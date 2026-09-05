@@ -1,0 +1,119 @@
+import { EventEmitter } from "node:events";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { EufySecurity, CommandName, PropertyName, VideoCodec, type Device, type Picture, type LoginOptions } from "eufy-security-client";
+import { JpegFramer } from "./jpeg.js";
+import { StreamHub } from "./streams.js";
+import { Storage } from "./storage.js";
+
+export interface Credentials { username: string; password: string; country: string }
+export interface CameraInfo {
+  serial: string; name: string; model: string; hardware: string; software: string;
+  battery: number | null; snapshot_received_at: string | null;
+}
+export type AuthState = { state: "unconfigured" | "connected" | "connecting" | "error" | "verify" | "captcha"; captcha?: string; captchaId?: string };
+
+export class Eufy extends EventEmitter {
+  private client?: EufySecurity;
+  private loginBusy = false;
+  private encoders = new Map<string, ChildProcessWithoutNullStreams>();
+  private livePictures = new Map<string, { data: Buffer; mime: string; received: string }>();
+  private devices = new Map<string, Device>();
+  readonly pictures = new Map<string, { data: Buffer; mime: string; received: string }>();
+  readonly metrics = { start_requests: 0, stop_requests: 0, started_events: 0, stopped_events: 0, frames: 0, last_start_request: null as string | null, last_stop_request: null as string | null, last_started_event: null as string | null, last_stopped_event: null as string | null };
+  auth: AuthState = { state: "unconfigured" };
+  readonly hub = new StreamHub({
+    start: async serial => { if (!this.client?.isConnected()) throw new Error("Disconnected"); this.metrics.start_requests++; this.metrics.last_start_request = new Date().toISOString(); await this.client.startStationLivestream(serial); },
+    stop: async serial => { this.metrics.stop_requests++; this.metrics.last_stop_request = new Date().toISOString(); await this.client?.stopStationLivestream(serial); },
+    disposeMedia: serial => { const picture = this.livePictures.get(serial); if (picture) { this.pictures.set(serial, picture); this.livePictures.delete(serial); this.emit("change"); } const encoder = this.encoders.get(serial); this.encoders.delete(serial); if (encoder) { encoder.stdin.destroy(); encoder.kill("SIGKILL"); } },
+  });
+  constructor(private readonly storage: Storage) { super(); }
+
+  async restore(): Promise<void> {
+    const saved = await this.storage.read("credentials.json");
+    if (saved) await this.login(JSON.parse(saved) as Credentials);
+  }
+  async login(credentials?: Credentials, options?: LoginOptions): Promise<AuthState> {
+    if (this.loginBusy) throw new Error("Login already in progress");
+    this.loginBusy = true;
+    try {
+      if (credentials) {
+        if (this.hub.active || this.hub.quarantined) throw new Error("Stop viewers before reauthenticating");
+        this.client?.removeAllListeners();
+        this.client?.close();
+        this.devices.clear(); this.pictures.clear();
+        this.client = await EufySecurity.initialize({
+          ...credentials, persistentData: (await this.storage.read("session.json")) ?? JSON.stringify({ country: "", openudid: "", serial_number: "", push_persistentIds: [], login_hash: "", version: "" }),
+          p2pConnectionSetup: 0, pollingIntervalMinutes: 0, eventDurationSeconds: 10,
+          acceptInvitations: false, trustedDeviceName: "Home Assistant Viewer",
+        });
+        this.client.setCameraMaxLivestreamDuration(120);
+        this.bind(this.client);
+        await this.storage.write("credentials.json", JSON.stringify(credentials));
+      }
+      if (!this.client) throw new Error("Credentials required");
+      this.auth = { state: "connecting" };
+      await this.client.connect(options);
+      if (this.client.isConnected()) this.auth = { state: "connected" };
+      if (this.auth.state === "connecting") this.auth = { state: "error" };
+      return this.auth;
+    } finally { this.loginBusy = false; this.emit("change"); }
+  }
+
+  private bind(client: EufySecurity): void {
+    client.on("persistent data", data => { void this.storage.write("session.json", data).catch(() => this.emit("storage_error")); });
+    client.on("connect", () => { this.auth = { state: "connected" }; this.emit("change"); });
+    client.on("close", () => { this.auth = { state: "error" }; this.hub.close(); this.emit("change"); });
+    client.on("connection error", () => { this.auth = { state: "error" }; this.emit("change"); });
+    client.on("tfa request", () => { this.auth = { state: "verify" }; this.emit("change"); });
+    client.on("captcha request", (captchaId, captcha) => { this.auth = { state: "captcha", captchaId, captcha }; this.emit("change"); });
+    client.on("device added", device => {
+      if (!device.hasCommand(CommandName.DeviceStartLivestream)) return;
+      this.devices.set(device.getSerial(), device);
+      if (device.hasProperty(PropertyName.DevicePicture)) this.picture(device.getSerial(), device.getPropertyValue(PropertyName.DevicePicture));
+      this.emit("change");
+    });
+    client.on("device removed", device => { const serial = device.getSerial(); this.hub.end(serial, "Device removed"); this.devices.delete(serial); this.pictures.delete(serial); this.emit("change"); });
+    client.on("device property changed", (device, name, value) => {
+      if (!this.devices.has(device.getSerial())) return;
+      if (name === PropertyName.DevicePicture) this.picture(device.getSerial(), value);
+      // Only push properties we expose; raw events contain sensitive data.
+      if ([PropertyName.DevicePicture, PropertyName.DeviceBattery, PropertyName.Name].includes(name as PropertyName)) this.emit("change");
+    });
+    client.on("station livestream stop", (_station, device) => { this.metrics.stopped_events++; this.metrics.last_stopped_event = new Date().toISOString(); this.hub.stopped(device.getSerial()); });
+    client.on("station livestream start", (_station, device, metadata, video, audio) => {
+      this.metrics.started_events++; this.metrics.last_started_event = new Date().toISOString();
+      const serial = device.getSerial();
+      // Drain unused audio so its buffer cannot grow while viewing video.
+      audio.on("error", () => this.hub.end(serial, "Audio transport error")); audio.resume();
+      if (!this.hub.started(serial)) { video.resume(); return; }
+      if (this.encoders.has(serial)) { this.hub.end(serial, "Duplicate stream"); video.resume(); return; }
+      const codec = metadata.videoCodec === VideoCodec.H264 ? "h264" : metadata.videoCodec === VideoCodec.H265 ? "hevc" : null;
+      if (!codec) { this.hub.end(serial, "Unsupported codec"); video.resume(); return; }
+      const encoder = spawn("ffmpeg", ["-hide_banner", "-loglevel", "error", "-threads", "1", "-f", codec, "-i", "pipe:0", "-an", "-vf", "fps=8,scale='min(960,iw)':-2", "-threads", "1", "-q:v", "6", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"], { stdio: ["pipe", "pipe", "pipe"] });
+      this.encoders.set(serial, encoder);
+      const framer = new JpegFramer(frame => { this.metrics.frames++; this.livePictures.set(serial, { data: frame, mime: "image/jpeg", received: new Date().toISOString() }); this.hub.frame(serial, frame); });
+      encoder.stdout.on("data", (chunk: Buffer) => { try { framer.push(chunk); } catch { this.hub.end(serial, "Invalid media"); } });
+      encoder.stderr.resume(); // Never expose SDK credentials or device addresses in logs.
+      encoder.stdin.on("error", () => this.hub.end(serial, "Encoder input failed"));
+      encoder.on("error", () => this.hub.end(serial, "Encoder unavailable"));
+      encoder.on("exit", () => { if (this.encoders.get(serial) === encoder) this.hub.end(serial, "Encoder stopped"); });
+      video.on("error", () => this.hub.end(serial, "Camera transport failed"));
+      video.pipe(encoder.stdin);
+    });
+  }
+  private picture(serial: string, value: unknown): void {
+    const picture = value as Partial<Picture> | undefined;
+    if (!picture || !Buffer.isBuffer(picture.data) || !picture.data.length || picture.data.length > 5_000_000 || !["image/jpeg", "image/png"].includes(picture.type?.mime ?? "")) return;
+    if (this.pictures.get(serial)?.data.equals(picture.data)) return;
+    this.pictures.set(serial, { data: picture.data, mime: picture.type!.mime, received: new Date().toISOString() });
+  }
+  inventory(): CameraInfo[] {
+    return [...this.devices.values()].map(device => ({
+      serial: device.getSerial(), name: device.getName(), model: device.getModel(), hardware: device.getHardwareVersion(), software: device.getSoftwareVersion(),
+      battery: device.hasProperty(PropertyName.DeviceBattery) ? Number(device.getPropertyValue(PropertyName.DeviceBattery)) : null,
+      snapshot_received_at: this.pictures.get(device.getSerial())?.received ?? null,
+    }));
+  }
+  hasCamera(serial: string): boolean { return this.devices.has(serial); }
+  async close(): Promise<void> { this.hub.close(); await new Promise(resolve => setTimeout(resolve, 1500)); this.client?.close(); await this.storage.flush(); }
+}

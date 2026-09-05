@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+bridge/node_modules/
+bridge/dist/
+frontend/node_modules/
+artifacts/
+*.egg-info/
+.env
+frontend/test-results/
+frontend/playwright-report/
+
+bridge.env

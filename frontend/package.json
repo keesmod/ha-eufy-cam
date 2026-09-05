@@ -1,0 +1,13 @@
+{
+  "name": "eufy-viewer-card-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "typescript": "^5.9.3"
+  }
+}

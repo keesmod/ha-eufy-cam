@@ -1,0 +1,55 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Eufy Viewer-bridge verbinden",
+        "description": "Vul het adres en toegangstoken van je eigen Eufy Viewer-bridge in. De bridge moet al draaien. Er worden geen camera's gestart.",
+        "data": {
+          "url": "Bridge-URL",
+          "token": "Toegangstoken van de bridge"
+        }
+      },
+      "account": {
+        "title": "Aanmelden bij Eufy",
+        "description": "Gebruik een apart Eufy-account met gedeelde toegang tot je camera's. De inloggegevens worden op de lokale bridge bewaard, niet in deze Home Assistant-configuratie.",
+        "data": {
+          "username": "E-mailadres",
+          "password": "Wachtwoord",
+          "country": "Landcode (bijvoorbeeld NL)"
+        }
+      },
+      "verify": {
+        "title": "Verificatiecode",
+        "description": "Vul de verificatiecode in die Eufy heeft verstuurd.",
+        "data": {
+          "code": "Verificatiecode"
+        }
+      },
+      "captcha": {
+        "title": "Captcha invullen",
+        "description": "![Captcha]({captcha_image})\n\nVul de tekens uit de afbeelding in.",
+        "data": {
+          "captcha": "Tekens"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Kan de bridge niet bereiken. Controleer het adres en de verbinding.",
+      "invalid_auth": "Aanmelden mislukt. Controleer de inloggegevens of verificatiecode."
+    },
+    "abort": {
+      "already_configured": "Deze bridge is al geconfigureerd.",
+      "wrong_bridge": "Dit adres hoort bij een andere bridge. Voeg die als aparte integratie toe.",
+      "invalid_bridge_auth": "De bridge heeft het toegangstoken geweigerd. Start opnieuw met het juiste token.",
+      "reauth_successful": "Aanmelding bijgewerkt.",
+      "reconfigure_successful": "Bridgeverbinding bijgewerkt."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Batterij"
+      }
+    }
+  }
+}

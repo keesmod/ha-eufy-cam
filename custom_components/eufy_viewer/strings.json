@@ -1,0 +1,55 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect Eufy Viewer bridge",
+        "description": "Enter the address and access token of your dedicated Eufy Viewer bridge. The bridge must already be running. No cameras will be started.",
+        "data": {
+          "url": "Bridge URL",
+          "token": "Bridge access token"
+        }
+      },
+      "account": {
+        "title": "Sign in to Eufy",
+        "description": "Use a dedicated Eufy account with shared access to your cameras. Credentials are stored on your local bridge, not in this Home Assistant entry.",
+        "data": {
+          "username": "Email address",
+          "password": "Password",
+          "country": "Country code (for example NL)"
+        }
+      },
+      "verify": {
+        "title": "Verification code",
+        "description": "Enter the verification code sent by Eufy.",
+        "data": {
+          "code": "Verification code"
+        }
+      },
+      "captcha": {
+        "title": "Complete the captcha",
+        "description": "![Captcha]({captcha_image})\n\nEnter the characters shown in the image.",
+        "data": {
+          "captcha": "Characters"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot communicate with the bridge. Check its address and connection.",
+      "invalid_auth": "Authentication failed. Check the credentials or verification code."
+    },
+    "abort": {
+      "already_configured": "This bridge is already configured.",
+      "wrong_bridge": "This endpoint belongs to a different bridge. Add it as a separate integration.",
+      "invalid_bridge_auth": "The bridge rejected its access token. Start setup again with the correct token.",
+      "reauth_successful": "Authentication updated.",
+      "reconfigure_successful": "Bridge connection updated."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery": {
+        "name": "Battery"
+      }
+    }
+  }
+}
