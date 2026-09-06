@@ -3,12 +3,14 @@ import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { EufySecurity, Station, Device, VideoCodec, type StreamMetadata, type DatabaseQueryByDate } from 'eufy-security-client';
 
+import { completeDay, recordingDays } from './history.js';
+
 const LIMIT = 32 * 1024 * 1024;
 const TTL = 15 * 60_000;
 export class RecordingError extends Error {
-  constructor(readonly code: "live_busy" | "live_stopping" | "recording_busy" | "recording_unavailable" | "recording_expired", readonly status: number) { super(code); }
+  constructor(readonly code: "live_busy" | "live_stopping" | "recording_busy" | "recording_unavailable" | "recording_expired" | "history_incomplete" | "thumbnail_unavailable", readonly status: number) { super(code); }
 }
-export interface Recording { id: string; start: string; end: string; bytes: number }
+export interface Recording { id: string; start: string; end: string; bytes: number; thumbnail: boolean; serial: string }
 interface Reference { serial: string; station: Station; record: DatabaseQueryByDate; expires: number }
 
 /** Existing HomeBase files only. No polling, live capture, guessed paths, or disk cache. */
@@ -49,38 +51,97 @@ export class Recordings {
   }
 
   async list(serial: string, date: string, signal: AbortSignal): Promise<{ recordings: Recording[]; returned: number }> {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Invalid date');
+    const result = await this.timeline([serial], date, signal);
+    return { recordings: result.recordings, returned: result.returned };
+  }
+
+  async timeline(serials: string[], date: string, signal: AbortSignal): Promise<{recordings: Recording[]; returned: number; complete: true}> {
     const start = new Date(`${date}T12:00:00`);
-    if (Number.isNaN(start.valueOf()) || `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2,'0')}-${String(start.getDate()).padStart(2,'0')}` !== date) throw new Error('Invalid date');
-    const end = new Date(start); end.setDate(end.getDate() + 1);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(start.valueOf()) || this.localTime(start).slice(0,10) !== date) throw new Error('Invalid date');
+    const end = new Date(start); end.setDate(end.getDate()+1);
     return this.run(signal, async (client, abort) => {
+      const stations = await this.stations(client, serials);
+      const all: Recording[] = []; let returned = 0;
+      const pending = new Map<string, Reference>();
+      const now = Date.now();
+      for (const [id, ref] of this.references) if (ref.expires <= now) this.references.delete(id);
+      for (const station of stations) {
+        const opened = !station.isConnected();
+        try {
+          await this.connected(station, abort); abort.throwIfAborted();
+          let records: DatabaseQueryByDate[];
+          try { records = await completeDay(station, start, end, abort, () => { this.metrics.queries++; }); }
+          catch { throw new RecordingError('history_incomplete', 503); }
+          returned += records.length;
+          for (const record of records) {
+            const serial = record.device_sn;
+            if (!serials.includes(serial)) continue;
+            if (record.station_sn !== station.getSerial() || typeof record.storage_path !== 'string' || !record.storage_path || record.storage_path.length > 2048 || !Number.isFinite(record.start_time?.valueOf()) || !Number.isFinite(record.end_time?.valueOf())) throw new RecordingError('history_incomplete', 503);
+            if (this.localTime(record.start_time).slice(0,10) !== date) continue;
+            const id = randomBytes(16).toString('hex');
+            pending.set(id, { serial, station, record, expires: now + TTL });
+            all.push({ id, serial, start: this.localTime(record.start_time), end: this.localTime(record.end_time), bytes: record.folder_size || 0, thumbnail: typeof record.thumb_path === 'string' && record.thumb_path.length > 0 && record.thumb_path.length <= 2048 });
+            if (all.length > 10000) throw new RecordingError('history_incomplete', 503);
+          }
+        } finally { if (opened || abort.aborted) station.close(); }
+      }
+      for (const [id, ref] of pending) this.references.set(id, ref);
+      while (this.references.size > 20000) this.references.delete(this.references.keys().next().value!);
+      return { recordings: all.sort((a,b)=>b.start.localeCompare(a.start) || a.id.localeCompare(b.id)), returned, complete: true };
+    });
+  }
+
+  private async stations(client: EufySecurity, serials: string[]): Promise<Station[]> {
+    if (!serials.length || serials.length > 100) throw new Error('Invalid cameras');
+    const result = new Map<string, Station>();
+    for (const serial of serials) {
       const device = await client.getDevice(serial);
       const station = await client.getStation(device.getStationSerial());
-      const opened = !station.isConnected();
+      result.set(station.getSerial(), station);
+    }
+    return [...result.values()];
+  }
+
+  async calendar(serials: string[], month: string, signal: AbortSignal): Promise<{days: string[]}> {
+    const start = new Date(`${month}-01T12:00:00`);
+    if (!/^\d{4}-\d{2}$/.test(month) || !Number.isFinite(start.valueOf()) || this.localTime(start).slice(0,7) !== month) throw new Error('Invalid month');
+    const end = new Date(start); end.setMonth(end.getMonth()+1);
+    return this.run(signal, async (client, abort) => {
+      const days = new Set<string>();
+      for (const station of await this.stations(client, serials)) {
+        const opened = !station.isConnected();
+        try {
+          await this.connected(station, abort); abort.throwIfAborted();
+          this.metrics.queries++;
+          for (const day of await recordingDays(station, start, end, abort)) if (day.startsWith(`${month}-`)) days.add(day);
+        } finally { if (opened || abort.aborted) station.close(); }
+      }
+      return { days: [...days].sort() };
+    });
+  }
+
+  async thumbnail(serial: string, id: string, signal: AbortSignal): Promise<Buffer> {
+    const ref = this.references.get(id);
+    if (!ref || ref.serial !== serial || ref.expires <= Date.now()) throw new RecordingError('recording_expired', 410);
+    const file = ref.record.thumb_path;
+    if (typeof file !== 'string' || !file || file.length > 2048) throw new RecordingError('thumbnail_unavailable', 503);
+    return this.run(signal, async (_client, abort) => {
+      const station = ref.station; const opened = !station.isConnected();
       try {
         await this.connected(station, abort); abort.throwIfAborted();
-        this.metrics.queries++;
-        const records = await new Promise<DatabaseQueryByDate[]>((resolve, reject) => {
-          const clean = () => { clearTimeout(timer); station.off('database query by date', received); abort.removeEventListener('abort', cancelled); };
-          const cancelled = () => { clean(); reject(new Error('History query cancelled or timed out')); };
-          const received = (_station: Station, code: number, data: DatabaseQueryByDate[]) => { clean(); if (code !== 0 || !Array.isArray(data) || data.length > 1000) reject(new Error('History query rejected')); else resolve(data); };
-          const timer = setTimeout(cancelled, 20_000);
-          station.on('database query by date', received); abort.addEventListener('abort', cancelled, { once: true });
-          // Upstream PR #768, confirmed on T8030 / 3.8.6.0: all cameras, [day,next day].
-          try { station.databaseQueryByDate([], start, end); } catch { cancelled(); }
+        return await new Promise<Buffer>((resolve, reject) => {
+          const clean = () => { clearTimeout(timer); station.off('image download', received); abort.removeEventListener('abort', fail); };
+          const fail = () => { clean(); reject(new RecordingError('thumbnail_unavailable', 503)); };
+          const received = (_station: Station, path: string, data: Buffer) => {
+            if (path !== file) return;
+            if (!Buffer.isBuffer(data) || data.length < 3 || data.length > 2*1024*1024 || data[0] !== 255 || data[1] !== 216 || data[2] !== 255) { fail(); return; }
+            clean(); resolve(data);
+          };
+          const timer = setTimeout(fail, 8000);
+          station.on('image download', received); abort.addEventListener('abort', fail, {once:true});
+          try { station.downloadImage(file); } catch { fail(); }
         });
-        const now = Date.now();
-        for (const [id, ref] of this.references) if (ref.expires <= now) this.references.delete(id);
-        const result: Recording[] = [];
-        for (const record of records) {
-          if (record.device_sn !== serial || record.station_sn !== station.getSerial() || !record.storage_path || typeof record.storage_path !== 'string' || record.storage_path.length > 2048 || !Number.isFinite(record.start_time?.valueOf()) || !Number.isFinite(record.end_time?.valueOf())) continue;
-          const id = randomBytes(16).toString('hex');
-          this.references.set(id, { serial, station, record, expires: now + TTL });
-          result.push({ id, start: this.localTime(record.start_time), end: this.localTime(record.end_time), bytes: record.folder_size });
-        }
-        while (this.references.size > 1000) this.references.delete(this.references.keys().next().value!);
-        return { recordings: result, returned: records.length };
-      } finally { if (opened) station.close(); }
+      } finally { if (opened || abort.aborted) station.close(); }
     });
   }
   private localTime(date: Date): string {
@@ -102,7 +163,7 @@ export class Recordings {
         const mp4 = await muxRecording(source.metadata, source.video, source.audio, abort);
         this.metrics.completed++;
         return mp4;
-      } finally { if (abort.aborted) this.metrics.cancelled++; if (opened) station.close(); }
+      } finally { if (abort.aborted) this.metrics.cancelled++; if (opened || abort.aborted) station.close(); }
     });
   }
 

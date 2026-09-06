@@ -2,7 +2,17 @@
 
 An independent Home Assistant integration, companion dashboard card and local Eufy bridge. Snapshots while idle; tap to watch live; close to stop. Not affiliated with or endorsed by Eufy or Anker.
 
-**Version 0.2.0:** on-demand WebRTC video and listen-only audio, plus browsing and playing existing HomeBase recordings by camera and date. Tested with Home Assistant 2026.9.0 and HomeBase 3 (T8030, firmware 3.8.6.0). Four camera entities and snapshots were verified on the live installation; actual WebRTC video and existing recording playback were verified at 1920×1080. See [validation and remaining limits](docs/VALIDATION_0.2.md). This is a HACS custom integration; it is not part of Home Assistant core.
+**Version 0.3.0:** an all-camera Events timeline with stored previews, a recording-day calendar, camera/date filters and previous/next playback. Includes on-demand WebRTC video and listen-only audio. Tested with Home Assistant 2026.9.0 and HomeBase 3 (T8030, firmware 3.8.6.0). Four camera entities and snapshots were verified on the live installation; actual WebRTC video and existing recording playback were verified at 1920×1080. See [validation and remaining limits](docs/VALIDATION_0.3.md). This is a HACS custom integration; it is not part of Home Assistant core.
+
+## Events timeline
+
+**Eufy Events** is a second card bundled in the same dashboard resource. It shows all your Eufy Viewer cameras in one timeline, with a camera filter, date selection, a calendar marking HomeBase recording days, existing-event previews, and previous/next playback. Add **Eufy Events** in the card picker; all accessible Viewer cameras are selected by default. Optional card configuration supports `entities` and `title`.
+
+Requests begin with an explicit action. The card fetches at most 12 stored previews per displayed page, keeps at most 24 previews in browser memory and cancels work when hidden, disconnected or removed. Previews use the thumbnail path from the existing event; no snapshot capture or live recording is used. Calendar marks apply to all cameras on the HomeBase, and are only available to a user authorized for the entire bridge camera inventory. Filtering the timeline to a camera does not change the calendar's scope.
+
+On the tested HB3, increasing the SDK's existing query limit retrieved 105 database rows for 5 September, including events beyond the original first 100. These contained 95 files from the four known cameras and 10 zero-byte rows outside that camera inventory. The day list grows through bounded requests instead of silently stopping at 100. If the HomeBase returns an unchanged full prefix, inconsistent IDs or reaches the safety ceiling, the UI reports that completeness could not be confirmed. Firmware outside the tested device may behave differently. See [0.3 validation](docs/VALIDATION_0.3.md).
+
+HACS updates the integration and bundled cards; the companion bridge updates separately through the **HA App Store**. An old manually installed local bridge needs migration to the GitHub repository app before those bridge updates can be offered.
 
 ## What it does
 
@@ -35,7 +45,7 @@ Requirements: Docker on a machine that can reach the cameras/HomeBase, a dedicat
 From the repository root:
 
 ```sh
-docker build -t eufy-viewer-bridge:0.2.0 ./bridge
+docker build -t eufy-viewer-bridge:0.3.0 ./bridge
 ```
 
 Create a private environment file with a randomly generated token of at least 32 characters:
@@ -53,7 +63,7 @@ docker run -d --name eufy-viewer-bridge \
   --env-file bridge.env \
   -p YOUR_LAN_IP:8080:8080 \
   -v eufy-viewer-data:/data \
-  eufy-viewer-bridge:0.2.0
+  eufy-viewer-bridge:0.3.0
 ```
 
 Use a trusted LAN or a TLS reverse proxy; HTTP on an untrusted network exposes the bridge token and login credentials. Do not publish port 8080 to the internet. The browser never connects to the bridge directly. Outbound Eufy cloud/push and local P2P connectivity are required; depending on the device/network, Docker host networking may be needed for P2P.
@@ -87,22 +97,22 @@ This is a **HACS custom repository**, not yet a default HACS listing.
 
 For a local manual install, copy `custom_components/eufy_viewer` into your HA configuration's `custom_components` folder and restart. The downloadable integration archive preserves this directory structure.
 
-## Upgrade from 0.1.0
+## Upgrade from 0.1.0 or 0.2.0
 
 1. Close live viewers and recording dialogs.
-2. Update **Eufy Security Viewer Bridge** to **0.2.0** in the HA App store, then start it. For Docker, rebuild and recreate the container from this release while preserving its private data volume and token.
-3. In HACS, update/download **Eufy Security Viewer 0.2.0** and restart Home Assistant. If the version is not shown yet, use the repository's **Redownload** action after checking for updates.
-4. Change the existing dashboard resource to `/eufy_viewer/eufy-viewer-card.js?v=0.2.0`, type **JavaScript module**, and reload the dashboard/browser. Edit the existing resource; do not add a duplicate.
-5. Open **Recordings** on a camera card, choose a date and select a returned clip. Use **Watch live** and **Enable sound** to test WebRTC/audio separately.
+2. Update **Eufy Security Viewer Bridge** to **0.3.0** in the HA App store, then start it. For Docker, rebuild and recreate the container from this release while preserving its private data volume and token.
+3. In HACS, update/download **Eufy Security Viewer 0.3.0** and restart Home Assistant. If the version is not shown yet, use the repository's **Redownload** action after checking for updates.
+4. Change the existing dashboard resource to `/eufy_viewer/eufy-viewer-card.js?v=0.3.0`, type **JavaScript module**, and reload the dashboard/browser. Edit the existing resource; do not add a duplicate.
+5. Add the **Eufy Events** card for the combined timeline, choose a date and select a clip. The existing **Recordings** button on camera cards still works. Use **Watch live** and **Enable sound** to test WebRTC/audio separately.
 
-HACS updates the integration and bundled card only. The bridge must also run 0.2.0 for recordings and WebRTC. Existing integration configuration, camera entities and credentials can be retained; no removal or re-pairing is needed. Verify the WebRTC media route described above if live playback does not connect.
+HACS updates the integration and bundled card only. The bridge must also run 0.3.0 for the Events timeline. Existing integration configuration, camera entities and credentials can be retained; no removal or re-pairing is needed. Verify the WebRTC media route described above if live playback does not connect.
 
 ## Add the card without YAML
 
 The card is bundled with the integration, so it updates through the same HACS installation.
 
 1. Enable **Advanced mode** in your HA profile if Resources is hidden.
-2. In dashboard **Resources**, add URL `/eufy_viewer/eufy-viewer-card.js?v=0.2.0`, type **JavaScript module**.
+2. In dashboard **Resources**, add URL `/eufy_viewer/eufy-viewer-card.js?v=0.3.0`, type **JavaScript module**.
 3. Edit a dashboard, **Add card → Eufy Security Viewer**, and select a camera using the visual picker.
 4. Save. The card stays on the snapshot until you tap it. Escape, the close button and clicking outside the dialog close live viewing.
 
@@ -135,4 +145,4 @@ See [architecture and safety](docs/ARCHITECTURE.md), [bridge protocol](docs/PROT
 
 Confirmed on HomeBase 3 T8030, firmware 3.8.6.0, with eufy-security-client 4.1.1-1. The bridge uses the working calendar query `10006` with an empty device filter and `[selected day, next day]`, then filters returned records to the authorized camera. Legacy `10017` is not used. Only device-returned paths can be downloaded; the browser receives opaque expiring IDs.
 
-The UI displays the records returned by the HomeBase. Complete pagination of large days is not yet established; do not treat a returned page as a full retention/export inventory. One query or download runs at a time; close live viewers before loading recordings. Clip preparation is limited to 60 seconds and 32 MiB, with no persistent video cache. Failed requests require an explicit retry. See [recording protocol and live evidence](docs/RECORDINGS_PROBE_2026-09-06.md).
+The bridge expands the existing query limit to retrieve the selected day on the tested HB3 firmware. Ambiguous boundaries, inconsistent responses and the final safety ceiling are reported as errors instead of silent truncation. Firmware-wide pagination and bulk retention/export completeness are not claimed. One query or download runs at a time; close live viewers before loading recordings. Clip preparation is limited to 60 seconds and 32 MiB, with no persistent video cache. Failed requests require an explicit retry. See [recording protocol and live evidence](docs/RECORDINGS_PROBE_2026-09-06.md).

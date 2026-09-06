@@ -42,14 +42,26 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         const options = typeof input.verifyCode === "string" ? { force: false, verifyCode: input.verifyCode } : typeof input.captcha === "string" && typeof input.captchaId === "string" ? { force: false, captcha: { captchaCode: input.captcha, captchaId: input.captchaId } } : undefined;
         json(response, 200, await eufy.login(credentials, options)); return;
       }
-      const recording = /^\/v1\/recordings\/([A-Za-z0-9_-]{1,64})(?:\/([a-f0-9]{32})\/video)?$/.exec(url.pathname);
+      if (request.method === "GET" && ["/v1/recordings", "/v1/recording-days"].includes(url.pathname)) {
+        const serials = [...new Set((url.searchParams.get("cameras") ?? "").split(","))];
+        if (!serials.length || serials.length > 100 || serials.some(s => !/^[A-Za-z0-9_-]{1,64}$/.test(s) || !eufy.hasCamera(s))) throw new Error("Invalid cameras");
+        const cancel = new AbortController(); const abort = () => cancel.abort(); response.once("close", abort);
+        try {
+          const data = url.pathname === "/v1/recording-days"
+            ? await eufy.recordings.calendar(serials, url.searchParams.get("month") ?? "", cancel.signal)
+            : await eufy.recordings.timeline(serials, url.searchParams.get("date") ?? "", cancel.signal);
+          if (!response.destroyed) json(response, 200, data);
+        } finally { response.off("close", abort); }
+        return;
+      }
+      const recording = /^\/v1\/recordings\/([A-Za-z0-9_-]{1,64})(?:\/([a-f0-9]{32})\/(video|thumbnail))?$/.exec(url.pathname);
       if (request.method === "GET" && recording && eufy.hasCamera(recording[1]!)) {
         const cancel = new AbortController();
         const abort = () => cancel.abort(); response.once("close", abort);
         try {
           if (recording[2]) {
-            const data = await eufy.recordings.video(recording[1]!, recording[2], cancel.signal);
-            if (!response.destroyed) { response.writeHead(200, { "Content-Type": "video/mp4", "Content-Length": data.length, "Cache-Control": "no-store" }); response.end(data); }
+            const data = await eufy.recordings[recording[3] === "thumbnail" ? "thumbnail" : "video"](recording[1]!, recording[2], cancel.signal);
+            if (!response.destroyed) { response.writeHead(200, { "Content-Type": recording[3] === "thumbnail" ? "image/jpeg" : "video/mp4", "Content-Length": data.length, "Cache-Control": "no-store" }); response.end(data); }
           } else {
             const data = await eufy.recordings.list(recording[1]!, url.searchParams.get("date") ?? "", cancel.signal);
             if (!response.destroyed) json(response, 200, data);

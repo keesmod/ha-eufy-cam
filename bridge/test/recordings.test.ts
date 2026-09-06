@@ -8,12 +8,13 @@ import { Recordings, muxRecording } from '../src/recordings.js';
 function fixture() {
   const calls: unknown[] = [];
   const station = Object.assign(new EventEmitter(), {
+    p2pSession: { sendCommandWithStringPayload: () => {} },
     getSerial: () => 'BASE', isConnected: () => true, close: () => calls.push('close'),
     databaseQueryByDate: (serials: string[], start: Date, end: Date) => {
       calls.push({ serials, start, end });
       queueMicrotask(() => station.emit('database query by date', station, 0, [
-        { device_sn: 'CAM', station_sn: 'BASE', storage_path: '/fixture/existing.zxvideo', folder_size: 50, start_time: new Date('2026-09-05T13:14:15'), end_time: new Date('2026-09-05T13:14:20') },
-        { device_sn: 'OTHER', station_sn: 'BASE', storage_path: '/fixture/private.zxvideo', start_time: new Date(), end_time: new Date() },
+        { record_id: 1, device_sn: 'CAM', station_sn: 'BASE', storage_path: '/fixture/existing.zxvideo', folder_size: 50, start_time: new Date('2026-09-05T13:14:15'), end_time: new Date('2026-09-05T13:14:20') },
+        { record_id: 2, device_sn: 'OTHER', station_sn: 'BASE', storage_path: '/fixture/private.zxvideo', start_time: new Date(), end_time: new Date() },
       ]));
     },
     startDownload: async () => { calls.push('download'); }, cancelDownload: () => calls.push('cancel'),
@@ -42,7 +43,7 @@ test('leaving while downloading cancels the exact device and releases the operat
   await new Promise(resolve => setImmediate(resolve)); assert.ok(calls.includes('download'));
   await assert.rejects(manager.list('CAM', '2026-09-05', controller.signal));
   controller.abort(); await assert.rejects(downloading);
-  assert.equal(calls.filter(c => c === 'cancel').length, 1); assert.equal(manager.busy, false);
+  assert.equal(calls.filter(c => c === 'cancel').length, 1); assert.ok(calls.includes('close')); assert.equal(manager.busy, false);
   assert.equal(station.listenerCount('download start'), 0); assert.equal(station.listenerCount('download finish'), 0);
 });
 
@@ -61,4 +62,34 @@ test('real stored H264 and AAC bytes become a fully decodable browser MP4', asyn
   execFileSync('ffmpeg',['-v','error','-i','pipe:0','-f','null','-'],{input:mp4});
   const muted = await muxRecording({ videoCodec:VideoCodec.H264,audioCodec:AudioCodec.NONE,videoFPS:15,videoWidth:320,videoHeight:180 },video,Buffer.alloc(0),new AbortController().signal);
   execFileSync('ffmpeg',['-v','error','-i','pipe:0','-f','null','-'],{input:muted});
+});
+
+test('all-camera timeline queries a shared HomeBase once and never exports raw paths', async()=>{
+  const {manager,calls}=fixture();const result=await manager.timeline(['CAM','OTHER'],'2026-09-05',new AbortController().signal);
+  assert.equal(calls.length,1);assert.equal(result.complete,true);assert.equal(result.recordings[0]?.serial,'CAM');assert.ok(!JSON.stringify(result).includes('storage_path'));
+});
+test('stored thumbnail accepts only the referenced file, validates JPEG and cleans up on abort', async()=>{
+  const {manager,station}=fixture();
+  const original=station.databaseQueryByDate;
+  station.databaseQueryByDate=(serials,start,end)=>{station.once('database query by date',(_s,_c,rows)=>{rows[0].thumb_path='/fixture/stored.jpg';});original(serials,start,end);};
+  const raw=station as typeof station & {downloadImage:(file:string)=>void};
+  raw.downloadImage=file=>{assert.equal(file,'/fixture/stored.jpg');queueMicrotask(()=>{station.emit('image download',station,'/unrelated/latest.jpg',Buffer.from([255,216,255,1]));station.emit('image download',station,file,Buffer.from([255,216,255,2]));});};
+  const controller=new AbortController();const result=await manager.list('CAM','2026-09-05',controller.signal);const id=result.recordings[0]!.id;
+  assert.equal(result.recordings[0]!.thumbnail,true);assert.deepEqual(await manager.thumbnail('CAM',id,controller.signal),Buffer.from([255,216,255,2]));
+  assert.equal(station.listenerCount('image download'),0);
+  await assert.rejects(manager.thumbnail('OTHER',id,controller.signal));
+  raw.downloadImage=()=>{};const pending=manager.thumbnail('CAM',id,controller.signal);await new Promise(r=>setImmediate(r));controller.abort();await assert.rejects(pending);assert.equal(station.listenerCount('image download'),0);assert.equal(manager.busy,false);
+});
+test('calendar validates the month and de-duplicates HomeBase-wide presence days',async()=>{
+  const {manager,station}=fixture();let calls=0;
+  Object.assign(station,{databaseCountByDate:()=>{calls++;queueMicrotask(()=>station.emit('database count by date',station,0,[{day:new Date('2026-09-05T00:00:00'),count:1},{day:new Date('2026-10-01T00:00:00'),count:1}]));}});
+  await assert.rejects(manager.calendar(['CAM'],'2026-13',new AbortController().signal));
+  assert.deepEqual(await manager.calendar(['CAM','OTHER'],'2026-09',new AbortController().signal),{days:['2026-09-05']});assert.equal(calls,1);
+});
+
+
+test('a malformed known-camera record cannot silently disappear from a complete day',async()=>{
+  const {manager,station}=fixture();
+  station.databaseQueryByDate=()=>{queueMicrotask(()=>station.emit('database query by date',station,0,[{record_id:1,device_sn:'CAM',station_sn:'BASE',storage_path:'',start_time:new Date(),end_time:new Date()}]));};
+  await assert.rejects(manager.timeline(['CAM'],'2026-09-05',new AbortController().signal),/history_incomplete/);
 });

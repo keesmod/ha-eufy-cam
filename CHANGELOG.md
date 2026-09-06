@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 — 2026-09-06
+
+- New Eufy Events card: all-camera timeline, camera/date filters, HomeBase recording-day calendar and previous/next playback.
+- Existing-event thumbnails, 12 visual results per page and bounded browser image caching; no live capture or cloud polling.
+- Expand the SDK's 100-row day limit using the hardware-verified count field. Reject ambiguous/inconsistent histories rather than silently truncate them.
+- Batch cameras by HomeBase; retain entity permissions, private file paths, expiring references and cancellation. Calendar markers require access to the full bridge inventory.
+- Verified 95 camera recordings from a 105-row day and played an existing clip beyond the former first-100 cutoff in HA.
+- Preserve WebRTC/audio, viewer leases and bounded stop recovery. Physical iPhone suspension/audio and other HomeBase firmware remain unverified.
+
+Update the bridge app and HACS integration to 0.3.0, restart HA and change the existing dashboard resource to `?v=0.3.0`. Add **Eufy Events** through the card picker. HACS updates the integration/cards; the bridge updates separately through the HA App Store.
+
 ## 0.2.0 — 2026-09-06
 
 - Browse existing HomeBase recordings by date from each camera card and play a selected clip in HA.

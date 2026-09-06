@@ -207,7 +207,7 @@ export class EufyViewerCard extends HTMLElement {
       await this._recordingResponse(response);
       const data = await response.json();
       if (generation !== this._recordGeneration || !this._recordDialog.open) return;
-      if (!Array.isArray(data.recordings) || data.recordings.length > 1000) throw new Error("Invalid history");
+      if (!Array.isArray(data.recordings) || data.recordings.length > 10000) throw new Error("Invalid history");
       this._recordStatus(data.recordings.length ? `${data.recordings.length} ${this._text().results} · ${this._text().homebaseTime}` : this._text().empty);
       for (const record of data.recordings) {
         if (!/^[a-f0-9]{32}$/.test(record.id) || typeof record.start !== "string" || typeof record.end !== "string") throw new Error("Invalid recording");

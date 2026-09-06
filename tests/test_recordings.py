@@ -109,3 +109,101 @@ async def test_stop_recovery_reason_is_forwarded(hass, hass_client, viewer_setup
         response = await client.get(BASE + "?date=2026-09-05")
         assert response.status == 409
         assert await response.json() == {"error": "live_stopping"}
+
+
+async def test_events_and_calendar_map_camera_permissions(
+    hass, hass_client, viewer_setup
+):
+    client = await hass_client()
+    api = viewer_setup.runtime_data.api
+    url = "/api/eufy_viewer/events?entities=camera.front_door"
+    row = {
+        "serial": "CAM123",
+        "id": CLIP,
+        "start": "2026-09-05T12:00:00",
+        "end": "2026-09-05T12:01:00",
+        "thumbnail": True,
+        "storage_path": "must not escape",
+    }
+    with patch.object(
+        api, "request", AsyncMock(return_value={"recordings": [row], "complete": True})
+    ) as query:
+        response = await client.get(url + "&date=2026-09-05")
+        assert response.status == 200
+        data = await response.json()
+        assert data["recordings"][0]["entity_id"] == "camera.front_door"
+        assert "storage_path" not in str(data)
+        query.assert_awaited_once_with(
+            "GET", "/v1/recordings?cameras=CAM123&date=2026-09-05"
+        )
+    with patch.object(api, "request", AsyncMock(return_value={"days": ["2026-09-05"]})):
+        response = await client.get(url + "&month=2026-09")
+        assert response.status == 200
+        assert await response.json() == {"days": ["2026-09-05"], "scope": "homebase"}
+    with patch.object(api, "recording_video", AsyncMock(return_value=b"jpeg")) as image:
+        response = await client.get(BASE + "/" + CLIP + "/thumbnail")
+        assert response.content_type == "image/jpeg"
+        image.assert_awaited_once_with("CAM123", CLIP, thumbnail=True)
+
+
+async def test_events_reject_partial_malformed_and_unauthorized_results(
+    hass, hass_client, viewer_setup
+):
+    client = await hass_client()
+    api = viewer_setup.runtime_data.api
+    url = "/api/eufy_viewer/events?entities=camera.front_door"
+    with patch.object(api, "request", AsyncMock()) as query:
+        for suffix in ("", "&month=2026-09&date=2026-09-05", "&date=no", "&month=no"):
+            assert (await client.get(url + suffix)).status == 400
+        assert (
+            await client.get("/api/eufy_viewer/events?date=2026-09-05")
+        ).status == 400
+        assert (await client.get(BASE + "/" + CLIP + "/unsafe")).status == 400
+        query.assert_not_called()
+        for result in (
+            None,
+            {"complete": False, "recordings": []},
+            {"complete": True, "recordings": [{"serial": "DENIED"}]},
+            {
+                "complete": True,
+                "recordings": [{"serial": "CAM123", "id": CLIP, "start": 0}],
+            },
+        ):
+            query.return_value = result
+            assert (await client.get(url + "&date=2026-09-05")).status == 502
+        for result in ({"days": ["2026-10-01"]}, {"days": [1]}, {"days": None}):
+            query.return_value = result
+            assert (await client.get(url + "&month=2026-09")).status == 502
+        permissions = Mock()
+        permissions.check_entity.return_value = False
+        with patch(
+            "homeassistant.auth.models.User.permissions",
+            new_callable=PropertyMock,
+            return_value=permissions,
+        ):
+            query.reset_mock()
+            assert (await client.get(url + "&month=2026-09")).status == 403
+            assert (await client.get(BASE + "/" + CLIP + "/thumbnail")).status == 403
+            query.assert_not_called()
+
+
+async def test_calendar_does_not_leak_days_of_other_cameras(
+    hass, hass_client, viewer_setup
+):
+    from dataclasses import replace
+
+    coordinator = viewer_setup.runtime_data
+    original = coordinator.data
+    coordinator.async_set_updated_data(
+        replace(
+            original,
+            cameras={**original.cameras, "PRIVATE": original.cameras["CAM123"]},
+        )
+    )
+    client = await hass_client()
+    with patch.object(coordinator.api, "request") as query:
+        response = await client.get(
+            "/api/eufy_viewer/events?entities=camera.front_door&month=2026-09"
+        )
+        assert response.status == 403
+        query.assert_not_called()

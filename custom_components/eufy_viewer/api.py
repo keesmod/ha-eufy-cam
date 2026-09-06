@@ -37,6 +37,8 @@ async def check_recording_error(response: aiohttp.ClientResponse) -> None:
         "recording_busy": 409,
         "recording_unavailable": 503,
         "recording_expired": 410,
+        "history_incomplete": 503,
+        "thumbnail_unavailable": 503,
     }
     if isinstance(code, str) and statuses.get(code) == response.status:
         raise BridgeRecordingError(code, response.status)
@@ -161,7 +163,7 @@ class BridgeClient:
     ) -> Any:
         """Execute a bounded request; never forward secrets across redirects."""
         try:
-            async with asyncio.timeout(45):
+            async with asyncio.timeout(62):
                 async with self._session.request(
                     method,
                     self.url + path,
@@ -172,10 +174,13 @@ class BridgeClient:
                     if response.status == 401:
                         raise BridgeAuthError("Bridge authentication failed")
                     if response.status != 200:
-                        if path.startswith("/v1/recordings/"):
+                        if path.startswith(("/v1/recordings", "/v1/recording-days")):
                             await check_recording_error(response)
                         raise BridgeError("Bridge request failed")
-                    raw = await read_bounded(response.content, 1_048_576)
+                    raw = await read_bounded(
+                        response.content,
+                        4_194_304 if path.startswith("/v1/recordings") else 1_048_576,
+                    )
 
                     return json.loads(raw)
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
@@ -212,19 +217,27 @@ class BridgeClient:
         except (aiohttp.ClientError, TimeoutError) as err:
             raise BridgeError("Snapshot unavailable") from err
 
-    async def recording_video(self, serial: str, recording_id: str) -> bytes:
+    async def recording_video(
+        self, serial: str, recording_id: str, *, thumbnail: bool = False
+    ) -> bytes:
         """Fetch one finite existing clip; cancellation closes the upstream socket."""
         try:
             async with asyncio.timeout(62):
                 async with self._session.get(
-                    self.url + f"/v1/recordings/{serial}/{recording_id}/video",
+                    self.url
+                    + f"/v1/recordings/{serial}/{recording_id}/"
+                    + ("thumbnail" if thumbnail else "video"),
                     headers=self._headers,
                     allow_redirects=False,
                 ) as response:
                     await check_recording_error(response)
-                    if response.status != 200 or response.content_type != "video/mp4":
+                    if response.status != 200 or response.content_type != (
+                        "image/jpeg" if thumbnail else "video/mp4"
+                    ):
                         raise BridgeError("Recording unavailable")
-                    return await read_bounded(response.content, 32 * 1024 * 1024)
+                    return await read_bounded(
+                        response.content, (2 if thumbnail else 32) * 1024 * 1024
+                    )
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             raise BridgeError("Recording unavailable") from err
 

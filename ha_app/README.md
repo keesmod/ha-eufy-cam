@@ -4,7 +4,7 @@ Required local bridge for the [Eufy Security Viewer integration](https://github.
 
 Install this app, set a unique random `token` of at least 32 characters in Configuration, start it and enable Start on boot. Copy the hostname from Info and use `http://HOSTNAME:8080` plus the same token in the integration setup. Enter Eufy credentials only in the Home Assistant integration flow. No YAML or host port mapping is required.
 
-Version **0.2.0** adds WebRTC video/audio and on-demand access to existing HomeBase recordings. Update the HACS integration to **0.2.0** as well, restart HA and refresh the dashboard card resource to `?v=0.2.0`. HACS does not update this app.
+Version **0.3.0** adds the shared Events timeline API, expanded day history, recording-day markers and stored thumbnails. WebRTC/audio and on-demand recording playback are preserved. Update the HACS integration to **0.3.0** as well, restart HA and refresh the dashboard card resource to `?v=0.3.0`. HACS does not update this app.
 
 This app includes Node.js 24 and FFmpeg. Initial installation builds the container. It needs access to Eufy cloud/push services and your cameras/HomeBase. Private credentials and session data persist in `/data/eufy` and must not be attached to support reports.
 

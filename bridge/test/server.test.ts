@@ -66,3 +66,17 @@ test('WebRTC media grants cannot wake cameras and expire with their owning viewe
     assert.equal(hub.active, 0);
   } finally { ws?.terminate(); server.emit('shutdown'); server.close(); await once(server, 'close'); }
 });
+
+test('timeline, calendar and stored thumbnails require auth and known camera IDs',async()=>{
+  const calls:string[]=[];const hub=new StreamHub({start:async()=>{},stop:async()=>{},disposeMedia:()=>{}});
+  const fake=Object.assign(new EventEmitter(),{auth:{state:'connected'},inventory:()=>[],hasCamera:(s:string)=>s==='CAM123',hub,recordings:{
+    timeline:async(serials:string[],date:string)=>{calls.push('timeline');assert.deepEqual(serials,['CAM123']);assert.equal(date,'2026-09-05');return {recordings:[],complete:true};},
+    calendar:async()=>{calls.push('calendar');return {days:['2026-09-05']};},thumbnail:async()=>{calls.push('thumbnail');return Buffer.from([255,216,255]);}
+  }});
+  const server=createBridge(fake as unknown as Eufy,token,'fixture');server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert.ok(address&&typeof address!=='string');const base=`http://127.0.0.1:${address.port}`,headers={Authorization:`Bearer ${token}`};
+  try{
+    const path='/v1/recordings?cameras=CAM123&date=2026-09-05';assert.equal((await fetch(base+path)).status,401);assert.equal((await fetch(base+path.replace('CAM123','UNKNOWN'),{headers})).status,400);assert.deepEqual(calls,[]);
+    assert.equal((await fetch(base+path,{headers})).status,200);assert.equal((await fetch(base+'/v1/recording-days?cameras=CAM123&month=2026-09',{headers})).status,200);
+    const image=await fetch(base+'/v1/recordings/CAM123/'+'a'.repeat(32)+'/thumbnail',{headers});assert.equal(image.headers.get('content-type'),'image/jpeg');assert.equal((await image.arrayBuffer()).byteLength,3);assert.deepEqual(calls,['timeline','calendar','thumbnail']);
+  }finally{server.emit('shutdown');server.close();await once(server,'close');}
+});
