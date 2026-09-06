@@ -4,9 +4,9 @@ I wanted to browse recordings already stored on my Eufy HomeBase from a Home Ass
 
 Version **0.3.0** provides an **Events timeline**: choose a date, filter by camera, see stored previews and play an existing recording with previous/next navigation. The camera card also offers snapshots while idle and on-demand WebRTC live video with optional listen-only audio. Closing or leaving the viewer releases its session; the bridge expires silent viewers. There is no scheduled cloud polling loop or permanent live stream.
 
-![Events UI demonstration with generated example media](https://raw.githubusercontent.com/keesmod/ha-eufy-cam/main/docs/media/events-demo.gif)
+![Actual Home Assistant dashboard playing an existing HomeBase recording; private areas obscured](https://raw.githubusercontent.com/keesmod/ha-eufy-cam/main/docs/media/ha-dashboard-demo.gif)
 
-*This walkthrough uses generated example media and simulated responses in the released card, so no private footage is shared. Separate hardware tests played actual, previously stored HomeBase clips in HA, including recordings from the previous day. The README links to the playback evidence and remaining limits.*
+*Recorded in a real Home Assistant dashboard: four cameras, date/camera selection, playback of an existing HomeBase clip from the previous day, and closing the player. Private areas and thumbnails are obscured. This silent walkthrough is edited between actions; the interface, event list and playback are real. The README links to the MP4, playback evidence and remaining limits.*
 
 **Currently tested:** Home Assistant 2026.9.0, HomeBase 3 T8030 with firmware 3.8.6.0, four cameras, landscape and portrait recordings. Other camera models/firmware, physical iPhone background behavior and remote WebRTC routes still need wider testing.
 

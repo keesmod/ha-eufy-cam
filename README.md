@@ -6,9 +6,9 @@ An independent integration with bundled dashboard cards and a required local bri
 
 [Install integration with HACS](https://my.home-assistant.io/redirect/hacs_repository/?owner=keesmod&repository=ha-eufy-cam&category=integration) · [Add bridge app repository](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fkeesmod%2Fha-eufy-cam) · [Installation steps](#install-in-home-assistant-with-hacs) · [Tested compatibility](docs/COMPATIBILITY.md)
 
-![Events timeline demonstration using generated example media](docs/media/events-demo.gif)
+![Actual Home Assistant dashboard playing an existing HomeBase recording; private areas obscured](docs/media/ha-dashboard-demo.gif)
 
-*UI demonstration with generated example media and simulated responses, using the released card. No private camera footage is published. Actual HomeBase playback evidence is documented in [validation](docs/VALIDATION_0.3.md). [Watch the MP4](docs/media/events-demo.mp4).*
+*Recorded in a real Home Assistant dashboard: four cameras, date/camera selection, playback of an existing HomeBase clip from the previous day, and closing the player. Private areas and thumbnails are obscured. This silent walkthrough is edited between actions; the interface, event list and playback are real. [Watch the MP4](docs/media/ha-dashboard-demo.mp4) · [Demo evidence](docs/media/README.md) · [Full validation](docs/VALIDATION_0.3.md).*
 
 **Start here:** Home Assistant **2026.9.0 or newer**, a Eufy account with camera access, and a **HomeBase 3** for the currently verified recording route. Install **both** parts: the bridge through the HA App Store (or Docker), then the integration through HACS. HACS currently uses a custom repository. Eufy login/cloud and push connectivity are still required; a cloud recording subscription is not required for the tested HomeBase files.
 
