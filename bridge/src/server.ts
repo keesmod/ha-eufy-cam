@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { timingSafeEqual } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import type { Credentials, Eufy } from "./eufy.js";
+import { RecordingError } from "./recordings.js";
 import type { Peer } from "./streams.js";
 
 function authorized(request: IncomingMessage, token: string): boolean {
@@ -21,8 +22,13 @@ function json(response: ServerResponse, status: number, value: unknown): void {
 }
 export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 1024, perMessageDeflate: false });
-  const state = () => ({ protocol: 1, bridge_id: bridgeId, auth: eufy.auth.state, cameras: eufy.inventory(), stream_metrics: { ...eufy.metrics, active_cameras: eufy.hub.active, quarantined: eufy.hub.quarantined } });
+  const state = () => ({ protocol: 1, transports: ["jpeg", "webrtc"], bridge_id: bridgeId, auth: eufy.auth.state, cameras: eufy.inventory(), recording_metrics: eufy.recordings ? { ...eufy.recordings.metrics, active: eufy.recordings.busy } : undefined, stream_metrics: { ...eufy.metrics, ...eufy.hub.recoveryMetrics, active_cameras: eufy.hub.active, quarantined: eufy.hub.quarantined } });
   const server = createServer((request, response) => {
+    const media = /^\/v1\/media\/([a-f0-9]{64})$/.exec(new URL(request.url ?? "/", "http://bridge").pathname);
+    if (request.method === "GET" && media) {
+      if (!eufy.media.serve(media[1]!, response)) json(response, 404, { error: "not_found" });
+      return;
+    }
     if (!authorized(request, token)) { json(response, 401, { error: "unauthorized" }); return; }
     void (async () => {
       const url = new URL(request.url ?? "/", "http://bridge");
@@ -36,6 +42,21 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         const options = typeof input.verifyCode === "string" ? { force: false, verifyCode: input.verifyCode } : typeof input.captcha === "string" && typeof input.captchaId === "string" ? { force: false, captcha: { captchaCode: input.captcha, captchaId: input.captchaId } } : undefined;
         json(response, 200, await eufy.login(credentials, options)); return;
       }
+      const recording = /^\/v1\/recordings\/([A-Za-z0-9_-]{1,64})(?:\/([a-f0-9]{32})\/video)?$/.exec(url.pathname);
+      if (request.method === "GET" && recording && eufy.hasCamera(recording[1]!)) {
+        const cancel = new AbortController();
+        const abort = () => cancel.abort(); response.once("close", abort);
+        try {
+          if (recording[2]) {
+            const data = await eufy.recordings.video(recording[1]!, recording[2], cancel.signal);
+            if (!response.destroyed) { response.writeHead(200, { "Content-Type": "video/mp4", "Content-Length": data.length, "Cache-Control": "no-store" }); response.end(data); }
+          } else {
+            const data = await eufy.recordings.list(recording[1]!, url.searchParams.get("date") ?? "", cancel.signal);
+            if (!response.destroyed) json(response, 200, data);
+          }
+        } finally { response.off("close", abort); }
+        return;
+      }
       const match = /^\/v1\/snapshot\/([A-Za-z0-9_-]{1,64})$/.exec(url.pathname);
       if (request.method === "GET" && match?.[1]) {
         const picture = eufy.pictures.get(match[1]);
@@ -43,7 +64,7 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         response.writeHead(200, { "Content-Type": picture.mime, "Content-Length": picture.data.length, "Cache-Control": "no-store" }); response.end(picture.data); return;
       }
       json(response, 404, { error: "not_found" });
-    })().catch(() => { if (!response.headersSent) json(response, 400, { error: "request_failed" }); else response.destroy(); });
+    })().catch(error => { if (!response.headersSent) json(response, error instanceof RecordingError ? error.status : 400, { error: error instanceof RecordingError ? error.code : "request_failed" }); else response.destroy(); });
   });
   server.requestTimeout = 60_000; server.headersTimeout = 10_000;
   server.on("upgrade", (request, socket, head) => {
@@ -60,14 +81,16 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         eufy.on("change", changed); ws.on("close", () => eufy.off("change", changed)); changed(); return;
       }
       const serial = live![1]!;
+      const webrtc = new URL(request.url ?? "/", "http://bridge").searchParams.get("transport") === "webrtc";
+      const grant = webrtc ? eufy.media.grant(serial) : null;
       const peer: Peer = {
-        send: frame => ws.send(frame, { binary: true }),
+        send: frame => { if (webrtc) ws.send(JSON.stringify({ type: "tick" })); else ws.send(frame, { binary: true }); },
         close: (code, reason) => { ws.close(code, reason); setTimeout(() => ws.terminate(), 500).unref(); },
         get bufferedAmount() { return ws.bufferedAmount; },
       };
-      ws.on("close", () => eufy.hub.detach(serial, peer));
+      ws.on("close", () => { if (grant) eufy.media.revoke(grant); eufy.hub.detach(serial, peer); });
       ws.on("message", (data, binary) => { if (!binary && data.toString() === "ack") eufy.hub.ack(serial, peer); else ws.close(1008, "Invalid acknowledgement"); });
-      eufy.hub.attach(serial, peer);
+      if (eufy.hub.attach(serial, peer) && grant) ws.send(JSON.stringify({ type: "ready", path: `/v1/media/${grant}` }));
     });
   });
   const watchdog = setInterval(() => eufy.hub.tick(), 250);

@@ -1,8 +1,11 @@
+import "./sdk-compat.js";
 import { EventEmitter } from "node:events";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { EufySecurity, CommandName, PropertyName, VideoCodec, type Device, type Picture, type LoginOptions } from "eufy-security-client";
+import { EufySecurity, CommandName, PropertyName, VideoCodec, AudioCodec, type Device, type Picture, type LoginOptions } from "eufy-security-client";
 import { JpegFramer } from "./jpeg.js";
 import { StreamHub } from "./streams.js";
+import { MediaRelay } from "./media.js";
+import { Recordings } from "./recordings.js";
 import { Storage } from "./storage.js";
 
 export interface Credentials { username: string; password: string; country: string }
@@ -18,13 +21,17 @@ export class Eufy extends EventEmitter {
   private encoders = new Map<string, ChildProcessWithoutNullStreams>();
   private livePictures = new Map<string, { data: Buffer; mime: string; received: string }>();
   private devices = new Map<string, Device>();
+  readonly media = new MediaRelay(serial => this.hub.end(serial, "Audio/video encoder failed"));
+  readonly recordings: Recordings = new Recordings(() => this.client, () => this.hub.active ? "live_busy" : this.hub.quarantined ? "live_stopping" : false);
   readonly pictures = new Map<string, { data: Buffer; mime: string; received: string }>();
   readonly metrics = { start_requests: 0, stop_requests: 0, started_events: 0, stopped_events: 0, frames: 0, last_start_request: null as string | null, last_stop_request: null as string | null, last_started_event: null as string | null, last_stopped_event: null as string | null };
   auth: AuthState = { state: "unconfigured" };
-  readonly hub = new StreamHub({
-    start: async serial => { if (!this.client?.isConnected()) throw new Error("Disconnected"); this.metrics.start_requests++; this.metrics.last_start_request = new Date().toISOString(); await this.client.startStationLivestream(serial); },
+  readonly hub: StreamHub = new StreamHub({
+    admit: () => !this.recordings.busy && Boolean(this.client?.isConnected()),
+    recover: serial => this.recoverStation(serial),
+    start: async serial => { if (this.recordings.busy) throw new Error("Recording operation in progress"); if (!this.client?.isConnected()) throw new Error("Disconnected"); this.metrics.start_requests++; this.metrics.last_start_request = new Date().toISOString(); await this.client.startStationLivestream(serial); },
     stop: async serial => { this.metrics.stop_requests++; this.metrics.last_stop_request = new Date().toISOString(); await this.client?.stopStationLivestream(serial); },
-    disposeMedia: serial => { const picture = this.livePictures.get(serial); if (picture) { this.pictures.set(serial, picture); this.livePictures.delete(serial); this.emit("change"); } const encoder = this.encoders.get(serial); this.encoders.delete(serial); if (encoder) { encoder.stdin.destroy(); encoder.kill("SIGKILL"); } },
+    disposeMedia: serial => { this.media.stop(serial); const picture = this.livePictures.get(serial); if (picture) { this.pictures.set(serial, picture); this.livePictures.delete(serial); this.emit("change"); } const encoder = this.encoders.get(serial); this.encoders.delete(serial); if (encoder) { encoder.stdin.destroy(); encoder.kill("SIGKILL"); } },
   });
   constructor(private readonly storage: Storage) { super(); }
 
@@ -37,7 +44,8 @@ export class Eufy extends EventEmitter {
     this.loginBusy = true;
     try {
       if (credentials) {
-        if (this.hub.active || this.hub.quarantined) throw new Error("Stop viewers before reauthenticating");
+        if (this.hub.active || this.hub.quarantined || this.recordings.busy) throw new Error("Stop viewers before reauthenticating");
+        this.recordings.close();
         this.client?.removeAllListeners();
         this.client?.close();
         this.devices.clear(); this.pictures.clear();
@@ -62,7 +70,7 @@ export class Eufy extends EventEmitter {
   private bind(client: EufySecurity): void {
     client.on("persistent data", data => { void this.storage.write("session.json", data).catch(() => this.emit("storage_error")); });
     client.on("connect", () => { this.auth = { state: "connected" }; this.emit("change"); });
-    client.on("close", () => { this.auth = { state: "error" }; this.hub.close(); this.emit("change"); });
+    client.on("close", () => { this.recordings.close(); this.auth = { state: "error" }; this.hub.close(); this.emit("change"); });
     client.on("connection error", () => { this.auth = { state: "error" }; this.emit("change"); });
     client.on("tfa request", () => { this.auth = { state: "verify" }; this.emit("change"); });
     client.on("captcha request", (captchaId, captcha) => { this.auth = { state: "captcha", captchaId, captcha }; this.emit("change"); });
@@ -83,12 +91,13 @@ export class Eufy extends EventEmitter {
     client.on("station livestream start", (_station, device, metadata, video, audio) => {
       this.metrics.started_events++; this.metrics.last_started_event = new Date().toISOString();
       const serial = device.getSerial();
-      // Drain unused audio so its buffer cannot grow while viewing video.
-      audio.on("error", () => this.hub.end(serial, "Audio transport error")); audio.resume();
-      if (!this.hub.started(serial)) { video.resume(); return; }
+      audio.on("error", () => this.hub.end(serial, "Audio transport error"));
+      if (!this.hub.started(serial)) { video.resume(); audio.resume(); return; }
       if (this.encoders.has(serial)) { this.hub.end(serial, "Duplicate stream"); video.resume(); return; }
       const codec = metadata.videoCodec === VideoCodec.H264 ? "h264" : metadata.videoCodec === VideoCodec.H265 ? "hevc" : null;
       if (!codec) { this.hub.end(serial, "Unsupported codec"); video.resume(); return; }
+      this.media.start(serial, codec, video, audio, [AudioCodec.AAC, AudioCodec.AAC_LC, AudioCodec.AAC_ELD].includes(metadata.audioCodec), metadata.videoFPS);
+      if (![AudioCodec.AAC, AudioCodec.AAC_LC, AudioCodec.AAC_ELD].includes(metadata.audioCodec)) audio.resume();
       const encoder = spawn("ffmpeg", ["-hide_banner", "-loglevel", "error", "-threads", "1", "-f", codec, "-i", "pipe:0", "-an", "-vf", "fps=8,scale='min(960,iw)':-2", "-threads", "1", "-q:v", "6", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"], { stdio: ["pipe", "pipe", "pipe"] });
       this.encoders.set(serial, encoder);
       const framer = new JpegFramer(frame => { this.metrics.frames++; this.livePictures.set(serial, { data: frame, mime: "image/jpeg", received: new Date().toISOString() }); this.hub.frame(serial, frame); });
@@ -100,6 +109,22 @@ export class Eufy extends EventEmitter {
       video.on("error", () => this.hub.end(serial, "Camera transport failed"));
       video.pipe(encoder.stdin);
     });
+  }
+  private async recoverStation(serial: string): Promise<string[]> {
+    if (!this.client || this.hub.active || this.recordings.busy) throw new Error("Station still owned");
+    const device = await this.client.getDevice(serial);
+    const station = await this.client.getStation(device.getStationSerial());
+    // Do not interpret a local no-stream flag as a physical stop. Require the
+    // SDK transport close event after sending END and clearing its command queue.
+    if (!station.isConnected()) throw new Error("Station disconnect not confirmed");
+    await new Promise<void>((resolve, reject) => {
+      const clean = () => { clearTimeout(timer); station.off("close", closed); };
+      const closed = () => { clean(); resolve(); };
+      const timer = setTimeout(() => { clean(); reject(new Error("Station close unconfirmed")); }, 5000);
+      station.once("close", closed);
+      try { station.close(); } catch { clean(); reject(new Error("Station close failed")); }
+    });
+    return [...this.devices.values()].filter(d => d.getStationSerial() === station.getSerial()).map(d => d.getSerial());
   }
   private picture(serial: string, value: unknown): void {
     const picture = value as Partial<Picture> | undefined;
@@ -115,5 +140,5 @@ export class Eufy extends EventEmitter {
     }));
   }
   hasCamera(serial: string): boolean { return this.devices.has(serial); }
-  async close(): Promise<void> { this.hub.close(); await new Promise(resolve => setTimeout(resolve, 1500)); this.client?.close(); await this.storage.flush(); }
+  async close(): Promise<void> { this.recordings.close(); this.hub.close(); await new Promise(resolve => setTimeout(resolve, 1500)); this.client?.close(); await this.storage.flush(); }
 }

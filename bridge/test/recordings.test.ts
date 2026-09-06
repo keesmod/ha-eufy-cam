@@ -1,0 +1,64 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import { execFileSync } from 'node:child_process';
+import { EufySecurity, VideoCodec, AudioCodec } from 'eufy-security-client';
+import { Recordings, muxRecording } from '../src/recordings.js';
+
+function fixture() {
+  const calls: unknown[] = [];
+  const station = Object.assign(new EventEmitter(), {
+    getSerial: () => 'BASE', isConnected: () => true, close: () => calls.push('close'),
+    databaseQueryByDate: (serials: string[], start: Date, end: Date) => {
+      calls.push({ serials, start, end });
+      queueMicrotask(() => station.emit('database query by date', station, 0, [
+        { device_sn: 'CAM', station_sn: 'BASE', storage_path: '/fixture/existing.zxvideo', folder_size: 50, start_time: new Date('2026-09-05T13:14:15'), end_time: new Date('2026-09-05T13:14:20') },
+        { device_sn: 'OTHER', station_sn: 'BASE', storage_path: '/fixture/private.zxvideo', start_time: new Date(), end_time: new Date() },
+      ]));
+    },
+    startDownload: async () => { calls.push('download'); }, cancelDownload: () => calls.push('cancel'),
+  });
+  const device = { getStationSerial: () => 'BASE', getChannel: () => 1 };
+  const client = { isConnected: () => true, getDevice: async () => device, getStation: async () => station };
+  return { station, calls, manager: new Recordings(() => client as unknown as EufySecurity, () => false) };
+}
+
+test('calendar query uses the verified empty-filter day interval; paths stay private and handles are camera scoped', async () => {
+  const { manager, calls } = fixture(); const signal = new AbortController().signal;
+  await assert.rejects(manager.list('CAM', '2026-02-31', signal)); assert.equal(calls.length, 0);
+  const result = await manager.list('CAM', '2026-09-05', signal);
+  assert.equal(result.recordings.length, 1); assert.equal(result.returned, 2);
+  assert.equal(JSON.stringify(result).includes('zxvideo'), false);
+  const call = calls[0] as {serials: string[]; start: Date; end: Date};
+  assert.deepEqual(call.serials, []); assert.equal(call.start.getDate(), 5); assert.equal(call.end.getDate(), 6);
+  await assert.rejects(manager.video('OTHER', result.recordings[0]!.id, signal));
+  assert.equal(calls.includes('download'), false);
+});
+
+test('leaving while downloading cancels the exact device and releases the operation; no retry', async () => {
+  const { manager, calls, station } = fixture(); const controller = new AbortController();
+  const result = await manager.list('CAM', '2026-09-05', controller.signal);
+  const downloading = manager.video('CAM', result.recordings[0]!.id, controller.signal);
+  await new Promise(resolve => setImmediate(resolve)); assert.ok(calls.includes('download'));
+  await assert.rejects(manager.list('CAM', '2026-09-05', controller.signal));
+  controller.abort(); await assert.rejects(downloading);
+  assert.equal(calls.filter(c => c === 'cancel').length, 1); assert.equal(manager.busy, false);
+  assert.equal(station.listenerCount('download start'), 0); assert.equal(station.listenerCount('download finish'), 0);
+});
+
+test('SDK negative response is an error, not an empty recording day', async () => {
+  const { manager, station } = fixture();
+  station.databaseQueryByDate = () => { station.emit('database query by date', station, -6006, []); };
+  await assert.rejects(manager.list('CAM', '2026-09-05', new AbortController().signal));
+  assert.equal(manager.busy, false);
+});
+
+test('real stored H264 and AAC bytes become a fully decodable browser MP4', async () => {
+  const video = execFileSync('ffmpeg', ['-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=15','-t','1','-c:v','libx264','-threads','1','-bf','0','-f','h264','pipe:1']);
+  const audio = execFileSync('ffmpeg', ['-v','error','-f','lavfi','-i','sine=frequency=440:sample_rate=16000','-t','1','-c:a','aac','-f','adts','pipe:1']);
+  const mp4 = await muxRecording({ videoCodec: VideoCodec.H264, audioCodec: AudioCodec.AAC, videoFPS:15,videoWidth:320,videoHeight:180 },video,audio,new AbortController().signal);
+  assert.equal(mp4.subarray(4,8).toString(),'ftyp');
+  execFileSync('ffmpeg',['-v','error','-i','pipe:0','-f','null','-'],{input:mp4});
+  const muted = await muxRecording({ videoCodec:VideoCodec.H264,audioCodec:AudioCodec.NONE,videoFPS:15,videoWidth:320,videoHeight:180 },video,Buffer.alloc(0),new AbortController().signal);
+  execFileSync('ffmpeg',['-v','error','-i','pipe:0','-f','null','-'],{input:muted});
+});

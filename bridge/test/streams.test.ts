@@ -64,3 +64,57 @@ test("JPEG parser handles split markers, concatenated frames and oversized data"
   assert.equal(frames.length, 2); assert.deepEqual(frames[0], jpeg);
   assert.throws(() => parser.push(Buffer.alloc(1_048_577)));
 });
+
+test("recording admission rejection creates no camera or quarantine", () => {
+  const hub = new StreamHub({ admit: () => false, start: async () => { assert.fail("must not start"); }, stop: async () => { assert.fail("must not stop"); }, disposeMedia: () => {} });
+  assert.equal(hub.attach("a", fixture().peer()), false);
+  assert.equal(hub.active, 0); assert.equal(hub.quarantined, 0);
+});
+
+test("missing stop event resets idle transport once; admission remains blocked until confirmed", async () => {
+  let now = 0; let recoveries = 0;
+  let confirm!: (serials: string[]) => void;
+  const hub = new StreamHub({ start: async () => {}, stop: async () => {}, disposeMedia: () => {}, recover: async () => { recoveries++; return new Promise(resolve => { confirm = resolve; }); } }, () => now);
+  const a = fixture().peer(); hub.attach("a", a); hub.detach("a", a);
+  await new Promise(resolve => setImmediate(resolve));
+  for (now = 3000; now <= 9000; now += 3000) hub.tick();
+  assert.equal(recoveries, 1); assert.equal(hub.quarantined, 1);
+  assert.equal(hub.attach("b", fixture().peer()), false);
+  hub.stopped("a"); assert.equal(hub.quarantined, 1); // SDK may emit this during transport close.
+  confirm(["a"]); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(hub.quarantined, 0); assert.equal(hub.recoveryMetrics.recovery_completed, 1);
+  assert.equal(hub.attach("b", fixture().peer()), true);
+});
+
+test("recovery waits for other viewers and pending starts; failed reset retains quarantine without a retry loop", async () => {
+  let now = 0; let resolveStart!: () => void; let recoveries = 0;
+  const hub = new StreamHub({ start: async s => { if (s === "a") await new Promise<void>(resolve => { resolveStart = resolve; }); }, stop: async () => {}, disposeMedia: () => {}, recover: async () => { recoveries++; throw new Error("unconfirmed"); } }, () => now);
+  const a = fixture().peer(), b = fixture().peer(); hub.attach("a", a); hub.detach("a", a); hub.attach("b", b);
+  for (now = 3000; now <= 9000; now += 3000) hub.tick();
+  assert.equal(recoveries, 0);
+  hub.stopped("b"); hub.tick(); assert.equal(recoveries, 0);
+  resolveStart(); await new Promise(resolve => setImmediate(resolve)); hub.tick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(recoveries, 1); assert.equal(hub.quarantined, 1);
+  for (now = 15000; now < 60000; now += 3000) hub.tick();
+  assert.equal(recoveries, 1); assert.equal(hub.recoveryMetrics.recovery_failed, 1);
+});
+
+test("Eufy recovery requires transport close and returns only cameras on that HomeBase", async () => {
+  const { EventEmitter } = await import("node:events");
+  const { Eufy } = await import("../src/eufy.js");
+  const { Storage } = await import("../src/storage.js");
+  const eufy = new Eufy(new Storage("/unused-test-storage"));
+  const station = Object.assign(new EventEmitter(), { isConnected: () => true, getSerial: () => "BASE", close: () => {} });
+  const a = { getStationSerial: () => "BASE", getSerial: () => "a" };
+  const internal = eufy as unknown as { client: unknown; devices: Map<string, unknown>; recoverStation(serial: string): Promise<string[]> };
+  internal.client = { getDevice: async () => a, getStation: async () => station };
+  internal.devices.set("a", a); internal.devices.set("b", { getStationSerial: () => "OTHER", getSerial: () => "b" });
+  let finished = false;
+  const reset = internal.recoverStation("a").then(serials => { finished = true; return serials; });
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(finished, false);
+  station.emit("close", station); assert.deepEqual(await reset, ["a"]);
+  assert.equal(station.listenerCount("close"), 0);
+  station.isConnected = () => false;
+  await assert.rejects(internal.recoverStation("a"), /not confirmed/);
+});

@@ -122,7 +122,11 @@ class Viewer:
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): "eufy_viewer/watch", vol.Required("entity_id"): str}
+    {
+        vol.Required("type"): "eufy_viewer/watch",
+        vol.Required("entity_id"): str,
+        vol.Optional("transport", default="jpeg"): vol.In(["jpeg", "webrtc"]),
+    }
 )
 @websocket_api.async_response
 async def websocket_watch(
@@ -165,7 +169,23 @@ async def websocket_watch(
     ):
         connection.send_error(msg["id"], "busy", "Too many viewers")
         return
-    viewer = Viewer(hass, connection, msg["id"], coordinator, serial, entity_id)
+    if msg["transport"] == "webrtc":
+        from .webrtc import WebRTCViewer
+
+        if not coordinator.data.webrtc:
+            connection.send_error(msg["id"], "unsupported", "Update the Eufy bridge")
+            return
+        try:
+            viewer: Viewer = WebRTCViewer(
+                hass, connection, msg["id"], coordinator, serial, entity_id
+            )
+        except BridgeError:
+            connection.send_error(
+                msg["id"], "unavailable", "Home Assistant go2rtc is unavailable"
+            )
+            return
+    else:
+        viewer = Viewer(hass, connection, msg["id"], coordinator, serial, entity_id)
     viewers[(connection, msg["id"])] = viewer
     coordinator.viewers.add(viewer)
     connection.subscriptions[msg["id"]] = viewer.cancel
@@ -192,8 +212,33 @@ async def websocket_ack(
     connection.send_result(msg["id"], {"accepted": accepted})
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eufy_viewer/signal",
+        vol.Required("subscription"): vol.All(int, vol.Range(min=1)),
+        vol.Exclusive("offer", "signal"): vol.All(str, vol.Length(min=1, max=65536)),
+        vol.Exclusive("candidate", "signal"): vol.All(str, vol.Length(max=2048)),
+    }
+)
+@websocket_api.async_response
+async def websocket_signal(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Connection-bound WebRTC offer/candidate dispatch, without camera starts."""
+    from .webrtc import WebRTCViewer
+
+    viewer = hass.data[DOMAIN]["viewers"].get((connection, msg["subscription"]))
+    accepted = bool(
+        isinstance(viewer, WebRTCViewer)
+        and connection.user.permissions.check_entity(viewer.entity_id, POLICY_READ)
+        and await viewer.signal(msg.get("offer"), msg.get("candidate"))
+    )
+    connection.send_result(msg["id"], {"accepted": accepted})
+
+
 @callback
 def async_register_commands(hass: HomeAssistant) -> None:
     """Register authenticated commands once per HA process."""
     websocket_api.async_register_command(hass, websocket_watch)
     websocket_api.async_register_command(hass, websocket_ack)
+    websocket_api.async_register_command(hass, websocket_signal)

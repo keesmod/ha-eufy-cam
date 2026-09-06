@@ -1,6 +1,6 @@
 # Local bridge protocol, version 1
 
-Every route requires `Authorization: Bearer <bridge token>`. Tokens are never accepted in query strings. Bridge WebSockets reject browser Origin headers. Put TLS in front of the bridge if the LAN is not trusted.
+Control routes require `Authorization: Bearer <bridge token>`. The media-only route uses an ephemeral, unguessable grant issued to an authenticated viewer, revoked when its lease ends. Tokens are never accepted in query strings. Bridge WebSockets reject browser Origin headers. Put TLS in front of the bridge if the LAN is not trusted.
 
 | Endpoint | Meaning | Camera side effect |
 |---|---|---|
@@ -8,9 +8,11 @@ Every route requires `Authorization: Bearer <bridge token>`. Tokens are never ac
 | `POST /v1/login` | Account credentials or verification/captcha response | Login/discovery only |
 | `GET /v1/snapshot/{serial}` | Cached JPEG/PNG; 404 if absent | None |
 | `WS /v1/events` | Initial state followed by push updates | None |
+| `GET /v1/media/{grant}` | Existing MPEG-TS feed, 256-bit grant | Cannot start or renew; closes when owning viewer ends |
+| `WS /v1/live/{serial}?transport=webrtc` | `ready` with grant path, then one pending `tick`; client text `ack` | Same lease and start/stop rules |
 | `WS /v1/live/{serial}` | Viewer lease, binary JPEG frames; text `ack` after each processed frame | First viewer starts; last close/expiry stops |
 
-The HA-side `eufy_viewer/watch` subscription accepts only `entity_id`. Frames carry the subscription ID, sequence and base64 JPEG. `eufy_viewer/ack` accepts the subscription and sequence, bound to the requesting HA connection. HA's normal `unsubscribe_events` releases the viewer.
+The HA-side `eufy_viewer/watch` subscription accepts `entity_id` and optional `transport` (`jpeg`, the compatibility default, or `webrtc`). Frames carry the subscription ID, sequence and base64 JPEG. `eufy_viewer/ack` accepts the subscription and sequence, bound to the requesting HA connection. HA's normal `unsubscribe_events` releases the viewer.
 
 Limits: 5 MB cached snapshot, 1 MB state message, 256 KB live JPEG, 4 viewers per camera, 8 camera slots at the bridge (including quarantined stops), 40 bridge sockets, 4 watches per HA connection and 16 per HA config entry. No media auto-reconnect. Watchdog tick 250 ms; first-frame timeout 20 s; processed-frame lease 10 s; absolute cap 120 s.
 
@@ -21,3 +23,16 @@ Upstream references used independently:
 - [Home Assistant camera entity](https://developers.home-assistant.io/docs/core/entity/camera/).
 - [Home Assistant WebSocket extension API](https://developers.home-assistant.io/docs/frontend/extending/websocket-api/).
 - [HA frontend WebSocket client](https://github.com/home-assistant/home-assistant-js-websocket/blob/master/lib/connection.ts), including `resubscribe: false`.
+
+`/v1/state` advertises `transports: ["jpeg", "webrtc"]`. WebRTC watch events contain `ready`, `answer`, `candidate`, `tick` or `ended`. The browser sends `eufy_viewer/signal` with its subscription and `offer` or `candidate`, bound to the original connection and current entity permission. Only one offer is accepted; SDP is bounded at 65,536 characters and ICE candidates at 2,048. The card gathers local ICE before offering, queues early remote candidates, and never reconnects media automatically. Each fresh painted video frame can acknowledge at most one pending tick through `eufy_viewer/ack`. Merely receiving control messages does not renew the camera lease.
+
+
+## Existing recordings
+
+- `GET /v1/recordings/{serial}?date=YYYY-MM-DD`: authenticated on-demand P2P calendar query. Returns `{recordings: [{id,start,end,bytes}], returned}`. Dates/times retain the HomeBase calendar values. `returned` is the station response count before camera filtering, not a verified total. No raw device paths or account fields cross the bridge boundary.
+- `GET /v1/recordings/{serial}/{id}/video`: downloads one previously enumerated existing file and converts it to finite `video/mp4`. IDs expire after 15 minutes, are bound to the camera and vanish on restart/reauthentication. The request socket owns cancellation.
+- HA exposes authenticated `GET /api/eufy_viewer/recordings/{entity_id}?date=…` and `GET /api/eufy_viewer/recordings/{entity_id}/{id}`. Both enforce entity read permission before reaching the bridge. No signed public media URL or token query parameter is used. A browser disconnect cancels the upstream request.
+- Preparation is globally serialized against other recording operations and live streams. Deadline: 60 seconds; input and output cap: 32 MiB. Closing the card, changing date, hiding the page or navigating cancels pending work and releases the browser Blob. The bridge sends download cancellation on interrupted transfers. No camera livestream is used to produce a recording.
+- `/v1/state` adds `recording_metrics` (`queries`, `downloads`, `completed`, `cancelled`, `active`), separate from the existing live stream counters.
+
+Recording failures use allowlisted JSON error codes: HTTP 409 `live_busy`, `live_stopping` or `recording_busy`; HTTP 410 `recording_expired`; HTTP 503 `recording_unavailable`. HA forwards only these known codes and the card translates them. Other upstream details remain redacted. Stream metrics additionally count bounded recovery attempts, completions and failures.

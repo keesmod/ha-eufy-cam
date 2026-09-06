@@ -5,7 +5,9 @@ export interface Peer {
   readonly bufferedAmount: number;
 }
 export interface Control {
+  admit?(serial: string): boolean;
   start(serial: string): Promise<void>;
+  recover?(serial: string): Promise<string[]>;
   stop(serial: string): Promise<void>;
   disposeMedia(serial: string): void;
 }
@@ -17,24 +19,29 @@ interface CameraSession {
   lastFrame: number;
   retries: number;
   nextStop: number;
+  startPending: boolean;
+  recoveryAttempted: boolean;
 }
 export class StreamHub {
+  private recovering = false;
+  readonly recoveryMetrics = { recovery_attempts: 0, recovery_completed: 0, recovery_failed: 0 };
   private readonly cameras = new Map<string, CameraSession>();
   constructor(private readonly control: Control, private readonly now = () => performance.now()) {}
 
   attach(serial: string, peer: Peer): boolean {
     let camera = this.cameras.get(serial);
-    if (camera?.phase === "stopping" || (camera?.viewers.size ?? 0) >= 4 || (!camera && this.cameras.size >= 8)) {
+    if (this.recovering || (!camera && this.control.admit?.(serial) === false) || camera?.phase === "stopping" || (camera?.viewers.size ?? 0) >= 4 || (!camera && this.cameras.size >= 8)) {
       peer.close(1013, "Camera busy or stopping");
       return false;
     }
     if (!camera) {
       const time = this.now();
-      camera = { viewers: new Map(), phase: "starting", started: time, lastFrame: time, retries: 0, nextStop: 0 };
+      camera = { viewers: new Map(), phase: "starting", started: time, lastFrame: time, retries: 0, nextStop: 0, startPending: true, recoveryAttempted: false };
       this.cameras.set(serial, camera);
       // Insert owner BEFORE invoking start; even synchronous events see ownership.
       camera.viewers.set(peer, { peer, deadline: time + 20_000, outstanding: false });
-      void this.control.start(serial).catch(() => this.end(serial, "Camera start failed"));
+      const owned = camera;
+      void this.control.start(serial).catch(() => { if (this.cameras.get(serial) === owned) this.end(serial, "Camera start failed"); }).finally(() => { owned.startPending = false; });
     } else {
       camera.viewers.set(peer, { peer, deadline: this.now() + 10_000, outstanding: false });
     }
@@ -113,6 +120,15 @@ export class StreamHub {
     for (const [serial, camera] of this.cameras) {
       if (camera.phase === "stopping") {
         if (camera.retries < 3 && time >= camera.nextStop) this.requestStop(serial, camera);
+        // Stop can be a no-op for a start that never delivered video. Reset the
+        // shared transport once, only after all owners and pending starts leave.
+        if (camera.retries >= 3 && time >= camera.nextStop && !camera.recoveryAttempted && !this.recovering && this.active === 0 && ![...this.cameras.values()].some(c => c.startPending) && this.control.recover) {
+          camera.recoveryAttempted = true; this.recovering = true; this.recoveryMetrics.recovery_attempts++;
+          void this.control.recover(serial).then(serials => {
+            for (const recovered of serials) if (this.cameras.get(recovered)?.phase === "stopping") this.stopped(recovered);
+            this.recoveryMetrics.recovery_completed++;
+          }).catch(() => { this.recoveryMetrics.recovery_failed++; }).finally(() => { this.recovering = false; });
+        }
         continue;
       }
       for (const viewer of camera.viewers.values()) {
@@ -126,5 +142,5 @@ export class StreamHub {
 
   close(): void { for (const serial of this.cameras.keys()) this.end(serial, "Bridge shutting down"); }
   get active(): number { return [...this.cameras.values()].filter(c => c.phase !== "stopping").length; }
-  get quarantined(): number { return [...this.cameras.values()].filter(c => c.phase === "stopping").length; }
+  get quarantined(): number { return Math.max(Number(this.recovering), [...this.cameras.values()].filter(c => c.phase === "stopping").length); }
 }

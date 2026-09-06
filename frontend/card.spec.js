@@ -27,8 +27,8 @@ test('idle never opens stream; click opens exactly once; close releases', async 
   await expect(page.getByRole('button', { name: 'Watch live' })).toBeEnabled();
   expect(await page.evaluate(() => calls.length)).toBe(0);
   await page.getByRole('button', { name: 'Watch live' }).click();
-  await expect(page.locator('dialog')).toBeVisible();
-  expect(await page.evaluate(() => calls)).toEqual([{ message: { type: 'eufy_viewer/watch', entity_id: 'camera.front' }, options: { resubscribe: false } }]);
+  await expect(page.locator('dialog:not(.record-dialog)')).toBeVisible();
+  expect(await page.evaluate(() => calls)).toEqual([{ message: { type: 'eufy_viewer/watch', entity_id: 'camera.front', transport: 'jpeg' }, options: { resubscribe: false } }]);
   await page.getByRole('button', { name: 'Close live view' }).click();
   await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
 });
@@ -54,7 +54,7 @@ test('close before subscribe resolves still releases the late subscription', asy
   await page.keyboard.press('Escape');
   await page.evaluate(() => resolveSubscription());
   await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
-  await expect(page.locator('dialog')).not.toBeVisible();
+  await expect(page.locator('dialog:not(.record-dialog)')).not.toBeVisible();
 });
 
 test('only a decoded visible frame is acknowledged; no ack after close', async ({ page }) => {
@@ -73,7 +73,7 @@ test('only a decoded visible frame is acknowledged; no ack after close', async (
 test('server termination closes dialog and never silently restarts', async ({ page }) => {
   await page.getByRole('button', { name: 'Watch live' }).click();
   await page.evaluate(() => receive({ type: 'ended' }));
-  await expect(page.locator('dialog')).not.toBeVisible();
+  await expect(page.locator('dialog:not(.record-dialog)')).not.toBeVisible();
   await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
   expect(await page.evaluate(() => calls.length)).toBe(1);
 });

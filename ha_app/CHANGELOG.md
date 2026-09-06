@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 — 2026-09-06
+
+- WebRTC video and listen-only audio through HA-managed go2rtc.
+- On-demand listing and playback of existing HomeBase recordings by camera and date.
+- Bounded recovery for live sessions that never emit a stop confirmation, without background polling or automatic stream restarts.
+- Compatibility fix for successful Eufy profile responses that otherwise leave camera discovery empty after restart.
+
+Update the HACS integration to 0.2.0 too, restart HA and refresh the bundled card resource. Existing app token and private data are retained. HomeBase 3 recording playback and four camera snapshots were validated; see the repository README for limits.
+
 ## 0.1.0 — 2026-09-05
 
 Initial public release for HACS custom-repository installation.

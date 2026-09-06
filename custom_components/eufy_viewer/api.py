@@ -16,6 +16,32 @@ class BridgeError(Exception):
     """Bridge unavailable or returned an invalid response."""
 
 
+class BridgeRecordingError(BridgeError):
+    """An allowlisted recording failure safe to display to the viewer."""
+
+    def __init__(self, code: str, status: int) -> None:
+        super().__init__(code)
+        self.code = code
+        self.status = status
+
+
+async def check_recording_error(response: aiohttp.ClientResponse) -> None:
+    """Forward only known codes, never arbitrary bridge error details."""
+    if response.status not in {409, 410, 503}:
+        return
+    data = json.loads(await read_bounded(response.content, 4096))
+    code = data.get("error") if isinstance(data, dict) else None
+    statuses = {
+        "live_busy": 409,
+        "live_stopping": 409,
+        "recording_busy": 409,
+        "recording_unavailable": 503,
+        "recording_expired": 410,
+    }
+    if isinstance(code, str) and statuses.get(code) == response.status:
+        raise BridgeRecordingError(code, response.status)
+
+
 class BridgeAuthError(BridgeError):
     """Bridge rejected its access token."""
 
@@ -40,6 +66,7 @@ class BridgeState:
     bridge_id: str
     auth: str
     cameras: dict[str, CameraInfo]
+    webrtc: bool = False
 
     @classmethod
     def parse(cls, data: Any) -> BridgeState:
@@ -84,7 +111,7 @@ class BridgeState:
                 cameras[serial] = CameraInfo(
                     **{key: item[key] for key in CameraInfo.__dataclass_fields__}
                 )
-            return cls(bridge_id, auth, cameras)
+            return cls(bridge_id, auth, cameras, "webrtc" in data.get("transports", []))
         except (KeyError, TypeError, ValueError) as err:
             raise BridgeError("Invalid bridge protocol") from err
 
@@ -145,6 +172,8 @@ class BridgeClient:
                     if response.status == 401:
                         raise BridgeAuthError("Bridge authentication failed")
                     if response.status != 200:
+                        if path.startswith("/v1/recordings/"):
+                            await check_recording_error(response)
                         raise BridgeError("Bridge request failed")
                     raw = await read_bounded(response.content, 1_048_576)
 
@@ -182,6 +211,22 @@ class BridgeClient:
                     return await read_bounded(response.content, 5_000_000)
         except (aiohttp.ClientError, TimeoutError) as err:
             raise BridgeError("Snapshot unavailable") from err
+
+    async def recording_video(self, serial: str, recording_id: str) -> bytes:
+        """Fetch one finite existing clip; cancellation closes the upstream socket."""
+        try:
+            async with asyncio.timeout(62):
+                async with self._session.get(
+                    self.url + f"/v1/recordings/{serial}/{recording_id}/video",
+                    headers=self._headers,
+                    allow_redirects=False,
+                ) as response:
+                    await check_recording_error(response)
+                    if response.status != 200 or response.content_type != "video/mp4":
+                        raise BridgeError("Recording unavailable")
+                    return await read_bounded(response.content, 32 * 1024 * 1024)
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+            raise BridgeError("Recording unavailable") from err
 
     async def websocket(self, path: str) -> aiohttp.ClientWebSocketResponse:
         """Open an authenticated local socket with bounded receive frames."""

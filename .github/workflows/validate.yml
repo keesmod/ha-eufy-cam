@@ -61,6 +61,15 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: npm ci --ignore-scripts
+        working-directory: bridge
+      - name: Install verified go2rtc for real WebRTC tests
+        run: |
+          curl --fail --location --retry 3 https://github.com/AlexxIT/go2rtc/releases/download/v1.9.14/go2rtc_linux_amd64 -o "$RUNNER_TEMP/go2rtc"
+          echo "32d616af226bd731678ffde328b94cfb94e30339bfefc469cfb76323144615a6  $RUNNER_TEMP/go2rtc" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/go2rtc"
+          echo "GO2RTC_BINARY=$RUNNER_TEMP/go2rtc" >> "$GITHUB_ENV"
       - run: npm ci --ignore-scripts
         working-directory: frontend
       - run: npx playwright install --with-deps chromium

@@ -150,3 +150,58 @@ async def test_local_websocket_protocol(aiohttp_server, socket_enabled):
         for mode in ("401", "403"):
             with pytest.raises(BridgeAuthError if mode == "401" else BridgeError):
                 await api.websocket("/v1/events")
+
+
+async def test_recording_media_type_auth_and_redirect_boundary(
+    aiohttp_server, socket_enabled
+):
+    mode = "video"
+
+    async def route(request):
+        assert request.headers["Authorization"] == "Bearer test"
+        if mode == "redirect":
+            return web.Response(
+                status=302, headers={"Location": "http://example.invalid"}
+            )
+        if mode == "html":
+            return web.Response(body=b"not video", content_type="text/html")
+        return web.Response(body=b"finite clip", content_type="video/mp4")
+
+    app = web.Application()
+    app.router.add_get("/v1/recordings/CAM123/abc/video", route)
+    server = await aiohttp_server(app)
+    async with ClientSession() as session:
+        api = BridgeClient(session, str(server.make_url("")), "test")
+        assert await api.recording_video("CAM123", "abc") == b"finite clip"
+        for response_mode in ("redirect", "html"):
+            mode = response_mode
+            with pytest.raises(BridgeError):
+                await api.recording_video("CAM123", "abc")
+
+
+@pytest.mark.parametrize(
+    "code,status", [("live_stopping", 409), ("secret", 409), ("live_busy", 400)]
+)
+async def test_recording_errors_allowlist(aiohttp_server, socket_enabled, code, status):
+    from custom_components.eufy_viewer.api import BridgeRecordingError
+
+    async def rejected(_request):
+        return web.json_response({"error": code}, status=status)
+
+    app = web.Application()
+    app.router.add_get("/v1/recordings/{tail:.*}", rejected)
+    server = await aiohttp_server(app)
+    async with ClientSession() as session:
+        api = BridgeClient(session, str(server.make_url("")), "test")
+        for action in (
+            api.request("GET", "/v1/recordings/CAM123?date=2026-09-06"),
+            api.recording_video("CAM123", "a" * 32),
+        ):
+            with pytest.raises(BridgeError) as error:
+                await action
+            if code == "live_stopping":
+                assert isinstance(error.value, BridgeRecordingError)
+                assert error.value.code == code
+            else:
+                assert not isinstance(error.value, BridgeRecordingError)
+                assert "secret" not in str(error.value)

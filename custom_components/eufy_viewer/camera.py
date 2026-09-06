@@ -52,6 +52,7 @@ class EufyCamera(EufyEntity, Camera):
             if self.info
             else None,
             "viewer_card": True,
+            "viewer_webrtc": self.coordinator.data.webrtc,
         }
 
     async def async_camera_image(

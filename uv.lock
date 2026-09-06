@@ -955,11 +955,12 @@ wheels = [
 
 [[package]]
 name = "eufy-security-viewer"
-version = "0.1.0"
+version = "0.2.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
+    { name = "go2rtc-client" },
     { name = "homeassistant" },
     { name = "infrared-protocols" },
     { name = "mypy" },
@@ -973,6 +974,7 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "go2rtc-client", specifier = "==0.4.0" },
     { name = "homeassistant", specifier = "==2026.9.0" },
     { name = "infrared-protocols", specifier = "==9.0.0" },
     { name = "mypy" },
@@ -1077,6 +1079,22 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/89/76/c615883b7b521ead2944bb3480398cbb07e12b7b4e4d073d3752eb721558/frozenlist-1.8.0-cp314-cp314t-win_amd64.whl", hash = "sha256:06be8f67f39c8b1dc671f5d83aaefd3358ae5cdcf8314552c57e7ed3e6475bdd", size = 49451 },
     { url = "https://files.pythonhosted.org/packages/e0/a3/5982da14e113d07b325230f95060e2169f5311b1017ea8af2a29b374c289/frozenlist-1.8.0-cp314-cp314t-win_arm64.whl", hash = "sha256:102e6314ca4da683dca92e3b1355490fed5f313b768500084fbe6371fddfdb79", size = 42507 },
     { url = "https://files.pythonhosted.org/packages/9a/9a/e35b4a917281c0b8419d4207f4334c8e8c5dbf4f3f5f9ada73958d937dcc/frozenlist-1.8.0-py3-none-any.whl", hash = "sha256:0c18a16eab41e82c295618a77502e17b195883241c563b00f0aa5106fc4eaa0d", size = 13409 },
+]
+
+[[package]]
+name = "go2rtc-client"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "awesomeversion" },
+    { name = "mashumaro" },
+    { name = "orjson" },
+    { name = "webrtc-models" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/89/80/8984b66ef28c034d015feecab3a13d588924781c182714e1b6f3d0951b12/go2rtc_client-0.4.0.tar.gz", hash = "sha256:9eff2630f8c9953a56d1aa8eb1eceb71d60c61c631aaadc3f8dc122831217858", size = 13426 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/90/3a/f7229ca552b6ca5c017ec88cc2fe0454daad0df1e07e50e5ac6217c427f4/go2rtc_client-0.4.0-py3-none-any.whl", hash = "sha256:2e3c95f45e7b3e6b1d3af3ad9248d1b58884c01baa68b28c3f8b2d8d961e3908", size = 13526 },
 ]
 
 [[package]]

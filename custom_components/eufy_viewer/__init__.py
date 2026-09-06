@@ -15,6 +15,7 @@ from homeassistant.helpers.typing import ConfigType
 from .api import BridgeAuthError, BridgeClient, BridgeError
 from .const import CARD_URL, CONF_TOKEN, CONF_URL, DOMAIN
 from .coordinator import EufyConfigEntry, EufyCoordinator
+from .recordings import RecordingsView
 from .viewers import async_register_commands
 
 PLATFORMS = [Platform.CAMERA, Platform.SENSOR]
@@ -32,6 +33,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             )
         ]
     )
+    hass.http.register_view(RecordingsView())
     async_register_commands(hass)
     hass.data[DOMAIN] = {"viewers": {}}
     return True

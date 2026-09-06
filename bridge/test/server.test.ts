@@ -35,3 +35,34 @@ test('authenticated bridge snapshots never start; websocket close stops last vie
     assert.deepEqual(calls, ['start:CAM123', 'stop:CAM123']);
   } finally { server.emit('shutdown'); server.close(); await once(server, 'close'); }
 });
+
+test('WebRTC media grants cannot wake cameras and expire with their owning viewer', async () => {
+  const { MediaRelay } = await import('../src/media.js');
+  const calls: string[] = [];
+  const media = new MediaRelay(() => {});
+  const hub = new StreamHub({ start: async s => { calls.push(`start:${s}`); }, stop: async s => { calls.push(`stop:${s}`); }, disposeMedia: s => media.stop(s) });
+  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {} });
+  const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const base = `http://127.0.0.1:${address.port}`;
+  let ws: WebSocket | undefined;
+  try {
+    assert.equal((await fetch(`${base}/v1/media/${'a'.repeat(64)}`)).status, 404);
+    assert.deepEqual(calls, []);
+    ws = new WebSocket(`${base}/v1/live/CAM123?transport=webrtc`, { headers: { Authorization: `Bearer ${token}` } });
+    const first = once(ws, 'message'); await once(ws, 'open');
+    const [ready] = await first;
+    const message = JSON.parse(ready.toString());
+    assert.equal(message.type, 'ready'); assert.match(message.path, /^\/v1\/media\/[a-f0-9]{64}$/);
+    assert.deepEqual(calls, ['start:CAM123']);
+    const tick = once(ws, 'message'); hub.frame('CAM123', Buffer.from('jpeg-not-forwarded'));
+    const [data, binary] = await tick;
+    assert.equal(binary, false); assert.deepEqual(JSON.parse(data.toString()), { type: 'tick' });
+    const detached = new Promise<void>(resolve => { const original = hub.detach.bind(hub); hub.detach = (s, peer) => { original(s, peer); resolve(); }; });
+    ws.close(); await Promise.all([once(ws, 'close'), detached]);
+    assert.deepEqual(calls, ['start:CAM123', 'stop:CAM123']);
+    assert.equal((await fetch(base + message.path)).status, 404);
+    assert.equal(hub.active, 0);
+  } finally { ws?.terminate(); server.emit('shutdown'); server.close(); await once(server, 'close'); }
+});
