@@ -1,0 +1,41 @@
+name: Bug report
+description: Report an installation, snapshot, live-view or existing-recording problem.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "Please search existing issues first. Include the bridge version separately from the HACS integration. Do not attach private bridge storage or raw debug logs."
+  - type: input
+    id: versions
+    attributes:
+      label: Software versions
+      description: Home Assistant, integration AND bridge versions.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Hardware and environment
+      description: HomeBase/camera models and firmware; App/Docker and architecture; browser/phone; LAN/VPN/proxy. No serial numbers or addresses.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps, expected result and actual result
+      description: Include the exact visible error. For recordings, say whether the same existing clip plays in the Eufy app and whether all live viewers were closed.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Relevant redacted diagnostics (optional)
+      description: Review integration diagnostics before attaching. Paste only the relevant log excerpt; remove tokens, account details, serials, paths and private addresses.
+      render: text
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before submitting
+      options:
+        - label: I removed credentials, tokens, serial numbers, private addresses and identifiable footage.
+          required: true

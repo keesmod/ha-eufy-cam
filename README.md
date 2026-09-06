@@ -1,6 +1,20 @@
 # Eufy Security Viewer
 
-An independent Home Assistant integration, companion dashboard card and local Eufy bridge. Snapshots while idle; tap to watch live; close to stop. Not affiliated with or endorsed by Eufy or Anker.
+**Browse and play existing Eufy HomeBase recordings in Home Assistant.** Choose a date, filter by camera and play a stored event. Watch live video with optional sound when you need it; closing the viewer releases the stream.
+
+An independent integration with bundled dashboard cards and a required local bridge. Not affiliated with or endorsed by Eufy or Anker. Built on [bropat's eufy-security-client](https://github.com/bropat/eufy-security-client).
+
+[Install integration with HACS](https://my.home-assistant.io/redirect/hacs_repository/?owner=keesmod&repository=ha-eufy-cam&category=integration) · [Add bridge app repository](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fkeesmod%2Fha-eufy-cam) · [Installation steps](#install-in-home-assistant-with-hacs) · [Tested compatibility](docs/COMPATIBILITY.md)
+
+![Events timeline demonstration using generated example media](docs/media/events-demo.gif)
+
+*UI demonstration with generated example media and simulated responses, using the released card. No private camera footage is published. Actual HomeBase playback evidence is documented in [validation](docs/VALIDATION_0.3.md). [Watch the MP4](docs/media/events-demo.mp4).*
+
+**Start here:** Home Assistant **2026.9.0 or newer**, a Eufy account with camera access, and a **HomeBase 3** for the currently verified recording route. Install **both** parts: the bridge through the HA App Store (or Docker), then the integration through HACS. HACS currently uses a custom repository. Eufy login/cloud and push connectivity are still required; a cloud recording subscription is not required for the tested HomeBase files.
+
+**Help confirm compatibility:** we're looking for the first **10 independent HomeBase 3 installations**. Follow the [short test checklist](docs/COMPATIBILITY.md#report-your-installation), then [report your result](https://github.com/keesmod/ha-eufy-cam/issues/new?template=compatibility.yml), including partial success. [Report a bug](https://github.com/keesmod/ha-eufy-cam/issues/new?template=bug_report.yml) if something fails.
+
+[HACS default-catalogue request](https://github.com/hacs/default/pull/10690) is submitted; inclusion is pending review. You can install now using the custom-repository button above.
 
 **Version 0.3.0:** an all-camera Events timeline with stored previews, a recording-day calendar, camera/date filters and previous/next playback. Includes on-demand WebRTC video and listen-only audio. Tested with Home Assistant 2026.9.0 and HomeBase 3 (T8030, firmware 3.8.6.0). Four camera entities and snapshots were verified on the live installation; actual WebRTC video and existing recording playback were verified at 1920×1080. See [validation and remaining limits](docs/VALIDATION_0.3.md). This is a HACS custom integration; it is not part of Home Assistant core.
 

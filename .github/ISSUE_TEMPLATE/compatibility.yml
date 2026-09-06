@@ -1,0 +1,64 @@
+name: Compatibility report
+description: Share a successful or partial installation, including existing HomeBase playback.
+title: "[Compatibility] HomeBase / camera model"
+body:
+  - type: markdown
+    attributes:
+      value: "Thank you for testing. Partial results help too. Use model numbers, never serial numbers. No credentials or camera footage are needed."
+  - type: input
+    id: versions
+    attributes:
+      label: Software versions
+      description: Home Assistant version, integration version AND bridge version.
+      placeholder: "HA 2026.9.0; integration 0.3.0; bridge 0.3.0"
+    validations:
+      required: true
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Models and firmware
+      description: HomeBase model/firmware and each tested camera model/firmware. No serial numbers.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Installation and viewing environment
+      description: HA OS or other install; bridge App or Docker; amd64/aarch64; browser/phone; LAN/VPN/proxy.
+    validations:
+      required: true
+  - type: dropdown
+    id: recording
+    attributes:
+      label: An existing HomeBase recording played through to the end in HA
+      options:
+        - "Yes"
+        - "Partly: started but did not finish"
+        - "No"
+        - "Not tested"
+    validations:
+      required: true
+  - type: textarea
+    id: outcomes
+    attributes:
+      label: Test outcomes
+      description: Write pass, fail or not tested for each item; include errors and approximate clip duration if useful.
+      value: |
+        Camera inventory and idle snapshots:
+        Existing clip also visible/playable in Eufy app:
+        Date/camera filters and calendar:
+        Stored previews and previous/next playback:
+        Live picture:
+        Audible sound:
+        Closing viewers and returning to snapshots:
+        Phone background / dashboard navigation:
+        Remaining bridge streams (if checked):
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before submitting
+      options:
+        - label: I removed credentials, tokens, serial numbers, private addresses and identifiable footage.
+          required: true
