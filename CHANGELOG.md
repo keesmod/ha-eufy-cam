@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1 — 2026-09-06
+
+- Remove the snapshot receive date/time and “Capture time unknown” line from camera cards in English and Dutch.
+- Keep snapshot receive timestamps in entity attributes and use them to refresh newly received images.
+- Update the README to describe the simplified card.
+
+Update the HACS integration to 0.3.1, restart HA and reload the dashboard. If the old card remains cached, edit the existing resource to `?v=0.3.1`. The bridge remains at 0.3.0; no bridge update is required.
+
 ## 0.3.0 — 2026-09-06
 
 - New Eufy Events card: all-camera timeline, camera/date filters, HomeBase recording-day calendar and previous/next playback.

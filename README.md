@@ -16,7 +16,7 @@ An independent integration with bundled dashboard cards and a required local bri
 
 [HACS default-catalogue request](https://github.com/hacs/default/pull/10690) is submitted; inclusion is pending review. You can install now using the custom-repository button above.
 
-**Version 0.3.0:** an all-camera Events timeline with stored previews, a recording-day calendar, camera/date filters and previous/next playback. Includes on-demand WebRTC video and listen-only audio. Tested with Home Assistant 2026.9.0 and HomeBase 3 (T8030, firmware 3.8.6.0). Four camera entities and snapshots were verified on the live installation; actual WebRTC video and existing recording playback were verified at 1920×1080. See [validation and remaining limits](docs/VALIDATION_0.3.md). This is a HACS custom integration; it is not part of Home Assistant core.
+**Version 0.3.1:** an all-camera Events timeline with stored previews, a recording-day calendar, camera/date filters and previous/next playback. Includes on-demand WebRTC video and listen-only audio. Tested with Home Assistant 2026.9.0 and HomeBase 3 (T8030, firmware 3.8.6.0). Four camera entities and snapshots were verified on the live installation; actual WebRTC video and existing recording playback were verified at 1920×1080. See [validation and remaining limits](docs/VALIDATION_0.3.md). This is a HACS custom integration; it is not part of Home Assistant core.
 
 ## Events timeline
 
@@ -42,7 +42,7 @@ HACS updates the integration and bundled cards; the companion bridge updates sep
 
 ### Honest snapshot and streaming limits
 
-A sleeping battery camera cannot provide a newly captured photo on every dashboard visit without waking. Idle views show the **latest received snapshot**. Its receive time is visible; it is not presented as capture time. If none exists, the card says so. New Eufy image events replace it. The last decoded live frame becomes the snapshot when viewing ends.
+A sleeping battery camera cannot provide a newly captured photo on every dashboard visit without waking. Idle views show the **latest received snapshot**. The receive time remains available in the camera entity attributes; the card omits snapshot timestamps. If none exists, the card says so. New Eufy image events replace it. The last decoded live frame becomes the snapshot when viewing ends.
 
 Live viewing uses **WebRTC video with listen-only audio** through Home Assistant's managed go2rtc. The bridge converts H.264/H.265 to browser-compatible H.264, up to **1920 pixels wide and 30 fps**, limited by the camera's source frame rate. Supported camera audio is converted to Opus. Playback starts muted; tap **Sound on / Geluid aan** to listen. A camera that supplies no supported audio remains video-only.
 
@@ -111,12 +111,16 @@ This is a **HACS custom repository**, not yet a default HACS listing.
 
 For a local manual install, copy `custom_components/eufy_viewer` into your HA configuration's `custom_components` folder and restart. The downloadable integration archive preserves this directory structure.
 
+## Upgrade from 0.3.0
+
+Update **Eufy Security Viewer** to **0.3.1** in HACS, restart Home Assistant and reload the dashboard. This patch removes the snapshot timestamp line from camera cards. The bridge remains at **0.3.0**; no bridge update is required. If the old card remains cached, edit the existing resource URL to `/eufy_viewer/eufy-viewer-card.js?v=0.3.1`.
+
 ## Upgrade from 0.1.0 or 0.2.0
 
 1. Close live viewers and recording dialogs.
 2. Update **Eufy Security Viewer Bridge** to **0.3.0** in the HA App store, then start it. For Docker, rebuild and recreate the container from this release while preserving its private data volume and token.
-3. In HACS, update/download **Eufy Security Viewer 0.3.0** and restart Home Assistant. If the version is not shown yet, use the repository's **Redownload** action after checking for updates.
-4. Change the existing dashboard resource to `/eufy_viewer/eufy-viewer-card.js?v=0.3.0`, type **JavaScript module**, and reload the dashboard/browser. Edit the existing resource; do not add a duplicate.
+3. In HACS, update/download **Eufy Security Viewer 0.3.1** and restart Home Assistant. If the version is not shown yet, use the repository's **Redownload** action after checking for updates.
+4. Change the existing dashboard resource to `/eufy_viewer/eufy-viewer-card.js?v=0.3.1`, type **JavaScript module**, and reload the dashboard/browser. Edit the existing resource; do not add a duplicate.
 5. Add the **Eufy Events** card for the combined timeline, choose a date and select a clip. The existing **Recordings** button on camera cards still works. Use **Watch live** and **Enable sound** to test WebRTC/audio separately.
 
 HACS updates the integration and bundled card only. The bridge must also run 0.3.0 for the Events timeline. Existing integration configuration, camera entities and credentials can be retained; no removal or re-pairing is needed. Verify the WebRTC media route described above if live playback does not connect.
@@ -126,7 +130,7 @@ HACS updates the integration and bundled card only. The bridge must also run 0.3
 The card is bundled with the integration, so it updates through the same HACS installation.
 
 1. Enable **Advanced mode** in your HA profile if Resources is hidden.
-2. In dashboard **Resources**, add URL `/eufy_viewer/eufy-viewer-card.js?v=0.3.0`, type **JavaScript module**.
+2. In dashboard **Resources**, add URL `/eufy_viewer/eufy-viewer-card.js?v=0.3.1`, type **JavaScript module**.
 3. Edit a dashboard, **Add card → Eufy Security Viewer**, and select a camera using the visual picker.
 4. Save. The card stays on the snapshot until you tap it. Escape, the close button and clicking outside the dialog close live viewing.
 
