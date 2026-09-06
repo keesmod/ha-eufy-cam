@@ -8,6 +8,7 @@ permissions:
 jobs:
   home-assistant:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -20,12 +21,14 @@ jobs:
       - run: uv run pytest --cov=custom_components.eufy_viewer --cov-report=term-missing --cov-fail-under=95
   hacs:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: hacs/action@main
         with:
           category: integration
   app-package:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - run: python3 scripts/prepare_ha_app.py
@@ -33,11 +36,13 @@ jobs:
       - run: docker build -t eufy-viewer-app:test ./ha_app
   hassfest:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: home-assistant/actions/hassfest@master
   bridge:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -48,12 +53,21 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: npm ci --ignore-scripts
         working-directory: bridge
-      - run: npm run build && npm test && npm audit --omit=dev
+      - name: Build bridge
+        run: npm run build
+        working-directory: bridge
+      - name: Test bridge
+        run: npm test -- --test-timeout=30000
+        timeout-minutes: 3
+        working-directory: bridge
+      - name: Audit bridge dependencies
+        run: npm audit --omit=dev
         working-directory: bridge
       - run: docker build -t eufy-viewer-bridge:test ./bridge
       - run: docker run --rm --network none -e EUFY_BRIDGE_TOKEN=00000000000000000000000000000000 -v "${{ github.workspace }}/scripts/container-smoke.mjs:/tmp/smoke.mjs:ro" --entrypoint node eufy-viewer-bridge:test /tmp/smoke.mjs
   card:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

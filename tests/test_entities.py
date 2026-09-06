@@ -2,6 +2,8 @@
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -103,12 +105,22 @@ async def test_setup_distinguishes_retry_auth_and_wrong_identity(hass):
             await async_setup_entry(hass, entry)
 
 
-async def test_two_bridges_share_frontend_registration_and_reload(hass):
+@pytest.mark.parametrize(
+    "component_loaded", [False, True], ids=["cold-start", "add-bridges"]
+)
+async def test_two_bridges_share_frontend_registration_and_reload(
+    hass, component_loaded
+):
     import asyncio
 
     from custom_components.eufy_viewer.api import BridgeClient
 
     await async_setup_component(hass, "http", {})
+    # A cold component setup owns loading every registered entry. Only call
+    # individual entry setup concurrently after the component is loaded.
+    if component_loaded:
+        assert await async_setup_component(hass, DOMAIN, {})
+    shared = hass.data.get(DOMAIN)
     one = MockConfigEntry(domain=DOMAIN, unique_id="bridge-123", data=DATA)
     two = MockConfigEntry(
         domain=DOMAIN,
@@ -118,7 +130,10 @@ async def test_two_bridges_share_frontend_registration_and_reload(hass):
     one.add_to_hass(hass)
     two.add_to_hass(hass)
 
+    state_calls = []
+
     async def state(client):
+        state_calls.append(client.url)
         if client.url == DATA["url"]:
             return BridgeState.parse(STATE)
         return BridgeState.parse(
@@ -135,17 +150,29 @@ async def test_two_bridges_share_frontend_registration_and_reload(hass):
         patch.object(BridgeClient, "state", state),
         patch("custom_components.eufy_viewer.coordinator.EufyCoordinator.start"),
     ):
-        assert all(
-            await asyncio.gather(
-                hass.config_entries.async_setup(one.entry_id),
-                hass.config_entries.async_setup(two.entry_id),
+        if component_loaded:
+            assert all(
+                await asyncio.gather(
+                    hass.config_entries.async_setup(one.entry_id),
+                    hass.config_entries.async_setup(two.entry_id),
+                )
             )
-        )
+        else:
+            assert await async_setup_component(hass, DOMAIN, {})
+            shared = hass.data[DOMAIN]
         await hass.async_block_till_done()
         assert hass.states.get("camera.front_door")
         assert hass.states.get("camera.other_camera")
+        assert one.state is ConfigEntryState.LOADED
+        assert two.state is ConfigEntryState.LOADED
+        assert sorted(state_calls) == sorted([DATA["url"], "http://second:8080"])
+        assert hass.data[DOMAIN] is shared
         assert await hass.config_entries.async_reload(one.entry_id)
         await hass.async_block_till_done()
         assert hass.states.get("camera.front_door").state == "idle"
+        assert hass.states.get("camera.other_camera").state == "idle"
+        assert state_calls.count(DATA["url"]) == 2
+        assert state_calls.count("http://second:8080") == 1
+        assert hass.data[DOMAIN] is shared
         assert await hass.config_entries.async_unload(one.entry_id)
         assert await hass.config_entries.async_unload(two.entry_id)

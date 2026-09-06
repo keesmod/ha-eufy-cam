@@ -43,3 +43,11 @@ Edit `frontend/eufy-viewer-card.ts` or `frontend/eufy-events-card.ts`; `npm run 
 Set `GO2RTC_BINARY` to a local go2rtc 1.9.14 executable when running the frontend tests. Without it, the three real-media tests are skipped; CI installs and verifies the executable and always runs them. Install the bridge npm dependencies too, because this fixture exercises the actual bridge media relay. FFmpeg and Chromium are required.
 
 The fixture generates synthetic 1280×720 H.264 and a 440 Hz AAC tone, runs the actual bridge and go2rtc, and checks decoded video and inbound audio energy in Chromium. Close, navigation and frozen playback must stop the fake camera and leave zero viewers. HA dispatch and Eufy hardware are simulated; separate HA tests cover signaling permissions and cleanup. The test go2rtc media listener uses the first non-loopback IPv4 interface because Chromium omits loopback ICE; its API and RTSP listeners are loopback-only. It never uses a microphone or real camera.
+
+## CI timing and cleanup
+
+Home Assistant's cold component setup loads all registered config entries itself. Tests must use that setup once, or initialize the component before concurrently setting up new entries. The two-bridge test covers both paths, checks one initial state request per bridge and verifies that reloading one bridge preserves the other and the shared registration.
+
+The SDK adapter's live-media fixture produces paced H.264 until the viewer closes. A finite file is unsuitable here: the A/V relay can reach EOF and stop the session before the JPEG decoder returns its first frame. The former fixture was reproduced hanging with a one-second JPEG-decoder delay; the continuous fixture passes that same delay. Producer failure and early viewer closure reject the frame wait, and the fixture has a 15-second deadline with producer cleanup in `finally`.
+
+CI separates bridge build, tests and dependency audit. Bridge tests have a 30-second per-test limit and a three-minute step limit; jobs have a ten-minute limit. Timeouts fail the run. No automatic retries or skipped assertions mask failures.
