@@ -11,6 +11,7 @@
   "dependencies": [
     "camera",
     "http",
+    "lovelace",
     "websocket_api"
   ],
   "documentation": "https://github.com/keesmod/ha-eufy-cam",
