@@ -76,3 +76,35 @@ async def test_account_expiry_ends_viewers_and_requests_reauth(hass):
         reauth.assert_called_once()
         close.assert_awaited_once()
         await coordinator.close()
+
+
+async def test_bridge_restart_waits_for_session_without_reauth(hass):
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="bridge-123", data=DATA)
+    entry.add_to_hass(hass)
+    api = AsyncMock(spec=BridgeClient)
+    socket = MediaSocket()
+    api.websocket.return_value = socket
+    coordinator = EufyCoordinator(hass, entry, api)
+    coordinator.async_set_updated_data(BridgeState.parse(STATE))
+    with (
+        patch.object(type(entry), "async_start_reauth") as reauth,
+        patch.object(coordinator, "close_viewers", AsyncMock()) as close,
+    ):
+        coordinator.start()
+        await socket.queue.put(
+            SimpleNamespace(
+                type=aiohttp.WSMsgType.TEXT,
+                json=lambda: {**STATE, "auth": "connecting", "cameras": []},
+            )
+        )
+        await hass.async_block_till_done()
+        close.assert_awaited_once()
+        reauth.assert_not_called()
+        await socket.queue.put(
+            SimpleNamespace(type=aiohttp.WSMsgType.TEXT, json=lambda: STATE)
+        )
+        await hass.async_block_till_done()
+        assert coordinator.data.auth == "connected"
+        assert "CAM123" in coordinator.data.cameras
+        reauth.assert_not_called()
+        await coordinator.close()

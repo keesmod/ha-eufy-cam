@@ -60,6 +60,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: EufyConfigEntry) -> bool
         raise ConfigEntryNotReady(
             "Bridge identity changed; reconfigure the integration"
         )
+    if state.auth == "connecting":
+        raise ConfigEntryNotReady("Eufy Viewer bridge is connecting")
     if state.auth != "connected":
         raise ConfigEntryAuthFailed("Eufy login needs attention")
     coordinator = entry.runtime_data = EufyCoordinator(hass, entry, api)

@@ -109,3 +109,22 @@ test('received snapshot displays without a watch subscription or placeholder ove
   expect(await page.evaluate(() => calls.length)).toBe(0);
   await page.locator('eufy-viewer-card').screenshot({ path: '../artifacts/card-preview.png' });
 });
+
+test('camera recovery clears the stale unavailable message without starting a stream', async ({ page }) => {
+  await page.evaluate(() => {
+    card.hass = { ...card._hass, states: { 'camera.front': { state: 'unavailable', attributes: { viewer_card: true } } } };
+  });
+  await expect(page.locator('.status')).toHaveText('Camera unavailable');
+  await expect(page.getByRole('button', { name: 'Watch live' })).toBeDisabled();
+  await page.evaluate(() => {
+    card.hass = { ...card._hass, states: { 'camera.front': { state: 'idle', attributes: { viewer_card: true } } } };
+  });
+  await expect(page.locator('.status')).toHaveText('');
+  await expect(page.getByRole('button', { name: 'Watch live' })).toBeEnabled();
+  expect(await page.evaluate(() => calls.length)).toBe(0);
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  await page.evaluate(() => receive({ type: 'ended' }));
+  await expect(page.locator('.status')).toHaveText('Live view ended. Tap again to watch.');
+  await page.evaluate(() => { card.hass = { ...card._hass }; });
+  await expect(page.locator('.status')).toHaveText('Live view ended. Tap again to watch.');
+});

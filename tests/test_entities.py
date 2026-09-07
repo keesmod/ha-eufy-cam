@@ -1,11 +1,16 @@
 """Push setup, dynamic discovery, snapshots, diagnostics and unloading."""
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.setup import async_setup_component
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from homeassistant.util import dt as dt_util
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 
 from custom_components.eufy_viewer.api import BridgeState
 from custom_components.eufy_viewer.const import DOMAIN
@@ -103,6 +108,29 @@ async def test_setup_distinguishes_retry_auth_and_wrong_identity(hass):
         state.return_value = BridgeState.parse({**STATE, "auth": "error"})
         with pytest.raises(ConfigEntryAuthFailed):
             await async_setup_entry(hass, entry)
+
+
+async def test_startup_waits_for_bridge_then_loads_without_reauth(hass, bridge):
+    """A running HTTP server does not mean the saved Eufy session is ready."""
+    assert await async_setup_component(hass, "http", {})
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="bridge-123", data=DATA)
+    entry.add_to_hass(hass)
+    state, _ = bridge
+    state.return_value = BridgeState.parse({**STATE, "auth": "connecting"})
+    with (
+        patch.object(type(entry), "async_start_reauth") as reauth,
+        patch("custom_components.eufy_viewer.coordinator.EufyCoordinator.start"),
+    ):
+        assert not await hass.config_entries.async_setup(entry.entry_id)
+        assert entry.state is ConfigEntryState.SETUP_RETRY
+        reauth.assert_not_called()
+        state.return_value = BridgeState.parse(STATE)
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=10))
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert entry.state is ConfigEntryState.LOADED
+        assert hass.states.get("camera.front_door").state == "idle"
+        reauth.assert_not_called()
+        assert await hass.config_entries.async_unload(entry.entry_id)
 
 
 @pytest.mark.parametrize(

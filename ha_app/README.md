@@ -17,7 +17,7 @@ The app provides `amd64` and `aarch64` builds. Only `amd64` has been tested on h
 
 ## Updates and private data
 
-Update this app through Home Assistant and the integration through HACS. Both must run 0.4.0 for HomeBase alarm and Guard Mode support. See the [upgrade steps](https://github.com/keesmod/ha-eufy-cam#upgrade-from-01x-02x-or-03x).
+Update this app through Home Assistant and the integration through HACS. Update both to 0.4.1 for automatic recovery after a Home Assistant or bridge restart. See the [upgrade steps](https://github.com/keesmod/ha-eufy-cam#upgrading).
 
 The app stores its bridge identity, Eufy credentials and session in `/data/eufy`. Back up the app and keep the same token when updating. Do not attach its data or token to support reports.
 

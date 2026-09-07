@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.1 — 2026-09-07
+
+- Report session restoration as connecting from the start, so Home Assistant can
+  wait for startup instead of requiring another login.
+- Bound the Eufy country lookup to ten seconds and retry temporary initialization
+  failures with backoff. Shutdown cancels pending retries; account verification
+  and CAPTCHA challenges are not retried automatically.
+- Verify automatic recovery after two complete HA OS VM reboots, with the same
+  four cameras and HomeBase and no automatically started streams.
+
+Update the HACS integration to **0.4.1** too, restart Home Assistant and reload the
+dashboard. Keep the existing app data and token. The integration and bundled card
+also fix the waiting state and stale unavailable messages.
+
 ## 0.3.0 — 2026-09-06
 
 - New Eufy Events card: all-camera timeline, camera/date filters, HomeBase recording-day calendar and previous/next playback.

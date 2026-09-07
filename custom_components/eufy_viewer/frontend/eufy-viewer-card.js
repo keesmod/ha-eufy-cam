@@ -12,6 +12,7 @@ export class EufyViewerCard extends HTMLElement {
     _unsubscribe;
     _frameUrl;
     _snapshotKey;
+    _unavailable = false;
     _startup;
     _observer;
     _preview;
@@ -191,6 +192,9 @@ export class EufyViewerCard extends HTMLElement {
             this._stop();
             this._status(text.unavailable);
         }
+        else if (this._unavailable)
+            this._status("");
+        this._unavailable = !available;
     }
     _recordStatus(text) { this.shadowRoot.querySelector(".record-status").textContent = text; }
     _clearRecording() {

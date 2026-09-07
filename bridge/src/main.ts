@@ -10,6 +10,7 @@ let id = await storage.read("bridge-id");
 if (!id) { id = randomUUID(); await storage.write("bridge-id", id); }
 const eufy = new Eufy(storage);
 eufy.on("storage_error", () => console.error("Unable to persist bridge session"));
+eufy.on("restore_retry", () => console.error("Eufy session restore failed; retrying when the network is ready"));
 const server = createBridge(eufy, token, id);
 server.listen(Number(process.env.PORT ?? 8080), process.env.BIND_ADDRESS ?? "0.0.0.0");
 void eufy.restore().catch(() => console.error("Eufy login needs attention in Home Assistant"));

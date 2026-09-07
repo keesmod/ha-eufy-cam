@@ -16,3 +16,19 @@ const request = HTTPApi.prototype.request;
 HTTPApi.prototype.request = async function (...args: Parameters<typeof request>) {
   return normalizeSuccess(await request.apply(this, args));
 };
+
+/** The SDK's country lookup has no timeout, so boot-time network failures can
+ * leave initialize() pending forever. Cancel that request before retrying;
+ * racing initialize() itself would leave live SDK instances in the background.
+ */
+export async function resolveApiBase(country: string, request: typeof fetch = fetch, timeoutMs = 10_000): Promise<string> {
+  if (!/^[A-Z]{2}$/.test(country)) throw new Error("Invalid country");
+  const response = await request(`https://extend.eufylife.com/domain/${country}`, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!response.ok) throw new Error("Eufy country lookup failed");
+  const result = await response.json() as { code?: unknown; data?: { domain?: unknown } };
+  const domain = result?.data?.domain;
+  if ((result?.code !== 0 && result?.code !== 200) || typeof domain !== "string" || !/^[a-z0-9]+(?:[.-][a-z0-9]+)*\.[a-z]{2,}$/i.test(domain)) throw new Error("Invalid Eufy country response");
+  return `https://${domain}`;
+}
+
+HTTPApi.getApiBaseFromCloud = country => resolveApiBase(country);

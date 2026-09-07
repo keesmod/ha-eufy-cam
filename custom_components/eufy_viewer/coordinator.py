@@ -56,7 +56,8 @@ class EufyCoordinator(DataUpdateCoordinator[BridgeState]):
                         delay = 1.0
                         if state.auth != "connected":
                             await self.close_viewers()
-                            self.entry.async_start_reauth(self.hass)
+                            if state.auth != "connecting":
+                                self.entry.async_start_reauth(self.hass)
                     raise BridgeError("Bridge disconnected")
             except BridgeAuthError as err:
                 self.async_set_update_error(UpdateFailed(str(err)))

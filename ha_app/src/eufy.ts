@@ -1,6 +1,7 @@
 import "./sdk-compat.js";
 import { EventEmitter } from "node:events";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 import { EufySecurity, CommandName, PropertyName, VideoCodec, AudioCodec, type Device, type Picture, type LoginOptions } from "eufy-security-client";
 import { JpegFramer } from "./jpeg.js";
 import { StreamHub } from "./streams.js";
@@ -20,6 +21,8 @@ export class Eufy extends EventEmitter {
   private client?: EufySecurity;
   stations?: Stations;
   private loginBusy = false;
+  private restoring = false;
+  private readonly restoreAbort = new AbortController();
   private encoders = new Map<string, ChildProcessWithoutNullStreams>();
   private livePictures = new Map<string, { data: Buffer; mime: string; received: string }>();
   private devices = new Map<string, Device>();
@@ -38,15 +41,39 @@ export class Eufy extends EventEmitter {
   constructor(private readonly storage: Storage) { super(); }
 
   async restore(): Promise<void> {
-    const saved = await this.storage.read("credentials.json");
-    if (saved) await this.login(JSON.parse(saved) as Credentials);
+    this.restoring = true;
+    this.auth = { state: "connecting" }; this.emit("change");
+    try {
+      const saved = await this.storage.read("credentials.json");
+      if (!saved) { this.auth = { state: "unconfigured" }; return; }
+      const credentials = JSON.parse(saved) as Credentials;
+      let retryDelay = 5000;
+      while (!this.restoreAbort.signal.aborted) {
+        try { await this.loginAttempt(credentials); return; }
+        catch {
+          // Startup can precede working DNS/networking. Retry failed SDK
+          // initialization, but never retry a returned password/2FA challenge.
+          this.auth = { state: "connecting" }; this.emit("change");
+          this.emit("restore_retry");
+          await delay(retryDelay, undefined, { signal: this.restoreAbort.signal });
+          retryDelay = Math.min(retryDelay * 2, 60_000);
+        }
+      }
+    } catch (error) {
+      if (!this.restoreAbort.signal.aborted) { this.auth = { state: "error" }; throw error; }
+    } finally { this.restoring = false; this.emit("change"); }
   }
   async login(credentials?: Credentials, options?: LoginOptions): Promise<AuthState> {
+    if (this.restoring) throw new Error("Saved login is still being restored");
+    return this.loginAttempt(credentials, options);
+  }
+  private async loginAttempt(credentials?: Credentials, options?: LoginOptions): Promise<AuthState> {
     if (this.loginBusy) throw new Error("Login already in progress");
+    if (credentials && (this.hub.active || this.hub.quarantined || this.recordings.busy)) throw new Error("Stop viewers before reauthenticating");
     this.loginBusy = true;
     try {
       if (credentials) {
-        if (this.hub.active || this.hub.quarantined || this.recordings.busy) throw new Error("Stop viewers before reauthenticating");
+        this.auth = { state: "connecting" }; this.emit("change");
         this.recordings.close();
         this.stations?.close();
         this.client?.removeAllListeners();
@@ -57,6 +84,7 @@ export class Eufy extends EventEmitter {
           p2pConnectionSetup: 0, pollingIntervalMinutes: 0, eventDurationSeconds: 10,
           acceptInvitations: false, trustedDeviceName: "Home Assistant Viewer",
         });
+        if (this.restoreAbort.signal.aborted) { this.client.close(); return this.auth; }
         this.client.setCameraMaxLivestreamDuration(120);
         this.stations = new Stations(this.client, () => this.emit("change"));
         this.bind(this.client);
@@ -68,6 +96,9 @@ export class Eufy extends EventEmitter {
       if (this.client.isConnected()) this.auth = { state: "connected" };
       if (this.auth.state === "connecting") this.auth = { state: "error" };
       return this.auth;
+    } catch (error) {
+      this.auth = { state: this.restoring ? "connecting" : "error" };
+      throw error;
     } finally { this.loginBusy = false; this.emit("change"); }
   }
 
@@ -144,5 +175,5 @@ export class Eufy extends EventEmitter {
     }));
   }
   hasCamera(serial: string): boolean { return this.devices.has(serial); }
-  async close(): Promise<void> { this.stations?.close(); this.recordings.close(); this.hub.close(); await new Promise(resolve => setTimeout(resolve, 1500)); this.client?.close(); await this.storage.flush(); }
+  async close(): Promise<void> { this.restoreAbort.abort(); this.stations?.close(); this.recordings.close(); this.hub.close(); await new Promise(resolve => setTimeout(resolve, 1500)); this.client?.close(); await this.storage.flush(); }
 }

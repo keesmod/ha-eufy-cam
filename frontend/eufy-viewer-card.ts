@@ -28,6 +28,7 @@ export class EufyViewerCard extends HTMLElement {
   private _unsubscribe: Unsubscribe | null;
   private _frameUrl: string | null;
   private _snapshotKey: string | null;
+  private _unavailable = false;
   private _startup?: number;
   private _observer?: IntersectionObserver;
   private _preview: HTMLButtonElement;
@@ -176,6 +177,8 @@ export class EufyViewerCard extends HTMLElement {
       else { this._snapshot.removeAttribute("src"); this._snapshot.hidden = true; this.shadowRoot!.querySelector<HTMLElement>(".empty")!.hidden = false; }
     }
     if (!available) { this._closeRecordings(); this._stop(); this._status(text.unavailable); }
+    else if (this._unavailable) this._status("");
+    this._unavailable = !available;
   }
   _recordStatus(text: string) { this.shadowRoot!.querySelector<HTMLElement>(".record-status")!.textContent = text; }
   _clearRecording() {

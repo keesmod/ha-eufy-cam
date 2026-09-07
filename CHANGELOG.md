@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.1 — 2026-09-07
+
+- Restore the saved Eufy session automatically after a Home Assistant or bridge
+  restart. Home Assistant now waits for a connecting bridge instead of asking
+  users to sign in again.
+- Cancel the SDK's country lookup after ten seconds and retry temporary
+  initialization failures with backoff. Keep genuine account verification and
+  CAPTCHA requests visible, and cancel pending retries during shutdown.
+- Clear stale "Camera unavailable" messages when the camera reconnects. Live
+  viewing still requires a tap and never resumes automatically after recovery.
+- Verify two complete HA OS VM reboots, all ten retained entity identities,
+  1920×1080 live playback and device-confirmed stream shutdown. See
+  [startup recovery validation](docs/STARTUP_RECOVERY_2026-09-07.md).
+
+Update **both the bridge and integration to 0.4.1**, restart Home Assistant, then
+reload the dashboard. Update the existing card resource to
+`/eufy_viewer/eufy-viewer-card.js?v=0.4.1` if needed. Keep the bridge data and token;
+no new Eufy account setup is required. Actual expired credentials or verification
+challenges still require the normal reauthentication flow.
+
 ## 0.4.0 — 2026-09-07
 
 - Add HomeBase alarm and Guard Mode entities to the existing camera integration

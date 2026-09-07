@@ -75,3 +75,76 @@ test('SDK adapter disables cloud polling, converts real media, and retains last 
     await bridge.close(); await rm(directory, { recursive: true, force: true });
   }
 });
+
+test('saved login stays connecting through delayed initialization and retries boot network failures', async t => {
+  const storage = new Storage('/unused');
+  t.mock.method(storage, 'read', async (name: string) => name === 'credentials.json' ? JSON.stringify({ username: 'fixture', password: 'fixture', country: 'NL' }) : undefined);
+  t.mock.method(storage, 'write', async () => {});
+  const sdk = Object.assign(new EventEmitter(), { isConnected: () => true, connect: async () => {}, close: () => {}, setCameraMaxLivestreamDuration: () => {} });
+  let attempts = 0;
+  let initialized!: (sdk: EufySecurity) => void;
+  const pending = new EventEmitter();
+  const initialization = once(pending, 'initializing');
+  t.mock.method(EufySecurity, 'initialize', async () => {
+    if (++attempts === 1) throw new Error('DNS unavailable during boot');
+    return new Promise<EufySecurity>(resolve => { initialized = resolve; pending.emit('initializing'); });
+  });
+  const bridge = new Eufy(storage);
+  const states: string[] = [];
+  bridge.on('change', () => states.push(bridge.auth.state));
+  const retry = once(bridge, 'restore_retry');
+  const restoring = bridge.restore();
+  try {
+    assert.equal(bridge.auth.state, 'connecting');
+    await retry;
+    assert.equal(attempts, 1);
+    await assert.rejects(bridge.login(), /still being restored/);
+    await initialization;
+    assert.equal(attempts, 2);
+    assert.equal(bridge.auth.state, 'connecting');
+    initialized(sdk as unknown as EufySecurity);
+    await restoring;
+    assert.equal(bridge.auth.state, 'connected');
+    assert.ok(!states.includes('unconfigured') && !states.includes('error'));
+    assert.equal(bridge.metrics.start_requests, 0);
+  } finally { await bridge.close(); }
+});
+
+test('restore distinguishes no account, corrupt storage and a genuine verification challenge', async t => {
+  const storage = new Storage('/unused');
+  const read = t.mock.method(storage, 'read', async () => undefined as string | undefined);
+  t.mock.method(storage, 'write', async () => {});
+  const bridge = new Eufy(storage);
+  try {
+    await bridge.restore(); assert.equal(bridge.auth.state, 'unconfigured');
+    read.mock.mockImplementation(async () => 'broken json');
+    await assert.rejects(bridge.restore()); assert.equal(bridge.auth.state, 'error');
+    read.mock.mockImplementation(async (name: string) => name === 'credentials.json' ? JSON.stringify({ username: 'fixture', password: 'fixture', country: 'NL' }) : undefined);
+    const sdk = Object.assign(new EventEmitter(), { isConnected: () => false, connect: async () => { sdk.emit('tfa request'); }, close: () => {}, setCameraMaxLivestreamDuration: () => {} });
+    const initialize = t.mock.method(EufySecurity, 'initialize', async () => sdk as unknown as EufySecurity);
+    await bridge.restore(); assert.equal(bridge.auth.state, 'verify');
+    assert.equal(initialize.mock.callCount(), 1);
+  } finally { await bridge.close(); }
+});
+
+test('shutdown cancels pending automatic restore retry', async t => {
+  const storage = new Storage('/unused');
+  t.mock.method(storage, 'read', async (name: string) => name === 'credentials.json' ? '{}' : undefined);
+  const initialize = t.mock.method(EufySecurity, 'initialize', async () => { throw new Error('offline'); });
+  const bridge = new Eufy(storage);
+  const retry = once(bridge, 'restore_retry');
+  const restoring = bridge.restore();
+  await retry;
+  await bridge.close();
+  await restoring;
+  assert.equal(initialize.mock.callCount(), 1);
+});
+
+test('refusing reauthentication during a viewer leaves the connected session intact', async () => {
+  const bridge = new Eufy(new Storage('/unused'));
+  bridge.auth = { state: 'connected' };
+  Object.defineProperty(bridge.hub, 'active', { value: 1 });
+  await assert.rejects(bridge.login({ username: 'fixture', password: 'fixture', country: 'NL' }), /Stop viewers/);
+  assert.equal(bridge.auth.state, 'connected');
+  await bridge.close();
+});

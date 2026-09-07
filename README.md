@@ -9,7 +9,7 @@ Browse and play Eufy HomeBase recordings in Home Assistant. Choose a date, filte
 
 On Home Assistant OS, the app runs on your HA machine and Home Assistant manages its container. You do not need to install Docker yourself. You can also put the bridge on a separate Docker host, for example to keep video processing off a Raspberry Pi.
 
-[Installation](#installation) · [Docker instructions](docs/DOCKER.md) · [Tested compatibility](docs/COMPATIBILITY.md) · [Upgrading](#upgrade-from-01x-02x-or-03x)
+[Installation](#installation) · [Docker instructions](docs/DOCKER.md) · [Tested compatibility](docs/COMPATIBILITY.md) · [Upgrading](#upgrading)
 
 ![Home Assistant dashboard playing an existing HomeBase recording; private areas obscured](docs/media/ha-dashboard-demo.gif)
 
@@ -86,7 +86,7 @@ If you install integrations manually, copy `custom_components/eufy_viewer` from 
 The cards are included with the integration. You do not need another HACS download.
 
 1. Enable **Advanced mode** in your HA profile if the dashboard resource settings are hidden.
-2. Open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.4.0` as a **JavaScript module**. If that resource already exists, edit it instead of adding a duplicate.
+2. Open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.4.1` as a **JavaScript module**. If that resource already exists, edit it instead of adding a duplicate.
 3. Edit a dashboard and select **Add card → Eufy Security Viewer**. Pick a camera and save.
 4. To browse recordings across cameras, add an **Eufy Events** card too. It uses the same resource and selects all accessible Viewer cameras by default.
 5. Open a live view, then close it. To check recordings, choose a date with a clip you can already see in the Eufy app and play that clip.
@@ -110,14 +110,14 @@ Live WebRTC video uses Home Assistant's [go2rtc integration](https://www.home-as
 
 If the problem remains, [report a bug](https://github.com/keesmod/ha-eufy-cam/issues/new?template=bug_report.yml) with your HA installation type, both component versions and the error. Follow the [support guidance](.github/SUPPORT.md) before sharing logs.
 
-## Upgrade from 0.1.x, 0.2.x or 0.3.x
+## Upgrading
 
-The bridge and integration have separate updates. Update both to 0.4.0 for HomeBase alarm support.
+The bridge and integration have separate updates. Update both to 0.4.1 for automatic recovery after a Home Assistant or bridge restart.
 
 1. Close live viewers and recording dialogs. Back up Home Assistant and the bridge's private data before updating.
 2. For the HAOS repository app, update **Eufy Security Viewer Bridge** in Home Assistant and start it. For Docker, follow the [bridge update steps](docs/DOCKER.md#update-the-docker-bridge), keeping the same data volume and token.
 3. Update **Eufy Security Viewer** in HACS and restart Home Assistant.
-4. Change the existing dashboard resource to `/eufy_viewer/eufy-viewer-card.js?v=0.4.0` and reload the browser. Do not add a duplicate resource.
+4. Change the existing dashboard resource to `/eufy_viewer/eufy-viewer-card.js?v=0.4.1` and reload the browser. Do not add a duplicate resource.
 5. Confirm the cameras work and the HomeBase alarm and Guard Mode selector match the Eufy app.
 
 Keeping the bridge's data preserves its identity, credentials and session. The integration keeps your existing camera entities. If your bridge is listed under **Local apps**, the repository app is a separate installation and will not update that local copy. Back up its private data and token before migrating; a new empty data directory creates a different bridge identity. See [support](.github/SUPPORT.md) if you need help moving an older installation.
@@ -161,6 +161,7 @@ Sessions have a **two-minute absolute limit**; continuing requires another tap. 
 
 - Use the integration's **Reconfigure** action when the bridge address or token changes. Its stable bridge ID must match.
 - Complete the HA **Reauthenticate** flow if the Eufy account or bridge token requires attention.
+- During startup, Home Assistant waits for the bridge to restore its saved Eufy session. Temporary network failures during initialization are retried automatically; they do not require entering your credentials again.
 - On bridge connection loss, entities become unavailable and all live viewers end. The local push socket reconnects with bounded backoff; media never automatically restarts.
 - If a camera does not confirm stopping, the bridge makes at most three stop attempts. Once all viewers and pending starts have left, it makes one attempt to close the HomeBase connection and waits for confirmation before allowing playback again. A failed recovery keeps the affected session blocked. If the recording dialog says the previous live session is still stopping, wait about ten seconds and load the date again. Persistent failures require checking the bridge state; they do not trigger a polling or restart loop.
 - A camera removed from Eufy becomes unavailable in HA; its registry entry is preserved so reappearance keeps IDs. Remove obsolete devices through HA's normal UI.
