@@ -1,5 +1,7 @@
 # Development
 
+The app's `src`, package manifests and `tsconfig.json` are generated from `bridge` by `scripts/prepare_ha_app.py`. Edit the files in `bridge`, then run that script to update the app build files.
+
 Baseline: Python 3.14.2+, Home Assistant 2026.9.0, Node 24+, FFmpeg. Dependencies are locked in `uv.lock`, `bridge/package-lock.json` and `frontend/package-lock.json`.
 
 ```sh

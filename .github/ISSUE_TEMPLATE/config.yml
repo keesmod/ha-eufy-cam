@@ -1,7 +1,7 @@
 blank_issues_enabled: true
 contact_links:
   - name: Installation and troubleshooting
-    url: https://github.com/keesmod/ha-eufy-cam#install-in-home-assistant-with-hacs
+    url: https://github.com/keesmod/ha-eufy-cam#installation
     about: Install both the bridge app and the HACS integration.
   - name: Tested compatibility and short test checklist
     url: https://github.com/keesmod/ha-eufy-cam/blob/main/docs/COMPATIBILITY.md

@@ -19,7 +19,7 @@ Detailed evidence: [0.3.0 validation](VALIDATION_0.3.md). Model support in the u
 
 Our first target is **10 independent HomeBase 3 installations**. You do not need to be a developer. A partial result is useful too.
 
-1. Follow the [installation instructions](../README.md#install-in-home-assistant-with-hacs). Record the integration and bridge versions separately.
+1. Follow the [installation instructions](../README.md#installation). Record the integration and bridge versions separately.
 2. Confirm your cameras appear and show their latest received snapshots. An older snapshot is expected when no new image has arrived.
 3. Close live viewers. In **Eufy Events**, choose a date with a recording you already see in the Eufy app, preferably yesterday. Confirm the camera/time is listed and play that existing clip through to the end.
 4. Check the camera filter and, if another clip exists, **Next recording** and **Previous recording**. Open the calendar and check a known recording day; calendar marks describe the whole HomeBase.

@@ -1,22 +1,128 @@
 # Eufy Security Viewer
 
-**Browse and play existing Eufy HomeBase recordings in Home Assistant.** Choose a date, filter by camera and play a stored event. Watch live video with optional sound when you need it; closing the viewer releases the stream.
+Browse and play Eufy HomeBase recordings in Home Assistant. Choose a date, filter by camera and play a stored event. You can also watch live video with optional sound. Closing the viewer releases the stream.
 
-An independent integration with bundled dashboard cards and a required local bridge. Not affiliated with or endorsed by Eufy or Anker. Built on [bropat's eufy-security-client](https://github.com/bropat/eufy-security-client).
+**You must install two parts:**
 
-[Install integration with HACS](https://my.home-assistant.io/redirect/hacs_repository/?owner=keesmod&repository=ha-eufy-cam&category=integration) · [Add bridge app repository](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fkeesmod%2Fha-eufy-cam) · [Installation steps](#install-in-home-assistant-with-hacs) · [Tested compatibility](docs/COMPATIBILITY.md)
+- **Eufy Security Viewer**, the Home Assistant integration and dashboard cards, installed through HACS.
+- **Eufy Security Viewer Bridge**, a separate service that connects to Eufy and handles video. Install it as a Home Assistant OS app or run it in Docker on a machine on your network. HACS does not install or update the bridge.
 
-![Actual Home Assistant dashboard playing an existing HomeBase recording; private areas obscured](docs/media/ha-dashboard-demo.gif)
+On Home Assistant OS, the app runs on your HA machine and Home Assistant manages its container. You do not need to install Docker yourself. You can also put the bridge on a separate Docker host, for example to keep video processing off a Raspberry Pi.
 
-*Recorded in a real Home Assistant dashboard: four cameras, date/camera selection, playback of an existing HomeBase clip from the previous day, and closing the player. Private areas and thumbnails are obscured. This silent walkthrough is edited between actions; the interface, event list and playback are real. [Watch the MP4](docs/media/ha-dashboard-demo.mp4) · [Demo evidence](docs/media/README.md) · [Full validation](docs/VALIDATION_0.3.md).*
+[Installation](#installation) · [Docker instructions](docs/DOCKER.md) · [Tested compatibility](docs/COMPATIBILITY.md) · [Upgrading](#upgrade-from-01x-02x-or-03x)
 
-**Start here:** Home Assistant **2026.9.0 or newer**, a Eufy account with camera access, and a **HomeBase 3** for the currently verified recording route. Install **both** parts: the bridge through the HA App Store (or Docker), then the integration through HACS. HACS currently uses a custom repository. Eufy login/cloud and push connectivity are still required; a cloud recording subscription is not required for the tested HomeBase files.
+![Home Assistant dashboard playing an existing HomeBase recording; private areas obscured](docs/media/ha-dashboard-demo.gif)
 
-**Help confirm compatibility:** we're looking for the first **10 independent HomeBase 3 installations**. Follow the [short test checklist](docs/COMPATIBILITY.md#report-your-installation), then [report your result](https://github.com/keesmod/ha-eufy-cam/issues/new?template=compatibility.yml), including partial success. [Report a bug](https://github.com/keesmod/ha-eufy-cam/issues/new?template=bug_report.yml) if something fails.
+This demo shows the dashboard, event list and playback from a real installation. Private areas are obscured and the silent walkthrough is edited between actions. [Watch the MP4](docs/media/ha-dashboard-demo.mp4) or read the [demo evidence](docs/media/README.md).
 
-[HACS default-catalogue request](https://github.com/hacs/default/pull/10690) is submitted; inclusion is pending review. You can install now using the custom-repository button above.
+This project is independent of Eufy and Anker and uses [bropat's eufy-security-client](https://github.com/bropat/eufy-security-client). Version 0.4.0 also adds HomeBase alarm and Guard Mode controls. See [alarm support and migration](docs/ALARM_MIGRATION_2026-09-06.md).
 
-**Version 0.4.0:** HomeBase alarm and Guard Mode entities now share the camera bridge, with device-confirmed commands and actual station status. See [alarm support and migration](docs/ALARM_MIGRATION_2026-09-06.md). Also includes an all-camera Events timeline with stored previews, a recording-day calendar, camera/date filters and previous/next playback. Includes on-demand WebRTC video and listen-only audio. Tested with Home Assistant 2026.9.0 and HomeBase 3 (T8030, firmware 3.8.6.0). Four camera entities and snapshots were verified on the live installation; actual WebRTC video and existing recording playback were verified at 1920×1080. See [validation and remaining limits](docs/VALIDATION_0.3.md). This is a HACS custom integration; it is not part of Home Assistant core.
+## Before you start
+
+You need:
+
+- Home Assistant 2026.9.0 or newer, with [HACS installed](https://hacs.xyz/docs/use/download/download/).
+- A Eufy account with access to your cameras and HomeBase. Use a dedicated account and share the devices with it in the Eufy app. Accept the invitation and confirm that account can see the devices before continuing.
+- A machine to run the bridge, with access to Eufy's internet services and your cameras/HomeBase on the local network. The bridge includes Node.js and FFmpeg and needs enough CPU to convert live video.
+
+Recording playback has been verified on HomeBase 3, model T8030, firmware 3.8.6.0. Other HomeBase models, standalone storage and firmware combinations still need testing. The HAOS app offers `amd64` and `aarch64` builds. Only `amd64` has been tested on hardware; 64-bit Raspberry Pi hardware testing is still pending. The app has no 32-bit ARM build. See [compatibility](docs/COMPATIBILITY.md) for the full limits.
+
+A Eufy cloud recording subscription is not needed to play the tested HomeBase files. Eufy account login and cloud/push connectivity are still required.
+
+## Installation
+
+Choose **one** bridge installation method, then install the integration and cards.
+
+| Your setup | Where to install the bridge |
+|---|---|
+| Home Assistant OS, including a 64-bit Raspberry Pi | Use the HAOS app below to run it on your HA machine. See the hardware limits above. |
+| Home Assistant Container | Follow the [Docker instructions](docs/DOCKER.md). |
+| Home Assistant OS with the bridge on another machine | Follow the [Docker instructions](docs/DOCKER.md) on that machine, then return to step 2. |
+
+### 1. Install the bridge on Home Assistant OS
+
+The bridge comes from the Home Assistant **app store**, separate from HACS. Older HA versions call apps "add-ons".
+
+1. Open **Settings → Apps → Install app** to open the app store.
+2. Open the three-dot menu, select **Repositories**, paste this URL and select **Add**:
+
+   ```text
+   https://github.com/keesmod/ha-eufy-cam
+   ```
+
+3. Find **Eufy Security Viewer Bridge** in the new repository and select **Install**. The first installation builds the container and can take several minutes.
+4. Open the app's **Configuration** tab. Set `token` to a unique, randomly generated secret of at least 32 characters, then save. A password manager can generate one. This token connects Home Assistant to the bridge; it is separate from your Eufy password. Keep it for step 2.
+5. Start the app and enable **Start on boot**. Check its **Logs** tab if it fails to start.
+6. Copy **Hostname** from the app's **Info** tab. Your bridge URL is `http://HOSTNAME:8080`, with `HOSTNAME` replaced by the value you copied. Leave the app's network port disabled; Home Assistant can reach it internally.
+
+Optional shortcut: [add the bridge app repository](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fkeesmod%2Fha-eufy-cam). This opens My Home Assistant, which forwards you to your own HA instance. If it opens the wrong instance or fails, use the manual steps above. Home Assistant also documents [adding an app repository](https://www.home-assistant.io/common-tasks/os/#installing-a-third-party-app-repository).
+
+Continue to step 2. Enter your Eufy email and password during integration setup, not in the bridge app configuration.
+
+### 2. Install and connect the HACS integration
+
+1. Open **HACS** in Home Assistant. In the three-dot menu, select **Custom repositories**.
+2. Add `https://github.com/keesmod/ha-eufy-cam`, select type **Integration**, then select **Add**. See [HACS custom repository help](https://hacs.xyz/docs/faq/custom_repositories/) if needed.
+3. Find **Eufy Security Viewer**, download it and restart Home Assistant.
+4. Open **Settings → Devices & services → Add integration** and search for **Eufy Security Viewer**.
+5. Enter the bridge URL and token from your bridge installation:
+
+   | Bridge installation | URL to enter |
+   |---|---|
+   | HAOS app on this HA machine | `http://HOSTNAME:8080`, using the app's hostname |
+   | Docker | `http://DOCKER_HOST_LAN_IP:8080`, using the Docker host's LAN address |
+
+   For Docker, use an address Home Assistant can reach. `localhost` would point at Home Assistant itself.
+
+6. Enter the dedicated Eufy account's email, password and two-letter country code, such as `NL`, `GB` or `US`. Complete verification or captcha if prompted.
+7. Check that your cameras appear under the integration. They show the latest received snapshot, which may be old or absent until a new image arrives.
+
+Optional shortcut: [open this integration in HACS](https://my.home-assistant.io/redirect/hacs_repository/?owner=keesmod&repository=ha-eufy-cam&category=integration). The manual custom-repository steps above work without waiting for inclusion in the HACS default catalogue.
+
+If you install integrations manually, copy `custom_components/eufy_viewer` from this repository into your HA configuration's `custom_components` folder and restart. You still need the bridge.
+
+### 3. Add the dashboard cards
+
+The cards are included with the integration. You do not need another HACS download.
+
+1. Enable **Advanced mode** in your HA profile if the dashboard resource settings are hidden.
+2. Open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.4.0` as a **JavaScript module**. If that resource already exists, edit it instead of adding a duplicate.
+3. Edit a dashboard and select **Add card → Eufy Security Viewer**. Pick a camera and save.
+4. To browse recordings across cameras, add an **Eufy Events** card too. It uses the same resource and selects all accessible Viewer cameras by default.
+5. Open a live view, then close it. To check recordings, choose a date with a clip you can already see in the Eufy app and play that clip.
+
+A standard Home Assistant camera card shows snapshots only. Use the included Eufy cards for live video and recording playback. No YAML, automation or stream preload setting is needed.
+
+Live WebRTC video uses Home Assistant's [go2rtc integration](https://www.home-assistant.io/integrations/go2rtc/). HAOS and HA Container set it up automatically when using `default_config`. Your browser must also be able to reach HA's media service on TCP port **18555**. An HTTPS dashboard connection alone may not provide that route. Check [streaming requirements](#honest-snapshot-and-streaming-limits) if snapshots work but live video does not.
+
+## Installation troubleshooting
+
+| Problem | What to check |
+|---|---|
+| The bridge repository shortcut fails | Use the URL and manual app-store steps in step 1. Check that My Home Assistant points to your HA instance. |
+| There is no Apps menu | The app instructions require Home Assistant OS. Use Docker for a Home Assistant Container installation. |
+| The bridge app does not appear | Confirm you added the repository to the HA app store. Refresh the page and check your machine's architecture against the supported builds above. |
+| The bridge will not start | Check its logs. The token must contain at least 32 characters. |
+| Integration setup cannot connect | Start the bridge first. Use the app hostname for the HAOS app, or the Docker host's LAN address and published port for Docker. |
+| Integration setup rejects the bridge token | Copy the same token configured in the app or in Docker's `bridge.env`. Do not enter the Eufy password in this field. |
+| Eufy login succeeds but cameras are missing | Sign into the Eufy app with the dedicated account and check that it has accepted device-sharing access. |
+| The cards do not appear | Check the resource URL and module type, then reload the browser. |
+
+If the problem remains, [report a bug](https://github.com/keesmod/ha-eufy-cam/issues/new?template=bug_report.yml) with your HA installation type, both component versions and the error. Follow the [support guidance](.github/SUPPORT.md) before sharing logs.
+
+## Upgrade from 0.1.x, 0.2.x or 0.3.x
+
+The bridge and integration have separate updates. Update both to 0.4.0 for HomeBase alarm support.
+
+1. Close live viewers and recording dialogs. Back up Home Assistant and the bridge's private data before updating.
+2. For the HAOS repository app, update **Eufy Security Viewer Bridge** in Home Assistant and start it. For Docker, follow the [bridge update steps](docs/DOCKER.md#update-the-docker-bridge), keeping the same data volume and token.
+3. Update **Eufy Security Viewer** in HACS and restart Home Assistant.
+4. Change the existing dashboard resource to `/eufy_viewer/eufy-viewer-card.js?v=0.4.0` and reload the browser. Do not add a duplicate resource.
+5. Confirm the cameras work and the HomeBase alarm and Guard Mode selector match the Eufy app.
+
+Keeping the bridge's data preserves its identity, credentials and session. The integration keeps your existing camera entities. If your bridge is listed under **Local apps**, the repository app is a separate installation and will not update that local copy. Back up its private data and token before migrating; a new empty data directory creates a different bridge identity. See [support](.github/SUPPORT.md) if you need help moving an older installation.
+
+If moving from another Eufy integration, follow the [migration checklist](docs/ALARM_MIGRATION_2026-09-06.md#moving-from-another-eufy-integration) before stopping its bridge. When upgrading from 0.1.x, also check the WebRTC media requirements above.
 
 ## Events timeline
 
@@ -25,8 +131,6 @@ An independent integration with bundled dashboard cards and a required local bri
 Requests begin with an explicit action. The card fetches at most 12 stored previews per displayed page, keeps at most 24 previews in browser memory and cancels work when hidden, disconnected or removed. Previews use the thumbnail path from the existing event; no snapshot capture or live recording is used. Calendar marks apply to all cameras on the HomeBase, and are only available to a user authorized for the entire bridge camera inventory. Filtering the timeline to a camera does not change the calendar's scope.
 
 On the tested HB3, increasing the SDK's existing query limit retrieved 105 database rows for 5 September, including events beyond the original first 100. These contained 95 files from the four known cameras and 10 zero-byte rows outside that camera inventory. The day list grows through bounded requests instead of silently stopping at 100. If the HomeBase returns an unchanged full prefix, inconsistent IDs or reaches the safety ceiling, the UI reports that completeness could not be confirmed. Firmware outside the tested device may behave differently. See [0.3 validation](docs/VALIDATION_0.3.md).
-
-HACS updates the integration and bundled cards; the companion bridge updates separately through the **HA App Store**. An old manually installed local bridge needs migration to the GitHub repository app before those bridge updates can be offered.
 
 ## What it does
 
@@ -52,86 +156,6 @@ A normal HA camera card/more-info dialog shows snapshots only. Use the companion
 WebRTC requires Home Assistant's **go2rtc integration** to be loaded and the browser to have a media route to HA (the managed service uses TCP port **18555**). A dashboard accessible through an HTTPS reverse proxy alone does not establish this media route. Routed LAN/VPN access can provide it; no public STUN/TURN service is configured by this integration. Do not expose the bridge API to solve WebRTC connectivity. See [0.2 validation](docs/VALIDATION_0.2.md).
 
 Sessions have a **two-minute absolute limit**; continuing requires another tap. Normal close immediately issues stop. After a network partition or frozen page the bridge expires a viewer within **10 seconds**, plus its 250 ms watchdog tick. Startup without frames expires after 20 seconds. A bridge or host hard failure cannot deliver a stop command; camera firmware/P2P behavior in that case must be verified on the intended hardware. No software can promise instantaneous physical stop across a dead network.
-
-## Install the bridge
-
-Requirements: Docker on a machine that can reach the cameras/HomeBase, a dedicated Eufy account with shared camera access, and sufficient CPU for video transcoding. The container includes Node 24 and FFmpeg. One bridge manages one Eufy account. Do not share it with another system that starts or stops streams.
-
-From the repository root:
-
-```sh
-docker build -t eufy-viewer-bridge:0.4.0 ./bridge
-```
-
-Create a private environment file with a randomly generated token of at least 32 characters:
-
-```sh
-umask 077
-printf 'EUFY_BRIDGE_TOKEN=%s\n' "$(openssl rand -hex 32)" > bridge.env
-```
-
-Keep this file out of version control. Run the bridge, replacing `YOUR_LAN_IP` with the host's LAN address:
-
-```sh
-docker run -d --name eufy-viewer-bridge \
-  --restart unless-stopped \
-  --env-file bridge.env \
-  -p YOUR_LAN_IP:8080:8080 \
-  -v eufy-viewer-data:/data \
-  eufy-viewer-bridge:0.4.0
-```
-
-Use a trusted LAN or a TLS reverse proxy; HTTP on an untrusted network exposes the bridge token and login credentials. Do not publish port 8080 to the internet. The browser never connects to the bridge directly. Outbound Eufy cloud/push and local P2P connectivity are required; depending on the device/network, Docker host networking may be needed for P2P.
-
-The bridge stores its ID, Eufy credentials and session in `/data`, with private file permissions and asynchronous atomic writes. Back up that private volume. Loss of the volume creates a different bridge identity. Never attach it to bug reports. The bridge token is also stored by HA as a config-entry credential.
-
-## Install in Home Assistant with HACS
-
-### 1. Bridge app (Home Assistant OS)
-
-[Add bridge app repository](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fkeesmod%2Fha-eufy-cam)
-
-1. Add this repository in **Settings → Apps → App store → Repositories** (called Add-ons on older HA versions).
-2. Install **Eufy Security Viewer Bridge**. The first installation builds the container and can take several minutes. amd64 and aarch64 are supported; amd64 has been tested on hardware.
-3. In its Configuration tab, set `token` to a unique randomly generated secret of at least 32 characters. Start the app and enable Start on boot.
-4. Copy the app's **Hostname** from its Info tab. Use `http://HOSTNAME:8080` as the bridge URL in the integration below. Leave the network port disabled: Home Assistant reaches the app internally.
-
-For HA Container installations, use the Docker instructions above instead. HACS installs the integration and bundled card; the bridge is a separate required app/container.
-
-### 2. Integration and bundled card (HACS)
-
-[Open in HACS](https://my.home-assistant.io/redirect/hacs_repository/?owner=keesmod&repository=ha-eufy-cam&category=integration)
-
-This is a **HACS custom repository**, not yet a default HACS listing.
-
-1. In HACS, add `keesmod/ha-eufy-cam` as a custom repository, category **Integration**.
-2. Download **Eufy Security Viewer** and restart Home Assistant.
-3. Open **Settings → Devices & services → Add integration → Eufy Security Viewer**.
-4. Enter the bridge URL (for example `http://192.168.1.10:8080`) and its access token.
-5. Enter the dedicated Eufy account's email, password and two-letter country code. Complete verification/captcha if requested.
-
-For a local manual install, copy `custom_components/eufy_viewer` into your HA configuration's `custom_components` folder and restart. The downloadable integration archive preserves this directory structure.
-
-## Upgrade from 0.1.x, 0.2.x or 0.3.x
-
-1. Close live viewers and recording dialogs.
-2. Update **Eufy Security Viewer Bridge** to **0.4.0** in the HA App Store, then start it. For Docker, rebuild from this release while preserving the private data volume and token.
-3. Update **Eufy Security Viewer** to **0.4.0** in HACS and restart Home Assistant.
-4. Reload the dashboard. If needed, edit the existing module resource to `/eufy_viewer/eufy-viewer-card.js?v=0.4.0`; do not add a duplicate.
-5. Confirm the HomeBase alarm and Guard Mode selector match the Eufy app. Both components must run 0.4.0 for alarm support.
-
-Existing integration configuration, camera entities and credentials are retained. HACS updates the integration and bundled cards; the bridge updates separately through the HA App Store. If moving from another Eufy integration, follow the [migration checklist](docs/ALARM_MIGRATION_2026-09-06.md#moving-from-another-eufy-integration) before stopping its bridge. For users upgrading from 0.1.x, also verify the WebRTC media route described above.
-
-## Add the card without YAML
-
-The card is bundled with the integration, so it updates through the same HACS installation.
-
-1. Enable **Advanced mode** in your HA profile if Resources is hidden.
-2. In dashboard **Resources**, add URL `/eufy_viewer/eufy-viewer-card.js?v=0.4.0`, type **JavaScript module**.
-3. Edit a dashboard, **Add card → Eufy Security Viewer**, and select a camera using the visual picker.
-4. Save. The card stays on the snapshot until you tap it. Escape, the close button and clicking outside the dialog close live viewing.
-
-After updates, reload browser resources. No YAML configuration, stream preload option, automation or scheduled service is needed. The integration deliberately does not advertise a generic stream source: another card cannot accidentally wake a camera through HA preload.
 
 ## Recovery and maintenance
 
