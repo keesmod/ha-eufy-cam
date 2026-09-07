@@ -6,6 +6,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = json.loads((ROOT / "custom_components/eufy_viewer/manifest.json").read_text())["version"]
+BRIDGE_VERSION = json.loads((ROOT / "bridge/package.json").read_text())["version"]
 OUTPUT = ROOT / "artifacts"
 OUTPUT.mkdir(exist_ok=True)
 
@@ -23,7 +24,7 @@ def archive(name: str, paths: list[Path]) -> None:
 
 
 archive(f"eufy-viewer-integration-{VERSION}.zip", list((ROOT / "custom_components").rglob("*")) + [ROOT / "README.md", ROOT / "LICENSE"] + list((ROOT / "docs").rglob("*.md")))
-archive(f"eufy-viewer-bridge-{VERSION}.zip", list((ROOT / "bridge/src").rglob("*")) + [ROOT / "bridge" / name for name in ("package.json", "package-lock.json", "tsconfig.json", "Dockerfile", ".dockerignore")] + [ROOT / "README.md", ROOT / "LICENSE"] + list((ROOT / "docs").rglob("*.md")))
+archive(f"eufy-viewer-bridge-{BRIDGE_VERSION}.zip", list((ROOT / "bridge/src").rglob("*")) + [ROOT / "bridge" / name for name in ("package.json", "package-lock.json", "tsconfig.json", "Dockerfile", ".dockerignore")] + [ROOT / "README.md", ROOT / "LICENSE"] + list((ROOT / "docs").rglob("*.md")))
 
 source = [ROOT / name for name in ("README.md", "LICENSE", "hacs.json", "pyproject.toml", "uv.lock", ".gitignore", "repository.yaml", "CHANGELOG.md")]
 for directory in ("custom_components", "bridge/src", "bridge/test", "docs", "scripts", "tests", ".github", "ha_app"):
