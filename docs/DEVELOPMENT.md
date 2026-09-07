@@ -40,6 +40,31 @@ Publishing, tagging, deploying and physical camera tests are separate explicit a
 
 Edit `frontend/eufy-viewer-card.ts` or `frontend/eufy-events-card.ts`; `npm run build` compiles both and combines them in the existing single bundled resource. `frontend/build.mjs` performs this dependency-free packaging step. Both the card and bridge compile with TypeScript strict mode.
 
+## Pull requests and releases
+
+For a change that users need to receive through an update, include the version
+bump, changelog entry and installation or upgrade instructions in the PR. Name
+the affected components and their target versions. Documentation-only changes
+can state that no release is needed.
+
+For integration or bundled-card changes, keep the version in
+`custom_components/eufy_viewer/manifest.json`, `pyproject.toml` and the project's
+`uv.lock` entry aligned. Update the card resource examples to that version.
+Only bump the bridge when it changes; keep its package files, generated app
+files, `ha_app/config.json` and app changelog aligned. For an integration-only
+release, state which existing bridge version to use.
+
+Before merging, all six Validate jobs must pass for the PR's latest commit:
+`home-assistant`, `hacs`, `hassfest`, `app-package`, `bridge` and `card`.
+After merging, wait for the full Validate pipeline to pass on the merged `main`
+commit. Build and inspect the release archives from that exact commit, then tag
+it as `v<integration-version>` and publish the GitHub release with upgrade
+instructions and checksums. Verify the published tag and archive versions.
+Do not publish a release from a failed or still-running pipeline.
+
+Merging a PR does not publish a release. The release checklist is complete only
+after the version is available as a GitHub release for HACS users.
+
 ## Real WebRTC acceptance tests
 
 Set `GO2RTC_BINARY` to a local go2rtc 1.9.14 executable when running the frontend tests. Without it, the three real-media tests are skipped; CI installs and verifies the executable and always runs them. Install the bridge npm dependencies too, because this fixture exercises the actual bridge media relay. FFmpeg and Chromium are required.
