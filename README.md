@@ -13,7 +13,7 @@ On Home Assistant OS, the app runs on your HA machine and Home Assistant manages
 
 ![Home Assistant dashboard playing an existing HomeBase recording; private areas obscured](docs/media/ha-dashboard-demo.gif)
 
-This demo shows the dashboard, event list and playback from a real installation. Private areas are obscured and the silent walkthrough is edited between actions. [Watch the MP4](docs/media/ha-dashboard-demo.mp4) or read the [demo evidence](docs/media/README.md).
+This demo shows the dashboard, event list and playback from a real installation. Private areas are obscured and the silent walkthrough is edited between actions. [Watch the MP4](docs/media/ha-dashboard-demo.mp4).
 
 This project is independent of Eufy and Anker and uses [bropat's eufy-security-client](https://github.com/bropat/eufy-security-client). Version 0.4.0 also adds HomeBase alarm and Guard Mode controls. See [alarm support and migration](docs/ALARM_MIGRATION_2026-09-06.md).
 
