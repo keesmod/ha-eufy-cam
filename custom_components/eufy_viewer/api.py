@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import aiohttp
@@ -62,6 +62,24 @@ class CameraInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class StationInfo:
+    """Station telemetry and supported security profiles."""
+
+    serial: str
+    name: str
+    model: str
+    hardware: str
+    software: str
+    connected: bool
+    guard_mode: int | None
+    current_mode: int | None
+    alarm: bool
+    alarm_delay: int | float
+    arm_delay: int | float
+    modes: list[int]
+
+
+@dataclass(frozen=True, slots=True)
 class BridgeState:
     """Protocol version and current push inventory."""
 
@@ -69,6 +87,7 @@ class BridgeState:
     auth: str
     cameras: dict[str, CameraInfo]
     webrtc: bool = False
+    stations: dict[str, StationInfo] = field(default_factory=dict)
 
     @classmethod
     def parse(cls, data: Any) -> BridgeState:
@@ -113,7 +132,48 @@ class BridgeState:
                 cameras[serial] = CameraInfo(
                     **{key: item[key] for key in CameraInfo.__dataclass_fields__}
                 )
-            return cls(bridge_id, auth, cameras, "webrtc" in data.get("transports", []))
+            stations = {}
+            items = data.get("stations", [])
+            if not isinstance(items, list) or len(items) > 100:
+                raise ValueError
+            for item in items:
+                serial = item["serial"]
+                if (
+                    not isinstance(serial, str)
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", serial)
+                    or serial in stations
+                ):
+                    raise ValueError
+                for key in ("name", "model", "hardware", "software"):
+                    if not isinstance(item[key], str) or len(item[key]) > 256:
+                        raise ValueError
+                for key in ("connected", "alarm"):
+                    if type(item[key]) is not bool:
+                        raise ValueError
+                for key in ("guard_mode", "current_mode"):
+                    if item[key] is not None and type(item[key]) is not int:
+                        raise ValueError
+                for key in ("alarm_delay", "arm_delay"):
+                    if (
+                        type(item[key]) not in (int, float)
+                        or not 0 <= item[key] <= 86400
+                    ):
+                        raise ValueError
+                if not isinstance(item["modes"], list) or any(
+                    type(mode) is not int or mode not in {0, 1, 2, 3, 4, 5, 47, 63}
+                    for mode in item["modes"]
+                ):
+                    raise ValueError
+                stations[serial] = StationInfo(
+                    **{key: item[key] for key in StationInfo.__dataclass_fields__}
+                )
+            return cls(
+                bridge_id,
+                auth,
+                cameras,
+                "webrtc" in data.get("transports", []),
+                stations,
+            )
         except (KeyError, TypeError, ValueError) as err:
             raise BridgeError("Invalid bridge protocol") from err
 
@@ -189,6 +249,14 @@ class BridgeClient:
     async def state(self) -> BridgeState:
         """Read cached bridge inventory once during setup."""
         return BridgeState.parse(await self.request("GET", "/v1/state"))
+
+    async def set_guard_mode(self, serial: str, mode: int) -> None:
+        """Wait for device acknowledgement; never write optimistic HA state."""
+        result = await self.request(
+            "POST", f"/v1/stations/{serial}/mode", {"mode": mode}
+        )
+        if not isinstance(result, dict) or result.get("accepted") is not True:
+            raise BridgeError("HomeBase did not confirm the command")
 
     async def login(self, data: dict[str, Any]) -> dict[str, Any]:
         """Submit credentials or a challenge without retaining them in HA."""

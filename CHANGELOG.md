@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0 — 2026-09-07
+
+- Add HomeBase alarm and Guard Mode entities to the existing camera integration
+  and bridge, including Home/Away, Disarmed, custom profiles, Schedule and Geofencing.
+- Report actual station state, entry delay, exit delay and triggered alarms. Wait
+  for matching device acknowledgements before completing mode commands; reject
+  unavailable stations, unsupported modes, concurrent commands and uncertain retries.
+- Document migration from another Eufy integration while retaining entity-based
+  automation and dashboard references.
+- Validate both HA command routes on HomeBase 3 with the previous bridge stopped;
+  four camera snapshots remain available. 61 HA tests and 37 bridge tests passed.
+
+Update **both the bridge and integration to 0.4.0**, then restart HA. Existing
+Viewer configuration and camera IDs are retained. Manual siren triggering is not
+exposed. See [migration and validation](docs/ALARM_MIGRATION_2026-09-06.md).
+
 ## 0.3.1 — 2026-09-06
 
 - Remove the snapshot receive date/time and “Capture time unknown” line from camera cards in English and Dutch.

@@ -50,6 +50,11 @@
       "battery": {
         "name": "Batterij"
       }
+    },
+    "select": {
+      "guard_mode": {
+        "name": "Guard Mode"
+      }
     }
   }
 }

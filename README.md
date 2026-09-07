@@ -16,7 +16,7 @@ An independent integration with bundled dashboard cards and a required local bri
 
 [HACS default-catalogue request](https://github.com/hacs/default/pull/10690) is submitted; inclusion is pending review. You can install now using the custom-repository button above.
 
-**Version 0.3.1:** an all-camera Events timeline with stored previews, a recording-day calendar, camera/date filters and previous/next playback. Includes on-demand WebRTC video and listen-only audio. Tested with Home Assistant 2026.9.0 and HomeBase 3 (T8030, firmware 3.8.6.0). Four camera entities and snapshots were verified on the live installation; actual WebRTC video and existing recording playback were verified at 1920×1080. See [validation and remaining limits](docs/VALIDATION_0.3.md). This is a HACS custom integration; it is not part of Home Assistant core.
+**Version 0.4.0:** HomeBase alarm and Guard Mode entities now share the camera bridge, with device-confirmed commands and actual station status. See [alarm support and migration](docs/ALARM_MIGRATION_2026-09-06.md). Also includes an all-camera Events timeline with stored previews, a recording-day calendar, camera/date filters and previous/next playback. Includes on-demand WebRTC video and listen-only audio. Tested with Home Assistant 2026.9.0 and HomeBase 3 (T8030, firmware 3.8.6.0). Four camera entities and snapshots were verified on the live installation; actual WebRTC video and existing recording playback were verified at 1920×1080. See [validation and remaining limits](docs/VALIDATION_0.3.md). This is a HACS custom integration; it is not part of Home Assistant core.
 
 ## Events timeline
 
@@ -37,6 +37,7 @@ HACS updates the integration and bundled cards; the companion bridge updates sep
 - Closing the dialog, leaving the dashboard, hiding the tab, disconnecting or failing to process frames releases the viewer.
 - Multiple viewers of a camera share one upstream stream. Closing one viewer does not interrupt the others.
 - The bridge independently expires silent viewers and stops the camera after the last viewer leaves.
+- HomeBase alarm and Guard Mode entities with station-confirmed commands and push status.
 - Push discovery and battery sensors, stable registry IDs, clean unload, English/Dutch UI and allowlisted diagnostics.
 - No cloud polling timer: the pinned Eufy client is configured with `pollingIntervalMinutes: 0`. Login, push-triggered refreshes, token renewal and the library's local station communication still occur.
 
@@ -59,7 +60,7 @@ Requirements: Docker on a machine that can reach the cameras/HomeBase, a dedicat
 From the repository root:
 
 ```sh
-docker build -t eufy-viewer-bridge:0.3.0 ./bridge
+docker build -t eufy-viewer-bridge:0.4.0 ./bridge
 ```
 
 Create a private environment file with a randomly generated token of at least 32 characters:
@@ -77,7 +78,7 @@ docker run -d --name eufy-viewer-bridge \
   --env-file bridge.env \
   -p YOUR_LAN_IP:8080:8080 \
   -v eufy-viewer-data:/data \
-  eufy-viewer-bridge:0.3.0
+  eufy-viewer-bridge:0.4.0
 ```
 
 Use a trusted LAN or a TLS reverse proxy; HTTP on an untrusted network exposes the bridge token and login credentials. Do not publish port 8080 to the internet. The browser never connects to the bridge directly. Outbound Eufy cloud/push and local P2P connectivity are required; depending on the device/network, Docker host networking may be needed for P2P.
@@ -111,26 +112,22 @@ This is a **HACS custom repository**, not yet a default HACS listing.
 
 For a local manual install, copy `custom_components/eufy_viewer` into your HA configuration's `custom_components` folder and restart. The downloadable integration archive preserves this directory structure.
 
-## Upgrade from 0.3.0
-
-Update **Eufy Security Viewer** to **0.3.1** in HACS, restart Home Assistant and reload the dashboard. This patch removes the snapshot timestamp line from camera cards. The bridge remains at **0.3.0**; no bridge update is required. If the old card remains cached, edit the existing resource URL to `/eufy_viewer/eufy-viewer-card.js?v=0.3.1`.
-
-## Upgrade from 0.1.0 or 0.2.0
+## Upgrade from 0.1.x, 0.2.x or 0.3.x
 
 1. Close live viewers and recording dialogs.
-2. Update **Eufy Security Viewer Bridge** to **0.3.0** in the HA App store, then start it. For Docker, rebuild and recreate the container from this release while preserving its private data volume and token.
-3. In HACS, update/download **Eufy Security Viewer 0.3.1** and restart Home Assistant. If the version is not shown yet, use the repository's **Redownload** action after checking for updates.
-4. Change the existing dashboard resource to `/eufy_viewer/eufy-viewer-card.js?v=0.3.1`, type **JavaScript module**, and reload the dashboard/browser. Edit the existing resource; do not add a duplicate.
-5. Add the **Eufy Events** card for the combined timeline, choose a date and select a clip. The existing **Recordings** button on camera cards still works. Use **Watch live** and **Enable sound** to test WebRTC/audio separately.
+2. Update **Eufy Security Viewer Bridge** to **0.4.0** in the HA App Store, then start it. For Docker, rebuild from this release while preserving the private data volume and token.
+3. Update **Eufy Security Viewer** to **0.4.0** in HACS and restart Home Assistant.
+4. Reload the dashboard. If needed, edit the existing module resource to `/eufy_viewer/eufy-viewer-card.js?v=0.4.0`; do not add a duplicate.
+5. Confirm the HomeBase alarm and Guard Mode selector match the Eufy app. Both components must run 0.4.0 for alarm support.
 
-HACS updates the integration and bundled card only. The bridge must also run 0.3.0 for the Events timeline. Existing integration configuration, camera entities and credentials can be retained; no removal or re-pairing is needed. Verify the WebRTC media route described above if live playback does not connect.
+Existing integration configuration, camera entities and credentials are retained. HACS updates the integration and bundled cards; the bridge updates separately through the HA App Store. If moving from another Eufy integration, follow the [migration checklist](docs/ALARM_MIGRATION_2026-09-06.md#moving-from-another-eufy-integration) before stopping its bridge. For users upgrading from 0.1.x, also verify the WebRTC media route described above.
 
 ## Add the card without YAML
 
 The card is bundled with the integration, so it updates through the same HACS installation.
 
 1. Enable **Advanced mode** in your HA profile if Resources is hidden.
-2. In dashboard **Resources**, add URL `/eufy_viewer/eufy-viewer-card.js?v=0.3.1`, type **JavaScript module**.
+2. In dashboard **Resources**, add URL `/eufy_viewer/eufy-viewer-card.js?v=0.4.0`, type **JavaScript module**.
 3. Edit a dashboard, **Add card → Eufy Security Viewer**, and select a camera using the visual picker.
 4. Save. The card stays on the snapshot until you tap it. Escape, the close button and clicking outside the dialog close live viewing.
 

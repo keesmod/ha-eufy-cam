@@ -18,7 +18,12 @@ from .coordinator import EufyConfigEntry, EufyCoordinator
 from .recordings import EventsView, RecordingsView
 from .viewers import async_register_commands
 
-PLATFORMS = [Platform.CAMERA, Platform.SENSOR]
+PLATFORMS = [
+    Platform.CAMERA,
+    Platform.SENSOR,
+    Platform.ALARM_CONTROL_PANEL,
+    Platform.SELECT,
+]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 

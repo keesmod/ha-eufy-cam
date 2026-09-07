@@ -7,6 +7,7 @@ import { StreamHub } from "./streams.js";
 import { MediaRelay } from "./media.js";
 import { Recordings } from "./recordings.js";
 import { Storage } from "./storage.js";
+import { Stations } from "./stations.js";
 
 export interface Credentials { username: string; password: string; country: string }
 export interface CameraInfo {
@@ -17,6 +18,7 @@ export type AuthState = { state: "unconfigured" | "connected" | "connecting" | "
 
 export class Eufy extends EventEmitter {
   private client?: EufySecurity;
+  stations?: Stations;
   private loginBusy = false;
   private encoders = new Map<string, ChildProcessWithoutNullStreams>();
   private livePictures = new Map<string, { data: Buffer; mime: string; received: string }>();
@@ -46,6 +48,7 @@ export class Eufy extends EventEmitter {
       if (credentials) {
         if (this.hub.active || this.hub.quarantined || this.recordings.busy) throw new Error("Stop viewers before reauthenticating");
         this.recordings.close();
+        this.stations?.close();
         this.client?.removeAllListeners();
         this.client?.close();
         this.devices.clear(); this.pictures.clear();
@@ -55,6 +58,7 @@ export class Eufy extends EventEmitter {
           acceptInvitations: false, trustedDeviceName: "Home Assistant Viewer",
         });
         this.client.setCameraMaxLivestreamDuration(120);
+        this.stations = new Stations(this.client, () => this.emit("change"));
         this.bind(this.client);
         await this.storage.write("credentials.json", JSON.stringify(credentials));
       }
@@ -140,5 +144,5 @@ export class Eufy extends EventEmitter {
     }));
   }
   hasCamera(serial: string): boolean { return this.devices.has(serial); }
-  async close(): Promise<void> { this.recordings.close(); this.hub.close(); await new Promise(resolve => setTimeout(resolve, 1500)); this.client?.close(); await this.storage.flush(); }
+  async close(): Promise<void> { this.stations?.close(); this.recordings.close(); this.hub.close(); await new Promise(resolve => setTimeout(resolve, 1500)); this.client?.close(); await this.storage.flush(); }
 }
