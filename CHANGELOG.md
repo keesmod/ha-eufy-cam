@@ -1,12 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.4.2 — 2026-09-07
 
 - Register the bundled dashboard cards automatically when the integration loads.
   Update the existing resource URL to the installed integration version and
   remove duplicate entries for the bundled card. Keep unrelated resources.
 - Leave YAML-managed resources unchanged and log the required module URL when
   manual configuration is needed. Registration errors do not block the cameras.
+
+Update the HACS integration to **0.4.2**, restart Home Assistant and reload the
+dashboard. The integration adds or updates its card resource automatically.
+For YAML-managed resources, update the existing module URL to
+`/eufy_viewer/eufy-viewer-card.js?v=0.4.2`. The bridge remains at **0.4.1**;
+no bridge update is required when it is already on that version.
 
 ## 0.4.1 — 2026-09-07
 
