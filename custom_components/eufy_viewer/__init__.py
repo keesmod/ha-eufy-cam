@@ -16,6 +16,7 @@ from .api import BridgeAuthError, BridgeClient, BridgeError
 from .const import CARD_URL, CONF_TOKEN, CONF_URL, DOMAIN
 from .coordinator import EufyConfigEntry, EufyCoordinator
 from .recordings import EventsView, RecordingsView
+from .resources import async_register_card
 from .viewers import async_register_commands
 
 PLATFORMS = [
@@ -42,6 +43,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.http.register_view(EventsView())
     async_register_commands(hass)
     hass.data[DOMAIN] = {"viewers": {}}
+    await async_register_card(hass)
     return True
 
 

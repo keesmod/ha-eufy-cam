@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Register the bundled dashboard cards automatically when the integration loads.
+  Update the existing resource URL to the installed integration version and
+  remove duplicate entries for the bundled card. Keep unrelated resources.
+- Leave YAML-managed resources unchanged and log the required module URL when
+  manual configuration is needed. Registration errors do not block the cameras.
+
 ## 0.4.1 — 2026-09-07
 
 - Restore the saved Eufy session automatically after a Home Assistant or bridge

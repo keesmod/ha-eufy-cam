@@ -85,11 +85,26 @@ If you install integrations manually, copy `custom_components/eufy_viewer` from 
 
 The cards are included with the integration. You do not need another HACS download.
 
-1. Enable **Advanced mode** in your HA profile if the dashboard resource settings are hidden.
-2. Open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.4.1` as a **JavaScript module**. If that resource already exists, edit it instead of adding a duplicate.
-3. Edit a dashboard and select **Add card → Eufy Security Viewer**. Pick a camera and save.
-4. To browse recordings across cameras, add an **Eufy Events** card too. It uses the same resource and selects all accessible Viewer cameras by default.
-5. Open a live view, then close it. To check recordings, choose a date with a clip you can already see in the Eufy app and play that clip.
+The development version registers the shared JavaScript resource automatically when the integration loads. It updates the cache version on upgrades and removes duplicate entries for this card. Other card resources are preserved. This feature is not included in release 0.4.1; use the manual step below for that release.
+
+1. Reload the browser after installing or updating the integration.
+2. Edit a dashboard and select **Add card → Eufy Security Viewer**. Pick a camera and save.
+3. To browse recordings across cameras, add an **Eufy Events** card too. It uses the same resource and selects all accessible Viewer cameras by default.
+4. Open a live view, then close it. To check recordings, choose a date with a clip you can already see in the Eufy app and play that clip.
+
+For release 0.4.1, or if automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.4.1` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
+
+If you manage resources in YAML, the integration leaves that configuration untouched. Add the module to your existing `lovelace.resources` list and update the version after upgrades:
+
+```yaml
+lovelace:
+  resource_mode: yaml
+  resources:
+    - url: /eufy_viewer/eufy-viewer-card.js?v=0.4.1
+      type: module
+```
+
+Keep any other resources already in the list. Reload YAML resources through Home Assistant, then reload the browser. A YAML dashboard can still use automatically managed resources when `resource_mode` is `storage`.
 
 A standard Home Assistant camera card shows snapshots only. Use the included Eufy cards for live video and recording playback. No YAML, automation or stream preload setting is needed.
 

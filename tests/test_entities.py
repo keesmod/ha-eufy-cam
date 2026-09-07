@@ -4,6 +4,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from homeassistant.components.lovelace import LOVELACE_DATA
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
@@ -13,7 +14,7 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.eufy_viewer.api import BridgeState
-from custom_components.eufy_viewer.const import DOMAIN
+from custom_components.eufy_viewer.const import CARD_URL, DOMAIN
 from custom_components.eufy_viewer.diagnostics import async_get_config_entry_diagnostics
 
 from .conftest import STATE
@@ -204,3 +205,6 @@ async def test_two_bridges_share_frontend_registration_and_reload(
         assert hass.data[DOMAIN] is shared
         assert await hass.config_entries.async_unload(one.entry_id)
         assert await hass.config_entries.async_unload(two.entry_id)
+        resources = hass.data[LOVELACE_DATA].resources.async_items()
+        assert len(resources) == 1
+        assert resources[0]["url"].startswith(f"{CARD_URL}?v=")
