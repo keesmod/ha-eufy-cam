@@ -85,14 +85,14 @@ If you install integrations manually, copy `custom_components/eufy_viewer` from 
 
 The cards are included with the integration. You do not need another HACS download.
 
-The development version registers the shared JavaScript resource automatically when the integration loads. It updates the cache version on upgrades and removes duplicate entries for this card. Other card resources are preserved. This feature is not included in release 0.4.1; use the manual step below for that release.
+From version 0.4.2, the integration registers the shared JavaScript resource automatically when it loads. It updates the cache version on upgrades and removes duplicate entries for this card. Other card resources are preserved.
 
 1. Reload the browser after installing or updating the integration.
 2. Edit a dashboard and select **Add card → Eufy Security Viewer**. Pick a camera and save.
 3. To browse recordings across cameras, add an **Eufy Events** card too. It uses the same resource and selects all accessible Viewer cameras by default.
 4. Open a live view, then close it. To check recordings, choose a date with a clip you can already see in the Eufy app and play that clip.
 
-For release 0.4.1, or if automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.4.1` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
+If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.4.2` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
 
 If you manage resources in YAML, the integration leaves that configuration untouched. Add the module to your existing `lovelace.resources` list and update the version after upgrades:
 
@@ -100,7 +100,7 @@ If you manage resources in YAML, the integration leaves that configuration untou
 lovelace:
   resource_mode: yaml
   resources:
-    - url: /eufy_viewer/eufy-viewer-card.js?v=0.4.1
+    - url: /eufy_viewer/eufy-viewer-card.js?v=0.4.2
       type: module
 ```
 
@@ -127,12 +127,12 @@ If the problem remains, [report a bug](https://github.com/keesmod/ha-eufy-cam/is
 
 ## Upgrading
 
-The bridge and integration have separate updates. Update both to 0.4.1 for automatic recovery after a Home Assistant or bridge restart.
+The bridge and integration have separate updates. The current integration is **0.4.2** and the bridge is **0.4.1**. If both are already on 0.4.1, only update the integration. It now registers and updates the dashboard resource automatically.
 
 1. Close live viewers and recording dialogs. Back up Home Assistant and the bridge's private data before updating.
-2. For the HAOS repository app, update **Eufy Security Viewer Bridge** in Home Assistant and start it. For Docker, follow the [bridge update steps](docs/DOCKER.md#update-the-docker-bridge), keeping the same data volume and token.
-3. Update **Eufy Security Viewer** in HACS and restart Home Assistant.
-4. Change the existing dashboard resource to `/eufy_viewer/eufy-viewer-card.js?v=0.4.1` and reload the browser. Do not add a duplicate resource.
+2. If the bridge is older than 0.4.1, update **Eufy Security Viewer Bridge** in Home Assistant and start it. For Docker, follow the [bridge update steps](docs/DOCKER.md#update-the-docker-bridge), keeping the same data volume and token. This includes the startup recovery fixes from 0.4.1.
+3. Update **Eufy Security Viewer** to **0.4.2** in HACS and restart Home Assistant.
+4. Reload the browser. If you manage resources in YAML, update the existing module URL to `/eufy_viewer/eufy-viewer-card.js?v=0.4.2` and reload YAML resources first. See the [manual fallback](#3-add-the-dashboard-cards) if automatic registration fails.
 5. Confirm the cameras work and the HomeBase alarm and Guard Mode selector match the Eufy app.
 
 Keeping the bridge's data preserves its identity, credentials and session. The integration keeps your existing camera entities. If your bridge is listed under **Local apps**, the repository app is a separate installation and will not update that local copy. Back up its private data and token before migrating; a new empty data directory creates a different bridge identity. See [support](.github/SUPPORT.md) if you need help moving an older installation.
@@ -186,7 +186,7 @@ Sessions have a **two-minute absolute limit**; continuing requires another tap. 
 
 | Component | Runtime requirements |
 |---|---|
-| Integration | Home Assistant ≥ 2026.9.0; built-in `camera`, `http`, `websocket_api`; `go2rtc-client` 0.4.0 (installed automatically); HA-managed `go2rtc` for WebRTC |
+| Integration | Home Assistant ≥ 2026.9.0; built-in `camera`, `http`, `lovelace`, `websocket_api`; `go2rtc-client` 0.4.0 (installed automatically); HA-managed `go2rtc` for WebRTC |
 | Card | Bundled JavaScript, Home Assistant frontend and a modern browser; no separate frontend runtime package |
 | Bridge | Node.js 24, FFmpeg and tini; all included in the app/container |
 | Bridge libraries | `eufy-security-client` 4.1.1-1 (MIT), `ws` 8.21.3 (MIT); transitive dependencies pinned by `bridge/package-lock.json` |
