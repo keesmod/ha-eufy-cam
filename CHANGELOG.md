@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.3 — 2026-09-08
+
+- Fix live viewing in the Home Assistant macOS app. Check client WebRTC and
+  video-frame callback support before opening a stream, and use the existing
+  JPEG transport when either is unavailable. JPEG live view has no audio.
+- Keep WebRTC with audio on supported clients and preserve explicit-start,
+  frame acknowledgement and stream cleanup behavior.
+- Reproduce the missing WebRTC API in the macOS app and verify actual JPEG
+  live playback and zero remaining active or quarantined streams.
+
+Update **Eufy Security Viewer** to **0.4.3** in HACS, restart Home Assistant,
+then refresh the dashboard in the macOS app. For YAML-managed resources, update
+the existing module URL to `/eufy_viewer/eufy-viewer-card.js?v=0.4.3`.
+The bridge stays at **0.4.1**; no bridge update or camera reconfiguration is
+needed when it is already on that version. Use Safari for live audio.
+
 ## 0.4.2 — 2026-09-07
 
 - Register the bundled dashboard cards automatically when the integration loads.

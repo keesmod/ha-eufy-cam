@@ -10,6 +10,7 @@ The initial evidence comes from one maintainer installation, not a broad device 
 | Stored recordings | Existing H.264/AAC files played in HA, including 1920×1080 and 1600×2300 portrait clips | H.265 hardware playback, long clips and large archives |
 | Events browsing | Date/camera filters, calendar presence, stored previews, previous/next playback; 95 known-camera files on a tested day | Other retention windows and firmware limits |
 | Live WebRTC | Hardware video at 1920×1080; automated video/audio decoding tests | Audible output on each camera, physical iPhone background behavior and remote routes |
+| Home Assistant macOS app | App 2026.9.0: JPEG live playback after client capability detection; 249 decoded frames and confirmed stream cleanup | JPEG has no audio; other macOS app versions |
 | Bridge app | amd64 tested on hardware | aarch64 hardware acceptance |
 | Viewer cleanup | Normal close, cancellation and zero remaining active/quarantined streams in live validation | Long-term battery measurements and physical stop during a hard host/network failure |
 

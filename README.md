@@ -92,7 +92,7 @@ From version 0.4.2, the integration registers the shared JavaScript resource aut
 3. To browse recordings across cameras, add an **Eufy Events** card too. It uses the same resource and selects all accessible Viewer cameras by default.
 4. Open a live view, then close it. To check recordings, choose a date with a clip you can already see in the Eufy app and play that clip.
 
-If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.4.2` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
+If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.4.3` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
 
 If you manage resources in YAML, the integration leaves that configuration untouched. Add the module to your existing `lovelace.resources` list and update the version after upgrades:
 
@@ -100,7 +100,7 @@ If you manage resources in YAML, the integration leaves that configuration untou
 lovelace:
   resource_mode: yaml
   resources:
-    - url: /eufy_viewer/eufy-viewer-card.js?v=0.4.2
+    - url: /eufy_viewer/eufy-viewer-card.js?v=0.4.3
       type: module
 ```
 
@@ -121,18 +121,19 @@ Live WebRTC video uses Home Assistant's [go2rtc integration](https://www.home-as
 | Integration setup cannot connect | Start the bridge first. Use the app hostname for the HAOS app, or the Docker host's LAN address and published port for Docker. |
 | Integration setup rejects the bridge token | Copy the same token configured in the app or in Docker's `bridge.env`. Do not enter the Eufy password in this field. |
 | Eufy login succeeds but cameras are missing | Sign into the Eufy app with the dedicated account and check that it has accepted device-sharing access. |
+| Live view fails immediately in the macOS app | Update the integration to 0.4.3, restart Home Assistant and refresh the dashboard in the app. Live video uses JPEG without audio. Use Safari for live audio. |
 | The cards do not appear | Check the resource URL and module type, then reload the browser. |
 
 If the problem remains, [report a bug](https://github.com/keesmod/ha-eufy-cam/issues/new?template=bug_report.yml) with your HA installation type, both component versions and the error. Follow the [support guidance](.github/SUPPORT.md) before sharing logs.
 
 ## Upgrading
 
-The bridge and integration have separate updates. The current integration is **0.4.2** and the bridge is **0.4.1**. If both are already on 0.4.1, only update the integration. It now registers and updates the dashboard resource automatically.
+The bridge and integration have separate updates. The current integration is **0.4.3** and the bridge is **0.4.1**. If the bridge is already on 0.4.1, only update the integration. Version 0.4.3 fixes live viewing in the Home Assistant macOS app by using JPEG video when WebRTC is unavailable. This fallback has no audio; supported clients keep WebRTC with audio.
 
 1. Close live viewers and recording dialogs. Back up Home Assistant and the bridge's private data before updating.
 2. If the bridge is older than 0.4.1, update **Eufy Security Viewer Bridge** in Home Assistant and start it. For Docker, follow the [bridge update steps](docs/DOCKER.md#update-the-docker-bridge), keeping the same data volume and token. This includes the startup recovery fixes from 0.4.1.
-3. Update **Eufy Security Viewer** to **0.4.2** in HACS and restart Home Assistant.
-4. Reload the browser. If you manage resources in YAML, update the existing module URL to `/eufy_viewer/eufy-viewer-card.js?v=0.4.2` and reload YAML resources first. See the [manual fallback](#3-add-the-dashboard-cards) if automatic registration fails.
+3. Update **Eufy Security Viewer** to **0.4.3** in HACS and restart Home Assistant.
+4. Reload the dashboard in your browser or the Home Assistant app. If you manage resources in YAML, update the existing module URL to `/eufy_viewer/eufy-viewer-card.js?v=0.4.3` and reload YAML resources first. See the [manual fallback](#3-add-the-dashboard-cards) if automatic registration fails.
 5. Confirm the cameras work and the HomeBase alarm and Guard Mode selector match the Eufy app.
 
 Keeping the bridge's data preserves its identity, credentials and session. The integration keeps your existing camera entities. If your bridge is listed under **Local apps**, the repository app is a separate installation and will not update that local copy. Back up its private data and token before migrating; a new empty data directory creates a different bridge identity. See [support](.github/SUPPORT.md) if you need help moving an older installation.
@@ -151,7 +152,7 @@ On the tested HB3, increasing the SDK's existing query limit retrieved 105 datab
 
 - UI-only integration setup, reauthentication, endpoint reconfiguration, verification-code and captcha flows.
 - Camera entities show Eufy's latest received snapshot; image requests never start a camera.
-- A visual-editor Lovelace card starts WebRTC video with optional listen-only audio after a click or keyboard activation.
+- A visual-editor Lovelace card starts live video after a click or keyboard activation. Supported clients use WebRTC with optional listen-only audio; clients without WebRTC use JPEG video.
 - Choose **Recordings → Date → Show recordings** to play an existing HomeBase event in Home Assistant. This reads stored events; it does not record a new live stream.
 - Closing the dialog, leaving the dashboard, hiding the tab, disconnecting or failing to process frames releases the viewer.
 - Multiple viewers of a camera share one upstream stream. Closing one viewer does not interrupt the others.
@@ -164,9 +165,11 @@ On the tested HB3, increasing the SDK's existing query limit retrieved 105 datab
 
 A sleeping battery camera cannot provide a newly captured photo on every dashboard visit without waking. Idle views show the **latest received snapshot**. The receive time remains available in the camera entity attributes; the card omits snapshot timestamps. If none exists, the card says so. New Eufy image events replace it. The last decoded live frame becomes the snapshot when viewing ends.
 
-Live viewing uses **WebRTC video with listen-only audio** through Home Assistant's managed go2rtc. The bridge converts H.264/H.265 to browser-compatible H.264, up to **1920 pixels wide and 30 fps**, limited by the camera's source frame rate. Supported camera audio is converted to Opus. Playback starts muted; tap **Sound on / Geluid aan** to listen. A camera that supplies no supported audio remains video-only.
+On supported clients, live viewing uses **WebRTC video with listen-only audio** through Home Assistant's managed go2rtc. The bridge converts H.264/H.265 to browser-compatible H.264, up to **1920 pixels wide and 30 fps**, limited by the camera's source frame rate. Supported camera audio is converted to Opus. Playback starts muted; tap **Sound on / Geluid aan** to listen. A camera that supplies no supported audio remains video-only.
 
-A normal HA camera card/more-info dialog shows snapshots only. Use the companion card for live video. Talkback, new live recordings, HLS, PTZ and permanent RTSP are not provided. Use **Recordings** on a companion card to choose a date and play an existing HomeBase recording. The date and times are HomeBase-local. Clips are downloaded on demand into bounded memory, then played as MP4; close or navigation cancels preparation. No Eufy Cloud subscription is required for these local files. The previous JPEG transport (8 fps / 960 pixels) remains supported for older bridge/card combinations; it has no sound.
+A normal HA camera card/more-info dialog shows snapshots only. Use the companion card for live video. Talkback, new live recordings, HLS, PTZ and permanent RTSP are not provided. Use **Recordings** on a companion card to choose a date and play an existing HomeBase recording. The date and times are HomeBase-local. Clips are downloaded on demand into bounded memory, then played as MP4; close or navigation cancels preparation. No Eufy Cloud subscription is required for these local files.
+
+Clients without WebRTC or video-frame callback support, including the Home Assistant macOS app, automatically use JPEG live video at up to **8 fps / 960 pixels**, without audio. The same explicit-start and stream cleanup rules apply. Use Safari on the Mac for WebRTC with live audio. Capability detection does not switch an existing WebRTC session to JPEG after a network or playback failure.
 
 WebRTC requires Home Assistant's **go2rtc integration** to be loaded and the browser to have a media route to HA (the managed service uses TCP port **18555**). A dashboard accessible through an HTTPS reverse proxy alone does not establish this media route. Routed LAN/VPN access can provide it; no public STUN/TURN service is configured by this integration. Do not expose the bridge API to solve WebRTC connectivity. See [0.2 validation](docs/VALIDATION_0.2.md).
 
