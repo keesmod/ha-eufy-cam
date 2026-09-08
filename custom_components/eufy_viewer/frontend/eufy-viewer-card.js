@@ -1,3 +1,60 @@
+"use strict";
+/** Native players need an HTTP source on macOS; blobs can stall indefinitely. */
+class EufyRecordingPlayback {
+    release;
+    clear() { this.release?.(); this.release = undefined; }
+    async prepare(ha, entity, id, signal) {
+        const response = await ha.fetchWithAuth(`/api/eufy_viewer/recordings/${entity}/${id}/playback`, { method: 'POST', signal });
+        const data = await response.json();
+        if (!response.ok)
+            throw new Error(data.error);
+        if (typeof data.path !== 'string' || !/^\/api\/eufy_viewer\/playback\/[a-f0-9]{32}$/.test(data.path)
+            || typeof data.url !== 'string' || !data.url.startsWith(data.path + '?authSig='))
+            throw new Error('Invalid playback');
+        const url = new URL(data.url, location.origin);
+        if (url.origin !== location.origin || url.pathname !== data.path || url.hash
+            || [...url.searchParams.keys()].some(key => key !== 'authSig'))
+            throw new Error('Invalid playback');
+        const release = () => { void ha.fetchWithAuth(data.path, { method: 'DELETE', keepalive: true }).catch(() => { }); };
+        if (signal.aborted) {
+            release();
+            signal.throwIfAborted();
+        }
+        this.clear();
+        this.release = release;
+        return data.url;
+    }
+    async load(video, url, signal) {
+        signal.throwIfAborted();
+        await new Promise((resolve, reject) => {
+            const finish = (error) => {
+                clearTimeout(timer);
+                video.removeEventListener('loadeddata', loaded);
+                video.removeEventListener('error', failed);
+                signal.removeEventListener('abort', aborted);
+                if (error)
+                    reject(error);
+                else
+                    resolve();
+            };
+            const loaded = () => finish();
+            const failed = () => finish(new Error('Recording playback failed'));
+            const aborted = () => finish(new DOMException('Aborted', 'AbortError'));
+            const timer = setTimeout(failed, 20000);
+            video.addEventListener('loadeddata', loaded, { once: true });
+            video.addEventListener('error', failed, { once: true });
+            signal.addEventListener('abort', aborted, { once: true });
+            video.src = url;
+            video.hidden = false;
+            void video.play().catch(error => {
+                // Native controls remain usable when automatic playback is denied.
+                if (error.name !== 'NotAllowedError')
+                    finish(error);
+            });
+        });
+    }
+}
+
 /** Eufy Viewer: snapshots at rest, a single explicit user gesture per live session. */
 const TEXT = {
     en: { live: "Watch live", close: "Close live view", connecting: "Connecting…", ended: "Live view ended. Tap again to watch.", unavailable: "Camera unavailable", noSnapshot: "No snapshot received yet", title: "Camera", error: "Live view failed. Tap again to retry.", sound: "Enable sound", mute: "Mute sound", recordings: "Recordings", date: "Date", load: "Show recordings", loading: "Loading HomeBase recordings…", preparing: "Preparing recording…", empty: "No recordings returned for this camera and date.", recordingError: "HomeBase recording unavailable. Load the date again.", live_busy: "A live viewer is still open. Close it and load the date again.", live_stopping: "The previous live session is still stopping. Wait a moment and load the date again.", recording_busy: "Another recording is being prepared. Wait a moment and try again.", recording_expired: "This recording link has expired. Load the date again.", recording_unavailable: "The HomeBase connection is unavailable. Try again shortly.", closeRecordings: "Close recordings", results: "recordings returned", homebaseTime: "HomeBase time" },
@@ -24,7 +81,7 @@ export class EufyViewerCard extends HTMLElement {
     _recordVideo;
     _recordDate;
     _recordAbort;
-    _recordUrl;
+    _recordPlayback = new EufyRecordingPlayback();
     _recordGeneration = 0;
     _rtc;
     _rtcCandidates = [];
@@ -205,9 +262,7 @@ export class EufyViewerCard extends HTMLElement {
         this._recordVideo.removeAttribute("src");
         this._recordVideo.load();
         this._recordVideo.hidden = true;
-        if (this._recordUrl)
-            URL.revokeObjectURL(this._recordUrl);
-        this._recordUrl = undefined;
+        this._recordPlayback.clear();
     }
     _closeRecordings() { this._clearRecording(); if (this._recordDialog?.open)
         this._recordDialog.close(); }
@@ -265,24 +320,16 @@ export class EufyViewerCard extends HTMLElement {
         const controller = this._recordAbort = new AbortController();
         this._recordStatus(this._text().preparing);
         try {
-            const response = await this._hass.fetchWithAuth(`/api/eufy_viewer/recordings/${this._config.entity}/${id}`, { signal: controller.signal });
-            await this._recordingResponse(response);
-            if (!response.headers.get("content-type")?.startsWith("video/mp4"))
-                throw new Error("Recording failed");
-            const blob = await response.blob();
-            if (generation !== this._recordGeneration || !this._recordDialog.open)
-                return;
-            if (!blob.size || blob.size > 32 * 1024 * 1024)
-                throw new Error("Recording too large");
-            this._recordUrl = URL.createObjectURL(blob);
-            this._recordVideo.src = this._recordUrl;
-            this._recordVideo.hidden = false;
+            const url = await this._recordPlayback.prepare(this._hass, this._config.entity, id, controller.signal);
+            controller.signal.throwIfAborted();
+            await this._recordPlayback.load(this._recordVideo, url, controller.signal);
             this._recordStatus("");
-            await this._recordVideo.play().catch(() => { });
         }
         catch (error) {
-            if (generation === this._recordGeneration && this._recordDialog.open)
+            if (generation === this._recordGeneration && this._recordDialog.open) {
+                this._clearRecording();
                 this._recordStatus(this._recordingFailure(error));
+            }
         }
     }
     _status(message) { this.shadowRoot.querySelector(".status").textContent = message; }
@@ -538,7 +585,7 @@ export class EufyEventsCard extends HTMLElement {
     job = Promise.resolve();
     active = false;
     urls = new Map();
-    videoUrl;
+    playback = new EufyRecordingPlayback();
     observer;
     cameraKey = '';
     loadedDate = '';
@@ -630,8 +677,7 @@ export class EufyEventsCard extends HTMLElement {
         }
         this.q('.show').disabled = !cameras.length;
     }
-    clearVideo() { const v = this.q('video'); v.pause(); v.removeAttribute('src'); v.load(); v.hidden = true; if (this.videoUrl)
-        URL.revokeObjectURL(this.videoUrl); this.videoUrl = undefined; }
+    clearVideo() { const v = this.q('video'); v.pause(); v.removeAttribute('src'); v.load(); v.hidden = true; this.playback.clear(); }
     closePlayer() { this.controller?.abort(); this.clearVideo(); const dialog = this.q('dialog'); if (dialog.open)
         dialog.close(); }
     stop() { this.closePlayer(); for (const url of this.urls.values())
@@ -812,19 +858,17 @@ export class EufyEventsCard extends HTMLElement {
         this.q('.next').disabled = index >= records.length - 1;
         this.run(async (signal) => {
             this.q('.player-status').textContent = this.text.preparing;
-            const response = await this.fetch(`/api/eufy_viewer/recordings/${record.entity_id}/${record.id}`, signal);
-            if (!response.headers.get('content-type')?.startsWith('video/mp4'))
-                throw new Error();
-            const blob = await response.blob();
-            signal.throwIfAborted();
-            if (!dialog.open || !blob.size || blob.size > 32 * 1024 * 1024)
-                throw new Error();
-            const video = this.q('video');
-            this.videoUrl = URL.createObjectURL(blob);
-            video.src = this.videoUrl;
-            video.hidden = false;
-            this.q('.player-status').textContent = '';
-            await video.play().catch(() => { });
+            try {
+                const url = await this.playback.prepare(this.ha, record.entity_id, record.id, signal);
+                signal.throwIfAborted();
+                await this.playback.load(this.q('video'), url, signal);
+                this.q('.player-status').textContent = '';
+            }
+            catch (error) {
+                if (!signal.aborted)
+                    this.clearVideo();
+                throw error;
+            }
         });
     }
 }

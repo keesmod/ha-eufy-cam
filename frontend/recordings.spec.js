@@ -8,7 +8,8 @@ test.beforeEach(async ({ page }) => {
   await page.route('http://eufy-test.invalid/**', route => {
     const url = route.request().url();
     if (url.includes('/api/eufy_viewer/')) {
-      if (url.endsWith(id)) return route.fulfill({ contentType:'video/mp4',body:mp4 });
+      if (url.endsWith('/playback')) return route.fulfill({json:{path:'/api/eufy_viewer/playback/'+id,url:'/api/eufy_viewer/playback/'+id+'?authSig=test'}});
+      if (url.includes('/api/eufy_viewer/playback/')) return route.request().method()==='DELETE' ? route.fulfill({status:204}) : route.fulfill({contentType:'video/mp4',body:mp4});
       return route.fulfill({json:{recordings:[{id,start:'2026-09-05T12:06:33',end:'2026-09-05T12:06:40'}],returned:1}});
     }
     return route.fulfill({contentType:'text/html',body:'<!doctype html><html><body></body></html>'});
@@ -16,10 +17,10 @@ test.beforeEach(async ({ page }) => {
   await page.goto('http://eufy-test.invalid');
   await page.addScriptTag({ content: source.replace('export class EufyViewerCard','class EufyViewerCard'), type:'module' });
   await page.evaluate(async () => {
-    await customElements.whenDefined('eufy-viewer-card'); window.starts = 0; window.urls = [];
+    await customElements.whenDefined('eufy-viewer-card'); window.starts = 0; window.urls = []; window.released=[]; URL.createObjectURL=()=>{throw new Error('Native recording playback must not use blobs');};
     const connection = new EventTarget(); connection.subscribeMessage = async () => { starts++; return async () => {}; };
     const card = window.card = document.createElement('eufy-viewer-card');document.body.append(card);card.setConfig({entity:'camera.front'});
-    card.hass={language:'en',connection,states:{'camera.front':{state:'idle',attributes:{viewer_card:true,friendly_name:'Front'}}},fetchWithAuth:(path,init)=>{urls.push(path);return fetch(path,init);}};
+    card.hass={language:'en',connection,states:{'camera.front':{state:'idle',attributes:{viewer_card:true,friendly_name:'Front'}}},fetchWithAuth:(path,init)=>{urls.push(path);if(init?.method==='DELETE')released.push(path);return fetch(path,init);}};
   });
 });
 
@@ -36,6 +37,7 @@ test('date-scoped stored clip actually plays, then close clears media with no li
   await page.getByRole('button',{name:'Close recordings',exact:true}).click();
   await expect(page.locator('.record-dialog')).not.toBeVisible();
   expect(await page.locator('.record-video').getAttribute('src')).toBeNull();
+  await expect.poll(()=>page.evaluate(()=>released.length)).toBe(1);
   expect(await page.evaluate(()=>starts)).toBe(0);
 });
 
@@ -60,3 +62,33 @@ test('stop recovery message distinguishes closed viewers from active viewers', a
   await page.getByRole('button',{name:'Show recordings',exact:true}).click();
   await expect(page.locator('.record-status')).toHaveText('HomeBase recording unavailable. Load the date again.');
 });
+
+ test('failed native video reports an error and releases the prepared recording', async ({page})=>{
+  await page.route('**/api/eufy_viewer/playback/*?authSig=*',r=>r.fulfill({status:404}));
+  await page.getByRole('button',{name:'Recordings',exact:true}).click();
+  await page.locator('.record-row').click();
+  await expect(page.locator('.record-status')).toHaveText('HomeBase recording unavailable. Load the date again.');
+  await expect.poll(()=>page.evaluate(()=>released.length)).toBe(1);
+  expect(await page.locator('.record-video').getAttribute('src')).toBeNull();
+ });
+ test('a late prepared response after closing is released and cannot attach media',async({page})=>{
+  await page.getByRole('button',{name:'Recordings',exact:true}).click();
+  await page.evaluate(()=>{
+   const original=card._hass.fetchWithAuth;
+   card._hass.fetchWithAuth=(path,init)=>init?.method==='POST'?new Promise(resolve=>{window.complete=()=>resolve(new Response(JSON.stringify({path:'/api/eufy_viewer/playback/'+'a'.repeat(32),url:'/api/eufy_viewer/playback/'+'a'.repeat(32)+'?authSig=test'})));}):original(path,init);
+  });
+  await page.locator('.record-row').click();await expect.poll(()=>page.evaluate(()=>!!window.complete)).toBe(true);
+  await page.getByRole('button',{name:'Close recordings',exact:true}).click();
+  await page.evaluate(()=>complete());await expect.poll(()=>page.evaluate(()=>released.length)).toBe(1);
+  expect(await page.locator('.record-video').getAttribute('src')).toBeNull();
+ });
+
+ test('a stalled native load times out and releases its media',async({page})=>{
+  await page.route('**/api/eufy_viewer/playback/*?authSig=*',()=>{});
+  await page.evaluate(()=>{const timer=window.setTimeout;window.setTimeout=(fn,delay,...args)=>timer(fn,delay===20000?50:delay,...args);});
+  await page.getByRole('button',{name:'Recordings',exact:true}).click();
+  await page.locator('.record-row').click();
+  await expect(page.locator('.record-status')).toHaveText('HomeBase recording unavailable. Load the date again.');
+  await expect.poll(()=>page.evaluate(()=>released.length)).toBe(1);
+  expect(await page.locator('.record-video').getAttribute('src')).toBeNull();
+ });

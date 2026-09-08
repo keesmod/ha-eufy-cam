@@ -40,7 +40,7 @@ export class EufyViewerCard extends HTMLElement {
   private _recordVideo: HTMLVideoElement;
   private _recordDate: HTMLInputElement;
   private _recordAbort?: AbortController;
-  private _recordUrl?: string;
+  private _recordPlayback = new EufyRecordingPlayback();
   private _recordGeneration = 0;
   private _rtc?: RTCPeerConnection;
   private _rtcCandidates: RTCIceCandidateInit[] = [];
@@ -184,7 +184,7 @@ export class EufyViewerCard extends HTMLElement {
   _clearRecording() {
     this._recordGeneration++; this._recordAbort?.abort(); this._recordAbort = undefined;
     this._recordVideo.pause(); this._recordVideo.removeAttribute("src"); this._recordVideo.load(); this._recordVideo.hidden = true;
-    if (this._recordUrl) URL.revokeObjectURL(this._recordUrl); this._recordUrl = undefined;
+    this._recordPlayback.clear();
   }
   _closeRecordings() { this._clearRecording(); if (this._recordDialog?.open) this._recordDialog.close(); }
   async _recordingResponse(response: Response) {
@@ -223,15 +223,11 @@ export class EufyViewerCard extends HTMLElement {
     if (!this._hass || !this._config || !this._recordDialog.open) return;
     const controller = this._recordAbort = new AbortController(); this._recordStatus(this._text().preparing);
     try {
-      const response = await this._hass.fetchWithAuth(`/api/eufy_viewer/recordings/${this._config.entity}/${id}`, { signal: controller.signal });
-      await this._recordingResponse(response);
-      if (!response.headers.get("content-type")?.startsWith("video/mp4")) throw new Error("Recording failed");
-      const blob = await response.blob();
-      if (generation !== this._recordGeneration || !this._recordDialog.open) return;
-      if (!blob.size || blob.size > 32 * 1024 * 1024) throw new Error("Recording too large");
-      this._recordUrl = URL.createObjectURL(blob); this._recordVideo.src = this._recordUrl; this._recordVideo.hidden = false;
-      this._recordStatus(""); await this._recordVideo.play().catch(() => {});
-    } catch (error) { if (generation === this._recordGeneration && this._recordDialog.open) this._recordStatus(this._recordingFailure(error)); }
+      const url = await this._recordPlayback.prepare(this._hass, this._config.entity, id, controller.signal);
+      controller.signal.throwIfAborted();
+      await this._recordPlayback.load(this._recordVideo, url, controller.signal);
+      this._recordStatus("");
+    } catch (error) { if (generation === this._recordGeneration && this._recordDialog.open) { this._clearRecording(); this._recordStatus(this._recordingFailure(error)); } }
   }
   _status(message: string) { this.shadowRoot!.querySelector<HTMLElement>(".status")!.textContent = message; }
   _watching(generation: number) { return this._open && generation === this._generation && this.isConnected && this._visible && document.visibilityState === "visible" && this._dialog.open; }
