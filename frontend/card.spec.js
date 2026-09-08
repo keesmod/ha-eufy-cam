@@ -48,6 +48,45 @@ test('escape, detach, hidden page, pagehide and disconnection all release', asyn
   }
 });
 
+for (const missing of ['RTCPeerConnection', 'requestVideoFrameCallback']) {
+  test(`missing ${missing} falls back to JPEG, displays frames and releases on close`, async ({ page }) => {
+    await page.evaluate(missing => {
+      card._hass.states['camera.front'].attributes.viewer_webrtc = true;
+      if (missing === 'RTCPeerConnection') Object.defineProperty(window, missing, { value: undefined, configurable: true });
+      else Object.defineProperty(HTMLVideoElement.prototype, missing, { value: undefined, configurable: true });
+    }, missing);
+    expect(await page.evaluate(() => calls.length)).toBe(0);
+    await page.getByRole('button', { name: 'Watch live' }).click();
+    expect(await page.evaluate(() => calls.map(call => call.message.transport))).toEqual(['jpeg']);
+    await expect(page.locator('video.video')).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Enable sound' })).toBeHidden();
+    await page.evaluate(() => {
+      const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 16;
+      window.jpeg = canvas.toDataURL('image/jpeg').split(',')[1];
+      receive({ type: 'frame', subscription: 9, sequence: 1, jpeg });
+    });
+    await expect.poll(() => page.evaluate(() => acks.length)).toBe(1);
+    await expect(page.locator('img.live')).toBeVisible();
+    expect(await page.locator('img.live').evaluate(image => image.naturalWidth)).toBe(16);
+    await page.getByRole('button', { name: 'Close live view' }).click();
+    await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+    await expect(page.locator('dialog:not(.record-dialog)')).toBeHidden();
+    await page.evaluate(() => receive({ type: 'frame', subscription: 9, sequence: 2, jpeg }));
+    expect(await page.evaluate(() => acks.length)).toBe(1);
+    expect(await page.evaluate(() => calls.length)).toBe(1);
+  });
+}
+
+test('supported clients keep WebRTC and its sound control', async ({ page }) => {
+  await page.evaluate(() => { card._hass.states['camera.front'].attributes.viewer_webrtc = true; });
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  expect(await page.evaluate(() => calls.map(call => call.message.transport))).toEqual(['webrtc']);
+  await expect(page.locator('img.live')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Enable sound' })).toBeVisible();
+  await page.getByRole('button', { name: 'Close live view' }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+});
+
 test('close before subscribe resolves still releases the late subscription', async ({ page }) => {
   await page.evaluate(() => { window.delaySubscription = true; });
   await page.getByRole('button', { name: 'Watch live' }).click();
