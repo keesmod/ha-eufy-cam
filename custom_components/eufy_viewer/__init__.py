@@ -15,6 +15,7 @@ from homeassistant.helpers.typing import ConfigType
 from .api import BridgeAuthError, BridgeClient, BridgeError
 from .const import CARD_URL, CONF_TOKEN, CONF_URL, DOMAIN
 from .coordinator import EufyConfigEntry, EufyCoordinator
+from .playback import PlaybackView, PreparePlaybackView
 from .recordings import EventsView, RecordingsView
 from .resources import async_register_card
 from .viewers import async_register_commands
@@ -39,10 +40,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             )
         ]
     )
+    playback = PlaybackView()
+    hass.http.register_view(PreparePlaybackView(playback))
+    hass.http.register_view(playback)
     hass.http.register_view(RecordingsView())
     hass.http.register_view(EventsView())
     async_register_commands(hass)
-    hass.data[DOMAIN] = {"viewers": {}}
+    hass.data[DOMAIN] = {"viewers": {}, "playback": playback}
     await async_register_card(hass)
     return True
 
@@ -71,6 +75,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EufyConfigEntry) -> bool
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     async def shutdown(_: Event) -> None:
+        hass.data[DOMAIN]["playback"].close_entry(entry.entry_id)
         await coordinator.close()
 
     entry.async_on_unload(
@@ -85,5 +90,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: EufyConfigEntry) -> bool
 
 async def async_unload_entry(hass: HomeAssistant, entry: EufyConfigEntry) -> bool:
     """Stop all viewers before removing entities."""
+    hass.data[DOMAIN]["playback"].close_entry(entry.entry_id)
     await entry.runtime_data.close()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

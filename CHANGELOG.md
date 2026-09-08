@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.4 — 2026-09-08
+
+- Fix recording playback in the Home Assistant macOS app in both Events and
+  the per-camera Recordings dialog. Use a native HTTP video source instead of
+  a browser blob, which stalls in this app.
+- Prepare each clip once, support byte-range seeking and keep camera permissions
+  enforced. Playback URLs use Home Assistant authentication, expire after five
+  minutes and are scoped to the requesting user and one recording. Media stays
+  in bounded memory and is released on close, expiry or integration unload.
+- Show a retry message and release media when native playback fails or stalls.
+
+Update **Eufy Security Viewer** to **0.4.4** in HACS, restart Home Assistant,
+then refresh the dashboard in the macOS app. Open **Events**, load the date and
+select a recording. For YAML-managed resources, update the existing module URL
+to `/eufy_viewer/eufy-viewer-card.js?v=0.4.4`. The bridge remains at **0.4.1**;
+no bridge update or camera reconfiguration is needed from that version.
+
 ## 0.4.3 — 2026-09-08
 
 - Fix live viewing in the Home Assistant macOS app. Check client WebRTC and

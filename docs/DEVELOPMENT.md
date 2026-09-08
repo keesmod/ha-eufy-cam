@@ -38,7 +38,7 @@ uv run python scripts/package.py
 
 Publishing, tagging, deploying and physical camera tests are separate explicit actions. Before a release, update the manifest/package versions, refresh lockfiles if dependencies changed, run all checks and complete the hardware acceptance matrix. A HACS installation uses the repository's `custom_components/eufy_viewer` folder, including its bundled card.
 
-Edit `frontend/eufy-viewer-card.ts` or `frontend/eufy-events-card.ts`; `npm run build` compiles both and combines them in the existing single bundled resource. `frontend/build.mjs` performs this dependency-free packaging step. Both the card and bridge compile with TypeScript strict mode.
+Edit `frontend/eufy-viewer-card.ts`, `frontend/eufy-events-card.ts` or their shared `frontend/recording-playback.ts` helper; `npm run build` compiles these and combines them in the existing single bundled resource. `frontend/build.mjs` performs this dependency-free packaging step. Both the card and bridge compile with TypeScript strict mode.
 
 ## Pull requests and releases
 

@@ -19,7 +19,7 @@ export class EufyEventsCard extends HTMLElement {
   private job: Promise<void> = Promise.resolve();
   private active = false;
   private urls = new Map<string,string>();
-  private videoUrl?: string;
+  private playback = new EufyRecordingPlayback();
   private observer?: IntersectionObserver;
   private cameraKey = '';
   private loadedDate = '';
@@ -78,7 +78,7 @@ export class EufyEventsCard extends HTMLElement {
     if(key!==this.cameraKey){this.cameraKey=key;const select=this.q<HTMLSelectElement>('.camera'), selected=select.value;select.replaceChildren();for(const id of ['',...cameras]){const option=document.createElement('option');option.value=id;option.textContent=id?this.name(id):this.text.all;select.append(option);}select.value=cameras.includes(selected)?selected:'';}
     this.q<HTMLButtonElement>('.show').disabled=!cameras.length;
   }
-  private clearVideo() {const v=this.q<HTMLVideoElement>('video');v.pause();v.removeAttribute('src');v.load();v.hidden=true;if(this.videoUrl)URL.revokeObjectURL(this.videoUrl);this.videoUrl=undefined;}
+  private clearVideo() {const v=this.q<HTMLVideoElement>('video');v.pause();v.removeAttribute('src');v.load();v.hidden=true;this.playback.clear();}
   private closePlayer() {this.controller?.abort();this.clearVideo();const dialog=this.q<HTMLDialogElement>('dialog');if(dialog.open)dialog.close();}
   private stop() {this.closePlayer();for(const url of this.urls.values())URL.revokeObjectURL(url);this.urls.clear();if(this.active)this.q('.status').textContent=this.text.stopped;}
   private run(action: (signal:AbortSignal)=>Promise<void>) {
@@ -145,10 +145,12 @@ export class EufyEventsCard extends HTMLElement {
     this.q<HTMLButtonElement>('.previous').disabled=index<=0;this.q<HTMLButtonElement>('.next').disabled=index>=records.length-1;
     this.run(async signal=>{
       this.q('.player-status').textContent=this.text.preparing;
-      const response=await this.fetch(`/api/eufy_viewer/recordings/${record.entity_id}/${record.id}`,signal);
-      if(!response.headers.get('content-type')?.startsWith('video/mp4'))throw new Error();
-      const blob=await response.blob();signal.throwIfAborted();if(!dialog.open||!blob.size||blob.size>32*1024*1024)throw new Error();
-      const video=this.q<HTMLVideoElement>('video');this.videoUrl=URL.createObjectURL(blob);video.src=this.videoUrl;video.hidden=false;this.q('.player-status').textContent='';await video.play().catch(()=>{});
+      try {
+        const url=await this.playback.prepare(this.ha!,record.entity_id,record.id,signal);
+        signal.throwIfAborted();
+        await this.playback.load(this.q<HTMLVideoElement>('video'),url,signal);
+        this.q('.player-status').textContent='';
+      } catch(error) { if(!signal.aborted)this.clearVideo(); throw error; }
     });
   }
 }
