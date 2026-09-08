@@ -291,7 +291,10 @@ export class EufyViewerCard extends HTMLElement {
         if (this._open || this._preview.disabled || !this._hass || !this._config || !this._visible || document.visibilityState !== "visible")
             return;
         const generation = ++this._generation;
-        const webrtc = Boolean(this._hass.states[this._config.entity]?.attributes.viewer_webrtc);
+        // Some embedded clients, including the macOS app, lack WebRTC support.
+        const webrtc = Boolean(this._hass.states[this._config.entity]?.attributes.viewer_webrtc)
+            && typeof RTCPeerConnection === "function"
+            && typeof this._video.requestVideoFrameCallback === "function";
         this._live.hidden = webrtc;
         this._video.hidden = !webrtc;
         this._sound.hidden = !webrtc;
