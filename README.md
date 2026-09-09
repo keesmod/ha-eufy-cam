@@ -17,6 +17,8 @@ This demo shows the dashboard, event list and playback from a real installation.
 
 This project is independent of Eufy and Anker and uses [bropat's eufy-security-client](https://github.com/bropat/eufy-security-client). Version 0.4.0 also adds HomeBase alarm and Guard Mode controls. See [alarm support and migration](docs/ALARM_MIGRATION_2026-09-06.md).
 
+Version 0.5.0 adds camera alerts and recognized person names for automations. See [events and notifications](docs/NOTIFICATIONS.md).
+
 ## Before you start
 
 You need:
@@ -92,7 +94,7 @@ From version 0.4.2, the integration registers the shared JavaScript resource aut
 3. To browse recordings across cameras, add an **Eufy Events** card too. It uses the same resource and selects all accessible Viewer cameras by default.
 4. Open a live view, then close it. To check recordings, choose a date with a clip you can already see in the Eufy app and play that clip.
 
-If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.4.4` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
+If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.5.0` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
 
 If you manage resources in YAML, the integration leaves that configuration untouched. Add the module to your existing `lovelace.resources` list and update the version after upgrades:
 
@@ -100,7 +102,7 @@ If you manage resources in YAML, the integration leaves that configuration untou
 lovelace:
   resource_mode: yaml
   resources:
-    - url: /eufy_viewer/eufy-viewer-card.js?v=0.4.4
+    - url: /eufy_viewer/eufy-viewer-card.js?v=0.5.0
       type: module
 ```
 
@@ -129,13 +131,14 @@ If the problem remains, [report a bug](https://github.com/keesmod/ha-eufy-cam/is
 
 ## Upgrading
 
-The bridge and integration have separate updates. The current integration is **0.4.4** and the bridge is **0.4.1**. If the bridge is already on 0.4.1, only update the integration. Version 0.4.4 fixes recording playback in the Home Assistant macOS app. It also includes the live-view fix from 0.4.3: JPEG video without audio when WebRTC is unavailable; supported clients keep WebRTC with audio.
+Version **0.5.0** requires both the integration and bridge to be updated. It adds named person detections and coalesced camera events while preserving recording playback and live viewing.
 
 1. Close live viewers and recording dialogs. Back up Home Assistant and the bridge's private data before updating.
-2. If the bridge is older than 0.4.1, update **Eufy Security Viewer Bridge** in Home Assistant and start it. For Docker, follow the [bridge update steps](docs/DOCKER.md#update-the-docker-bridge), keeping the same data volume and token. This includes the startup recovery fixes from 0.4.1.
-3. Update **Eufy Security Viewer** to **0.4.4** in HACS and restart Home Assistant.
-4. Reload the dashboard in your browser or the Home Assistant app. If you manage resources in YAML, update the existing module URL to `/eufy_viewer/eufy-viewer-card.js?v=0.4.4` and reload YAML resources first. See the [manual fallback](#3-add-the-dashboard-cards) if automatic registration fails.
-5. Confirm the cameras work and the HomeBase alarm and Guard Mode selector match the Eufy app.
+2. Update **Eufy Security Viewer Bridge** to **0.5.0** and start it. For Docker, follow the [bridge update steps](docs/DOCKER.md#update-the-docker-bridge), keeping the same data volume and token.
+3. Update **Eufy Security Viewer** to **0.5.0** in HACS and restart Home Assistant.
+4. Reload the dashboard. For YAML resources, update the existing module URL to `/eufy_viewer/eufy-viewer-card.js?v=0.5.0` and reload resources first.
+5. Check that the push connection sensor is connected. Test a real detection and inspect its event entity or listen to `eufy_viewer_event`. A recognized person should produce one `person` event with `person_name` and `recognition: known`. See [notification examples](docs/NOTIFICATIONS.md).
+6. Confirm cameras and HomeBase controls remain available. Event support does not change Eufy's detection settings or phone notification preferences.
 
 Keeping the bridge's data preserves its identity, credentials and session. The integration keeps your existing camera entities. If your bridge is listed under **Local apps**, the repository app is a separate installation and will not update that local copy. Back up its private data and token before migrating; a new empty data directory creates a different bridge identity. See [support](.github/SUPPORT.md) if you need help moving an older installation.
 

@@ -87,6 +87,7 @@ class BridgeState:
     auth: str
     cameras: dict[str, CameraInfo]
     webrtc: bool = False
+    push_connected: bool | None = None
     stations: dict[str, StationInfo] = field(default_factory=dict)
 
     @classmethod
@@ -167,11 +168,18 @@ class BridgeState:
                 stations[serial] = StationInfo(
                     **{key: item[key] for key in StationInfo.__dataclass_fields__}
                 )
+            metrics = data.get("notification_metrics", {})
+            if not isinstance(metrics, dict):
+                raise ValueError
+            push_connected = metrics.get("push_connected")
+            if push_connected is not None and type(push_connected) is not bool:
+                raise ValueError
             return cls(
                 bridge_id,
                 auth,
                 cameras,
                 "webrtc" in data.get("transports", []),
+                push_connected,
                 stations,
             )
         except (KeyError, TypeError, ValueError) as err:

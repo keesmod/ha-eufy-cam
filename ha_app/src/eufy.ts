@@ -8,6 +8,7 @@ import { StreamHub } from "./streams.js";
 import { MediaRelay } from "./media.js";
 import { Recordings } from "./recordings.js";
 import { Storage } from "./storage.js";
+import { Notifications } from "./notifications.js";
 import { Stations } from "./stations.js";
 
 export interface Credentials { username: string; password: string; country: string }
@@ -28,6 +29,7 @@ export class Eufy extends EventEmitter {
   private devices = new Map<string, Device>();
   readonly media = new MediaRelay(serial => this.hub.end(serial, "Audio/video encoder failed"));
   readonly recordings: Recordings = new Recordings(() => this.client, () => this.hub.active ? "live_busy" : this.hub.quarantined ? "live_stopping" : false);
+  readonly notifications = new Notifications(serial => this.devices.has(serial) || Boolean(this.stations?.inventory().some(station => station.serial === serial)), event => this.emit("notification", event), () => this.emit("change"));
   readonly pictures = new Map<string, { data: Buffer; mime: string; received: string }>();
   readonly metrics = { start_requests: 0, stop_requests: 0, started_events: 0, stopped_events: 0, frames: 0, last_start_request: null as string | null, last_stop_request: null as string | null, last_started_event: null as string | null, last_stopped_event: null as string | null };
   auth: AuthState = { state: "unconfigured" };
@@ -103,6 +105,7 @@ export class Eufy extends EventEmitter {
   }
 
   private bind(client: EufySecurity): void {
+    this.notifications.bind(client);
     client.on("persistent data", data => { void this.storage.write("session.json", data).catch(() => this.emit("storage_error")); });
     client.on("connect", () => { this.auth = { state: "connected" }; this.emit("change"); });
     client.on("close", () => { this.recordings.close(); this.auth = { state: "error" }; this.hub.close(); this.emit("change"); });
@@ -175,5 +178,5 @@ export class Eufy extends EventEmitter {
     }));
   }
   hasCamera(serial: string): boolean { return this.devices.has(serial); }
-  async close(): Promise<void> { this.restoreAbort.abort(); this.stations?.close(); this.recordings.close(); this.hub.close(); await new Promise(resolve => setTimeout(resolve, 1500)); this.client?.close(); await this.storage.flush(); }
+  async close(): Promise<void> { this.restoreAbort.abort(); this.notifications.close(); this.stations?.close(); this.recordings.close(); this.hub.close(); await new Promise(resolve => setTimeout(resolve, 1500)); this.client?.close(); await this.storage.flush(); }
 }

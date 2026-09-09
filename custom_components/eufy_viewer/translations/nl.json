@@ -55,6 +55,40 @@
       "guard_mode": {
         "name": "Guard Mode"
       }
+    },
+    "event": {
+      "camera_event": {
+        "name": "Gebeurtenis",
+        "state_attributes": {
+          "event_type": {
+            "name": "Gebeurtenistype",
+            "state": {
+              "motion": "Beweging gedetecteerd",
+              "person": "Persoon gedetecteerd",
+              "ring": "Er is aangebeld",
+              "vehicle": "Voertuig gedetecteerd",
+              "pet": "Huisdier gedetecteerd",
+              "crying": "Huilen gedetecteerd",
+              "sound": "Geluid gedetecteerd",
+              "package_delivered": "Pakket bezorgd",
+              "package_taken": "Pakket meegenomen",
+              "package_stranded": "Pakket achtergebleven",
+              "loitering": "Rondhangen gedetecteerd",
+              "radar_motion": "Radarbeweging gedetecteerd",
+              "dog": "Hond gedetecteerd",
+              "dog_lick": "Likkende hond gedetecteerd",
+              "dog_poop": "Poepende hond gedetecteerd",
+              "notification": "Overige apparaatmelding",
+              "stranger": "Onbekende persoon gedetecteerd"
+            }
+          }
+        }
+      }
+    },
+    "binary_sensor": {
+      "push_connection": {
+        "name": "Eufy pushverbinding"
+      }
     }
   }
 }
