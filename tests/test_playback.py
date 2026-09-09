@@ -141,3 +141,20 @@ async def test_unload_releases_prepared_recordings(hass, hass_client, viewer_set
     await hass.config_entries.async_unload(viewer_setup.entry_id)
     assert not cache.sessions
     assert (await client.get(data["path"])).status == 404
+
+
+async def test_native_preparation_is_explicit_and_validated(
+    hass, hass_client, viewer_setup
+):
+    client = await hass_client()
+    with patch.object(
+        viewer_setup.runtime_data.api, "recording_video", AsyncMock(return_value=b"mp4")
+    ) as download:
+        assert (await client.post(PREPARE + "?format=unknown")).status == 400
+        download.assert_not_awaited()
+        response = await client.post(PREPARE + "?format=native")
+        assert response.status == 200
+        download.assert_awaited_once_with("CAM123", CLIP, native=True)
+        data = await response.json()
+        assert await (await client.get(data["path"])).read() == b"mp4"
+        assert (await client.delete(data["path"])).status == 204

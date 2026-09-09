@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.1 — 2026-09-09
+
+- Preserve native H.265 recordings as Apple-compatible hvc1 MP4 when requested
+  by a compatible player. Copy AAC audio without re-encoding.
+- Allow up to 45 seconds for H.264 compatibility conversion within the existing
+  operation and media size limits.
+- Write one complete MP4 fragment so native Apple players can play the full clip.
+
+Update this bridge first, then the HACS integration to **0.5.1**. Restart Home
+Assistant and refresh the dashboard in each app/browser. Keep existing app data
+and credentials. The updated cards select the supported codec and handle one
+H.264 fallback for native codec failures before or during playback.
+
 ## 0.4.1 — 2026-09-07
 
 - Report session restoration as connecting from the start, so Home Assistant can

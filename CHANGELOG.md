@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.1 — 2026-09-09
+
+- Preserve H.265 recordings in an Apple-compatible `hvc1` MP4 when the player
+  reports HEVC support. Copy AAC audio without re-encoding. Both Events and
+  camera recording dialogs use the same capability check.
+- Fall back once to H.264 on a native decoding/codec error, including errors
+  during playback. Preserve position and pause state, show recovery progress,
+  and cancel recovery when the viewer closes or changes recordings. Unsupported clients
+  request H.264 immediately; network errors and cancellation do not retry.
+- Allow up to 45 seconds for the H.264 compatibility conversion of H.265 clips,
+  within the existing 60-second operation and 32 MiB media limits.
+- Emit one complete MP4 fragment so the macOS native player sees the whole
+  recording instead of ending after the first fragment.
+- Keep authenticated HTTP playback, byte ranges, expiry and close cleanup.
+
+Update the bridge and integration together to **0.5.1**, bridge first. Restart
+Home Assistant and refresh the dashboard in every app/browser. For manually
+configured resources, change the existing URL to
+`/eufy_viewer/eufy-viewer-card.js?v=0.5.1`. No camera settings need to change.
+
 ## 0.5.0 — 2026-09-09
 
 - Add camera event entities and the `eufy_viewer_event` automation event for

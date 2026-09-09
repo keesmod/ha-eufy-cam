@@ -223,9 +223,11 @@ export class EufyViewerCard extends HTMLElement {
     if (!this._hass || !this._config || !this._recordDialog.open) return;
     const controller = this._recordAbort = new AbortController(); this._recordStatus(this._text().preparing);
     try {
-      const url = await this._recordPlayback.prepare(this._hass, this._config.entity, id, controller.signal);
-      controller.signal.throwIfAborted();
-      await this._recordPlayback.load(this._recordVideo, url, controller.signal);
+      await this._recordPlayback.play(this._hass, this._config.entity, id, this._recordVideo, controller.signal, (state, error) => {
+        if (generation !== this._recordGeneration || !this._recordDialog.open || controller.signal.aborted) return;
+        if (state === 'failed') { this._clearRecording(); this._recordStatus(this._recordingFailure(error)); }
+        else this._recordStatus(state === 'preparing' ? this._text().preparing : '');
+      });
       this._recordStatus("");
     } catch (error) { if (generation === this._recordGeneration && this._recordDialog.open) { this._clearRecording(); this._recordStatus(this._recordingFailure(error)); } }
   }

@@ -294,7 +294,12 @@ class BridgeClient:
             raise BridgeError("Snapshot unavailable") from err
 
     async def recording_video(
-        self, serial: str, recording_id: str, *, thumbnail: bool = False
+        self,
+        serial: str,
+        recording_id: str,
+        *,
+        thumbnail: bool = False,
+        native: bool = False,
     ) -> bytes:
         """Fetch one finite existing clip; cancellation closes the upstream socket."""
         try:
@@ -302,7 +307,8 @@ class BridgeClient:
                 async with self._session.get(
                     self.url
                     + f"/v1/recordings/{serial}/{recording_id}/"
-                    + ("thumbnail" if thumbnail else "video"),
+                    + ("thumbnail" if thumbnail else "video")
+                    + ("?format=native" if native and not thumbnail else ""),
                     headers=self._headers,
                     allow_redirects=False,
                 ) as response:

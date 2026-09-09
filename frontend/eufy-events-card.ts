@@ -146,9 +146,12 @@ export class EufyEventsCard extends HTMLElement {
     this.run(async signal=>{
       this.q('.player-status').textContent=this.text.preparing;
       try {
-        const url=await this.playback.prepare(this.ha!,record.entity_id,record.id,signal);
-        signal.throwIfAborted();
-        await this.playback.load(this.q<HTMLVideoElement>('video'),url,signal);
+        await this.playback.play(this.ha!,record.entity_id,record.id,this.q<HTMLVideoElement>('video'),signal,(state,error)=>{
+          if(signal.aborted)return;
+          this.active=state==='preparing';
+          if(state==='failed'){this.clearVideo();this.q('.player-status').textContent=this.failure(error);}
+          else this.q('.player-status').textContent=state==='preparing'?this.text.preparing:'';
+        });
         this.q('.player-status').textContent='';
       } catch(error) { if(!signal.aborted)this.clearVideo(); throw error; }
     });

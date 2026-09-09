@@ -163,8 +163,16 @@ class PreparePlaybackView(HomeAssistantView):
         if not request.get(KEY_HASS_REFRESH_TOKEN_ID):
             raise web.HTTPForbidden
 
+        output_format = request.query.get("format", "h264")
+        if output_format not in {"h264", "native"}:
+            raise web.HTTPBadRequest
+
         async def prepare() -> dict[str, str]:
-            body = await coordinator.api.recording_video(serial, recording_id)
+            body = await coordinator.api.recording_video(
+                serial,
+                recording_id,
+                **({"native": True} if output_format == "native" else {}),
+            )
             # Recheck access after the potentially long download.
             camera_access(request, entity_id)
             return self.playback.add(request, entity_id, body)

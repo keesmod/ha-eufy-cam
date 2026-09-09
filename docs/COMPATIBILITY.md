@@ -7,10 +7,12 @@ The initial evidence comes from one maintainer installation, not a broad device 
 | Home Assistant | 2026.9.0 | Later releases and other installations |
 | HomeBase | HomeBase 3, T8030, firmware 3.8.6.0 | Other firmware, HomeBase 2 and standalone storage |
 | Cameras and snapshots | Four camera entities available; all four snapshots returned successfully | Exact camera models and wider combinations |
-| Stored recordings | Existing H.264/AAC files played in HA, including 1920×1080 and 1600×2300 portrait clips | H.265 hardware playback, long clips and large archives |
+| Stored recordings | H.264/AAC and native H.265/AAC `hvc1` playback. T8213 doorbell 1600×2300 clips played to completion in the macOS app, including a 49-second clip and seeking. H.264 compatibility conversion also decoded successfully. | Other HEVC profiles, installations and large archives; audible output was not independently assessed |
 | Events browsing | Date/camera filters, calendar presence, stored previews, previous/next playback; 95 known-camera files on a tested day | Other retention windows and firmware limits |
 | Live WebRTC | Hardware video at 1920×1080; automated video/audio decoding tests | Audible output on each camera, physical iPhone background behavior and remote routes |
-| Home Assistant macOS app | App 2026.9.0: JPEG live playback after client capability detection; 249 decoded frames and confirmed stream cleanup | JPEG has no audio; other macOS app versions |
+| Home Assistant macOS app | App 2026.9.0 build 2026.2874: native H.265 recording playback through both cards; JPEG live playback after client capability detection; 249 decoded frames and confirmed stream cleanup | JPEG has no audio; other macOS app versions |
+| Home Assistant iOS app | Maintainer user report on 2026-09-09: live image starts in about 3 seconds | App/iOS versions and independent reproduction |
+| Windows Chrome | Maintainer user report on 2026-09-09: live image starts in about 6 seconds; stored recordings in 3–5 seconds | Browser version, clip details and independent reproduction |
 | Bridge app | amd64 tested on hardware | aarch64 hardware acceptance |
 | Viewer cleanup | Normal close, cancellation and zero remaining active/quarantined streams in live validation | Long-term battery measurements and physical stop during a hard host/network failure |
 

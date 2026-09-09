@@ -156,8 +156,10 @@ async def test_recording_media_type_auth_and_redirect_boundary(
     aiohttp_server, socket_enabled
 ):
     mode = "video"
+    formats = []
 
     async def route(request):
+        formats.append(request.query.get("format"))
         assert request.headers["Authorization"] == "Bearer test"
         if mode == "redirect":
             return web.Response(
@@ -173,6 +175,8 @@ async def test_recording_media_type_auth_and_redirect_boundary(
     async with ClientSession() as session:
         api = BridgeClient(session, str(server.make_url("")), "test")
         assert await api.recording_video("CAM123", "abc") == b"finite clip"
+        assert await api.recording_video("CAM123", "abc", native=True) == b"finite clip"
+        assert formats == [None, "native"]
         for response_mode in ("redirect", "html"):
             mode = response_mode
             with pytest.raises(BridgeError):
