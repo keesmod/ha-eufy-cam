@@ -33,3 +33,20 @@ test('incomplete history is not displayed as a successful empty day',async({page
 test('mobile layout stays within the screen',async({page})=>{
  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'Show recordings',exact:true}).click();await expect(page.locator('.event')).toHaveCount(12);expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
 });
+
+test('events player recovers a late codec error once and reports a repeated failure',async({page})=>{
+ await page.evaluate(()=>{HTMLVideoElement.prototype.canPlayType=()=>'probably';});
+ await page.getByRole('button',{name:'Show recordings',exact:true}).click();
+ await page.locator('.event').first().click();
+ await expect.poll(()=>page.locator('video').evaluate(v=>v.currentTime)).toBeGreaterThan(0);
+ const fail=()=>page.locator('video').evaluate(v=>{Object.defineProperty(v,'error',{configurable:true,value:{code:3}});v.dispatchEvent(new Event('error'));delete v.error;});
+ await fail();
+ await expect.poll(()=>page.evaluate(()=>urls.filter(p=>p.includes('/recordings/')&&p.includes('/playback')).length)).toBe(2);
+ await expect(page.locator('.player-status')).toHaveText('');
+ await expect.poll(()=>page.locator('video').evaluate(v=>v.currentTime)).toBeGreaterThan(0);
+ await fail();
+ await expect(page.locator('.player-status')).toContainText('unavailable');
+ await expect.poll(()=>page.evaluate(()=>released.length)).toBe(2);
+ expect(await page.locator('video').getAttribute('src')).toBeNull();
+ expect(await page.evaluate(()=>urls.filter(p=>p.includes('/recordings/')&&p.includes('/playback')).length)).toBe(2);
+});

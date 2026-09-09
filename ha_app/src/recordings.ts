@@ -17,7 +17,7 @@ interface Reference { serial: string; station: Station; record: DatabaseQueryByD
 export class Recordings {
   private references = new Map<string, Reference>();
   private operation?: AbortController;
-  readonly metrics = { queries: 0, downloads: 0, completed: 0, cancelled: 0 };
+  readonly metrics = { queries: 0, downloads: 0, completed: 0, remuxed: 0, transcoded: 0, cancelled: 0 };
   get busy(): boolean { return this.operation !== undefined; }
   constructor(private client: () => EufySecurity | undefined, private liveBusy: () => boolean | "live_busy" | "live_stopping") {}
   close(): void { this.operation?.abort(); this.references.clear(); }
@@ -150,7 +150,7 @@ export class Recordings {
     return `${date.getFullYear()}-${p(date.getMonth()+1)}-${p(date.getDate())}T${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`;
   }
 
-  async video(serial: string, id: string, signal: AbortSignal): Promise<Buffer> {
+  async video(serial: string, id: string, signal: AbortSignal, format: 'h264' | 'native' = 'h264'): Promise<Buffer> {
     const ref = this.references.get(id);
     if (!ref || ref.serial !== serial || ref.expires <= Date.now()) throw new RecordingError("recording_expired", 410);
     return this.run(signal, async (client, abort) => {
@@ -160,7 +160,9 @@ export class Recordings {
         await this.connected(station, abort); abort.throwIfAborted();
         this.metrics.downloads++;
         const source = await this.download(station, device, ref.record, abort);
-        const mp4 = await muxRecording(source.metadata, source.video, source.audio, abort);
+        const mp4 = await muxRecording(source.metadata, source.video, source.audio, abort, format);
+        if (source.metadata.videoCodec === VideoCodec.H265 && format === 'h264') this.metrics.transcoded++;
+        else this.metrics.remuxed++;
         this.metrics.completed++;
         return mp4;
       } finally { if (abort.aborted) this.metrics.cancelled++; if (opened || abort.aborted) station.close(); }
@@ -197,21 +199,26 @@ export class Recordings {
   }
 }
 
-export async function muxRecording(metadata: StreamMetadata, video: Buffer, audio: Buffer, signal: AbortSignal): Promise<Buffer> {
+export async function muxRecording(metadata: StreamMetadata, video: Buffer, audio: Buffer, signal: AbortSignal, format: 'h264' | 'native' = 'h264'): Promise<Buffer> {
   signal.throwIfAborted();
   const codec = metadata.videoCodec === VideoCodec.H264 ? 'h264' : metadata.videoCodec === VideoCodec.H265 ? 'hevc' : null;
   if (!codec) throw new Error('Unsupported recording codec');
+  const transcode = codec === 'hevc' && format === 'h264';
   return new Promise((resolve, reject) => {
     const args = ['-hide_banner','-loglevel','error','-threads','2','-r',String(metadata.videoFPS || 15),'-f',codec,'-i','pipe:0'];
     if (audio.length) args.push('-f','aac','-i','pipe:3');
-    args.push('-map','0:v:0','-c:v',codec === 'h264' ? 'copy' : 'libx264');
-    if (codec === 'hevc') args.push('-preset','veryfast','-pix_fmt','yuv420p','-threads','2');
-    if (audio.length) args.push('-map','1:a:0','-c:a','aac','-b:a','64k');
-    args.push('-movflags','frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1');
+    args.push('-map','0:v:0','-c:v',transcode ? 'libx264' : 'copy');
+    if (codec === 'hevc' && !transcode) args.push('-tag:v','hvc1');
+    if (transcode) args.push('-preset','veryfast','-pix_fmt','yuv420p','-threads','2');
+    if (audio.length) args.push('-map','1:a:0','-c:a','copy','-bsf:a','aac_adtstoasc');
+    // Playback starts after the complete clip is buffered. A single fragment lets
+    // native Apple players determine the full duration instead of stopping early.
+    // Oversized output must flush and hit our byte cap before FFmpeg buffers more.
+    args.push('-movflags','frag_custom+empty_moov+default_base_moof','-frag_size',String(LIMIT),'-f','mp4','pipe:1');
     const process = spawn('ffmpeg', args, { stdio: ['pipe','pipe','pipe','pipe'] });
     const parts: Buffer[] = []; let size = 0; let settled = false;
     const fail = () => { if (settled) return; settled = true; clearTimeout(timer); signal.removeEventListener('abort', fail); process.kill('SIGKILL'); reject(new Error('Recording conversion failed')); };
-    const timer = setTimeout(fail, 20_000); signal.addEventListener('abort', fail, { once: true });
+    const timer = setTimeout(fail, transcode ? 45_000 : 20_000); signal.addEventListener('abort', fail, { once: true });
     process.stdout!.on('data', (b: Buffer) => { size += b.length; if (size > LIMIT) fail(); else parts.push(b); });
     process.stderr!.resume(); process.once('error', fail);
     process.once('close', code => { if (settled) return; if (code !== 0 || !size) { fail(); return; } settled = true; clearTimeout(timer); signal.removeEventListener('abort', fail); resolve(Buffer.concat(parts)); });

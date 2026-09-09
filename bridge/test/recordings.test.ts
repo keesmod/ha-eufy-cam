@@ -93,3 +93,32 @@ test('a malformed known-camera record cannot silently disappear from a complete 
   station.databaseQueryByDate=()=>{queueMicrotask(()=>station.emit('database query by date',station,0,[{record_id:1,device_sn:'CAM',station_sn:'BASE',storage_path:'',start_time:new Date(),end_time:new Date()}]));};
   await assert.rejects(manager.timeline(['CAM'],'2026-09-05',new AbortController().signal),/history_incomplete/);
 });
+
+test('native HEVC is losslessly remuxed as hvc1, while compatibility output is H264', async () => {
+  const video = execFileSync('ffmpeg', ['-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=15','-t','1','-c:v','libx265','-x265-params','pools=1:frame-threads=1:keyint=5:min-keyint=5:scenecut=0:log-level=error','-f','hevc','pipe:1']);
+  const audio = execFileSync('ffmpeg', ['-v','error','-f','lavfi','-i','sine=sample_rate=16000','-t','1','-c:a','aac','-f','adts','pipe:1']);
+  const metadata = { videoCodec: VideoCodec.H265, audioCodec: AudioCodec.AAC, videoFPS:15,videoWidth:320,videoHeight:180 };
+  const originalFrames = execFileSync('ffmpeg',['-v','error','-r','15','-f','hevc','-i','pipe:0','-fps_mode','passthrough','-f','framemd5','-'],{input:video}).toString();
+  for (const format of ['native','h264'] as const) {
+    const mp4 = await muxRecording(metadata,video,audio,new AbortController().signal,format);
+    const boxes: string[] = [];
+    for (let at=0; at<mp4.length;) { const size=mp4.readUInt32BE(at); assert.ok(size>=8 && at+size<=mp4.length); boxes.push(mp4.toString('ascii',at+4,at+8)); at+=size; }
+    assert.equal(boxes.filter(type=>type==='moof').length,1,'one complete fragment, even across multiple keyframes');
+    const streams = JSON.parse(execFileSync('ffprobe',['-v','error','-show_streams','-of','json','pipe:0'],{input:mp4}).toString()).streams;
+    assert.equal(streams[0].codec_name, format === 'native' ? 'hevc' : 'h264');
+    assert.equal(streams[0].codec_tag_string, format === 'native' ? 'hvc1' : 'avc1');
+    assert.equal(streams[1].codec_name,'aac');
+    execFileSync('ffmpeg',['-v','error','-i','pipe:0','-f','null','-'],{input:mp4});
+    if (format === 'native') {
+      const frames = execFileSync('ffmpeg',['-v','error','-i','pipe:0','-map','0:v','-fps_mode','passthrough','-f','framemd5','-'],{input:mp4}).toString();
+      const hashes = (text: string) => text.split('\n').filter(line=>line && !line.startsWith('#')).map(line=>line.split(',').at(-1)?.trim());
+      assert.deepEqual(hashes(frames),hashes(originalFrames));
+    }
+  }
+});
+
+test('oversized remux output is rejected instead of returning a truncated playable clip', async () => {
+  const sample = execFileSync('ffmpeg', ['-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=15','-t','1','-c:v','libx264','-threads','1','-bf','0','-crf','0','-f','h264','pipe:1']);
+  const video = Buffer.concat(Array.from({length:Math.ceil(33*1024*1024/sample.length)},()=>sample));
+  await assert.rejects(muxRecording({videoCodec:VideoCodec.H264,audioCodec:AudioCodec.NONE,videoFPS:15,videoWidth:320,videoHeight:180},video,Buffer.alloc(0),new AbortController().signal,'native'),/Recording conversion failed/);
+});
