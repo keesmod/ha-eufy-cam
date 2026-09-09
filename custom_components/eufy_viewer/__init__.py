@@ -22,6 +22,8 @@ from .viewers import async_register_commands
 
 PLATFORMS = [
     Platform.CAMERA,
+    Platform.EVENT,
+    Platform.BINARY_SENSOR,
     Platform.SENSOR,
     Platform.ALARM_CONTROL_PANEL,
     Platform.SELECT,
