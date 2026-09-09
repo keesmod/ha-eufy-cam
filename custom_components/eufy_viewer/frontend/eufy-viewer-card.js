@@ -2,9 +2,77 @@
 /** Native players need an HTTP source on macOS; blobs can stall indefinitely. */
 class EufyRecordingPlayback {
     release;
-    clear() { this.release?.(); this.release = undefined; }
-    async prepare(ha, entity, id, signal) {
-        const response = await ha.fetchWithAuth(`/api/eufy_viewer/recordings/${entity}/${id}/playback`, { method: 'POST', signal });
+    cancel;
+    releaseMedia() { const release = this.release; this.release = undefined; return release?.() ?? Promise.resolve(); }
+    clear() { this.cancel?.(); this.cancel = undefined; return this.releaseMedia(); }
+    async play(ha, entity, id, video, externalSignal, changed = () => { }) {
+        await this.clear();
+        externalSignal.throwIfAborted();
+        const controller = new AbortController(), signal = controller.signal;
+        let native = Boolean(video.canPlayType('video/mp4; codecs="hvc1.1.6.L153.B0"'));
+        let recovering = false;
+        const detach = () => video.removeEventListener('error', failed);
+        const cancel = () => { controller.abort(); detach(); externalSignal.removeEventListener('abort', cancel); };
+        this.cancel = cancel;
+        externalSignal.addEventListener('abort', cancel, { once: true });
+        const recover = async (error, preservePosition = false) => {
+            if (!native || signal.aborted || !(error instanceof RecordingCodecError))
+                throw error;
+            native = false; // One fallback for the whole clip, including errors after the first frame.
+            const position = video.currentTime, paused = preservePosition && video.paused;
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+            await this.releaseMedia();
+            signal.throwIfAborted();
+            const url = await this.prepare(ha, entity, id, signal);
+            await this.load(video, url, signal, !paused);
+            signal.throwIfAborted();
+            if (Number.isFinite(position) && position > 0)
+                video.currentTime = Math.min(position, Number.isFinite(video.duration) ? video.duration : position);
+        };
+        const failed = () => {
+            if (signal.aborted || recovering)
+                return;
+            recovering = true;
+            detach();
+            const error = video.error?.code === 3 || video.error?.code === 4
+                ? new RecordingCodecError('Recording codec unsupported') : new Error('Recording playback failed');
+            if (native && error instanceof RecordingCodecError)
+                changed('preparing');
+            void recover(error, true).then(() => {
+                if (!signal.aborted) {
+                    recovering = false;
+                    video.addEventListener('error', failed);
+                    changed('playing');
+                }
+            }).catch(async (error) => {
+                if (signal.aborted)
+                    return;
+                await this.clear();
+                if (!externalSignal.aborted)
+                    changed('failed', error);
+            });
+        };
+        try {
+            const url = await this.prepare(ha, entity, id, signal, native);
+            try {
+                await this.load(video, url, signal);
+            }
+            catch (error) {
+                await recover(error);
+            }
+            signal.throwIfAborted();
+            video.addEventListener('error', failed);
+        }
+        catch (error) {
+            if (!signal.aborted)
+                await this.clear();
+            throw error;
+        }
+    }
+    async prepare(ha, entity, id, signal, native = false) {
+        const response = await ha.fetchWithAuth(`/api/eufy_viewer/recordings/${entity}/${id}/playback${native ? "?format=native" : ""}`, { method: 'POST', signal });
         const data = await response.json();
         if (!response.ok)
             throw new Error(data.error);
@@ -15,16 +83,16 @@ class EufyRecordingPlayback {
         if (url.origin !== location.origin || url.pathname !== data.path || url.hash
             || [...url.searchParams.keys()].some(key => key !== 'authSig'))
             throw new Error('Invalid playback');
-        const release = () => { void ha.fetchWithAuth(data.path, { method: 'DELETE', keepalive: true }).catch(() => { }); };
+        const release = async () => { await ha.fetchWithAuth(data.path, { method: 'DELETE', keepalive: true, signal: AbortSignal.timeout(5000) }).catch(() => { }); };
         if (signal.aborted) {
-            release();
+            await release();
             signal.throwIfAborted();
         }
-        this.clear();
+        void this.releaseMedia();
         this.release = release;
         return data.url;
     }
-    async load(video, url, signal) {
+    async load(video, url, signal, autoplay = true) {
         signal.throwIfAborted();
         await new Promise((resolve, reject) => {
             const finish = (error) => {
@@ -38,21 +106,30 @@ class EufyRecordingPlayback {
                     resolve();
             };
             const loaded = () => finish();
-            const failed = () => finish(new Error('Recording playback failed'));
+            const failed = () => finish(video.error?.code === 3 || video.error?.code === 4
+                ? new RecordingCodecError('Recording codec unsupported') : new Error('Recording playback failed'));
             const aborted = () => finish(new DOMException('Aborted', 'AbortError'));
             const timer = setTimeout(failed, 20000);
             video.addEventListener('loadeddata', loaded, { once: true });
             video.addEventListener('error', failed, { once: true });
             signal.addEventListener('abort', aborted, { once: true });
+            video.autoplay = autoplay;
             video.src = url;
             video.hidden = false;
+            if (!autoplay) {
+                video.load();
+                return;
+            }
             void video.play().catch(error => {
                 // Native controls remain usable when automatic playback is denied.
                 if (error.name !== 'NotAllowedError')
-                    finish(error);
+                    finish(error.name === 'NotSupportedError'
+                        ? new RecordingCodecError('Recording codec unsupported') : error);
             });
         });
     }
+}
+class RecordingCodecError extends Error {
 }
 
 /** Eufy Viewer: snapshots at rest, a single explicit user gesture per live session. */
@@ -320,9 +397,16 @@ export class EufyViewerCard extends HTMLElement {
         const controller = this._recordAbort = new AbortController();
         this._recordStatus(this._text().preparing);
         try {
-            const url = await this._recordPlayback.prepare(this._hass, this._config.entity, id, controller.signal);
-            controller.signal.throwIfAborted();
-            await this._recordPlayback.load(this._recordVideo, url, controller.signal);
+            await this._recordPlayback.play(this._hass, this._config.entity, id, this._recordVideo, controller.signal, (state, error) => {
+                if (generation !== this._recordGeneration || !this._recordDialog.open || controller.signal.aborted)
+                    return;
+                if (state === 'failed') {
+                    this._clearRecording();
+                    this._recordStatus(this._recordingFailure(error));
+                }
+                else
+                    this._recordStatus(state === 'preparing' ? this._text().preparing : '');
+            });
             this._recordStatus("");
         }
         catch (error) {
@@ -859,9 +943,17 @@ export class EufyEventsCard extends HTMLElement {
         this.run(async (signal) => {
             this.q('.player-status').textContent = this.text.preparing;
             try {
-                const url = await this.playback.prepare(this.ha, record.entity_id, record.id, signal);
-                signal.throwIfAborted();
-                await this.playback.load(this.q('video'), url, signal);
+                await this.playback.play(this.ha, record.entity_id, record.id, this.q('video'), signal, (state, error) => {
+                    if (signal.aborted)
+                        return;
+                    this.active = state === 'preparing';
+                    if (state === 'failed') {
+                        this.clearVideo();
+                        this.q('.player-status').textContent = this.failure(error);
+                    }
+                    else
+                        this.q('.player-status').textContent = state === 'preparing' ? this.text.preparing : '';
+                });
                 this.q('.player-status').textContent = '';
             }
             catch (error) {

@@ -69,7 +69,11 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         const abort = () => cancel.abort(); response.once("close", abort);
         try {
           if (recording[2]) {
-            const data = await eufy.recordings[recording[3] === "thumbnail" ? "thumbnail" : "video"](recording[1]!, recording[2], cancel.signal);
+            const format = url.searchParams.get("format") ?? "h264";
+            if (format !== "h264" && format !== "native") throw new Error("Invalid recording format");
+            const data = recording[3] === "thumbnail"
+              ? await eufy.recordings.thumbnail(recording[1]!, recording[2], cancel.signal)
+              : await eufy.recordings.video(recording[1]!, recording[2], cancel.signal, format);
             if (!response.destroyed) { response.writeHead(200, { "Content-Type": recording[3] === "thumbnail" ? "image/jpeg" : "video/mp4", "Content-Length": data.length, "Cache-Control": "no-store" }); response.end(data); }
           } else {
             const data = await eufy.recordings.list(recording[1]!, url.searchParams.get("date") ?? "", cancel.signal);

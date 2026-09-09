@@ -71,6 +71,7 @@ test('timeline, calendar and stored thumbnails require auth and known camera IDs
   const calls:string[]=[];const hub=new StreamHub({start:async()=>{},stop:async()=>{},disposeMedia:()=>{}});
   const fake=Object.assign(new EventEmitter(),{auth:{state:'connected'},inventory:()=>[],hasCamera:(s:string)=>s==='CAM123',hub,recordings:{
     timeline:async(serials:string[],date:string)=>{calls.push('timeline');assert.deepEqual(serials,['CAM123']);assert.equal(date,'2026-09-05');return {recordings:[],complete:true};},
+    video:async(_serial:string,_id:string,_signal:AbortSignal,format:string)=>{calls.push('video:'+format);return Buffer.from('mp4');},
     calendar:async()=>{calls.push('calendar');return {days:['2026-09-05']};},thumbnail:async()=>{calls.push('thumbnail');return Buffer.from([255,216,255]);}
   }});
   const server=createBridge(fake as unknown as Eufy,token,'fixture');server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert.ok(address&&typeof address!=='string');const base=`http://127.0.0.1:${address.port}`,headers={Authorization:`Bearer ${token}`};
@@ -78,6 +79,12 @@ test('timeline, calendar and stored thumbnails require auth and known camera IDs
     const path='/v1/recordings?cameras=CAM123&date=2026-09-05';assert.equal((await fetch(base+path)).status,401);assert.equal((await fetch(base+path.replace('CAM123','UNKNOWN'),{headers})).status,400);assert.deepEqual(calls,[]);
     assert.equal((await fetch(base+path,{headers})).status,200);assert.equal((await fetch(base+'/v1/recording-days?cameras=CAM123&month=2026-09',{headers})).status,200);
     const image=await fetch(base+'/v1/recordings/CAM123/'+'a'.repeat(32)+'/thumbnail',{headers});assert.equal(image.headers.get('content-type'),'image/jpeg');assert.equal((await image.arrayBuffer()).byteLength,3);assert.deepEqual(calls,['timeline','calendar','thumbnail']);
+    const clip=base+'/v1/recordings/CAM123/'+'a'.repeat(32)+'/video';
+    assert.equal((await fetch(clip+'?format=native')).status,401);
+    assert.equal((await fetch(clip+'?format=bad',{headers})).status,400);
+    assert.equal((await fetch(clip+'?format=native',{headers})).status,200);
+    assert.equal((await fetch(clip,{headers})).status,200);
+    assert.deepEqual(calls.slice(3),['video:native','video:h264']);
   }finally{server.emit('shutdown');server.close();await once(server,'close');}
 });
 
