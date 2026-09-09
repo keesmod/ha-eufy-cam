@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 (unreleased)
+## 0.5.0 — 2026-09-09
 
 - Add camera event entities and the `eufy_viewer_event` automation event for
   doorbell rings, motion, people, vehicles, pets, sound and package detections.
@@ -17,7 +17,7 @@ Requires integration and bridge **0.5.0**. Update the bridge first, then the
 integration, restart Home Assistant and verify the push connection sensor.
 Existing bridge clients continue receiving state-only messages until they opt
 in. See [events and notifications](docs/NOTIFICATIONS.md) for automation examples,
-account/phone filtering and delivery limitations. This version is not published.
+account/phone filtering and delivery limitations.
 
 ## 0.4.4 — 2026-09-08
 
