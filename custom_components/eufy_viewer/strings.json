@@ -55,6 +55,40 @@
       "guard_mode": {
         "name": "Guard Mode"
       }
+    },
+    "event": {
+      "camera_event": {
+        "name": "Event",
+        "state_attributes": {
+          "event_type": {
+            "name": "Event type",
+            "state": {
+              "motion": "Motion detected",
+              "person": "Person detected",
+              "ring": "Doorbell pressed",
+              "vehicle": "Vehicle detected",
+              "pet": "Pet detected",
+              "crying": "Crying detected",
+              "sound": "Sound detected",
+              "package_delivered": "Package delivered",
+              "package_taken": "Package taken",
+              "package_stranded": "Package left behind",
+              "loitering": "Loitering detected",
+              "radar_motion": "Radar motion detected",
+              "dog": "Dog detected",
+              "dog_lick": "Dog licking detected",
+              "dog_poop": "Dog defecating detected",
+              "notification": "Other device notification",
+              "stranger": "Unknown person detected"
+            }
+          }
+        }
+      }
+    },
+    "binary_sensor": {
+      "push_connection": {
+        "name": "Eufy push connection"
+      }
     }
   }
 }

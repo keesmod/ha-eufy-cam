@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.0 (unreleased)
+
+- Add camera event entities and the `eufy_viewer_event` automation event for
+  doorbell rings, motion, people, vehicles, pets, sound and package detections.
+- Include Eufy-recognized person names and distinguish known, explicitly unknown
+  and unidentified people. Merge parallel push formats and derived SDK callbacks
+  into one actionable event per detection. Unclassified device alerts remain
+  available as `notification`; account data and raw message bodies are excluded.
+- Add an Eufy push connection diagnostic binary sensor. Login connectivity and
+  push connectivity are separate states.
+- Subscribe without starting camera streams; ignore detector reset events,
+  suppress duplicate push deliveries, and never replay alerts on HA reconnect.
+
+Requires integration and bridge **0.5.0**. Update the bridge first, then the
+integration, restart Home Assistant and verify the push connection sensor.
+Existing bridge clients continue receiving state-only messages until they opt
+in. See [events and notifications](docs/NOTIFICATIONS.md) for automation examples,
+account/phone filtering and delivery limitations. This version is not published.
+
 ## 0.4.4 — 2026-09-08
 
 - Fix recording playback in the Home Assistant macOS app in both Events and

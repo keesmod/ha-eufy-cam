@@ -80,3 +80,28 @@ test('timeline, calendar and stored thumbnails require auth and known camera IDs
     const image=await fetch(base+'/v1/recordings/CAM123/'+'a'.repeat(32)+'/thumbnail',{headers});assert.equal(image.headers.get('content-type'),'image/jpeg');assert.equal((await image.arrayBuffer()).byteLength,3);assert.deepEqual(calls,['timeline','calendar','thumbnail']);
   }finally{server.emit('shutdown');server.close();await once(server,'close');}
 });
+
+test('notification frames require opt-in and subscriptions are removed on disconnect', async () => {
+  const hub = new StreamHub({ start: async () => {}, stop: async () => {}, disposeMedia: () => {} });
+  const fake = Object.assign(new EventEmitter(), {auth: {state: 'connected'}, inventory: () => [], hub});
+  const server = createBridge(fake as unknown as Eufy, token, 'fixture');
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const base = `ws://127.0.0.1:${address.port}/v1/events`;
+  const clients: WebSocket[] = [];
+  try {
+    for (const suffix of ['', '?notifications=1']) {
+      const ws = new WebSocket(base + suffix, {headers: {Authorization: `Bearer ${token}`}});
+      clients.push(ws);
+      const first = once(ws, 'message'); await once(ws, 'open');
+      assert.equal(JSON.parse((await first)[0].toString()).protocol, 1);
+    }
+    assert.equal(fake.listenerCount('notification'), 1);
+    const next = once(clients[1]!, 'message');
+    fake.emit('notification', {id: 'one', serial: 'CAM123', event_type: 'ring'});
+    assert.equal(JSON.parse((await next)[0].toString()).event_type, 'ring');
+    const removed = new Promise<void>(resolve => { fake.on('removeListener', name => { if (name === 'notification') resolve(); }); });
+    const gone = once(clients[1]!, 'close'); clients[1]!.close(); await Promise.all([gone, removed]);
+    assert.equal(fake.listenerCount('notification'), 0);
+  } finally { clients.forEach(ws => ws.terminate()); server.emit('shutdown'); server.close(); await once(server, 'close'); }
+});
