@@ -89,18 +89,22 @@ class WebRTCViewer(Viewer):
             return False
         return not self.closed
 
-    async def _prepare(self, path: str) -> None:
+    async def _prepare(self, path: str, audio: bool | None = None) -> None:
         if self.ready or not re.fullmatch(r"/v1/media/[a-f0-9]{64}", path):
             raise BridgeError("Invalid media grant")
+        if audio is not None and not isinstance(audio, bool):
+            raise BridgeError("Invalid media audio capability")
+        sources = [self.coordinator.api.url + path]
+        # Older bridges omit this field. Preserve their A/V behavior, but never
+        # ask go2rtc to convert audio when this stream is explicitly video-only.
+        if audio is not False:
+            sources.append(f"ffmpeg:{self.name}#audio=opus")
         client = Go2RtcRestClient(self.config.session, self.config.url)
         self.registered = True
         async with asyncio.timeout(10):
             await client.streams.add(
                 self.name,
-                [
-                    self.coordinator.api.url + path,
-                    f"ffmpeg:{self.name}#audio=opus",
-                ],
+                sources,
             )
         if self.closed:
             return
@@ -149,7 +153,7 @@ class WebRTCViewer(Viewer):
                             raise BridgeError("Invalid media control")
                         data = json.loads(message.data)
                         if data.get("type") == "ready":
-                            await self._prepare(data.get("path", ""))
+                            await self._prepare(data.get("path", ""), data.get("audio"))
                         elif data.get("type") == "tick" and self.ready:
                             if self.pending:
                                 raise BridgeError("Invalid media backpressure")

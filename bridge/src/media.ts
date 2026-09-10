@@ -5,6 +5,8 @@ import type { ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
 export class MediaRelay {
+  private audioTracks = new Map<string, boolean>();
+  audioSupported(serial: string): boolean | undefined { return this.audioTracks.get(serial); }
   private encoders = new Map<string, ChildProcess>();
   private readers = new Map<string, Set<ServerResponse>>();
   private grants = new Map<string, string>();
@@ -40,6 +42,7 @@ export class MediaRelay {
     args.push('-mpegts_flags', '+resend_headers', '-muxdelay', '0', '-muxpreload', '0', '-f', 'mpegts', 'pipe:1');
     const process = spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] });
     this.encoders.set(serial, process);
+    this.audioTracks.set(serial, hasAudio);
     const failed = () => { if (this.encoders.get(serial) === process) this.failed(serial); };
     process.on('error', failed); process.on('exit', failed);
     process.stderr!.resume(); process.stdin!.on('error', failed);
@@ -57,6 +60,7 @@ export class MediaRelay {
   }
   stop(serial: string): void {
     const process = this.encoders.get(serial); this.encoders.delete(serial);
+    this.audioTracks.delete(serial);
     if (process) { process.stdin?.destroy(); (process.stdio[3] as Writable)?.destroy(); process.kill('SIGKILL'); }
     for (const reader of this.readers.get(serial) ?? []) reader.destroy();
     this.readers.delete(serial);
