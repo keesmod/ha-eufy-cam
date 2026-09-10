@@ -17,7 +17,7 @@ This demo shows the dashboard, event list and playback from a real installation.
 
 This project is independent of Eufy and Anker. Version 0.6.0 adds the independent [Eufy Mega client](https://github.com/keesmod/eufy-mega-client), tested with T8030 HomeBase 3, T8160 cameras and the T8213 doorbell. Version 0.6.2 also enables discovery of T8142 eufyCam S220 / 2C Pro and T8134 SoloCam S220 paired with T8030; S220 hardware validation remains pending. The existing [bropat client](https://github.com/bropat/eufy-security-client) remains selectable as `legacy`. Each bridge uses one backend and its separate session. See [Mega migration and rollback](docs/MEGA_MIGRATION.md) before upgrading an existing app.
 
-Version 0.6.3 fixes missing recording audio on Apple players by including AAC decoder configuration in the MP4 header. Close and reopen prepared clips after updating the bridge.
+Version 0.6.4 fixes missing recording audio on Apple players by including AAC decoder configuration in the MP4 header. Close and reopen prepared clips after updating the bridge.
 
 Version 0.5.1 preserves H.265 recordings on capable players, with H.264 compatibility playback for other clients. Camera alerts and recognized names remain available; see [events and notifications](docs/NOTIFICATIONS.md).
 
@@ -97,7 +97,7 @@ From version 0.4.2, the integration registers the shared JavaScript resource aut
 3. To browse recordings across cameras, add an **Eufy Events** card too. It uses the same resource and selects all accessible Viewer cameras by default.
 4. Open a live view, then close it. To check recordings, choose a date with a clip you can already see in the Eufy app and play that clip.
 
-If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.6.3` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
+If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.6.4` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
 
 If you manage resources in YAML, the integration leaves that configuration untouched. Add the module to your existing `lovelace.resources` list and update the version after upgrades:
 
@@ -105,7 +105,7 @@ If you manage resources in YAML, the integration leaves that configuration untou
 lovelace:
   resource_mode: yaml
   resources:
-    - url: /eufy_viewer/eufy-viewer-card.js?v=0.6.3
+    - url: /eufy_viewer/eufy-viewer-card.js?v=0.6.4
       type: module
 ```
 
@@ -134,12 +134,12 @@ If the problem remains, [report a bug](https://github.com/keesmod/ha-eufy-cam/is
 
 ## Upgrading
 
-Version **0.6.3** fixes silent recordings on Apple players and requires both the integration and bridge to be updated. The HAOS app now uses host networking and `http://127.0.0.1:8063`. Select `mega` for the tested T8030/T8160/T8213 installation. Existing H.264/H.265 playback, notifications and entity identities are preserved. Read [Mega migration and rollback](docs/MEGA_MIGRATION.md) first.
+Version **0.6.4** fixes silent recordings on Apple players and requires both the integration and bridge to be updated. The HAOS app now uses host networking and `http://127.0.0.1:8063`. Select `mega` for the tested T8030/T8160/T8213 installation. Existing H.264/H.265 playback, notifications and entity identities are preserved. Read [Mega migration and rollback](docs/MEGA_MIGRATION.md) first.
 
 1. Close live viewers and recording dialogs. Back up Home Assistant and the bridge's private data before updating.
-2. Stop the old bridge and update **Eufy Security Viewer Bridge** to **0.6.3**. Select the intended backend, keep the existing token and start only this bridge. For Docker, follow the [bridge update steps](docs/DOCKER.md#update-the-docker-bridge), keeping the same data volume and token.
-3. Update **Eufy Security Viewer** to **0.6.3** in HACS and restart Home Assistant. Reconfigure the existing integration entry to `http://127.0.0.1:8063` for the HAOS app, keeping its token. Do not delete and recreate the entry. Complete a fresh Mega login challenge if requested.
-4. Reload the dashboard. For YAML resources, update the existing module URL to `/eufy_viewer/eufy-viewer-card.js?v=0.6.3` and reload resources first.
+2. Stop the old bridge and update **Eufy Security Viewer Bridge** to **0.6.4**. Select the intended backend, keep the existing token and start only this bridge. For Docker, follow the [bridge update steps](docs/DOCKER.md#update-the-docker-bridge), keeping the same data volume and token.
+3. Update **Eufy Security Viewer** to **0.6.4** in HACS and restart Home Assistant. Reconfigure the existing integration entry to `http://127.0.0.1:8063` for the HAOS app, keeping its token. Do not delete and recreate the entry. Complete a fresh Mega login challenge if requested.
+4. Reload the dashboard. For YAML resources, update the existing module URL to `/eufy_viewer/eufy-viewer-card.js?v=0.6.4` and reload resources first.
 5. Check that the push connection sensor is connected. Test a real detection and inspect its event entity or listen to `eufy_viewer_event`. A recognized person should produce one `person` event with `person_name` and `recognition: known`. See [notification examples](docs/NOTIFICATIONS.md).
 6. Confirm cameras and HomeBase controls remain available. Event support does not change Eufy's detection settings or phone notification preferences.
 
@@ -213,3 +213,30 @@ See [architecture and safety](docs/ARCHITECTURE.md), [bridge protocol](docs/PROT
 Confirmed on HomeBase 3 T8030, firmware 3.8.6.0, with eufy-security-client 4.1.1-1. The bridge uses the working calendar query `10006` with an empty device filter and `[selected day, next day]`, then filters returned records to the authorized camera. Legacy `10017` is not used. Only device-returned paths can be downloaded; the browser receives opaque expiring IDs.
 
 The bridge expands the existing query limit to retrieve the selected day on the tested HB3 firmware. Ambiguous boundaries, inconsistent responses and the final safety ceiling are reported as errors instead of silent truncation. Firmware-wide pagination and bulk retention/export completeness are not claimed. One query or download runs at a time; close live viewers before loading recordings. Clip preparation is limited to 60 seconds and 32 MiB, with no persistent video cache. Failed requests require an explicit retry. See [recording protocol and live evidence](docs/RECORDINGS_PROBE_2026-09-06.md).
+
+### Live-stream diagnostics
+
+In the bridge app configuration, enable `diagnostics: true`, save and restart
+that app. The option defaults to false and older saved configurations may omit
+it. Reproduce one live-view attempt and copy the lines containing
+`"diagnostic":"live"` from the app logs. Disable the option and restart after
+collecting the evidence. It applies to both Mega and legacy backends.
+
+For Docker, set `EUFY_DIAGNOSTICS=true` and recreate the bridge container with
+its existing data volume. Remove it or set it to `false` afterward.
+
+Each attempt has a temporary number and elapsed milliseconds. `video_input`
+and `audio_input` mean input bytes arrived, not that decoding succeeded.
+`jpeg_frame` and `media_output` identify output from the two encoders.
+`media_reader` means a client requested the media stream, not that it played.
+`frame_ack` means the viewer acknowledged a delivered frame. `viewer_timeout`
+means that acknowledgement deadline expired. `camera_timeout` means the
+camera frame deadline or maximum viewing duration expired. `stream_failure`
+is a general termination category. Encoder error, exit, invalid-data and
+decode-error categories narrow the failure without exposing raw FFmpeg text.
+
+Diagnostics emit each category once per attempt and never include device
+identifiers, tokens, addresses, media grants, images or raw SDK/encoder errors.
+Attempt numbers reset when the app restarts. Ordinary logs from other components
+are outside this filter, so review any additional logs before sharing them.
+This option does not change timeouts, keep cameras awake or enable SDK debug.
