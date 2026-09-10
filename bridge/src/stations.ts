@@ -1,9 +1,8 @@
 import { EufySecurity, PropertyName, type Station, type CommandResult } from "eufy-security-client";
 
 const MODES = new Set([0, 1, 2, 3, 4, 5, 47, 63]);
-export class StationError extends Error {
-  constructor(readonly code: string, readonly status = 503) { super(code); }
-}
+import {StationError} from './errors.js';
+export {StationError} from './errors.js';
 
 /** One command owner per station. State always comes from SDK telemetry. */
 export class Stations {

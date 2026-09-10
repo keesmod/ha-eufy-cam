@@ -2,8 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { timingSafeEqual } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import type { Credentials, Eufy } from "./eufy.js";
-import { RecordingError } from "./recordings.js";
-import { StationError } from "./stations.js";
+import { RecordingError,StationError } from "./errors.js";
 import type { Notification } from "./notifications.js";
 import type { Peer } from "./streams.js";
 
@@ -24,7 +23,7 @@ function json(response: ServerResponse, status: number, value: unknown): void {
 }
 export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 1024, perMessageDeflate: false });
-  const state = () => ({ protocol: 1, transports: ["jpeg", "webrtc"], bridge_id: bridgeId, auth: eufy.auth.state, notification_metrics: eufy.notifications?.metrics, cameras: eufy.inventory(), stations: eufy.stations?.inventory() ?? [], alarm_metrics: eufy.stations?.metrics, recording_metrics: eufy.recordings ? { ...eufy.recordings.metrics, active: eufy.recordings.busy } : undefined, stream_metrics: { ...eufy.metrics, ...eufy.hub.recoveryMetrics, active_cameras: eufy.hub.active, quarantined: eufy.hub.quarantined } });
+  const state = () => ({ protocol: 1, backend: eufy.backendName, transports: ["jpeg", "webrtc"], bridge_id: bridgeId, auth: eufy.auth.state, notification_metrics: eufy.notifications?.metrics, cameras: eufy.inventory(), stations: eufy.stations?.inventory() ?? [], alarm_metrics: eufy.stations?.metrics, recording_metrics: eufy.recordings ? { ...eufy.recordings.metrics, active: eufy.recordings.busy } : undefined, stream_metrics: { ...eufy.metrics, ...eufy.hub.recoveryMetrics, active_cameras: eufy.hub.active, quarantined: eufy.hub.quarantined } });
   const server = createServer((request, response) => {
     const media = /^\/v1\/media\/([a-f0-9]{64})$/.exec(new URL(request.url ?? "/", "http://bridge").pathname);
     if (request.method === "GET" && media) {

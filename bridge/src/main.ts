@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import {backendName} from "./backend.js";
 import { Eufy } from "./eufy.js";
 import { createBridge } from "./server.js";
 import { Storage } from "./storage.js";
@@ -8,7 +9,8 @@ if (!token || token.length < 32) throw new Error("EUFY_BRIDGE_TOKEN must contain
 const storage = new Storage(process.env.EUFY_DATA_DIR ?? "/data");
 let id = await storage.read("bridge-id");
 if (!id) { id = randomUUID(); await storage.write("bridge-id", id); }
-const eufy = new Eufy(storage);
+const eufy = new Eufy(storage,backendName(process.env.EUFY_BACKEND));
+eufy.on("backend_fault", code => console.error("Eufy backend:", code));
 eufy.on("storage_error", () => console.error("Unable to persist bridge session"));
 eufy.on("restore_retry", () => console.error("Eufy session restore failed; retrying when the network is ready"));
 const server = createBridge(eufy, token, id);
@@ -17,7 +19,7 @@ void eufy.restore().catch(() => console.error("Eufy login needs attention in Hom
 let closing = false;
 async function shutdown(): Promise<void> {
   if (closing) return; closing = true;
-  const deadline = setTimeout(() => process.exit(1), 8000); deadline.unref();
+  const deadline = setTimeout(() => process.exit(1), 15000); deadline.unref();
   server.emit("shutdown");
   await eufy.close(); server.close(); server.closeAllConnections();
 }

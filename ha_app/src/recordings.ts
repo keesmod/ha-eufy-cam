@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { EufySecurity, Station, Device, VideoCodec, type StreamMetadata, type DatabaseQueryByDate } from 'eufy-security-client';
 
@@ -7,10 +6,11 @@ import { completeDay, recordingDays } from './history.js';
 
 const LIMIT = 32 * 1024 * 1024;
 const TTL = 15 * 60_000;
-export class RecordingError extends Error {
-  constructor(readonly code: "live_busy" | "live_stopping" | "recording_busy" | "recording_unavailable" | "recording_expired" | "history_incomplete" | "thumbnail_unavailable", readonly status: number) { super(code); }
-}
-export interface Recording { id: string; start: string; end: string; bytes: number; thumbnail: boolean; serial: string }
+import {RecordingError} from './errors.js';
+export {RecordingError} from './errors.js';
+import {muxRecording as muxMedia} from './recording-media.js';
+import type {Recording} from './backend.js';
+export type {Recording} from './backend.js';
 interface Reference { serial: string; station: Station; record: DatabaseQueryByDate; expires: number }
 
 /** Existing HomeBase files only. No polling, live capture, guessed paths, or disk cache. */
@@ -199,30 +199,6 @@ export class Recordings {
   }
 }
 
-export async function muxRecording(metadata: StreamMetadata, video: Buffer, audio: Buffer, signal: AbortSignal, format: 'h264' | 'native' = 'h264'): Promise<Buffer> {
-  signal.throwIfAborted();
-  const codec = metadata.videoCodec === VideoCodec.H264 ? 'h264' : metadata.videoCodec === VideoCodec.H265 ? 'hevc' : null;
-  if (!codec) throw new Error('Unsupported recording codec');
-  const transcode = codec === 'hevc' && format === 'h264';
-  return new Promise((resolve, reject) => {
-    const args = ['-hide_banner','-loglevel','error','-threads','2','-r',String(metadata.videoFPS || 15),'-f',codec,'-i','pipe:0'];
-    if (audio.length) args.push('-f','aac','-i','pipe:3');
-    args.push('-map','0:v:0','-c:v',transcode ? 'libx264' : 'copy');
-    if (codec === 'hevc' && !transcode) args.push('-tag:v','hvc1');
-    if (transcode) args.push('-preset','veryfast','-pix_fmt','yuv420p','-threads','2');
-    if (audio.length) args.push('-map','1:a:0','-c:a','copy','-bsf:a','aac_adtstoasc');
-    // Playback starts after the complete clip is buffered. A single fragment lets
-    // native Apple players determine the full duration instead of stopping early.
-    // Oversized output must flush and hit our byte cap before FFmpeg buffers more.
-    args.push('-movflags','frag_custom+empty_moov+default_base_moof','-frag_size',String(LIMIT),'-f','mp4','pipe:1');
-    const process = spawn('ffmpeg', args, { stdio: ['pipe','pipe','pipe','pipe'] });
-    const parts: Buffer[] = []; let size = 0; let settled = false;
-    const fail = () => { if (settled) return; settled = true; clearTimeout(timer); signal.removeEventListener('abort', fail); process.kill('SIGKILL'); reject(new Error('Recording conversion failed')); };
-    const timer = setTimeout(fail, transcode ? 45_000 : 20_000); signal.addEventListener('abort', fail, { once: true });
-    process.stdout!.on('data', (b: Buffer) => { size += b.length; if (size > LIMIT) fail(); else parts.push(b); });
-    process.stderr!.resume(); process.once('error', fail);
-    process.once('close', code => { if (settled) return; if (code !== 0 || !size) { fail(); return; } settled = true; clearTimeout(timer); signal.removeEventListener('abort', fail); resolve(Buffer.concat(parts)); });
-    process.stdin!.on('error', fail); process.stdin!.end(video);
-    const input = process.stdio[3] as import('node:stream').Writable; input.on('error', fail); input.end(audio);
-  });
+export async function muxRecording(metadata:StreamMetadata,video:Buffer,audio:Buffer,signal:AbortSignal,format:'h264'|'native'='h264'):Promise<Buffer>{
+  return muxMedia({videoCodec:metadata.videoCodec===VideoCodec.H264?'h264':metadata.videoCodec===VideoCodec.H265?'hevc':null,fps:metadata.videoFPS},video,audio,signal,format);
 }

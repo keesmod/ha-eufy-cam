@@ -15,7 +15,7 @@ On Home Assistant OS, the app runs on your HA machine and Home Assistant manages
 
 This demo shows the dashboard, event list and playback from a real installation. Private areas are obscured and the silent walkthrough is edited between actions. [Watch the MP4](docs/media/ha-dashboard-demo.mp4).
 
-This project is independent of Eufy and Anker and uses [bropat's eufy-security-client](https://github.com/bropat/eufy-security-client). Version 0.4.0 also adds HomeBase alarm and Guard Mode controls. See [alarm support and migration](docs/ALARM_MIGRATION_2026-09-06.md).
+This project is independent of Eufy and Anker. Version 0.6.0 adds the independent [Eufy Mega client](https://github.com/keesmod/eufy-mega-client), tested with T8030 HomeBase 3, T8160 cameras and the T8213 doorbell. The existing [bropat client](https://github.com/bropat/eufy-security-client) remains selectable as `legacy`. Each bridge uses one backend and its separate session. See [Mega migration and rollback](docs/MEGA_MIGRATION.md) before upgrading an existing app.
 
 Version 0.5.1 preserves H.265 recordings on capable players, with H.264 compatibility playback for other clients. Camera alerts and recognized names remain available; see [events and notifications](docs/NOTIFICATIONS.md).
 
@@ -53,9 +53,9 @@ The bridge comes from the Home Assistant **app store**, separate from HACS. Olde
    ```
 
 3. Find **Eufy Security Viewer Bridge** in the new repository and select **Install**. The first installation builds the container and can take several minutes.
-4. Open the app's **Configuration** tab. Set `token` to a unique, randomly generated secret of at least 32 characters, then save. A password manager can generate one. This token connects Home Assistant to the bridge; it is separate from your Eufy password. Keep it for step 2.
+4. Open the app's **Configuration** tab. Select `backend: mega` for the tested T8030/T8160/T8213 installation. The default `legacy` retains the existing client; other hardware has not passed Mega acceptance. Set `token` to a unique, randomly generated secret of at least 32 characters, then save. A password manager can generate one. This token connects Home Assistant to the bridge; it is separate from your Eufy password. Keep it for step 2.
 5. Start the app and enable **Start on boot**. Check its **Logs** tab if it fails to start.
-6. Copy **Hostname** from the app's **Info** tab. Your bridge URL is `http://HOSTNAME:8080`, with `HOSTNAME` replaced by the value you copied. Leave the app's network port disabled; Home Assistant can reach it internally.
+6. App version 0.6.0 uses the bridge URL `http://127.0.0.1:8063`. It shares the HA host network and listens only on loopback. Older apps used `http://HOSTNAME:8080`; reconfigure the existing integration entry when upgrading.
 
 Optional shortcut: [add the bridge app repository](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fkeesmod%2Fha-eufy-cam). This opens My Home Assistant, which forwards you to your own HA instance. If it opens the wrong instance or fails, use the manual steps above. Home Assistant also documents [adding an app repository](https://www.home-assistant.io/common-tasks/os/#installing-a-third-party-app-repository).
 
@@ -71,7 +71,8 @@ Continue to step 2. Enter your Eufy email and password during integration setup,
 
    | Bridge installation | URL to enter |
    |---|---|
-   | HAOS app on this HA machine | `http://HOSTNAME:8080`, using the app's hostname |
+   | HAOS app 0.6.0 on this HA machine | `http://127.0.0.1:8063` |
+   | Older HAOS app through 0.5.1 | `http://HOSTNAME:8080`, using the app's hostname |
    | Docker | `http://DOCKER_HOST_LAN_IP:8080`, using the Docker host's LAN address |
 
    For Docker, use an address Home Assistant can reach. `localhost` would point at Home Assistant itself.
@@ -94,7 +95,7 @@ From version 0.4.2, the integration registers the shared JavaScript resource aut
 3. To browse recordings across cameras, add an **Eufy Events** card too. It uses the same resource and selects all accessible Viewer cameras by default.
 4. Open a live view, then close it. To check recordings, choose a date with a clip you can already see in the Eufy app and play that clip.
 
-If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.5.1` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
+If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.6.0` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
 
 If you manage resources in YAML, the integration leaves that configuration untouched. Add the module to your existing `lovelace.resources` list and update the version after upgrades:
 
@@ -102,7 +103,7 @@ If you manage resources in YAML, the integration leaves that configuration untou
 lovelace:
   resource_mode: yaml
   resources:
-    - url: /eufy_viewer/eufy-viewer-card.js?v=0.5.1
+    - url: /eufy_viewer/eufy-viewer-card.js?v=0.6.0
       type: module
 ```
 
@@ -120,7 +121,7 @@ Live WebRTC video uses Home Assistant's [go2rtc integration](https://www.home-as
 | There is no Apps menu | The app instructions require Home Assistant OS. Use Docker for a Home Assistant Container installation. |
 | The bridge app does not appear | Confirm you added the repository to the HA app store. Refresh the page and check your machine's architecture against the supported builds above. |
 | The bridge will not start | Check its logs. The token must contain at least 32 characters. |
-| Integration setup cannot connect | Start the bridge first. Use the app hostname for the HAOS app, or the Docker host's LAN address and published port for Docker. |
+| Integration setup cannot connect | Start the bridge first. HAOS app 0.6.0 uses `http://127.0.0.1:8063`; older apps use their hostname on port 8080. For Docker, use the configured address reachable from HA. |
 | Integration setup rejects the bridge token | Copy the same token configured in the app or in Docker's `bridge.env`. Do not enter the Eufy password in this field. |
 | Eufy login succeeds but cameras are missing | Sign into the Eufy app with the dedicated account and check that it has accepted device-sharing access. |
 | Live view fails immediately in the macOS app | Update the integration to 0.4.4, restart Home Assistant and refresh the dashboard in the app. Live video uses JPEG without audio. Use Safari for live audio. |
@@ -131,12 +132,12 @@ If the problem remains, [report a bug](https://github.com/keesmod/ha-eufy-cam/is
 
 ## Upgrading
 
-Version **0.5.1** requires both the integration and bridge to be updated. Supported players receive the original H.265 video in MP4 without video conversion. Other players receive H.264. A native codec/decode failure gets one H.264 fallback; connection errors and cancellation do not retry. Recordings still download fully before playback, and compatibility conversion can take longer.
+Version **0.6.0** requires both the integration and bridge to be updated. The HAOS app now uses host networking and `http://127.0.0.1:8063`. Select `mega` for the tested T8030/T8160/T8213 installation. Existing H.264/H.265 playback, notifications and entity identities are preserved. Read [Mega migration and rollback](docs/MEGA_MIGRATION.md) first.
 
 1. Close live viewers and recording dialogs. Back up Home Assistant and the bridge's private data before updating.
-2. Update **Eufy Security Viewer Bridge** to **0.5.1** and start it. For Docker, follow the [bridge update steps](docs/DOCKER.md#update-the-docker-bridge), keeping the same data volume and token.
-3. Update **Eufy Security Viewer** to **0.5.1** in HACS and restart Home Assistant.
-4. Reload the dashboard. For YAML resources, update the existing module URL to `/eufy_viewer/eufy-viewer-card.js?v=0.5.1` and reload resources first.
+2. Stop the old bridge and update **Eufy Security Viewer Bridge** to **0.6.0**. Select the intended backend, keep the existing token and start only this bridge. For Docker, follow the [bridge update steps](docs/DOCKER.md#update-the-docker-bridge), keeping the same data volume and token.
+3. Update **Eufy Security Viewer** to **0.6.0** in HACS and restart Home Assistant. Reconfigure the existing integration entry to `http://127.0.0.1:8063` for the HAOS app, keeping its token. Do not delete and recreate the entry. Complete a fresh Mega login challenge if requested.
+4. Reload the dashboard. For YAML resources, update the existing module URL to `/eufy_viewer/eufy-viewer-card.js?v=0.6.0` and reload resources first.
 5. Check that the push connection sensor is connected. Test a real detection and inspect its event entity or listen to `eufy_viewer_event`. A recognized person should produce one `person` event with `person_name` and `recognition: known`. See [notification examples](docs/NOTIFICATIONS.md).
 6. Confirm cameras and HomeBase controls remain available. Event support does not change Eufy's detection settings or phone notification preferences.
 

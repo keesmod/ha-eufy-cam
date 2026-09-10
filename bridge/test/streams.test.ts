@@ -107,7 +107,10 @@ test("Eufy recovery requires transport close and returns only cameras on that Ho
   const eufy = new Eufy(new Storage("/unused-test-storage"));
   const station = Object.assign(new EventEmitter(), { isConnected: () => true, getSerial: () => "BASE", close: () => {} });
   const a = { getStationSerial: () => "BASE", getSerial: () => "a" };
-  const internal = eufy as unknown as { client: unknown; devices: Map<string, unknown>; recoverStation(serial: string): Promise<string[]> };
+  const { LegacyBackend } = await import("../src/legacy-backend.js");
+  const backend = new LegacyBackend(new Storage("/unused-test-storage"), () => false);
+  (eufy as unknown as { backend: unknown }).backend = backend;
+  const internal = backend as unknown as { client: unknown; devices: Map<string, unknown>; recoverStation(serial: string): Promise<string[]> };
   internal.client = { getDevice: async () => a, getStation: async () => station };
   internal.devices.set("a", a); internal.devices.set("b", { getStationSerial: () => "OTHER", getSerial: () => "b" });
   let finished = false;
