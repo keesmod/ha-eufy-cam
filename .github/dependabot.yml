@@ -19,6 +19,11 @@ updates:
           - version-update:semver-minor
     cooldown:
       default-days: 7
+    # This package comes from GitHub releases and has no npm registry entry.
+    # Update its release URL and integrity through the library release process.
+    # Full lockfile security audits and the release pin checks still cover it.
+    ignore:
+      - dependency-name: "@keesmod/eufy-mega-client"
     groups:
       npm-patch-minor:
         applies-to: version-updates
