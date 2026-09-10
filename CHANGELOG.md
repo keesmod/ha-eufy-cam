@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.6.0 — 2026-09-10
+
+- Add the independent Eufy Mega client for T8030 HomeBase 3, T8160 cameras and
+  the T8213 doorbell. Select one backend at startup; retain separate sessions
+  and never retry a command through the legacy backend.
+- Preserve camera/entity identities, notifications, snapshots, live video and
+  audio, recording formats and Guard Mode with observed device confirmation.
+- Recover cancelled starts, downloads and network loss with device STOP
+  acknowledgements. Close UDP sockets and restore idle station connectivity.
+- Wait for delayed first audio packets before deciding a live stream has no
+  audio. Normal streams start as soon as their media is identified.
+- Use host networking and the loopback endpoint `http://127.0.0.1:8063` for the
+  HAOS app. Reconfigure the existing integration entry when upgrading.
+
+Update bridge and integration together. The HAOS app endpoint changes to
+`http://127.0.0.1:8063`; select `mega` explicitly and reconfigure the existing HA
+entry with its existing token. Keep the previous image and private session backup.
+See [Mega migration and rollback](docs/MEGA_MIGRATION.md). The agreed overnight
+observation lasted about 11 hours 26 minutes; it is not a completed 24-hour
+reliability or battery-life test.
+
 ## 0.5.1 — 2026-09-09
 
 - Preserve H.265 recordings in an Apple-compatible `hvc1` MP4 when the player

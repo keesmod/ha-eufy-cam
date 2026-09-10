@@ -18,6 +18,20 @@ The initial evidence comes from one maintainer installation, not a broad device 
 
 Detailed evidence: [0.3.0 validation](VALIDATION_0.3.md). Model support in the underlying SDK alone does not count as a successful installation report.
 
+## Independent Mega backend in 0.6.0
+
+Tested on T8030 firmware 3.8.6.0, three T8160 cameras on 3.4.3.0 and a T8213
+doorbell on 0.2.1.8. Test and production HA checks covered all four snapshots and
+WebRTC video/audio, native H.264/H.265 and converted recordings, a complete
+138-record day with camera filters, observed Guard Mode and stream cleanup.
+Real rings/person/pet events and recognized names reached HA. The existing
+fifteen entity identities were preserved.
+
+An agreed overnight observation lasted about 11 hours 26 minutes, with no
+unwanted stream starts. HA recorder independently covered gaps caused by an
+expired token in the auxiliary observer. This is not a completed 24-hour or
+battery-life test. See the library's [full results and limits](https://github.com/keesmod/eufy-mega-client/blob/main/docs/COMPATIBILITY.md).
+
 ## Report your installation
 
 Our first target is **10 independent HomeBase 3 installations**. You do not need to be a developer. A partial result is useful too.
