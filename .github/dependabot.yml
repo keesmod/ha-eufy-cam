@@ -6,11 +6,29 @@ updates:
       - /ha_app
       - /frontend
     schedule:
-      interval: daily
-    # Security updates remain enabled; routine version PRs are outside this flow.
-    open-pull-requests-limit: 0
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Europe/Amsterdam
+    open-pull-requests-limit: 5
+    # These version-update limits do not filter or delay security updates.
+    allow:
+      - dependency-type: all
+        update-types:
+          - version-update:semver-patch
+          - version-update:semver-minor
+    cooldown:
+      default-days: 7
     groups:
+      npm-patch-minor:
+        applies-to: version-updates
+        group-by: dependency-name
+        patterns:
+          - "*"
+        update-types:
+          - patch
+          - minor
       npm-security:
         applies-to: security-updates
         patterns:
-          - '*'
+          - "*"

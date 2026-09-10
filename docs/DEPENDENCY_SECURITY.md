@@ -25,16 +25,34 @@ without repository activity. Check the workflow's enabled state after a long
 pause and re-enable it when needed. Dependabot alerts operate independently of
 the Actions schedule. See [GitHub's schedule policy](https://docs.github.com/en/enterprise-cloud@latest/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
 
-The configuration groups npm security fixes into PRs.
-`open-pull-requests-limit: 0` disables routine version-update PRs and does
-not disable security-update PRs. Updates are not automatically merged or deployed.
+The configuration groups npm security fixes into PRs. Security updates remain
+independent of the weekly version-update schedule, its cooldown and PR limit.
 
-For a security PR, review the advisory and changed packages, preserve exact
+## Weekly version updates
+
+Dependabot checks all three npm package roots every Monday at 09:00
+`Europe/Amsterdam`. It proposes patch and minor updates that have been published
+for at least seven days, with at most five open version-update PRs. Regular major
+upgrades require separate manual review and are not proposed by this flow.
+
+The version group uses `group-by: dependency-name` to update the same dependency
+across the bridge, app and frontend together when their constraints allow it.
+Security fixes keep their existing group. The `allow.update-types` restriction
+and cooldown apply only to ordinary version updates; they do not suppress a
+security fix that requires a major upgrade. See [GitHub's Dependabot options](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference).
+
+PR creation and CI are automatic. Merging, release publication and installation
+on Home Assistant remain controlled steps. Neither the daily security audit nor
+the required CI and release gates are relaxed for Dependabot.
+
+For any dependency PR, review the changes and applicable advisories, preserve exact
 lockfile integrity, and complete [the normal release requirements](RELEASING.md).
 Production dependency changes require the bridge and integration version bumps,
 changelog and appropriate acceptance tests. Keep `bridge` canonical and
 regenerate the app with `python3 scripts/prepare_ha_app.py`; generated-file
-checks remain mandatory even for bot PRs.
+checks remain mandatory even for bot PRs. Regenerate the frontend build when its
+dependencies change. A bot PR may need these generated files, version bumps and
+release notes before its checks pass.
 
 The GitHub-hosted Mega tarball stays pinned to an exact release and checksum.
 Dependabot is not a cross-repository release updater: a fix to Mega itself must
