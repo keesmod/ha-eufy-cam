@@ -13,14 +13,20 @@ If you use Home Assistant OS, you can run the bridge on the same machine through
 
 The container includes Node.js 24 and FFmpeg. Each bridge manages one Eufy account. Do not use this bridge with another system that starts or stops camera streams.
 
+The independent Mega backend is tested with T8030 HomeBase 3, T8160 cameras and
+the T8213 doorbell on the same LAN. It requires host networking. See
+[Mega migration and rollback](MEGA_MIGRATION.md) before updating an existing
+installation. The default backend remains `legacy`; the command below explicitly
+selects Mega and keeps its session separate.
+
 ## 1. Download and build
 
-These commands check out release 0.5.0 and build its Docker image locally:
+These commands check out release 0.6.0 and build its Docker image locally:
 
 ```sh
-git clone --branch v0.5.0 --depth 1 https://github.com/keesmod/ha-eufy-cam.git
+git clone --branch v0.6.0 --depth 1 https://github.com/keesmod/ha-eufy-cam.git
 cd ha-eufy-cam
-docker build -t eufy-viewer-bridge:0.5.0 ./bridge
+docker build -t eufy-viewer-bridge:0.6.0 ./bridge
 ```
 
 Stay in this directory for the remaining commands. The first build may take several minutes.
@@ -44,16 +50,20 @@ Replace `YOUR_LAN_IP` with this Docker machine's LAN address, such as `192.168.1
 docker run -d --name eufy-viewer-bridge \
   --restart unless-stopped \
   --env-file bridge.env \
-  -p YOUR_LAN_IP:8080:8080 \
+  --network host --stop-timeout 20 \
+  -e EUFY_BACKEND=mega -e BIND_ADDRESS=YOUR_LAN_IP \
   -v eufy-viewer-data:/data \
-  eufy-viewer-bridge:0.5.0
+  eufy-viewer-bridge:0.6.0
 ```
 
-Port 8080 on that address must be free. Home Assistant connects to `http://YOUR_LAN_IP:8080`. Use the Docker host's LAN address even if Home Assistant also runs in Docker; `localhost` inside HA points to HA's own container.
+Port 8080 on that address must be free. Host networking uses the chosen bind address directly; do not add Docker `-p` mappings. If HA shares the host network, you can bind to `127.0.0.1` and use that address in HA instead. Home Assistant connects to `http://YOUR_LAN_IP:8080`. Use the Docker host's LAN address even if Home Assistant also runs in Docker; `localhost` inside HA points to HA's own container.
 
 Allow Home Assistant to reach the published port. Keep it on a trusted LAN or protect it with a TLS reverse proxy; plain HTTP exposes the token and login credentials on an untrusted network. Do not forward this port from the internet. Your browser connects through Home Assistant and does not need direct access to the bridge.
 
-Some device/network combinations may need Docker host networking for Eufy's local P2P connection. If account login works but the HomeBase cannot connect, check the bridge logs and the host's local network/firewall before changing networking. With host networking, Docker port mappings no longer restrict the listener, so review the bind address and firewall too.
+If login works but the HomeBase cannot connect, check that the Docker host is
+on the HomeBase LAN. Routed VLAN and relay-only Mega connections have not been
+validated. To keep the existing client, select `EUFY_BACKEND=legacy`; commands
+never switch backend automatically.
 
 ## 4. Check startup and connect Home Assistant
 
@@ -74,15 +84,15 @@ Never attach the data volume or environment file to a support report.
 
 ## Update the Docker bridge
 
-These steps update an older Docker installation to 0.5.0. Run them from your existing checkout and keep the original `bridge.env`. If you used a different container name, volume name, image tag or port mapping, use those values instead of the examples below.
+These steps update an older Docker installation to 0.6.0. Run them from your existing checkout and keep the original `bridge.env`. If you used a different container name, volume name, image tag or port mapping, use those values instead of the examples below.
 
 1. Close all live viewers and recording dialogs.
 2. Download and build the new release while the old container is still available:
 
    ```sh
-   git fetch origin tag v0.5.0
-   git checkout v0.5.0
-   docker build -t eufy-viewer-bridge:0.5.0 ./bridge
+   git fetch origin tag v0.6.0
+   git checkout v0.6.0
+   docker build -t eufy-viewer-bridge:0.6.0 ./bridge
    ```
 
 3. Stop the bridge, then back up its named volume and `bridge.env` using your Docker host's backup tools:
