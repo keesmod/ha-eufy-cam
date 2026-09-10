@@ -50,7 +50,7 @@ class FakeGitHub:
     def create(self, tag, commit, notes):
         assert self.tagged == commit
         assert "Validation:" in notes.read_text()
-        self.current = {"draft": True, "prerelease": False}
+        self.current = {"draft": True, "prerelease": False, "body": notes.read_text()}
 
     def upload(self, tag, path):
         assert path.name not in self.files
@@ -143,7 +143,13 @@ class ReleaseTests(unittest.TestCase):
     def test_partial_draft_resumes_only_missing_uploads(self):
         github = FakeGitHub()
         github.tagged = SHA
-        github.current = {"draft": True, "prerelease": False}
+        github.current = {
+            "draft": True,
+            "prerelease": False,
+            "body": release.release_notes(
+                META, SHA, "Synthetic protocol tests; hardware unchanged."
+            ),
+        }
         github.files["fixture.tgz"] = (self.folder / "fixture.tgz").read_bytes()
         self.publish(github)
         self.assertNotIn("fixture.tgz", github.uploads)
@@ -182,11 +188,30 @@ class ReleaseTests(unittest.TestCase):
     def test_unrelated_draft_asset_requires_inspection(self):
         github = FakeGitHub()
         github.tagged = SHA
-        github.current = {"draft": True, "prerelease": False}
+        github.current = {
+            "draft": True,
+            "prerelease": False,
+            "body": release.release_notes(
+                META, SHA, "Synthetic protocol tests; hardware unchanged."
+            ),
+        }
         github.files["manual.txt"] = b"do not delete"
         with self.assertRaisesRegex(ValueError, "unrelated assets"):
             self.publish(github)
         self.assertEqual(github.files["manual.txt"], b"do not delete")
+
+    def test_existing_manual_draft_notes_are_not_published(self):
+        github = FakeGitHub()
+        github.tagged = SHA
+        github.current = {
+            "draft": True,
+            "prerelease": False,
+            "body": "Unrelated manual draft",
+        }
+        with self.assertRaisesRegex(ValueError, "Draft release notes differ"):
+            self.publish(github)
+        self.assertFalse(github.uploads)
+        self.assertEqual(github.publications, 0)
 
     def test_no_branch_publication(self):
         with patch.dict(os.environ, {"GITHUB_REF": "refs/heads/feature"}):

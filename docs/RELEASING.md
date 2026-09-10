@@ -70,7 +70,8 @@ does not publish a release. Releases do not deploy to a Home Assistant instance.
 
 A failed or cancelled build cannot publish. A download, checksum or package
 mismatch leaves the candidate as a draft. Rerunning the same commit can resume
-missing uploads; existing assets are verified and never overwritten. A mismatched
+missing uploads; reuse the original acceptance summary. Draft notes must match
+the candidate before publication. Existing assets are verified and never overwritten. A mismatched
 existing asset or an unrelated manual draft requires inspection, not automatic
 deletion. Preserve valid published releases and tags.
 

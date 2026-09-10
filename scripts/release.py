@@ -48,7 +48,8 @@ def version_tuple(version):
 def metadata(root=ROOT, requested=None, base=None):
     result = project.metadata(root)
     version_tuple(result["version"])
-    if requested:
+    if requested is not None:
+        version_tuple(requested)
         require(
             result["version"] == requested,
             "Requested version differs from repository metadata",
@@ -269,6 +270,28 @@ def verify_remote(github, tag, release, folder, meta, commit, manifest_digest):
         )
 
 
+def release_notes(meta, commit, acceptance):
+    body = project.changelog(ROOT, meta["version"])
+    body = re.sub(
+        r"\]\((docs/[^)]+)\)",
+        lambda match: (
+            "]("
+            + "https://github.com/"
+            + meta["repository"]
+            + "/blob/"
+            + commit
+            + "/"
+            + match[1]
+            + ")"
+        ),
+        body,
+    )
+    return (
+        body + f"\n\nSource commit: `{commit}`\n\nValidation: {acceptance.strip()}\n\n"
+        "Download checksums and exact component versions are included in the release assets.\n"
+    )
+
+
 def publish(folder, requested, manifest_digest, acceptance, github=None):
     require(
         os.environ.get("GITHUB_REF") == "refs/heads/main",
@@ -298,16 +321,17 @@ def publish(folder, requested, manifest_digest, acceptance, github=None):
         return
     if github.tag_commit(tag) is None:
         github.api("/git/refs", {"ref": "refs/tags/" + tag, "sha": commit})
+    notes_text = release_notes(meta, commit, acceptance)
     if release is None:
         with tempfile.TemporaryDirectory() as temp:
             notes = Path(temp) / "notes.md"
-            notes.write_text(
-                project.changelog(ROOT, meta["version"])
-                + f"\n\nSource commit: `{commit}`\n\nValidation: {acceptance.strip()}\n\n"
-                + "Download checksums and exact component versions are included in the release assets.\n"
-            )
+            notes.write_text(notes_text)
             github.create(tag, commit, notes)
         release = github.release(tag)
+    require(
+        (release.get("body") or "").replace("\r\n", "\n").strip() == notes_text.strip(),
+        "Draft release notes differ; reuse the original acceptance summary or inspect the draft",
+    )
     present = {a["name"] for a in release["assets"]}
     require(present <= expected, "Draft contains unrelated assets; inspect it manually")
     # Resume only missing uploads. Never replace an existing tag or asset.
