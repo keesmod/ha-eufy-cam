@@ -199,10 +199,12 @@ Sessions have a **two-minute absolute limit**; continuing requires another tap. 
 | Integration | Home Assistant ≥ 2026.9.0; built-in `camera`, `http`, `lovelace`, `websocket_api`; `go2rtc-client` 0.4.0 (installed automatically); HA-managed `go2rtc` for WebRTC |
 | Card | Bundled JavaScript, Home Assistant frontend and a modern browser; no separate frontend runtime package |
 | Bridge | Node.js 24, FFmpeg and tini; all included in the app/container |
-| Bridge libraries | `eufy-security-client` 4.1.1-1 (MIT), `ws` 8.21.3 (MIT); transitive dependencies pinned by `bridge/package-lock.json` |
+| Bridge libraries | `@keesmod/eufy-mega-client` 0.1.0 from its checksum-pinned GitHub release for `mega`; `eufy-security-client` 4.1.1-1 for `legacy`; `ws` 8.21.3. MIT licensed, with dependencies pinned by `bridge/package-lock.json`. |
 | External services | Eufy account with camera access, Eufy cloud/push connectivity and local connectivity to camera/HomeBase |
 
 No MQTT, separately installed RTSP server, existing Eufy integration or `eufy-security-ws` app is required. WebRTC uses HA's managed go2rtc and its FFmpeg audio conversion. Upgrade the bridge and integration together for the new transport. A dedicated shared Eufy account is recommended for ongoing use. Simultaneous operation with another Eufy client using the same account has only been briefly observed, not long-term validated. TypeScript, Playwright and Python test tools are development-only dependencies.
+
+Maintainers use the [validated release flow](docs/RELEASING.md) for both repositories. HACS updates the integration; the app store or Docker updates the bridge. A library release reaches HA only after a separately tested bridge release.
 
 See [architecture and safety](docs/ARCHITECTURE.md), [bridge protocol](docs/PROTOCOL.md), [development](docs/DEVELOPMENT.md) and [validation](docs/VALIDATION.md).
 

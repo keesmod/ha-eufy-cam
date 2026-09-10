@@ -1,20 +1,21 @@
-Describe the problem and what changes for users.
+Describe the problem and resulting behavior.
 
 ## Validation
 
-List the checks run and any behavior that remains unverified.
+List checks run, applicable hardware/HA evidence and behavior still unverified.
 
-## Release checklist
+## Release impact
 
-- [ ] Name the affected components and target versions, or explain why no release is needed.
-- [ ] Include the version bump, matching package metadata and changelog entry.
-- [ ] Update installation and upgrade instructions, including card resource URLs and the required bridge version.
-- [ ] All six Validate jobs pass on the PR's latest commit before merging.
+- [ ] Name affected components and target versions, or state why this is CI/docs only.
+- [ ] Update matching manifests/lockfiles, changelog and upgrade/rollback guidance.
+- [ ] Preserve exact dependency pins and attribution; update compatibility evidence when needed.
+- [ ] The required `ci` check passes on the current PR commit.
 
-For a release, complete these steps after merging:
+After a release-impacting merge:
 
-- [ ] The full Validate pipeline passes on the merged `main` commit.
-- [ ] Build and inspect archives from that commit, then publish its version tag and GitHub release with upgrade notes and checksums.
-- [ ] Verify the published tag and the versions inside the release archives.
+- [ ] Confirm `ci` on the merged main commit.
+- [ ] Run the Release workflow rehearsal and inspect its verified package artifact.
+- [ ] Supply sanitized acceptance evidence and explicitly run publication.
+- [ ] Confirm public tag, assets, checksums and any separately authorized deployment.
 
-See [the release process](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/DEVELOPMENT.md#pull-requests-and-releases).
+See [the release flow](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/RELEASING.md).
