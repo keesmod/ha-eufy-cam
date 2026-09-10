@@ -1,6 +1,7 @@
 """WebRTC signaling authorization, cancellation and independent bridge leases."""
 
 import asyncio
+import json
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -213,3 +214,44 @@ async def test_missing_go2rtc_or_old_bridge_never_wakes_camera(
     )
     assert (await client.receive_json())["error"]["code"] == "unsupported"
     assert not connect.called
+
+
+@pytest.mark.parametrize("audio", [False, True, None])
+async def test_audio_conversion_matches_stream_capability(
+    hass, hass_ws_client, rtc_setup, audio
+):
+    socket, rest, _, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client)
+    payload = {"type": "ready", "path": "/v1/media/" + "a" * 64}
+    if audio is not None:
+        payload["audio"] = audio
+    await socket.queue.put(
+        SimpleNamespace(type=aiohttp.WSMsgType.TEXT, data=json.dumps(payload))
+    )
+    assert (await client.receive_json())["event"]["type"] == "ready"
+    sources = rest.streams.add.call_args.args[1]
+    assert len(sources) == (1 if audio is False else 2)
+    assert sources[0].endswith(payload["path"])
+    if audio is not False:
+        assert sources[1] == f"ffmpeg:{viewer.name}#audio=opus"
+    await client.close()
+    await hass.async_block_till_done()
+
+
+async def test_invalid_audio_capability_cannot_register_stream(
+    hass, hass_ws_client, rtc_setup
+):
+    socket, rest, _, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client)
+    await socket.queue.put(
+        SimpleNamespace(
+            type=aiohttp.WSMsgType.TEXT,
+            data=json.dumps(
+                {"type": "ready", "path": "/v1/media/" + "a" * 64, "audio": "false"}
+            ),
+        )
+    )
+    assert (await client.receive_json())["event"]["type"] == "ended"
+    await viewer.task
+    rest.streams.add.assert_not_called()
+    await client.close()

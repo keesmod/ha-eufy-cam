@@ -117,14 +117,23 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
       const serial = live![1]!;
       const webrtc = new URL(request.url ?? "/", "http://bridge").searchParams.get("transport") === "webrtc";
       const grant = webrtc ? eufy.media.grant(serial) : null;
+      let ready = false;
       const peer: Peer = {
-        send: frame => { if (webrtc) ws.send(JSON.stringify({ type: "tick" })); else ws.send(frame, { binary: true }); },
+        send: frame => {
+          if (!webrtc) { ws.send(frame, { binary: true }); return; }
+          if (!ready) {
+            ready = true;
+            // The encoder has the actual stream metadata before its first frame.
+            ws.send(JSON.stringify({ type: "ready", path: `/v1/media/${grant}`, audio: eufy.media.audioSupported(serial) }));
+          }
+          ws.send(JSON.stringify({ type: "tick" }));
+        },
         close: (code, reason) => { ws.close(code, reason); setTimeout(() => ws.terminate(), 500).unref(); },
         get bufferedAmount() { return ws.bufferedAmount; },
       };
       ws.on("close", () => { if (grant) eufy.media.revoke(grant); eufy.hub.detach(serial, peer); });
       ws.on("message", (data, binary) => { if (!binary && data.toString() === "ack") eufy.hub.ack(serial, peer); else ws.close(1008, "Invalid acknowledgement"); });
-      if (eufy.hub.attach(serial, peer) && grant) ws.send(JSON.stringify({ type: "ready", path: `/v1/media/${grant}` }));
+      eufy.hub.attach(serial, peer);
     });
   });
   const watchdog = setInterval(() => eufy.hub.tick(), 250);

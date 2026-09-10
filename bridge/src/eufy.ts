@@ -25,6 +25,8 @@ export class Eufy extends EventEmitter {
   private backend?: Backend;
   private loginBusy = false;
   private restoring = false;
+  private restoreTask?: Promise<void>;
+  private restoreRetryAbort = new AbortController();
   private readonly restoreAbort = new AbortController();
   private encoders = new Map<string, ChildProcessWithoutNullStreams>();
   private livePictures = new Map<string, Picture>();
@@ -101,7 +103,16 @@ export class Eufy extends EventEmitter {
   ) {
     super();
   }
-  async restore(): Promise<void> {
+  restore(): Promise<void> {
+    if (this.restoreTask) return this.restoreTask;
+    this.restoreRetryAbort = new AbortController();
+    const task = this.restoreSaved();
+    this.restoreTask = task;
+    void task.finally(() => { if (this.restoreTask === task) this.restoreTask = undefined; }).catch(() => {});
+    return task;
+  }
+  private async restoreSaved(): Promise<void> {
+    const signal = AbortSignal.any([this.restoreAbort.signal, this.restoreRetryAbort.signal]);
     this.restoring = true;
     this.auth = { state: 'connecting' };
     this.emit('change');
@@ -113,22 +124,23 @@ export class Eufy extends EventEmitter {
       }
       const credentials = JSON.parse(saved) as Credentials;
       let retryDelay = 5000;
-      while (!this.restoreAbort.signal.aborted) {
+      while (!signal.aborted) {
         try {
           await this.loginAttempt(credentials);
           return;
         } catch {
+          if (signal.aborted) return;
           // Startup can precede working DNS/networking. Retry failed SDK
           // initialization, but never retry a returned password/2FA challenge.
           this.auth = { state: 'connecting' };
           this.emit('change');
           this.emit('restore_retry');
-          await delay(retryDelay, undefined, { signal: this.restoreAbort.signal });
+          await delay(retryDelay, undefined, { signal });
           retryDelay = Math.min(retryDelay * 2, 60_000);
         }
       }
     } catch (error) {
-      if (!this.restoreAbort.signal.aborted) {
+      if (!signal.aborted) {
         this.auth = { state: 'error' };
         throw error;
       }
@@ -138,7 +150,14 @@ export class Eufy extends EventEmitter {
     }
   }
   async login(credentials?: Credentials, options?: LoginOptions): Promise<AuthState> {
-    if (this.restoring) throw new Error('Saved login is still being restored');
+    if (this.restoring) {
+      if (!credentials) throw new Error('Saved login is still being restored');
+      // User-provided credentials supersede automatic retries. Wait for an
+      // in-flight attempt to settle so two SDK owners can never overlap.
+      this.restoreRetryAbort.abort();
+      await this.restoreTask;
+    }
+    if (this.restoreAbort.signal.aborted) throw new Error('Bridge is shutting down');
     return this.loginAttempt(credentials, options);
   }
   private async loginAttempt(

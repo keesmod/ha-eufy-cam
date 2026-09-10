@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.3 - 2026-09-10
+
+- Keep video-only live streams usable by forwarding the actual audio capability
+  to Home Assistant and omitting go2rtc audio conversion when no supported audio
+  track is present. Preserve audio conversion for audio-capable streams and
+  compatibility with older bridges.
+- Allow a corrected account login to replace automatic session-restore retries.
+  Wait for any in-flight initialization to finish before creating another SDK
+  owner. No session deletion or integration recreation is required.
+- Add regression coverage for video-only and audio-capable negotiation, invalid
+  metadata, recovery during backoff and serialized in-flight recovery.
+
+Update the bridge and HACS integration together to 0.6.3, then
+restart Home Assistant. Preserve the existing token, account and data. Keep the
+previous version and a private backup for rollback. These fixes address code
+paths implicated by issue #10. T8134 live playback still needs reporter
+validation. Person event entities retain the last event, not a motion/idle state.
+
 ## 0.6.2 — 2026-09-10
 
 - Update the independent Mega client to 0.1.1. Include T8142 eufyCam S220 / 2C
