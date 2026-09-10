@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directories:
+      - /bridge
+      - /ha_app
+      - /frontend
+    schedule:
+      interval: daily
+    # Security updates remain enabled; routine version PRs are outside this flow.
+    open-pull-requests-limit: 0
+    groups:
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - '*'
