@@ -1,8 +1,9 @@
 # Independent Mega backend migration
 
-Upgrade to bridge and integration 0.6.1 together. Version 0.6.1 includes the
+Upgrade to bridge and integration 0.6.2 together. Version 0.6.2 adds S220
+T8142/T8134 discovery on T8030; S220 hardware validation remains pending. Version 0.6.1 includes the
 recording audio fix for Apple players. The bridge pins the compiled
-`@keesmod/eufy-mega-client` 0.1.0 GitHub release and verifies its lockfile integrity.
+`@keesmod/eufy-mega-client` 0.1.1 GitHub release and verifies its lockfile integrity.
 No npm registry publication or additional service is required.
 
 The bridge can select `legacy` or `mega` once at startup. Mega uses the independent

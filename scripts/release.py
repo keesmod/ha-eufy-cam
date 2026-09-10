@@ -186,7 +186,20 @@ class GitHub:
         raise ValueError("Too many nested tags")
 
     def release(self, tag):
-        return self.api("/releases/tags/" + tag, missing=True)
+        result = self.api("/releases/tags/" + tag, missing=True)
+        if result is not None:
+            return result
+        # GitHub's tag endpoint may omit drafts. Find the exact draft in the
+        # authenticated release list; never treat another draft as this release.
+        page = 1
+        while True:
+            releases = self.api(f"/releases?per_page=100&page={page}")
+            for candidate in releases:
+                if candidate["tag_name"] == tag:
+                    return self.api("/releases/" + str(candidate["id"]))
+            if len(releases) < 100:
+                return None
+            page += 1
 
     def download(self, tag, folder):
         command(
@@ -328,6 +341,7 @@ def publish(folder, requested, manifest_digest, acceptance, github=None):
             notes.write_text(notes_text)
             github.create(tag, commit, notes)
         release = github.release(tag)
+    require(release is not None, "Created draft is not visible; retry after inspection")
     require(
         (release.get("body") or "").replace("\r\n", "\n").strip() == notes_text.strip(),
         "Draft release notes differ; reuse the original acceptance summary or inspect the draft",
