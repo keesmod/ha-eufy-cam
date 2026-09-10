@@ -70,6 +70,31 @@ class FakeGitHub:
         self.publications += 1
 
 
+class GitHubLookupTests(unittest.TestCase):
+    def test_draft_omitted_by_tag_endpoint_is_found_on_later_page(self):
+        github = release.GitHub("owner/example")
+        draft = {"id": 42, "tag_name": "v0.2.0", "draft": True, "assets": []}
+        with patch.object(github, "api", side_effect=[
+            None, [{"tag_name": "v0.1.0", "id": 1}] * 100, [draft], draft
+        ]) as api:
+            self.assertEqual(github.release("v0.2.0"), draft)
+            self.assertEqual(api.call_args_list[-1].args, ("/releases/42",))
+
+    def test_missing_release_does_not_select_unrelated_draft(self):
+        github = release.GitHub("owner/example")
+        with patch.object(github, "api", side_effect=[
+            None, [{"tag_name": "v0.1.0", "id": 1, "draft": True}]
+        ]):
+            self.assertIsNone(github.release("v0.2.0"))
+
+    def test_public_release_uses_tag_endpoint(self):
+        github = release.GitHub("owner/example")
+        public = {"tag_name": "v0.2.0", "draft": False}
+        with patch.object(github, "api", return_value=public) as api:
+            self.assertEqual(github.release("v0.2.0"), public)
+            api.assert_called_once()
+
+
 class ReleaseTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
