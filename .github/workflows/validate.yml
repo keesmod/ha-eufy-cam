@@ -1,17 +1,40 @@
 name: Validate
 on:
   push:
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    outputs:
+      manifest_sha256:
+        description: Digest of the verified package manifest
+        value: ${{ jobs.release-package.outputs.manifest_sha256 }}
 permissions:
   contents: read
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
 jobs:
+  release-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 scripts/check_workflows.py
+      - run: python3 -m unittest discover -s scripts/tests -v
+      - name: Check versions, release notes, dependency pins and changed components
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/release.py check
   home-assistant:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
           python-version: '3.14'
       - run: uv sync --frozen
@@ -23,14 +46,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: hacs/action@main
+      - uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa # main, 2026-09-10
         with:
           category: integration
   app-package:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 scripts/prepare_ha_app.py
       - run: git diff --exit-code -- ha_app
       - run: docker build -t eufy-viewer-app:test ./ha_app
@@ -38,14 +61,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: home-assistant/actions/hassfest@master
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: home-assistant/actions/hassfest@a7c616ce81ccda50150bf1595786c71b1883fabb # master, 2026-09-10
   bridge:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
@@ -69,8 +92,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
           cache: npm
@@ -88,5 +111,38 @@ jobs:
         working-directory: frontend
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
-      - run: npm run build && npm test
+      - run: npm run build
         working-directory: frontend
+      - run: git diff --exit-code -- custom_components/eufy_viewer/frontend
+      - run: npm test
+        working-directory: frontend
+  release-package:
+    needs: [release-checks, home-assistant, hacs, hassfest, app-package, bridge, card]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      manifest_sha256: ${{ steps.bundle.outputs.manifest_sha256 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build and inspect integration, bridge and source archives
+        id: bundle
+        run: python3 scripts/release.py build
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-package
+          path: artifacts/release/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+  ci:
+    if: ${{ always() }}
+    needs: [release-checks, home-assistant, hacs, hassfest, app-package, bridge, card, release-package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every check to succeed
+        env:
+          RESULTS: ${{ toJson(needs) }}
+        run: python3 -c 'import json,os; assert all(j["result"] == "success" for j in json.loads(os.environ["RESULTS"]).values())'
