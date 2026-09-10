@@ -148,3 +148,54 @@ test('refusing reauthentication during a viewer leaves the connected session int
   assert.equal(bridge.auth.state, 'connected');
   await bridge.close();
 });
+
+
+test('explicit credentials recover during automatic restore backoff without overlapping SDK owners', async t => {
+  const storage = new Storage('/unused');
+  t.mock.method(storage, 'read', async (name: string) => name === 'credentials.json' ? JSON.stringify({ username: 'old', password: 'fixture', country: 'NL' }) : undefined);
+  t.mock.method(storage, 'write', async () => {});
+  const sdk = Object.assign(new EventEmitter(), { isConnected: () => true, connect: async () => {}, close: () => {}, setCameraMaxLivestreamDuration: () => {} });
+  let attempts = 0;
+  t.mock.method(EufySecurity, 'initialize', async () => {
+    if (++attempts === 1) throw new Error('Saved settings cannot initialize');
+    return sdk as unknown as EufySecurity;
+  });
+  const bridge = new Eufy(storage);
+  const retry = once(bridge, 'restore_retry');
+  const restoring = bridge.restore();
+  try {
+    await retry;
+    const recovered = await bridge.login({ username: 'corrected', password: 'fixture', country: 'IT' });
+    await restoring;
+    assert.equal(recovered.state, 'connected');
+    assert.equal(attempts, 2);
+    assert.equal(bridge.auth.state, 'connected');
+  } finally { await bridge.close(); }
+});
+
+test('manual recovery waits for in-flight automatic initialization to settle', async t => {
+  const storage = new Storage('/unused');
+  t.mock.method(storage, 'read', async (name: string) => name === 'credentials.json' ? '{}' : undefined);
+  t.mock.method(storage, 'write', async () => {});
+  let rejectOld!: (error: Error) => void;
+  const starting = new EventEmitter();
+  const started = once(starting, 'started');
+  let attempts = 0;
+  const sdk = Object.assign(new EventEmitter(), { isConnected: () => true, connect: async () => {}, close: () => {}, setCameraMaxLivestreamDuration: () => {} });
+  t.mock.method(EufySecurity, 'initialize', async () => {
+    if (++attempts === 1) return new Promise<EufySecurity>((_resolve, reject) => { rejectOld = reject; starting.emit('started'); });
+    return sdk as unknown as EufySecurity;
+  });
+  const bridge = new Eufy(storage);
+  const restoring = bridge.restore();
+  try {
+    await started;
+    const recovery = bridge.login({ username: 'corrected', password: 'fixture', country: 'IT' });
+    await Promise.resolve();
+    assert.equal(attempts, 1);
+    rejectOld(new Error('Old initialization failed'));
+    assert.equal((await recovery).state, 'connected');
+    await restoring;
+    assert.equal(attempts, 2);
+  } finally { await bridge.close(); }
+});

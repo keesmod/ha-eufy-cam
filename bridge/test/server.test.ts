@@ -36,10 +36,11 @@ test('authenticated bridge snapshots never start; websocket close stops last vie
   } finally { server.emit('shutdown'); server.close(); await once(server, 'close'); }
 });
 
-test('WebRTC media grants cannot wake cameras and expire with their owning viewer', async () => {
+for (const hasAudio of [false, true]) test(`WebRTC grants report audio=${hasAudio} after the first frame and expire with their owner`, async t => {
   const { MediaRelay } = await import('../src/media.js');
   const calls: string[] = [];
   const media = new MediaRelay(() => {});
+  t.mock.method(media, 'audioSupported', () => hasAudio);
   const hub = new StreamHub({ start: async s => { calls.push(`start:${s}`); }, stop: async s => { calls.push(`stop:${s}`); }, disposeMedia: s => media.stop(s) });
   const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {} });
   const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
@@ -51,14 +52,20 @@ test('WebRTC media grants cannot wake cameras and expire with their owning viewe
     assert.equal((await fetch(`${base}/v1/media/${'a'.repeat(64)}`)).status, 404);
     assert.deepEqual(calls, []);
     ws = new WebSocket(`${base}/v1/live/CAM123?transport=webrtc`, { headers: { Authorization: `Bearer ${token}` } });
-    const first = once(ws, 'message'); await once(ws, 'open');
+    const messages: { data: string; binary: boolean }[] = [];
+    ws.on('message', (data, binary) => messages.push({ data: data.toString(), binary }));
+    await once(ws, 'open');
+    assert.deepEqual(messages, [], 'No fabricated audio capability before media arrives');
+    const first = once(ws, 'message');
+    hub.frame('CAM123', Buffer.from('jpeg-not-forwarded'));
     const [ready] = await first;
     const message = JSON.parse(ready.toString());
     assert.equal(message.type, 'ready'); assert.match(message.path, /^\/v1\/media\/[a-f0-9]{64}$/);
     assert.deepEqual(calls, ['start:CAM123']);
-    const tick = once(ws, 'message'); hub.frame('CAM123', Buffer.from('jpeg-not-forwarded'));
-    const [data, binary] = await tick;
-    assert.equal(binary, false); assert.deepEqual(JSON.parse(data.toString()), { type: 'tick' });
+    assert.equal(message.audio, hasAudio);
+    assert.equal(messages.length, 2);
+    assert.equal(messages[1]!.binary, false);
+    assert.deepEqual(JSON.parse(messages[1]!.data), { type: 'tick' });
     const detached = new Promise<void>(resolve => { const original = hub.detach.bind(hub); hub.detach = (s, peer) => { original(s, peer); resolve(); }; });
     ws.close(); await Promise.all([once(ws, 'close'), detached]);
     assert.deepEqual(calls, ['start:CAM123', 'stop:CAM123']);
