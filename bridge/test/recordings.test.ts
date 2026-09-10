@@ -59,6 +59,10 @@ test('real stored H264 and AAC bytes become a fully decodable browser MP4', asyn
   const audio = execFileSync('ffmpeg', ['-v','error','-f','lavfi','-i','sine=frequency=440:sample_rate=16000','-t','1','-c:a','aac','-f','adts','pipe:1']);
   const mp4 = await muxRecording({ videoCodec: VideoCodec.H264, audioCodec: AudioCodec.AAC, videoFPS:15,videoWidth:320,videoHeight:180 },video,audio,new AbortController().signal);
   assert.equal(mp4.subarray(4,8).toString(),'ftyp');
+  const audioInfo = JSON.parse(execFileSync('ffprobe', ['-v','error','-select_streams','a:0','-show_entries','stream=profile,channels,extradata_size','-of','json','pipe:0'], {input:mp4}).toString()).streams[0];
+  assert.equal(audioInfo.profile, 'LC', 'MP4 must identify AAC before an Apple player opens it');
+  assert.equal(audioInfo.channels, 1, 'AAC configuration must retain the source channel count');
+  assert.ok(audioInfo.extradata_size >= 2, 'MP4 must include the AAC AudioSpecificConfig');
   execFileSync('ffmpeg',['-v','error','-i','pipe:0','-f','null','-'],{input:mp4});
   const muted = await muxRecording({ videoCodec:VideoCodec.H264,audioCodec:AudioCodec.NONE,videoFPS:15,videoWidth:320,videoHeight:180 },video,Buffer.alloc(0),new AbortController().signal);
   execFileSync('ffmpeg',['-v','error','-i','pipe:0','-f','null','-'],{input:muted});
@@ -108,6 +112,9 @@ test('native HEVC is losslessly remuxed as hvc1, while compatibility output is H
     assert.equal(streams[0].codec_name, format === 'native' ? 'hevc' : 'h264');
     assert.equal(streams[0].codec_tag_string, format === 'native' ? 'hvc1' : 'avc1');
     assert.equal(streams[1].codec_name,'aac');
+    assert.equal(streams[1].profile,'LC');
+    assert.equal(streams[1].channels,1);
+    assert.ok(streams[1].extradata_size >= 2, 'native and compatibility MP4s need AAC configuration');
     execFileSync('ffmpeg',['-v','error','-i','pipe:0','-f','null','-'],{input:mp4});
     if (format === 'native') {
       const frames = execFileSync('ffmpeg',['-v','error','-i','pipe:0','-map','0:v','-fps_mode','passthrough','-f','framemd5','-'],{input:mp4}).toString();
