@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.1 — 2026-09-10
+
+- Fix silent recordings in Safari and the Home Assistant iOS/macOS apps. The MP4
+  header now includes the AAC decoder configuration before playback starts.
+- Preserve encoded audio and native video without extra transcoding. The fix
+  applies to H.264, native H.265 and H.264 compatibility playback on both backends.
+- Add regression checks for AAC profile, channel count and decoder configuration.
+
+Update the bridge to **0.6.1**, then the HACS integration. Restart Home Assistant
+and close and reopen any prepared recording. Existing HomeBase recordings need
+no repair or camera setting change. Keep the existing data and bridge token.
+
 ## 0.6.0 — 2026-09-10
 
 - Add the independent Eufy Mega client for T8030 HomeBase 3, T8160 cameras and

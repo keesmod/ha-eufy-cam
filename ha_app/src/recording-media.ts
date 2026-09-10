@@ -37,10 +37,12 @@ export async function muxRecording(
     if (audio.length) args.push('-map', '1:a:0', '-c:a', 'copy', '-bsf:a', 'aac_adtstoasc');
     // Playback starts after the complete clip is buffered. A single fragment lets
     // native Apple players determine the full duration instead of stopping early.
+    // ADTS-to-ASC discovers the AAC configuration from its first packet. Delay
+    // the MP4 header until that packet is processed or Apple omits the audio track.
     // Oversized output must flush and hit our byte cap before FFmpeg buffers more.
     args.push(
       '-movflags',
-      'frag_custom+empty_moov+default_base_moof',
+      'frag_custom+empty_moov+delay_moov+default_base_moof',
       '-frag_size',
       String(LIMIT),
       '-f',
