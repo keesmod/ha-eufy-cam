@@ -1,0 +1,81 @@
+name: Release
+run-name: Release ${{ inputs.version }} / publish=${{ inputs.publish }}
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable version from the package metadata, without v
+        type: string
+        required: true
+      publish:
+        description: Publish after all checks (false runs the full rehearsal only)
+        type: boolean
+        default: false
+      acceptance:
+        description: Sanitized hardware/HA evidence link or why hardware testing is not needed
+        type: string
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Require main and matching release metadata
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          python3 scripts/release.py check --version "$RELEASE_VERSION"
+  validate:
+    needs: preflight
+    uses: ./.github/workflows/validate.yml
+  rehearsal:
+    if: ${{ !inputs.publish }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-package
+          path: artifacts/release
+      - name: Verify the validated build without publishing
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_MANIFEST_SHA: ${{ needs.validate.outputs.manifest_sha256 }}
+        run: |
+          python3 scripts/release.py verify --version "$RELEASE_VERSION"
+          echo 'Release rehearsal passed. No tag or release was created.' >> "$GITHUB_STEP_SUMMARY"
+  publish:
+    if: ${{ inputs.publish }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-package
+          path: artifacts/release
+      - name: Verify draft, publish, then verify downloaded public assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_ACCEPTANCE: ${{ inputs.acceptance }}
+          RELEASE_MANIFEST_SHA: ${{ needs.validate.outputs.manifest_sha256 }}
+        run: python3 scripts/release.py publish --version "$RELEASE_VERSION"

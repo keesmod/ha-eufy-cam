@@ -54,16 +54,15 @@ Only bump the bridge when it changes; keep its package files, generated app
 files, `ha_app/config.json` and app changelog aligned. For an integration-only
 release, state which existing bridge version to use.
 
-Before merging, all six Validate jobs must pass for the PR's latest commit:
-`home-assistant`, `hacs`, `hassfest`, `app-package`, `bridge` and `card`.
-After merging, wait for the full Validate pipeline to pass on the merged `main`
-commit. Build and inspect the release archives from that exact commit, then tag
-it as `v<integration-version>` and publish the GitHub release with upgrade
-instructions and checksums. Verify the published tag and archive versions.
-Do not publish a release from a failed or still-running pipeline.
+The required `ci` check covers release metadata, workflow validation, HA tests,
+HACS, hassfest, app packaging, bridge tests, the card and verified release ZIPs.
+After merging, verify it on `main`. Use **Actions → Release** for a rehearsal and
+then explicit publication. See [the release flow](RELEASING.md) for the complete
+procedure, checksums, acceptance evidence and failed-run recovery.
 
-Merging a PR does not publish a release. The release checklist is complete only
-after the version is available as a GitHub release for HACS users.
+Merging a PR does not publish a release. HACS users receive a version after the
+Release workflow publishes and verifies it. Pure CI/documentation changes do not
+need a new product version or a Home Assistant deployment.
 
 ## Real WebRTC acceptance tests
 
