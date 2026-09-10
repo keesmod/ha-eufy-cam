@@ -13,6 +13,6 @@ COPY --from=build /app/package*.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY bootstrap.mjs ./
-EXPOSE 8080
+EXPOSE 8063
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "bootstrap.mjs"]

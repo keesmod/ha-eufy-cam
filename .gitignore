@@ -15,3 +15,5 @@ frontend/test-results/
 frontend/playwright-report/
 
 bridge.env
+
+bridge/.packages/

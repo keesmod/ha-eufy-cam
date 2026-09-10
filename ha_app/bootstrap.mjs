@@ -7,6 +7,11 @@ await mkdir(directory, { recursive: true, mode: 0o700 });
 await chown(directory, 1000, 1000);
 process.env.EUFY_BRIDGE_TOKEN = options.token;
 process.env.EUFY_DATA_DIR = directory;
+// Host networking is required for the verified Mega LAN discovery path.
+// Only local HA and its managed media service need access to this API.
+process.env.BIND_ADDRESS = '127.0.0.1';
+process.env.PORT = '8063';
+process.env.EUFY_BACKEND = options.backend ?? 'legacy';
 process.setgroups([]);
 process.setgid(1000);
 process.setuid(1000);
