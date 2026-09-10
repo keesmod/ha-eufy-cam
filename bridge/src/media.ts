@@ -1,4 +1,5 @@
 /** Encoded A/V fan-out. Readers cannot start or renew camera ownership. */
+import { StreamDiagnostics } from './diagnostics.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
 import type { ServerResponse } from 'node:http';
@@ -11,7 +12,7 @@ export class MediaRelay {
   private readers = new Map<string, Set<ServerResponse>>();
   private grants = new Map<string, string>();
   private grantReaders = new Map<string, Set<ServerResponse>>();
-  constructor(private readonly failed: (serial: string) => void) {}
+  constructor(private readonly failed: (serial: string) => void, private readonly diagnostics = new StreamDiagnostics()) {}
   grant(serial: string): string {
     const key = randomBytes(32).toString('hex'); this.grants.set(key, serial); return key;
   }
@@ -28,6 +29,7 @@ export class MediaRelay {
     this.readers.set(serial, readers); readers.add(response);
     const owned = this.grantReaders.get(key) ?? new Set<ServerResponse>();
     this.grantReaders.set(key, owned); owned.add(response);
+    this.diagnostics.mark(serial, 'media_reader');
     response.writeHead(200, { 'Content-Type': 'video/mp2t', 'Cache-Control': 'no-store' });
     response.on('close', () => { readers.delete(response); owned.delete(response); });
     return true;
@@ -43,14 +45,16 @@ export class MediaRelay {
     const process = spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] });
     this.encoders.set(serial, process);
     this.audioTracks.set(serial, hasAudio);
+    this.diagnostics.encoder(serial, 'media', process);
     const failed = () => { if (this.encoders.get(serial) === process) this.failed(serial); };
     process.on('error', failed); process.on('exit', failed);
-    process.stderr!.resume(); process.stdin!.on('error', failed);
+    process.stdin!.on('error', failed);
     video.pipe(process.stdin!);
     const input = process.stdio[3] as Writable;
     input.on('error', failed);
     if (hasAudio) audio.pipe(input);
     process.stdout!.on('data', (chunk: Buffer) => {
+      this.diagnostics.mark(serial, 'media_output');
       for (const reader of this.readers.get(serial) ?? []) {
         // A slow consumer is disconnected instead of holding the camera pipeline.
         if (reader.writableLength > 1_000_000) reader.destroy();

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.4 - 2026-09-10
+
+- Add opt-in live-stream diagnostics with per-attempt timing, incoming media,
+  encoder output, playback acknowledgements and timeout categories.
+- Keep diagnostics off by default. Emit fixed categories rather than raw
+  encoder output, credentials, camera identifiers or media URLs. Limit repeated
+  events to one per category per attempt.
+
+Enable `diagnostics: true` in the bridge app configuration and restart the app.
+For Docker, set `EUFY_DIAGNOSTICS=true` and recreate the container. Reproduce
+one failed live view, save the diagnostic lines, then disable the option and
+restart. This is a diagnostic aid. T8134 live playback remains unconfirmed.
+Keep the existing account, token and data. Keep a backup and version 0.6.3 for
+rollback. No camera timeout or ownership policy is changed.
+
 ## 0.6.3 - 2026-09-10
 
 - Keep video-only live streams usable by forwarding the actual audio capability

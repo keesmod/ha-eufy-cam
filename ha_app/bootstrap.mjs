@@ -11,6 +11,7 @@ process.env.EUFY_DATA_DIR = directory;
 // Only local HA and its managed media service need access to this API.
 process.env.BIND_ADDRESS = '127.0.0.1';
 process.env.PORT = '8063';
+process.env.EUFY_DIAGNOSTICS = options.diagnostics === true ? 'true' : 'false';
 process.env.EUFY_BACKEND = options.backend ?? 'legacy';
 process.setgroups([]);
 process.setgid(1000);
