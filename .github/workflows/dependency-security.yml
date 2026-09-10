@@ -1,0 +1,45 @@
+name: Dependency security
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: dependency-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+jobs:
+  audit:
+    name: npm / ${{ matrix.component }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: bridge
+            directory: bridge
+          - component: ha-app
+            directory: ha_app
+          - component: frontend
+            directory: frontend
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Audit all locked dependencies without installing packages
+        working-directory: ${{ matrix.directory }}
+        timeout-minutes: 3
+        run: npm audit --package-lock-only --ignore-scripts --include=dev --include=optional --include=peer --json > npm-audit.json
+      - name: Keep the audit report even when vulnerabilities are found
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dependency-audit-${{ matrix.component }}
+          path: ${{ matrix.directory }}/npm-audit.json
+          if-no-files-found: error
+          retention-days: 14
