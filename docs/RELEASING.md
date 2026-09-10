@@ -4,6 +4,9 @@ Releases use **Actions → Release → Run workflow** on `main`. The default is 
 full rehearsal. Publishing is a separate, explicit selection on the same form.
 Stable `X.Y.Z` versions are supported; this flow does not create npm releases.
 
+Every release also runs [the complete dependency security checks](DEPENDENCY_SECURITY.md),
+including development dependencies. The same checks run daily between releases.
+
 ## Prepare a pull request
 
 The repository release version is the HA integration version. Keep

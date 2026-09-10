@@ -15,6 +15,8 @@ concurrency:
   group: validate-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
 jobs:
+  dependency-security:
+    uses: ./.github/workflows/dependency-security.yml
   release-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -83,9 +85,6 @@ jobs:
         run: npm test -- --test-timeout=30000
         timeout-minutes: 3
         working-directory: bridge
-      - name: Audit bridge dependencies
-        run: npm audit --omit=dev
-        working-directory: bridge
       - run: docker build -t eufy-viewer-bridge:test ./bridge
       - run: docker run --rm --network none -e EUFY_BRIDGE_TOKEN=00000000000000000000000000000000 -v "${{ github.workspace }}/scripts/container-smoke.mjs:/tmp/smoke.mjs:ro" --entrypoint node eufy-viewer-bridge:test /tmp/smoke.mjs
   card:
@@ -117,7 +116,7 @@ jobs:
       - run: npm test
         working-directory: frontend
   release-package:
-    needs: [release-checks, home-assistant, hacs, hassfest, app-package, bridge, card]
+    needs: [dependency-security, release-checks, home-assistant, hacs, hassfest, app-package, bridge, card]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -138,7 +137,7 @@ jobs:
           compression-level: 0
   ci:
     if: ${{ always() }}
-    needs: [release-checks, home-assistant, hacs, hassfest, app-package, bridge, card, release-package]
+    needs: [dependency-security, release-checks, home-assistant, hacs, hassfest, app-package, bridge, card, release-package]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
