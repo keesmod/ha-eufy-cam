@@ -5,6 +5,7 @@ export interface Peer {
   readonly bufferedAmount: number;
 }
 export interface Control {
+  diagnostic?(serial: string, event: "frame_ack" | "viewer_timeout" | "camera_timeout" | "stream_failure" | "no_viewers"): void;
   admit?(serial: string): boolean;
   start(serial: string): Promise<void>;
   recover?(serial: string): Promise<string[]>;
@@ -52,7 +53,8 @@ export class StreamHub {
     const viewer = this.cameras.get(serial)?.viewers.get(peer);
     // A heartbeat without a delivered frame MUST NOT keep a camera awake.
     if (!viewer?.outstanding) return;
-    if (viewer.deadline <= this.now()) { this.detach(serial, peer); return; }
+    if (viewer.deadline <= this.now()) { this.control.diagnostic?.(serial, "viewer_timeout"); this.detach(serial, peer); return; }
+    this.control.diagnostic?.(serial, "frame_ack");
     viewer.outstanding = false;
     viewer.deadline = this.now() + 10_000;
   }
@@ -63,7 +65,7 @@ export class StreamHub {
     camera.phase = "playing";
     camera.lastFrame = this.now();
     for (const viewer of camera.viewers.values()) {
-      if (viewer.deadline <= this.now()) { this.detach(serial, viewer.peer); continue; }
+      if (viewer.deadline <= this.now()) { this.control.diagnostic?.(serial, "viewer_timeout"); this.detach(serial, viewer.peer); continue; }
       if (!viewer.outstanding && viewer.peer.bufferedAmount < 256_000) {
         viewer.outstanding = true;
         try { viewer.peer.send(frame); } catch { this.detach(serial, viewer.peer); }
@@ -92,6 +94,7 @@ export class StreamHub {
   end(serial: string, reason: string): void {
     const camera = this.cameras.get(serial);
     if (!camera || camera.phase === "stopping") return;
+    this.control.diagnostic?.(serial, reason === "No viewers" ? "no_viewers" : "stream_failure");
     camera.phase = "stopping";
     const viewers = [...camera.viewers.keys()];
     camera.viewers.clear();
@@ -132,9 +135,11 @@ export class StreamHub {
         continue;
       }
       for (const viewer of camera.viewers.values()) {
-        if (time >= viewer.deadline) this.detach(serial, viewer.peer);
+        if (time >= viewer.deadline) { this.control.diagnostic?.(serial, "viewer_timeout"); this.detach(serial, viewer.peer); }
       }
+      if (!camera.viewers.size) continue;
       if (time - camera.started >= 120_000 || time - camera.lastFrame >= (camera.phase === "starting" ? 20_000 : 10_000)) {
+        this.control.diagnostic?.(serial, "camera_timeout");
         this.end(serial, "Viewing time limit or stalled camera");
       }
     }

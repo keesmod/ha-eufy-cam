@@ -36,7 +36,7 @@ test('authenticated bridge snapshots never start; websocket close stops last vie
   } finally { server.emit('shutdown'); server.close(); await once(server, 'close'); }
 });
 
-for (const hasAudio of [false, true]) test(`WebRTC grants report audio=${hasAudio} after the first frame and expire with their owner`, async t => {
+for (const hasAudio of [false, true]) test(`WebRTC grants report audio=${hasAudio} after the first frame and expire with their owner`, { timeout: 5000 }, async t => {
   const { MediaRelay } = await import('../src/media.js');
   const calls: string[] = [];
   const media = new MediaRelay(() => {});
@@ -53,7 +53,12 @@ for (const hasAudio of [false, true]) test(`WebRTC grants report audio=${hasAudi
     assert.deepEqual(calls, []);
     ws = new WebSocket(`${base}/v1/live/CAM123?transport=webrtc`, { headers: { Authorization: `Bearer ${token}` } });
     const messages: { data: string; binary: boolean }[] = [];
-    ws.on('message', (data, binary) => messages.push({ data: data.toString(), binary }));
+    let receivedBoth!: () => void;
+    const bothMessages = new Promise<void>(resolve => { receivedBoth = resolve; });
+    ws.on('message', (data, binary) => {
+      messages.push({ data: data.toString(), binary });
+      if (messages.length === 2) receivedBoth();
+    });
     await once(ws, 'open');
     assert.deepEqual(messages, [], 'No fabricated audio capability before media arrives');
     const first = once(ws, 'message');
@@ -63,6 +68,7 @@ for (const hasAudio of [false, true]) test(`WebRTC grants report audio=${hasAudi
     assert.equal(message.type, 'ready'); assert.match(message.path, /^\/v1\/media\/[a-f0-9]{64}$/);
     assert.deepEqual(calls, ['start:CAM123']);
     assert.equal(message.audio, hasAudio);
+    await bothMessages;
     assert.equal(messages.length, 2);
     assert.equal(messages[1]!.binary, false);
     assert.deepEqual(JSON.parse(messages[1]!.data), { type: 'tick' });

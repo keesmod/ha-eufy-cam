@@ -1,6 +1,6 @@
 {
   "name": "Eufy Security Viewer Bridge",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "slug": "eufy_viewer_bridge",
   "description": "Lokale Eufy-camera bridge met kijkersbewaking en stoppen bij sluiten",
   "url": "https://github.com/keesmod/ha-eufy-cam",
@@ -15,10 +15,12 @@
   "timeout": 20,
   "options": {
     "token": "",
-    "backend": "legacy"
+    "backend": "legacy",
+    "diagnostics": false
   },
   "schema": {
     "token": "password",
-    "backend": "list(legacy|mega)"
+    "backend": "list(legacy|mega)",
+    "diagnostics": "bool?"
   }
 }

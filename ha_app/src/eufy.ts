@@ -3,6 +3,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { JpegFramer } from './jpeg.js';
 import { StreamHub } from './streams.js';
+import { StreamDiagnostics } from './diagnostics.js';
 import { MediaRelay } from './media.js';
 import { Storage } from './storage.js';
 import type {
@@ -31,7 +32,8 @@ export class Eufy extends EventEmitter {
   private encoders = new Map<string, ChildProcessWithoutNullStreams>();
   private livePictures = new Map<string, Picture>();
   readonly pictures = new Map<string, Picture>();
-  readonly media = new MediaRelay((serial) => this.hub.end(serial, 'Audio/video encoder failed'));
+  readonly diagnostics = new StreamDiagnostics();
+  readonly media = new MediaRelay((serial) => this.hub.end(serial, 'Audio/video encoder failed'), this.diagnostics);
   private readonly unavailableRecordings: BackendRecordings = {
     busy: false,
     metrics: { queries: 0, downloads: 0, completed: 0, remuxed: 0, transcoded: 0, cancelled: 0 },
@@ -64,6 +66,7 @@ export class Eufy extends EventEmitter {
   };
   auth: AuthState = { state: 'unconfigured' };
   readonly hub = new StreamHub({
+    diagnostic: (serial, event) => this.diagnostics.mark(serial, event),
     admit: (serial) =>
       !this.recordings.busy &&
       Boolean(this.backend?.connected) &&
@@ -72,6 +75,7 @@ export class Eufy extends EventEmitter {
     start: async (serial) => {
       if (this.recordings.busy) throw new Error('Recording operation in progress');
       if (!this.backend?.connected) throw new Error('Disconnected');
+      this.diagnostics.begin(serial);
       this.metrics.start_requests++;
       this.metrics.last_start_request = new Date().toISOString();
       await this.backend.startLive(serial);
@@ -82,6 +86,7 @@ export class Eufy extends EventEmitter {
       await this.backend?.stopLive(serial);
     },
     disposeMedia: (serial) => {
+      this.diagnostics.finish(serial);
       this.media.stop(serial);
       const picture = this.livePictures.get(serial);
       if (picture) {
@@ -100,8 +105,10 @@ export class Eufy extends EventEmitter {
   constructor(
     private readonly storage: Storage,
     readonly backendName: BackendName = 'legacy',
+    diagnostics = false,
   ) {
     super();
+    this.diagnostics.enabled = diagnostics;
   }
   restore(): Promise<void> {
     if (this.restoreTask) return this.restoreTask;
@@ -250,6 +257,10 @@ export class Eufy extends EventEmitter {
           video.resume();
           return;
         }
+        this.diagnostics.mark(serial, codec);
+        this.diagnostics.mark(serial, audioSupported ? 'audio_supported' : 'audio_absent');
+        video.once('data', () => this.diagnostics.mark(serial, 'video_input'));
+        if (audioSupported) audio.once('data', () => this.diagnostics.mark(serial, 'audio_input'));
         this.media.start(serial, codec, video, audio, audioSupported, fps);
         if (!audioSupported) audio.resume();
         const encoder = spawn(
@@ -281,6 +292,7 @@ export class Eufy extends EventEmitter {
         );
         this.encoders.set(serial, encoder);
         const framer = new JpegFramer((frame) => {
+          this.diagnostics.mark(serial, 'jpeg_frame');
           this.metrics.frames++;
           this.livePictures.set(serial, {
             data: frame,
@@ -296,7 +308,7 @@ export class Eufy extends EventEmitter {
             this.hub.end(serial, 'Invalid media');
           }
         });
-        encoder.stderr.resume(); // Never expose SDK credentials or device addresses in logs.
+        this.diagnostics.encoder(serial, 'jpeg', encoder);
         encoder.stdin.on('error', () => this.hub.end(serial, 'Encoder input failed'));
         encoder.on('error', () => this.hub.end(serial, 'Encoder unavailable'));
         encoder.on('exit', () => {
