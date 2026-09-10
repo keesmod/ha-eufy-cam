@@ -55,8 +55,12 @@ dependencies change. A bot PR may need these generated files, version bumps and
 release notes before its checks pass.
 
 The GitHub-hosted Mega tarball stays pinned to an exact release and checksum.
-Dependabot is not a cross-repository release updater: a fix to Mega itself must
-be released there first, then pinned and tested in this bridge.
+It has no npm registry entry, so Dependabot's version resolver gets a 404 if it
+tries to update `@keesmod/eufy-mega-client` as an npm package. That package is
+excluded from ordinary Dependabot version proposals. A change to Mega itself
+must be released in its own repository first, then pinned and tested here.
+The full lockfile security audit, library repository scans, and required release
+URL/integrity checks still apply. No advisory is dismissed by this configuration.
 
 ## Local verification and limits
 
