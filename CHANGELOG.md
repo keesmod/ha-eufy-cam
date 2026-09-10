@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.2 — 2026-09-10
+
+- Update the independent Mega client to 0.1.1. Include T8142 eufyCam S220 / 2C
+  Pro and T8134 SoloCam S220 paired with T8030 HomeBase 3 in camera discovery.
+  Previously the model filter silently skipped these cameras, as reported in #10.
+- Preserve existing camera protocol commands and the HomeBase 3 parent check.
+  Standalone SoloCam operation is not included. Legacy behavior is unchanged.
+- Automated discovery and protocol tests pass; S220 hardware validation of
+  snapshots, live video/audio, recordings and real events is still pending.
+
+Update the bridge to **0.6.2**, then the HACS integration to **0.6.2** and restart
+Home Assistant. Keep the existing token, data and integration entry. This fix
+applies to `backend: mega`; upgrading does not change your selected backend.
+Report your backend, model, camera/HomeBase firmware and test results in issue
+#10. Keep a backup and bridge/integration 0.6.1 available for rollback.
+
 ## 0.6.1 — 2026-09-10
 
 - Fix silent recordings in Safari and the Home Assistant iOS/macOS apps. The MP4
