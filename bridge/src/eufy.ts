@@ -257,7 +257,8 @@ export class Eufy extends EventEmitter {
       this.emit('change');
     });
     backend.on('storage_error', () => this.emit('storage_error'));
-    backend.on('backend_fault', (code) => this.emit('backend_fault', code));
+    backend.on('backend_fault', (code, detail) =>
+      this.emit('backend_fault', code, ...(detail ? [detail] : [])));
     backend.on('notification', (event) => this.emit('notification', event));
     backend.on('disconnected', () => this.hub.close());
     backend.on('camera-removed', (serial) => {

@@ -5,7 +5,7 @@ import { Readable } from 'node:stream';
 import { createRequire } from 'node:module';
 import {
   EufyError,
-  type EufyMegaClient,
+  EufyMegaClient,
   type ClientOptions,
   type Device,
   type CameraCapabilities,
@@ -303,7 +303,10 @@ for (const empty of [false, true])
       const login = f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
       if (empty) await assert.rejects(login, { code: 'camera_inventory_empty' });
       else assert.equal((await login).state, 'connected');
-      assert.deepEqual(faults, [['unsupported_device'], ['unsupported_station']]);
+      assert.deepEqual(faults, [
+        ['unsupported_device', 'device_model=unavailable device_type=unavailable'],
+        ['unsupported_station'],
+      ]);
       assert.equal(f.backend.inventory().length, empty ? 0 : 1);
       assert.equal(f.backend.stations.inventory().length, empty ? 0 : 1);
       assert.deepEqual(f.calls, []);
@@ -423,4 +426,130 @@ test('missing migration devices close the new owner before events or connected a
     assert.deepEqual(bridge.inventory(), []);
     assert.equal(bridge.hub.active, 0);
   } finally { await bridge.close(); }
+});
+
+for (const empty of [false, true])
+  test(`discovery keeps distinct safe pairs through the shipped client for ${empty ? 'empty' : 'mixed'} inventory`, async () => {
+    const f = fixture();
+    const faults: unknown[][] = [];
+    f.backend.on('backend_fault', (...args) => faults.push(args));
+    const rows = [
+      { device_model: 'T9999', device_type: 95 },
+      { device_model: 'T9999', device_type: 95 },
+      { device_model: 'T9999', device_type: 96 },
+      { device_model: 'T8224', device_type: 96 },
+      { device_model: 'T8224PRIVATE_SERIAL', device_type: 95 },
+      { device_model: 'T8224\nPRIVATE_TOKEN', device_type: 95 },
+      { device_model: 'T8224\n', device_type: 95 },
+      { device_model: 'T9999', device_type: 65536 },
+      { device_model: 'T9999', device_type: 'PRIVATE_TOKEN' },
+    ].map((row, index) => ({
+      category: 'eufy_security',
+      device_sn: `PRIVATE_${index}`,
+      parent_sn: 'BASE',
+      device_name: 'PRIVATE_NAME',
+      token: 'PRIVATE_TOKEN',
+      address: '192.0.2.1',
+      ...row,
+    }));
+    if (!empty)
+      rows.push(
+        {
+          ...rows[0]!,
+          device_sn: 'BASE',
+          parent_sn: '',
+          device_model: 'T8030',
+          device_type: 18,
+        },
+        {
+          ...rows[0]!,
+          device_sn: 'CAM',
+          device_model: 'T8224',
+          device_type: 95,
+        },
+      );
+    // Exercise the installed library's public discovery API. Only the cloud
+    // boundary is synthetic, with no network, authentication or device commands.
+    const actual = Object.assign(Object.create(EufyMegaClient.prototype), {
+      cloud: {
+        call: async (...args: unknown[]) => {
+          assert.equal(args[1], '/app/house/get_devs_list');
+          return { devices: rows };
+        },
+      },
+    }) as EufyMegaClient;
+    f.client.discoverDevices = () => actual.discoverDevices();
+    try {
+      const login = f.backend.login({
+        username: 'fixture',
+        password: 'fixture',
+        country: 'NL',
+      });
+      if (empty) await assert.rejects(login, { code: 'camera_inventory_empty' });
+      else assert.equal((await login).state, 'connected');
+      assert.deepEqual(faults, [
+        ['unsupported_device', 'device_model=T9999 device_type=95'],
+        ['unsupported_device', 'device_model=T9999 device_type=96'],
+        ['unsupported_device', 'device_model=T8224 device_type=96'],
+        ['unsupported_device', 'device_model=unavailable device_type=95'],
+        ['unsupported_device', 'device_model=T9999 device_type=unavailable'],
+        ['invalid_device_relationship'],
+      ]);
+      assert.equal(f.backend.inventory().length, empty ? 0 : 1);
+      assert.equal(f.backend.stations.inventory().length, empty ? 0 : 1);
+      assert.deepEqual(f.calls, []);
+      assert.doesNotMatch(JSON.stringify(faults), /PRIVATE|192\.0\.2\.1/);
+    } finally {
+      await f.backend.close();
+    }
+  });
+
+test('discovery revalidates diagnostics and ignores extra issue fields at the bridge boundary', async () => {
+  const f = fixture();
+  const faults: unknown[][] = [];
+  f.backend.on('backend_fault', (...args) => faults.push(args));
+  const malformed = [
+    ['T8224\n', 95],
+    ['T8224\r', 95],
+    ['T8224\u001b[31m', 95],
+    ['T8224PRIVATE_SERIAL', 95],
+    [null, 95],
+    [{ secret: 'PRIVATE_TOKEN' }, 95],
+    ['T9999', '95'],
+    ['T9999', -1],
+    ['T9999', 65536],
+    ['T9999', Infinity],
+    ['T9999', 1.5],
+    ['T9999', { secret: 'PRIVATE_TOKEN' }],
+    ['T9999', 0],
+    ['T9999', 65535],
+  ];
+  f.client.discoverDevices = async () => ({
+    devices,
+    relationships: [],
+    issues: malformed.map(([deviceModel, deviceType], index) => ({
+      index,
+      deviceId: 'PRIVATE_SERIAL',
+      code: 'unsupported_device',
+      deviceModel,
+      deviceType,
+      token: 'PRIVATE_TOKEN',
+      address: '192.0.2.1',
+    })) as unknown as DiscoveryResult['issues'],
+  });
+  try {
+    await f.backend.login({
+      username: 'fixture',
+      password: 'fixture',
+      country: 'NL',
+    });
+    assert.deepEqual(faults, [
+      ['unsupported_device', 'device_model=unavailable device_type=95'],
+      ['unsupported_device', 'device_model=T9999 device_type=unavailable'],
+      ['unsupported_device', 'device_model=T9999 device_type=0'],
+      ['unsupported_device', 'device_model=T9999 device_type=65535'],
+    ]);
+  } finally {
+    await f.backend.close();
+  }
 });
