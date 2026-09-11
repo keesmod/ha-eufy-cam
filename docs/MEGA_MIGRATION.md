@@ -1,21 +1,27 @@
 # Independent Mega backend migration
 
-Upgrade to bridge and integration 0.6.2 together. Version 0.6.2 adds S220
-T8142/T8134 discovery on T8030; S220 hardware validation remains pending. Version 0.6.1 includes the
-recording audio fix for Apple players. The bridge pins the compiled
-`@keesmod/eufy-mega-client` 0.1.1 GitHub release and verifies its lockfile integrity.
-No npm registry publication or additional service is required.
+Upgrade bridge and integration to **0.7.1** together. This release pins
+`@keesmod/eufy-mega-client` **0.10.0** through its exact GitHub release tarball and
+committed lockfile. No npm registry publication or additional service is required.
+
+The hardware evidence covers T8160 firmware 3.4.3.0 and T8213 firmware 0.2.1.8,
+each paired with T8030 firmware 3.8.6.0. These results do not establish support
+for every camera or doorbell in the same family. T8134 live and recovery
+obligations remain open in [camera #10](https://github.com/keesmod/ha-eufy-cam/issues/10)
+and the linked client stories.
 
 The bridge can select `legacy` or `mega` once at startup. Mega uses the independent
 `@keesmod/eufy-mega-client` library and a separate `mega-session.json`; legacy keeps
 its existing `session.json`. Commands never switch backends or retry through the
 other implementation. Legacy remains the app's default until explicitly selected.
 
-The initial Mega target is T8030 HomeBase 3, T8160 cameras and T8213 doorbell.
-Other models have not passed Mega acceptance. See the library's
-[compatibility results](https://github.com/keesmod/eufy-mega-client/blob/main/docs/COMPATIBILITY.md),
-including the agreed 11-hour-26-minute overnight observation and its measurement
-limits. This is not a completed 24-hour reliability or battery-life test.
+See the library's
+[model evidence matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md)
+for feature-specific hardware claims and remaining obligations. Historical
+observation windows do not establish battery life or a reliability guarantee.
+
+The dated [upgrade and rollback rehearsal](CAMERA_UPGRADE_ROLLBACK_2026_09_11.md)
+records the tested versions, outcomes and remaining acceptance work.
 
 ## Prepare and migrate
 
@@ -53,15 +59,25 @@ empty data volume would change that behavior.
 1. Close viewers, stop the Mega bridge and confirm it has exited before starting
    another controller. An unconfirmed device STOP requires recovery, not a
    second concurrent bridge.
-2. For a backend-only rollback, select `legacy` and restart using the untouched
-   legacy session. The new app version still uses `127.0.0.1:8063`.
-3. For a full version rollback, restore the previous bridge image and original
-   data/configuration backup. Restore the previous HA URL (the old app used its
-   Docker hostname on port 8080) through Reconfigure. Keep the original token and
-   bridge ID. Restore the integration release too if the release notes require it.
-4. Verify the original entity identities, connected station, original Guard Mode,
-   camera inventory and zero active/quarantined streams. Report any physical
-   outcome that could not be checked.
+2. For a version rollback, restore the exact previous bridge image and its
+   original data/configuration backup. Restore the matching integration release.
+   Keep the same integration entry, bridge token and bridge identity. A Mega
+   version rollback stays on Mega and does not enable the legacy controller.
+3. Restore the original endpoint only if that release used a different endpoint.
+   Both 0.6.4 and 0.7.1 use `http://127.0.0.1:8063`. Earlier releases may use the
+   Docker hostname on port 8080. Use Reconfigure rather than recreating the entry.
+4. Validate HA configuration, reload or restart as required, then verify the
+   saved login, original entity identities, camera inventory and Guard Mode.
+   Repeat snapshots, live video/audio, recordings and events. Confirm a live stop
+   event with zero active/quarantined streams and no transport recovery attempt.
+5. Remove temporary instrumentation and stop the test controller before restoring
+   the normal owner. Supervisor may remove a stopped app container. Start the app
+   through Supervisor and verify its actual image, rather than assuming a stopped
+   Docker container still exists.
+
+A deliberately selected backend rollback to legacy is a separate operation. It
+requires its untouched legacy session and exclusive ownership. It is never an
+automatic response to a failed camera command.
 
 Never copy Mega session data over the legacy session or enable automatic
 fallback after a command. Stop and clean up a failed candidate before starting
