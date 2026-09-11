@@ -16,6 +16,12 @@ export type AuthState = {
   captcha?: string;
   captchaId?: string;
 };
+export interface MediaCapability {
+  available: boolean;
+  status: 'experimental' | 'unsupported';
+  reason: string | null;
+}
+export type CameraCapabilities = Record<'snapshot' | 'live' | 'recordings', MediaCapability>;
 export interface CameraInfo {
   serial: string;
   name: string;
@@ -24,6 +30,7 @@ export interface CameraInfo {
   software: string;
   battery: number | null;
   snapshot_received_at: string | null;
+  capabilities?: CameraCapabilities;
 }
 export interface StationInfo {
   serial: string;
