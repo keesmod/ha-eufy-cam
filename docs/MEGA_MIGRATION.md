@@ -25,8 +25,10 @@ setting is handled automatically. No terminal commands or file copying are neede
 - **A device is missing or does not work?** Stop the new bridge. Restore the previous
   bridge version and its data backup. Keep the same HA integration and token.
   Report the camera model, firmware and failing feature in a GitHub issue.
-- **No preparation notification?** Check that the old bridge is connected and
-  your cameras are available, then reload the integration. Do not update the bridge yet.
+- **No preparation notification?** Using a bridge older than 0.6.4? Back up its
+  data and install bridge 0.7.1 first. Once connected, reload the integration.
+  For newer bridges, check the connection and reload. Wait for the notification
+  before installing bridge 0.8.0.
 
 Never run the old and new bridges together. Do not delete or recreate the HA
 integration to fix migration. Your backup is the rollback path, not a second
