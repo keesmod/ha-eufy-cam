@@ -69,7 +69,7 @@ when finished. Idle images are the latest received snapshots and may be old.
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
 
-The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.0`.
+The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.1`.
 See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 </details>
