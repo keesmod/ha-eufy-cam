@@ -12,7 +12,9 @@ process.env.EUFY_DATA_DIR = directory;
 process.env.BIND_ADDRESS = '127.0.0.1';
 process.env.PORT = '8063';
 process.env.EUFY_DIAGNOSTICS = options.diagnostics === true ? 'true' : 'false';
-process.env.EUFY_BACKEND = options.backend ?? 'legacy';
+// Old Supervisor options may still contain legacy. Only the Mega migration
+// service starts, and its saved-inventory gate prevents importing old credentials.
+process.env.EUFY_BACKEND = options.backend === 'legacy' ? 'mega' : (options.backend ?? 'mega');
 process.setgroups([]);
 process.setgid(1000);
 process.setuid(1000);

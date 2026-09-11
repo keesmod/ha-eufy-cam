@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.0 - Candidate, not published
+
+**BREAKING CHANGE: Mega is now the only camera backend.** Existing users must
+update the HA integration before the bridge. The integration automatically saves
+and transfers the device list. Legacy users sign in to Mega again. Old sessions,
+credentials, entity IDs and backups are preserved. Missing devices pause migration.
+
+- Remove the deprecated backend and direct eufy-security-client dependency.
+- Handle old HA app backend settings automatically. Standalone Docker users
+  remove EUFY_BACKEND=legacy when updating the container.
+- Keep the previous bridge release and data backup for rollback.
+
+Follow the [four upgrade steps](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/MEGA_MIGRATION.md). New-build hardware acceptance and the
+Python security gate remain open in camera #31 and #30. Do not treat this
+unpublished candidate as an accepted production release.
+
 ## 0.7.1 - 2026-09-11
 
 - Automatically switch failed WebRTC playback to live JPEG over the existing

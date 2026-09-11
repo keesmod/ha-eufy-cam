@@ -1,87 +1,62 @@
-# Independent Mega backend migration
+# Upgrade to 0.8.0
 
-Upgrade bridge and integration to **0.7.1** together. This release pins
-`@keesmod/eufy-mega-client` **0.10.0** through its exact GitHub release tarball and
-committed lockfile. No npm registry publication or additional service is required.
+**Breaking change: the old legacy backend is removed.** Update the integration
+before the bridge. Keep your existing integration, token and bridge data.
 
-The hardware evidence covers T8160 firmware 3.4.3.0 and T8213 firmware 0.2.1.8,
-each paired with T8030 firmware 3.8.6.0. These results do not establish support
-for every camera or doorbell in the same family. T8134 live and recovery
-obligations remain open in [camera #10](https://github.com/keesmod/ha-eufy-cam/issues/10)
-and the linked client stories.
+## Home Assistant
 
-The bridge can select `legacy` or `mega` once at startup. Mega uses the independent
-`@keesmod/eufy-mega-client` library and a separate `mega-session.json`; legacy keeps
-its existing `session.json`. Commands never switch backends or retry through the
-other implementation. Legacy remains the app's default until explicitly selected.
+1. Update **Eufy Security Viewer** in HACS and restart Home Assistant. Wait for
+   **Eufy: ready for the bridge update**. Your device list is saved automatically.
+2. Make a Home Assistant backup, then update the **Eufy Security Viewer Bridge** app.
+3. If Home Assistant asks you to sign in to Eufy again, complete the login and
+   verification code. Your old login files stay untouched.
+4. Check a snapshot, live video with sound, a recording and a real notification.
+   Check your alarm mode. Keep the backup until everything works.
 
-See the library's
-[model evidence matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md)
-for feature-specific hardware claims and remaining obligations. Historical
-observation windows do not establish battery life or a reliability guarantee.
+The integration transfers your device list automatically. Missing devices stop
+migration instead of disappearing silently. Existing Mega users normally keep
+their saved login. Legacy users need a fresh Mega login. The old app backend
+setting is handled automatically. No terminal commands or file copying are needed.
 
-The dated [upgrade and rollback rehearsal](CAMERA_UPGRADE_ROLLBACK_2026_09_11.md)
-records the tested versions and completed acceptance for that installation.
-Integration candidate 0.7.2 changes metadata and documentation only and retains
-bridge 0.7.1. See its [candidate notes](CAMERA_RELEASE_CANDIDATE_0_7_2.md).
+## Recovery
 
-## Prepare and migrate
+- **Updated the bridge first?** Stop it and restore your previous bridge version
+  and its data backup. Leave the HA integration installed, then follow step 1.
+- **A device is missing or does not work?** Stop the new bridge. Restore the previous
+  bridge version and its data backup. Keep the same HA integration and token.
+  Report the camera model, firmware and failing feature in a GitHub issue.
+- **No preparation notification?** Check that the old bridge is connected and
+  your cameras are available, then reload the integration. Do not update the bridge yet.
 
-1. Close all live viewers and recording dialogs. Check that no bridge streams or
-   recording operations remain active.
-2. Keep the previous bridge image/release and a private backup of its data:
-   `bridge-id`, credentials, both session files if present, and the bridge token.
-   Back up the HA integration entry and entity/device registries as well.
-3. Install the validated bridge release with its exact GitHub library tarball URL
-   and committed lockfile. `npm ci` checks the package's lockfile integrity. Do
-   not substitute an unpinned Git branch or import legacy session/device data.
-4. For the HAOS app, set `backend` to `mega` and keep the existing token. This app
-   version uses host networking for HomeBase discovery and binds its API only to
-   `127.0.0.1:8063`. Its former Docker hostname/port is no longer the endpoint.
-5. Start one bridge. In **Settings → Devices & services → Eufy Security Viewer →
-   Reconfigure**, use `http://127.0.0.1:8063` and the existing bridge token. Keep
-   the same integration entry. Complete a fresh Mega login challenge if required.
-6. Confirm all expected devices and existing entity IDs, snapshots, live audio/
-   video, recordings and events. Check the observed Guard Mode. Validate HA
-   configuration and runtime recovery. Keep the old release and private backup
-   throughout the observation window.
+Never run the old and new bridges together. Do not delete or recreate the HA
+integration to fix migration. Your backup is the rollback path, not a second
+backend in the new release.
 
-For standalone Docker, use `EUFY_BACKEND=mega`, host networking and an explicit
-`BIND_ADDRESS` that HA can reach. Bind to loopback when HA shares the host network;
-otherwise choose the intended private LAN interface and restrict access to HA.
-Do not publish a bridge API to the internet. Keep FFmpeg, viewer leases and HA
-playback in this bridge; the library adds no service.
+## Other installations
 
-The same bridge ID, camera/station serials and HA unique IDs preserve dashboards,
-notifications and automations. Recreating the HA integration or starting with an
-empty data volume would change that behavior.
+Docker users with this HA integration follow the same preparation steps. Keep
+the existing volume and token. Remove `EUFY_BACKEND=legacy` from the container
+settings when installing the new image. Mega is the only backend.
 
-## Roll back
+Without the HA integration, use the [migration helper](../scripts/migrate_camera.py)
+from the 0.8.0 source bundle. Python 3.11+ is sufficient.
 
-1. Close viewers, stop the Mega bridge and confirm it has exited before starting
-   another controller. An unconfirmed device STOP requires recovery, not a
-   second concurrent bridge.
-2. For a version rollback, restore the exact previous bridge image and its
-   original data/configuration backup. Restore the matching integration release.
-   Keep the same integration entry, bridge token and bridge identity. A Mega
-   version rollback stays on Mega and does not enable the legacy controller.
-3. Restore the original endpoint only if that release used a different endpoint.
-   Both 0.6.4 and 0.7.1 use `http://127.0.0.1:8063`. Earlier releases may use the
-   Docker hostname on port 8080. Use Reconfigure rather than recreating the entry.
-4. Validate HA configuration, reload or restart as required, then verify the
-   saved login, original entity identities, camera inventory and Guard Mode.
-   Repeat snapshots, live video/audio, recordings and events. Confirm a live stop
-   event with zero active/quarantined streams and no transport recovery attempt.
-5. Remove temporary instrumentation and stop the test controller before restoring
-   the normal owner. Supervisor may remove a stopped app container. Start the app
-   through Supervisor and verify its actual image, rather than assuming a stopped
-   Docker container still exists.
+```sh
+python3 scripts/migrate_camera.py http://127.0.0.1:8063
+```
 
-A deliberately selected backend rollback to legacy is a separate operation. It
-requires its untouched legacy session and exclusive ownership. It is never an
-automatic response to a failed camera command.
+Enter the bridge token at the hidden prompt. The helper saves the device list,
+waits while you back up and update the bridge, then transfers the list automatically.
+Use your actual bridge address. Do not share the generated private inventory file.
 
-Never copy Mega session data over the legacy session or enable automatic
-fallback after a command. Stop and clean up a failed candidate before starting
-another controller. Retain the original configuration, session and startup
-settings for rollback.
+## Support limits
+
+The previous hardware rehearsal covers T8160 firmware 3.4.3.0 and T8213 firmware
+0.2.1.8 through T8030 firmware 3.8.6.0. Acceptance of the new 0.8.0 build remains
+tracked in [#31](https://github.com/keesmod/ha-eufy-cam/issues/31) until completed.
+T8134 live playback and recovery remain open in [#10](https://github.com/keesmod/ha-eufy-cam/issues/10).
+Check the [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md)
+before migrating other models. Recognition alone does not prove support.
+
+Technical evidence and remaining security gates are in [#24](https://github.com/keesmod/ha-eufy-cam/issues/24).
+An unpublished candidate or green software CI is not hardware acceptance.

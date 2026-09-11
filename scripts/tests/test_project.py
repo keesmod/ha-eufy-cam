@@ -45,6 +45,21 @@ class ProjectTests(unittest.TestCase):
     def test_current_metadata_is_coherent(self):
         self.assertEqual(project.metadata(self.root)["repository"], project.REPOSITORY)
 
+    def test_legacy_dependency_cannot_return_in_release(self):
+        for directory in ("bridge", "ha_app"):
+            path = self.root / directory / "package-lock.json"
+            data = json.loads(path.read_text())
+            data["packages"]["node_modules/eufy-security-client"] = {"version": "4.1.1-1"}
+            path.write_text(json.dumps(data))
+        with self.assertRaisesRegex(ValueError, "Retired legacy dependency"):
+            project.metadata(self.root)
+
+    def test_legacy_source_cannot_return_in_release(self):
+        for directory in ("bridge", "ha_app"):
+            (self.root / directory / "src/legacy-backend.ts").write_text("export {};\n")
+        with self.assertRaisesRegex(ValueError, "Retired legacy runtime"):
+            project.metadata(self.root)
+
     def test_stale_app_version_rejected(self):
         path = self.root / "ha_app/config.json"
         data = json.loads(path.read_text())

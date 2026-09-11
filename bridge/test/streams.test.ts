@@ -99,25 +99,3 @@ test("recovery waits for other viewers and pending starts; failed reset retains 
   for (now = 15000; now < 60000; now += 3000) hub.tick();
   assert.equal(recoveries, 1); assert.equal(hub.recoveryMetrics.recovery_failed, 1);
 });
-
-test("Eufy recovery requires transport close and returns only cameras on that HomeBase", async () => {
-  const { EventEmitter } = await import("node:events");
-  const { Eufy } = await import("../src/eufy.js");
-  const { Storage } = await import("../src/storage.js");
-  const eufy = new Eufy(new Storage("/unused-test-storage"));
-  const station = Object.assign(new EventEmitter(), { isConnected: () => true, getSerial: () => "BASE", close: () => {} });
-  const a = { getStationSerial: () => "BASE", getSerial: () => "a" };
-  const { LegacyBackend } = await import("../src/legacy-backend.js");
-  const backend = new LegacyBackend(new Storage("/unused-test-storage"), () => false);
-  (eufy as unknown as { backend: unknown }).backend = backend;
-  const internal = backend as unknown as { client: unknown; devices: Map<string, unknown>; recoverStation(serial: string): Promise<string[]> };
-  internal.client = { getDevice: async () => a, getStation: async () => station };
-  internal.devices.set("a", a); internal.devices.set("b", { getStationSerial: () => "OTHER", getSerial: () => "b" });
-  let finished = false;
-  const reset = internal.recoverStation("a").then(serials => { finished = true; return serials; });
-  await new Promise(resolve => setImmediate(resolve)); assert.equal(finished, false);
-  station.emit("close", station); assert.deepEqual(await reset, ["a"]);
-  assert.equal(station.listenerCount("close"), 0);
-  station.isConnected = () => false;
-  await assert.rejects(internal.recoverStation("a"), /not confirmed/);
-});

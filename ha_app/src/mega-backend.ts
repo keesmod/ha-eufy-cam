@@ -9,6 +9,7 @@ import {
   type AuthState as MegaAuth,
 } from '@keesmod/eufy-mega-client';
 import { Storage } from './storage.js';
+import { migrationInventory, verifyInventory } from './migration.js';
 import { MegaRecordings } from './mega-recordings.js';
 import { RecordingError, StationError } from './errors.js';
 import type {
@@ -222,6 +223,7 @@ export class MegaBackend extends EventEmitter implements Backend {
   private async discover(): Promise<void> {
     const client = this.client!;
     const devices = await client.listDevices();
+    verifyInventory(await migrationInventory(this.storage), devices);
     const next = new Map(devices.map((d) => [d.id, d]));
     for (const device of this.devices.values())
       if (device.kind === 'camera' && !next.has(device.id)) {

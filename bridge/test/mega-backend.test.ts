@@ -175,7 +175,7 @@ function fixture() {
       return client as unknown as EufyMegaClient;
     },
   );
-  return { backend, client, calls, reads };
+  return { backend, client, calls, reads, storage };
 }
 test('Mega adapter preserves camera identity, notifications, and device-confirmed stream cleanup', async () => {
   const f = fixture();
@@ -190,7 +190,7 @@ test('Mega adapter preserves camera identity, notifications, and device-confirme
       ).state,
       'connected',
     );
-    assert.deepEqual(f.reads, ['mega-session.json']);
+    assert.deepEqual(f.reads, ['mega-session.json', 'migration-inventory.json']);
     assert.equal(f.backend.inventory()[0]?.serial, 'CAM');
     assert.equal(f.backend.inventory()[0]?.hardware, '1');
     const notifications: unknown[] = [];
@@ -366,4 +366,23 @@ test('concurrent capability reads cannot create two owners for one live start', 
   } finally {
     await f.backend.close();
   }
+});
+
+test('missing migration devices close the new owner before events or connected acceptance', async () => {
+  const { Eufy } = await import('../src/eufy.js');
+  const f = fixture();
+  const expected = { version:1, bridge_id:'bridge-test', backend:'legacy', cameras:['CAM','MISSING'], stations:['BASE'] };
+  f.storage.read = async name => name === 'migration-inventory.json' ? JSON.stringify(expected) : name === 'bridge-id' ? 'bridge-test' : undefined;
+  let events = 0;
+  f.client.startEvents = async () => { events++; };
+  const bridge = new Eufy(f.storage, 'mega', false, () => f.backend);
+  try {
+    await assert.rejects(bridge.login({username:'fixture',password:'fixture',country:'NL'}), /expected_devices_missing/);
+    assert.equal(events, 0);
+    assert.deepEqual(f.calls, ['shutdown']);
+    assert.equal(bridge.auth.state, 'error');
+    assert.equal(bridge.migrationError, 'expected_devices_missing');
+    assert.deepEqual(bridge.inventory(), []);
+    assert.equal(bridge.hub.active, 0);
+  } finally { await bridge.close(); }
 });

@@ -6,6 +6,8 @@ import { StreamHub } from './streams.js';
 import { StreamDiagnostics } from './diagnostics.js';
 import { MediaRelay } from './media.js';
 import { Storage } from './storage.js';
+import { MegaBackend } from './mega-backend.js';
+import { migrationInventory, MigrationError, parseMigrationInventory } from './migration.js';
 import type {
   Backend,
   BackendName,
@@ -23,8 +25,10 @@ const unavailable = async (): Promise<never> => {
   throw new Error('Recording backend unavailable');
 };
 export class Eufy extends EventEmitter {
+  migrationError: string | null = null;
   private backend?: Backend;
   private loginBusy = false;
+  private migrationBusy = false;
   private restoring = false;
   private restoreTask?: Promise<void>;
   private restoreRetryAbort = new AbortController();
@@ -104,8 +108,10 @@ export class Eufy extends EventEmitter {
   });
   constructor(
     private readonly storage: Storage,
-    readonly backendName: BackendName = 'legacy',
+    readonly backendName: BackendName = 'mega',
     diagnostics = false,
+    private readonly backendFactory: (storage: Storage, busy: () => boolean | 'live_busy' | 'live_stopping') => Backend =
+      (storage, busy) => new MegaBackend(storage, busy),
   ) {
     super();
     this.diagnostics.enabled = diagnostics;
@@ -118,13 +124,35 @@ export class Eufy extends EventEmitter {
     void task.finally(() => { if (this.restoreTask === task) this.restoreTask = undefined; }).catch(() => {});
     return task;
   }
+  async acceptMigration(value: unknown): Promise<void> {
+    if (this.migrationBusy) throw new MigrationError('bridge_busy');
+    this.migrationBusy = true;
+    try {
+      const inventory = parseMigrationInventory(value, await this.storage.read('bridge-id'));
+      const previous = await this.storage.read('migration-inventory.json');
+      if (previous) {
+        const parsed = parseMigrationInventory(JSON.parse(previous), inventory.bridge_id);
+        if (JSON.stringify(parsed) !== JSON.stringify(inventory)) throw new MigrationError('inventory_already_saved');
+        return;
+      }
+      if (this.backend || this.loginBusy || this.hub.active || this.recordings.busy)
+        throw new MigrationError('bridge_busy');
+      await this.restoreTask?.catch(() => {});
+      await this.storage.writeOnce('migration-inventory.json', JSON.stringify(inventory));
+      this.migrationError = null;
+      void this.restore().catch(() => {});
+    } finally { this.migrationBusy = false; }
+  }
   private async restoreSaved(): Promise<void> {
     const signal = AbortSignal.any([this.restoreAbort.signal, this.restoreRetryAbort.signal]);
     this.restoring = true;
     this.auth = { state: 'connecting' };
     this.emit('change');
     try {
-      const saved = await this.storage.read('credentials.json');
+      const inventory = await migrationInventory(this.storage);
+      let saved = await this.storage.read('mega-credentials.json');
+      if (!saved && inventory?.backend === 'mega' && await this.storage.exists('mega-session.json'))
+        saved = await this.storage.read('credentials.json');
       if (!saved) {
         this.auth = { state: 'unconfigured' };
         return;
@@ -135,7 +163,8 @@ export class Eufy extends EventEmitter {
         try {
           await this.loginAttempt(credentials);
           return;
-        } catch {
+        } catch (error) {
+          if (error instanceof MigrationError) throw error;
           if (signal.aborted) return;
           // Startup can precede working DNS/networking. Retry failed SDK
           // initialization, but never retry a returned password/2FA challenge.
@@ -148,6 +177,7 @@ export class Eufy extends EventEmitter {
       }
     } catch (error) {
       if (!signal.aborted) {
+        if (error instanceof MigrationError) this.migrationError = error.code;
         this.auth = { state: 'error' };
         throw error;
       }
@@ -171,11 +201,13 @@ export class Eufy extends EventEmitter {
     credentials?: Credentials,
     options?: LoginOptions,
   ): Promise<AuthState> {
+    if (this.migrationBusy) throw new MigrationError('bridge_busy');
     if (this.loginBusy) throw new Error('Login already in progress');
     if (credentials && (this.hub.active || this.hub.quarantined || this.recordings.busy))
       throw new Error('Stop viewers before reauthenticating');
     this.loginBusy = true;
     try {
+      await migrationInventory(this.storage);
       if (credentials) {
         this.auth = { state: 'connecting' };
         this.emit('change');
@@ -188,26 +220,29 @@ export class Eufy extends EventEmitter {
             : this.hub.quarantined
               ? ('live_stopping' as const)
               : false;
-        // The backend is chosen once at startup. Commands never switch backends.
-        if (this.backendName === 'legacy') {
-          const { LegacyBackend } = await import('./legacy-backend.js');
-          this.backend = new LegacyBackend(this.storage, busy);
-        } else {
-          const { MegaBackend } = await import('./mega-backend.js');
-          this.backend = new MegaBackend(this.storage, busy);
-        }
+        this.backend = this.backendFactory(this.storage, busy);
         this.bind(this.backend);
       }
       if (!this.backend) throw new Error('Credentials required');
       this.auth = { state: 'connecting' };
       this.auth = await this.backend.login(credentials, options);
-      if (credentials) await this.storage.write('credentials.json', JSON.stringify(credentials));
+      if (this.auth.state === 'connected') {
+        this.migrationError = null;
+        this.emit('change');
+      }
+      if (credentials) await this.storage.write('mega-credentials.json', JSON.stringify(credentials));
       if (this.restoreAbort.signal.aborted) {
         await this.backend.close();
         return this.auth;
       }
       return this.auth;
     } catch (error) {
+      if (error instanceof MigrationError) {
+        this.migrationError = error.code;
+        await this.backend?.close();
+        this.backend = undefined;
+        this.emit('backend_fault', error.code);
+      }
       this.auth = { state: this.restoring ? 'connecting' : 'error' };
       throw error;
     } finally {

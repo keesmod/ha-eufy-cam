@@ -15,6 +15,7 @@ from homeassistant.helpers.typing import ConfigType
 from .api import BridgeAuthError, BridgeClient, BridgeError
 from .const import CARD_URL, CONF_TOKEN, CONF_URL, DOMAIN
 from .coordinator import EufyConfigEntry, EufyCoordinator
+from .migration import prepare_migration
 from .playback import PlaybackView, PreparePlaybackView
 from .recordings import EventsView, RecordingsView
 from .resources import async_register_card
@@ -60,6 +61,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EufyConfigEntry) -> bool
     )
     try:
         state = await api.state()
+        state = await prepare_migration(hass, entry, api, state)
     except BridgeAuthError as err:
         raise ConfigEntryAuthFailed("Bridge token was rejected") from err
     except BridgeError as err:

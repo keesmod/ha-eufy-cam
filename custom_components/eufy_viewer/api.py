@@ -118,6 +118,9 @@ class BridgeState:
     webrtc: bool = False
     push_connected: bool | None = None
     stations: dict[str, StationInfo] = field(default_factory=dict)
+    backend: str | None = None
+    migration: bool = False
+    migration_error: str | None = None
 
     @classmethod
     def parse(cls, data: Any) -> BridgeState:
@@ -249,6 +252,22 @@ class BridgeState:
                 "webrtc" in data.get("transports", []),
                 push_connected,
                 stations,
+                data.get("backend")
+                if data.get("backend") in {"legacy", "mega"}
+                else None,
+                isinstance(data.get("migration"), dict)
+                and data["migration"].get("version") == 1,
+                data.get("migration", {}).get("error")
+                if isinstance(data.get("migration"), dict)
+                and data["migration"].get("error")
+                in {
+                    "inventory_required",
+                    "inventory_invalid",
+                    "bridge_identity_mismatch",
+                    "camera_inventory_empty",
+                    "expected_devices_missing",
+                }
+                else None,
             )
         except (KeyError, TypeError, ValueError) as err:
             raise BridgeError("Invalid bridge protocol") from err
