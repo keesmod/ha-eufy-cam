@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.0 - Unreleased
+
+- Carry camera snapshot, live and recording software capabilities into HA and
+  both cards. Mark available operations experimental and show unsupported reasons.
+- Reject unsupported media before bridge or HA requests can start a stream or
+  recording operation. Preserve optional-field compatibility and existing IDs.
+- Keep standalone cameras separate from HomeBase alarm entities. A failed owner
+  does not prevent independent camera inventory setup.
+- Pin the verified published client 0.10.0 package with SHA512 integrity. No new hardware
+  support is claimed. Camera migration, release and legacy retirement remain open.
+- No session or entity migration is required. Keep the previous integration,
+  bridge package and private data for rollback. This version is not published.
+
 ## 0.6.4 - 2026-09-10
 
 - Add opt-in live-stream diagnostics with per-attempt timing, incoming media,

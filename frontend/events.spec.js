@@ -50,3 +50,11 @@ test('events player recovers a late codec error once and reports a repeated fail
  expect(await page.locator('video').getAttribute('src')).toBeNull();
  expect(await page.evaluate(()=>urls.filter(p=>p.includes('/recordings/')&&p.includes('/playback')).length)).toBe(2);
 });
+
+test('unavailable recording cameras cannot trigger history or calendar requests',async({page})=>{
+ await page.evaluate(()=>{for(const state of Object.values(card.ha.states))state.attributes.capabilities={recordings:{available:false,status:'unsupported',reason:'standalone_transport_unverified'}};card.hass=card.ha;});
+ await expect(page.getByRole('button',{name:'Show recordings',exact:true})).toBeDisabled();
+ await expect(page.locator('.status')).toContainText('No camera with available recordings');
+ await page.evaluate(()=>{card.load();card.loadCalendar();});
+ expect(await page.evaluate(()=>urls)).toEqual([]);
+});

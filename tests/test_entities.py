@@ -208,3 +208,27 @@ async def test_two_bridges_share_frontend_registration_and_reload(
         resources = hass.data[LOVELACE_DATA].resources.async_items()
         assert len(resources) == 1
         assert resources[0]["url"].startswith(f"{CARD_URL}?v=")
+
+
+async def test_capability_attributes_and_unsupported_snapshot(hass):
+    from custom_components.eufy_viewer.api import BridgeClient
+    from custom_components.eufy_viewer.camera import EufyCamera
+    from custom_components.eufy_viewer.coordinator import EufyCoordinator
+
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="bridge-123", data=DATA)
+    entry.add_to_hass(hass)
+    api = AsyncMock(spec=BridgeClient)
+    coordinator = EufyCoordinator(hass, entry, api)
+    coordinator.async_set_updated_data(BridgeState.parse(STATE))
+    info = coordinator.data.cameras["CAM123"]
+    info.capabilities["snapshot"] = {
+        "available": False,
+        "status": "unsupported",
+        "reason": "camera_media_unverified",
+    }
+    camera = EufyCamera(coordinator, info)
+    camera.hass = hass
+    assert camera.unique_id == "CAM123_camera"
+    assert camera.extra_state_attributes["capabilities"] == info.capabilities
+    assert await camera.async_camera_image() is None
+    api.snapshot.assert_not_called()
