@@ -110,6 +110,7 @@ export interface LiveMedia {
   audio: Readable;
 }
 export interface Backend extends EventEmitter {
+  supportReport?(): import('./discovery-diagnostics.js').SupportReport;
   readonly connected: boolean;
   readonly auth: AuthState;
   readonly recordings: BackendRecordings;
