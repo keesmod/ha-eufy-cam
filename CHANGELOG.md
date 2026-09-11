@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.5 - Unreleased
+
+- Add explicit HomeBase/owner connection states and anonymous references on
+  connection failures, with separate connection and state-refresh steps.
+- Record timestamped connection loss and recovery without duplicate state logs.
+- Provide one authenticated support download with the complete latest discovery
+  and up to 100 recent diagnostic events. Preserve failed setup evidence.
+- Extend Home Assistant's standard diagnostic download with this report and the
+  actual HA/integration versions, including integrations that failed to load.
+- Include bounded received firmware and parent context for rejected devices via
+  library 0.12.2. Keep credentials and device identities out of shared reports.
+  No model admission, media behavior or hardware support changes are claimed.
+
+
 
 ## 0.8.4 - Unpublished
 

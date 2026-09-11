@@ -270,3 +270,20 @@ test('explicit unavailable capabilities reject cached snapshots and websocket me
     assert.equal(fake.hub.active, 0);
   } finally { server.emit('shutdown'); server.close(); await once(server, 'close'); }
 });
+
+test('support download is authenticated, available during failed setup and starts no operations', async () => {
+  const report={schema:2,generated_at:new Date().toISOString(),last_discovery:[{event:'summary',outcome:'camera_inventory_empty'}],recent_events:[]};
+  const fake=Object.assign(new EventEmitter(),{auth:{state:'error'},supportReport:()=>report});
+  const server=createBridge(fake as unknown as Eufy,token,'PRIVATE_BRIDGE');
+  server.listen(0,'127.0.0.1');await once(server,'listening');
+  const address=server.address();assert.ok(address&&typeof address!=='string');
+  const url=`http://127.0.0.1:${address.port}/v1/diagnostics`;
+  try {
+    assert.equal((await fetch(url)).status,401);
+    const response=await fetch(url,{headers:{Authorization:`Bearer ${token}`}});
+    assert.equal(response.status,200);
+    assert.match(response.headers.get('content-disposition')!,/eufy-diagnostics\.json/);
+    assert.equal(response.headers.get('cache-control'),'no-store');
+    assert.deepEqual(await response.json(),report);
+  } finally {server.emit('shutdown');server.closeAllConnections();server.close();await once(server,'close');}
+});

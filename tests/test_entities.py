@@ -50,7 +50,13 @@ async def test_setup_discovery_unload(hass, bridge):
         await hass.async_block_till_done()
         assert hass.states.get("sensor.front_door_battery").state == "55"
         assert hass.states.get("camera.back_door")
-        diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+        with patch(
+            "custom_components.eufy_viewer.api.BridgeClient.request",
+            AsyncMock(
+                return_value={"schema": 2, "last_discovery": [], "recent_events": []}
+            ),
+        ):
+            diagnostics = await async_get_config_entry_diagnostics(hass, entry)
         assert "CAM123" not in str(diagnostics) and DATA["token"] not in str(
             diagnostics
         )
