@@ -14,7 +14,9 @@ An admitted operation is experimental software. It does not establish hardware
 support, reachability, fresh imagery, decoded video, audible audio or successful
 stop/cancel. Runtime operation guards remain authoritative.
 
-The camera card displays experimental status and useful unsupported reasons.
+The camera card displays useful reasons for unavailable operations. The generic
+experimental software status remains in HA attributes. It is not a per-camera
+hardware verdict and does not produce a warning on every card.
 Unavailable live and recording buttons are disabled. Unsupported snapshots are
 not requested. HA rejects direct viewer and recording requests before contacting
 the bridge. The bridge also refuses unsupported live sessions, cached snapshot

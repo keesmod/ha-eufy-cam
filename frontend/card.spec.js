@@ -220,12 +220,13 @@ test('capability status disables media controls and never fetches unsupported sn
   expect(await page.evaluate(() => calls.length)).toBe(0);
 });
 
-test('experimental software is visible while live remains explicitly user started', async ({ page }) => {
+test('experimental software does not claim missing hardware verification or start live', async ({ page }) => {
   await page.evaluate(() => {
-    card._hass.states['camera.front'].attributes.capabilities = { live: { available: true, status: 'experimental', reason: null } };
+    card._hass.states['camera.front'].attributes.capabilities = Object.fromEntries(['snapshot', 'live', 'recordings'].map(feature => [feature, { available: true, status: 'experimental', reason: null }]));
     card.hass = card._hass;
   });
-  await expect(page.locator('.capability')).toContainText('experimental, hardware not confirmed');
+  await expect(page.locator('.capability')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Recordings', exact: true })).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Watch live' })).toBeEnabled();
   expect(await page.evaluate(() => calls.length)).toBe(0);
 });

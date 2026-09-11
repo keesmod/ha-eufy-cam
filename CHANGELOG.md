@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.3 - Unpublished
+
+- Remove the repeated experimental/hardware warning from camera cards. The
+  capability status describes software availability, not hardware verification.
+- Keep unavailable-operation explanations, disabled controls and capability
+  attributes. No camera transport or hardware-support claim changes.
+- Integration-only update with bridge 0.7.1 retained. Publication and deployment
+  remain separate actions. Refresh the card resource after upgrading.
+
 ## 0.7.2 - Candidate, not published
 
 - Consolidate the completed camera capability and upgrade/rollback evidence,
