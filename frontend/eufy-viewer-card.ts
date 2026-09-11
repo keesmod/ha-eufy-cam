@@ -179,7 +179,7 @@ export class EufyViewerCard extends HTMLElement {
     const notes = Object.entries(capabilities ?? {}).filter(([feature]) => ["snapshot", "live", "recordings"].includes(feature)).map(([feature, capability]) => {
       const label = feature === "live" ? text.live : feature === "recordings" ? text.recordings : "Snapshot";
       if (capability.available === false) return `${label}: ${this._capabilityReason(capability.reason)}`;
-      return capability.status === "experimental" ? `${label}: ${this._hass?.language?.startsWith("nl") ? "experimenteel, hardware niet bevestigd" : "experimental, hardware not confirmed"}` : "";
+      return "";
     }).filter(Boolean);
     this.shadowRoot!.querySelector<HTMLElement>(".capability")!.textContent = notes.join(". ");
     const received = capabilities?.snapshot?.available === false ? undefined : state?.attributes.snapshot_received_at;

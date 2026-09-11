@@ -1,5 +1,6 @@
 """The standalone helper retains only the pre-upgrade inventory."""
 
+import ast
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,9 @@ STATE = {
 
 
 class MigrationHelperTests(unittest.TestCase):
+    def test_helper_supports_documented_python_311(self):
+        ast.parse(Path(helper.__file__).read_text(), feature_version=(3, 11))
+
     def test_only_allowlisted_inventory_is_retained(self):
         data = helper.inventory(STATE)
         self.assertEqual(

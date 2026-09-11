@@ -40,8 +40,9 @@ recording capabilities from the Mega client. Available software is marked
 experimental. Unsupported operations show a reason and cannot start media.
 Older bridges without this optional metadata keep their existing behavior.
 See [capability evidence](docs/CAMERA_CAPABILITIES.md) for validation and limits.
-The unpublished integration 0.7.2 [candidate](docs/CAMERA_RELEASE_CANDIDATE_0_7_2.md)
-adds release evidence and keeps bridge 0.7.1 and client 0.10.0.
+The unpublished integration 0.7.3 removes the generic experimental/hardware
+warning from camera cards. It retains the 0.7.2 [candidate evidence](docs/CAMERA_RELEASE_CANDIDATE_0_7_2.md),
+bridge 0.7.1 and client 0.10.0.
 
 ## Installation
 

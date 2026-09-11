@@ -113,7 +113,7 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except ValueError, OSError, KeyError, TypeError:
+    except (ValueError, OSError, KeyError, TypeError):
         raise SystemExit(
             "Migration paused. Keep your backup and use the recovery steps in docs/MEGA_MIGRATION.md."
         ) from None
