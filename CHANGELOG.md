@@ -1,67 +1,57 @@
 # Changelog
 
-## 0.8.5 - Unreleased
+## 0.8.5 - 2026-09-11
 
-- Add explicit HomeBase/owner connection states and anonymous references on
-  connection failures, with separate connection and state-refresh steps.
-- Record timestamped connection loss and recovery without duplicate state logs.
-- Provide one authenticated support download with the complete latest discovery
-  and up to 100 recent diagnostic events. Preserve failed setup evidence.
-- Extend Home Assistant's standard diagnostic download with this report and the
-  actual HA/integration versions, including integrations that failed to load.
-- Include bounded received firmware and parent context for rejected devices via
-  library 0.12.2. Keep credentials and device identities out of shared reports.
-  No model admission, media behavior or hardware support changes are claimed.
+### Logging improvements for diagnostics
 
+This release includes all diagnostic changes since 0.8.1. Versions 0.8.2 through
+0.8.4 were not published as GitHub releases.
 
+- Include discovery rejection reasons and bounded received model/type pairs in
+  normal bridge logs so missing devices can be investigated without debug mode.
+- Collect one complete startup report with actual bridge/library/Node versions,
+  authentication and inventory results, model/firmware details, anonymous device
+  and HomeBase references, migration counts and push startup. Preserve available
+  evidence when setup fails and distinguish missing observations from failures.
+- Show explicit HomeBase/owner connection states, distinguish connection from
+  state-refresh failures and record timestamped connection loss and recovery.
+  Suppress unchanged repeated logs.
+- Add an authenticated support download containing the complete latest discovery
+  and up to 100 recent diagnostic events. Include it in Home Assistant's standard
+  diagnostic download with actual HA/integration versions, also for failed setup.
+- Bundle the verified eufy-mega-client 0.12.2 release for bounded received firmware
+  and parent context on rejected devices. Independently filter shared reports in
+  the bridge and HA integration to exclude credentials and device identities.
+- Document collection steps, required versions, privacy checks and report field
+  meanings. Link the guide from support pages and both issue forms.
 
-## 0.8.4 - Unpublished
+### Upgrade and recovery
 
-- Add a bounded discovery support report to the normal bridge log, including
-  bridge/library/Node versions, platform, safe cloud results, authentication,
-  inventory counts, model/firmware, anonymous ownership, media software guards,
-  migration counts and push startup. Users can share one startup excerpt.
-- Include discovery data when setup is blocked. Keep existing rejection codes
-  and model/type details. Label missing observations as unknown, suppress
-  unchanged repeated rows and end each report with a row count.
-- Allowlist every output field and value. Never include identities, names,
-  account data, addresses, tokens, raw errors or raw cloud inventory.
-- Keep library 0.12.1, device admission and command behavior unchanged. Align
-  integration metadata for packaging without changing integration behavior.
-- Update and restart the bridge, then copy the Eufy discovery and Eufy backend
-  lines from the normal Logs tab. Debug is not needed. See the
-  [support guide](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/DISCOVERY_DIAGNOSTICS.md).
-  Keep the previous bridge and its private-data backup for rollback.
+Update the Eufy Viewer integration to 0.8.5 through HACS and restart Home
+Assistant. Separately update the bridge app or Docker installation to 0.8.5.
+The bridge includes library 0.12.2, which needs no manual installation.
 
-## 0.8.3 - Unpublished
+Download diagnostics from the integration's menu after the bridge has completed
+one startup discovery. Alternatively, collect the complete `Eufy discovery:`
+and `Eufy backend:` lines from the bridge's normal Logs tab. Debug is not needed
+and bridge logs remain usable with an older integration. Review the file before
+sharing it. See the [diagnostic collection guide](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/DISCOVERY_DIAGNOSTICS.md).
 
-- Include bounded received model/type details in unsupported-device discovery
-  logs, with eufy-mega-client 0.12.1. Keep distinct pairs visible while suppressing
-  duplicate pairs within one discovery pass.
-- Revalidate both fields before logging. Replace invalid or absent values with
-  `unavailable`. Never log device identities, account details or raw inventory.
-- Preserve usable cameras in mixed inventories, existing error codes and the
-  empty-camera setup guard. No C30 mapping or hardware-support claim changes.
-- When the app offers this version, update and restart the bridge, then read
-  its normal Logs tab. Live-video diagnostics need not be enabled. See the
-  [diagnostic guide](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/DISCOVERY_DIAGNOSTICS.md).
-- Keep integration version metadata aligned for packaging. The integration has
-  no behavior changes. Retain the previous bridge and its private data backup
-  for rollback through the normal Supervisor restore path.
+Existing Mega installations need no new login or migration because of this
+update. Installations older than 0.8.0 must still follow the
+[Mega migration guide](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/MEGA_MIGRATION.md).
+Keep a backup of the previous integration, bridge and private bridge data.
+For rollback, restore that matching backup through the normal installation or
+Supervisor restore path.
 
-## 0.8.2 - Unpublished
+### Scope and known limitations
 
-- Report discovery rejection codes in the bridge log when devices are missing
-  or have unsupported connections. Previously the bridge discarded these reasons.
-- Log each reason once per discovery, without device identities or raw inventory.
-  Device admission, migration checks and camera commands are unchanged.
-- Keep integration and bridge version metadata aligned for packaging. The HA
-  integration has no behavior changes. Use the normal update steps and preserve
-  the previous bridge and private data for rollback.
-
-This diagnostic fix does not establish the cause of all missing devices in
-[issue #40](https://github.com/keesmod/ha-eufy-cam/issues/40). Exact reporter models,
-connection details and login results are still needed.
+Device admission, camera commands and media behavior are unchanged. This release
+adds evidence for [issue #40](https://github.com/keesmod/ha-eufy-cam/issues/40),
+not a confirmed fix for the reporter's missing C30 or floodlight camera.
+The C30 model is already recognized by the library. The reporter's actual
+model/type, topology and discovery result are still needed to locate the failure.
+No additional hardware or media support is claimed.
 
 ## 0.8.1 - 2026-09-11
 
