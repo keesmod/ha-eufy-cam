@@ -1,22 +1,19 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes } from 'node:crypto';
 import {
   EufyError,
   type EufyMegaClient,
   type Device,
   type Recording as MegaRecording,
   type RecordingDownload,
-} from "@keesmod/eufy-mega-client";
-import { RecordingError } from "./errors.js";
-import { muxRecording } from "./recording-media.js";
-import type { BackendRecordings, Recording } from "./backend.js";
+} from '@keesmod/eufy-mega-client';
+import { RecordingError } from './errors.js';
+import { muxRecording } from './recording-media.js';
+import type { BackendRecordings, Recording } from './backend.js';
 
 /** Keeps bridge handles, conversion and limits stable across both backends. */
 export class MegaRecordings implements BackendRecordings {
   private operation?: AbortController;
-  private references = new Map<
-    string,
-    { record: MegaRecording; expires: number }
-  >();
+  private references = new Map<string, { record: MegaRecording; expires: number }>();
   readonly metrics = {
     queries: 0,
     downloads: 0,
@@ -28,7 +25,7 @@ export class MegaRecordings implements BackendRecordings {
   constructor(
     private client: () => EufyMegaClient | undefined,
     private devices: () => Device[],
-    private liveBusy: () => boolean | "live_busy" | "live_stopping",
+    private liveBusy: () => boolean | 'live_busy' | 'live_stopping',
     private checkCapability: (serial: string) => Promise<void> = async () => {},
   ) {}
   get busy(): boolean {
@@ -42,20 +39,16 @@ export class MegaRecordings implements BackendRecordings {
     signal: AbortSignal,
     action: (client: EufyMegaClient, abort: AbortSignal) => Promise<T>,
   ): Promise<T> {
-    if (this.busy) throw new RecordingError("recording_busy", 409);
+    if (this.busy) throw new RecordingError('recording_busy', 409);
     const live = this.liveBusy();
     if (live)
-      throw new RecordingError(
-        live === "live_stopping" ? "live_stopping" : "live_busy",
-        409,
-      );
+      throw new RecordingError(live === 'live_stopping' ? 'live_stopping' : 'live_busy', 409);
     const client = this.client();
-    if (!client?.connected)
-      throw new RecordingError("recording_unavailable", 503);
+    if (!client?.connected) throw new RecordingError('recording_unavailable', 503);
     signal.throwIfAborted();
     const operation = (this.operation = new AbortController());
     const abort = () => operation.abort();
-    signal.addEventListener("abort", abort, { once: true });
+    signal.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(abort, 60000);
     try {
       return await action(client, operation.signal);
@@ -64,31 +57,29 @@ export class MegaRecordings implements BackendRecordings {
       if (
         error instanceof EufyError &&
         [
-          "history_changed",
-          "history_completeness_unconfirmed",
-          "invalid_history_page",
-          "invalid_recording",
+          'history_changed',
+          'history_completeness_unconfirmed',
+          'invalid_history_page',
+          'invalid_recording',
         ].includes(error.code)
       )
-        throw new RecordingError("history_incomplete", 503);
-      throw new RecordingError("recording_unavailable", 503);
+        throw new RecordingError('history_incomplete', 503);
+      throw new RecordingError('recording_unavailable', 503);
     } finally {
       clearTimeout(timer);
-      signal.removeEventListener("abort", abort);
+      signal.removeEventListener('abort', abort);
       if (this.operation === operation) this.operation = undefined;
     }
   }
   private stations(serials: string[]): string[] {
     if (!serials.length || serials.length > 100)
-      throw new RecordingError("recording_unavailable", 400);
+      throw new RecordingError('recording_unavailable', 400);
     const devices = this.devices();
     return [
       ...new Set(
         serials.map((serial) => {
-          const device = devices.find(
-            (d) => d.id === serial && d.kind === "camera",
-          );
-          if (!device) throw new RecordingError("recording_unavailable", 400);
+          const device = devices.find((d) => d.id === serial && d.kind === 'camera');
+          if (!device) throw new RecordingError('recording_unavailable', 400);
           return device.stationId;
         }),
       ),
@@ -112,20 +103,17 @@ export class MegaRecordings implements BackendRecordings {
         const result = await client.listRecordings(
           id,
           date,
-          serials.filter(
-            (serial) => devices.find((d) => d.id === serial)?.stationId === id,
-          ),
+          serials.filter((serial) => devices.find((d) => d.id === serial)?.stationId === id),
           abort,
         );
-        if (result.complete !== true)
-          throw new RecordingError("history_incomplete", 503);
+        if (result.complete !== true) throw new RecordingError('history_incomplete', 503);
         rows.push(...result.recordings);
         returned += result.returned;
       }
       for (const [id, ref] of this.references)
         if (ref.expires <= Date.now()) this.references.delete(id);
       const recordings = rows.map((record) => {
-        const id = randomBytes(16).toString("hex");
+        const id = randomBytes(16).toString('hex');
         this.references.set(id, { record, expires: Date.now() + 15 * 60000 });
         return {
           id,
@@ -157,8 +145,7 @@ export class MegaRecordings implements BackendRecordings {
       const days = new Set<string>();
       for (const station of this.stations(serials)) {
         this.metrics.queries++;
-        for (const day of await client.recordingCalendar(station, month, abort))
-          days.add(day);
+        for (const day of await client.recordingCalendar(station, month, abort)) days.add(day);
       }
       return { days: [...days].sort() };
     });
@@ -166,25 +153,19 @@ export class MegaRecordings implements BackendRecordings {
   private reference(serial: string, id: string): MegaRecording {
     const ref = this.references.get(id);
     if (!ref || ref.record.deviceId !== serial || ref.expires <= Date.now())
-      throw new RecordingError("recording_expired", 410);
+      throw new RecordingError('recording_expired', 410);
     return ref.record;
   }
-  async thumbnail(
-    serial: string,
-    id: string,
-    signal: AbortSignal,
-  ): Promise<Buffer> {
+  async thumbnail(serial: string, id: string, signal: AbortSignal): Promise<Buffer> {
     await this.checkCapability(serial);
     const record = this.reference(serial, id);
-    return this.run(signal, (client, abort) =>
-      client.recordingThumbnail(record.id, abort),
-    );
+    return this.run(signal, (client, abort) => client.recordingThumbnail(record.id, abort));
   }
   async video(
     serial: string,
     id: string,
     signal: AbortSignal,
-    format: "h264" | "native" = "h264",
+    format: 'h264' | 'native' = 'h264',
   ): Promise<Buffer> {
     await this.checkCapability(serial);
     const record = this.reference(serial, id);
@@ -195,18 +176,13 @@ export class MegaRecordings implements BackendRecordings {
         audio: Buffer[] = [];
       try {
         transfer = await client.downloadRecording(record.id, abort);
-        transfer.video.on("data", (chunk) => video.push(chunk));
-        transfer.audio.on("data", (chunk) => audio.push(chunk));
+        transfer.video.on('data', (chunk) => video.push(chunk));
+        transfer.audio.on('data', (chunk) => audio.push(chunk));
         const result = await transfer.completed;
-        if (!result.complete)
-          throw new RecordingError("recording_unavailable", 503);
+        if (!result.complete) throw new RecordingError('recording_unavailable', 503);
         const metadata = transfer.metadata;
         const codec =
-          metadata.videoCodec === "h264"
-            ? "h264"
-            : metadata.videoCodec === "h265"
-              ? "hevc"
-              : null;
+          metadata.videoCodec === 'h264' ? 'h264' : metadata.videoCodec === 'h265' ? 'hevc' : null;
         const output = await muxRecording(
           { videoCodec: codec, fps: metadata.fps },
           Buffer.concat(video),
@@ -214,7 +190,7 @@ export class MegaRecordings implements BackendRecordings {
           abort,
           format,
         );
-        if (codec === "hevc" && format === "h264") this.metrics.transcoded++;
+        if (codec === 'hevc' && format === 'h264') this.metrics.transcoded++;
         else this.metrics.remuxed++;
         this.metrics.completed++;
         return output;

@@ -1,4 +1,4 @@
-import { EventEmitter } from "node:events";
+import { EventEmitter } from 'node:events';
 import {
   EufyMegaClient,
   EufyError,
@@ -7,10 +7,10 @@ import {
   type StationState,
   type LiveStream,
   type AuthState as MegaAuth,
-} from "@keesmod/eufy-mega-client";
-import { Storage } from "./storage.js";
-import { MegaRecordings } from "./mega-recordings.js";
-import { RecordingError, StationError } from "./errors.js";
+} from '@keesmod/eufy-mega-client';
+import { Storage } from './storage.js';
+import { MegaRecordings } from './mega-recordings.js';
+import { RecordingError, StationError } from './errors.js';
 import type {
   Backend,
   BackendStations,
@@ -22,23 +22,23 @@ import type {
   LiveMedia,
   Picture,
   StationInfo,
-} from "./backend.js";
+} from './backend.js';
 
 const modes = [0, 1, 2, 3, 4, 5, 47, 63];
 const authState = (state: MegaAuth): AuthState => {
   switch (state.state) {
-    case "connected":
-      return { state: "connected" };
-    case "captcha_required":
+    case 'connected':
+      return { state: 'connected' };
+    case 'captcha_required':
       return {
-        state: "captcha",
+        state: 'captcha',
         captcha: state.image,
         captchaId: state.captchaId,
       };
-    case "verification_required":
-      return { state: "verify" };
+    case 'verification_required':
+      return { state: 'verify' };
     default:
-      return { state: "error" };
+      return { state: 'error' };
   }
 };
 class MegaStations implements BackendStations {
@@ -51,15 +51,15 @@ class MegaStations implements BackendStations {
   ) {}
   inventory(): StationInfo[] {
     return this.devices()
-      .filter((d) => d.kind === "station")
+      .filter((d) => d.kind === 'station')
       .map((device) => {
         const state = this.states.get(device.id);
         return {
           serial: device.id,
           name: device.name,
           model: device.model,
-          hardware: device.hardware ?? "",
-          software: device.firmware ?? "",
+          hardware: device.hardware ?? '',
+          software: device.firmware ?? '',
           connected: !!this.client()?.connected && !!state?.connected,
           guard_mode: state?.guardMode ?? null,
           current_mode: state?.currentMode ?? null,
@@ -71,31 +71,24 @@ class MegaStations implements BackendStations {
       });
   }
   async setMode(serial: string, mode: unknown): Promise<void> {
-    if (typeof mode !== "number" || !modes.includes(mode))
-      throw new StationError("invalid_mode", 400);
+    if (typeof mode !== 'number' || !modes.includes(mode))
+      throw new StationError('invalid_mode', 400);
     const client = this.client();
-    if (
-      !client?.connected ||
-      !this.devices().some((d) => d.kind === "station" && d.id === serial)
-    )
-      throw new StationError("station_unavailable");
+    if (!client?.connected || !this.devices().some((d) => d.kind === 'station' && d.id === serial))
+      throw new StationError('station_unavailable');
     this.metrics.commands++;
     try {
-      const result = await client.setGuardMode(
-        serial,
-        mode,
-        AbortSignal.timeout(30000),
-      );
-      if (!result.confirmed) throw new StationError("station_unconfirmed");
+      const result = await client.setGuardMode(serial, mode, AbortSignal.timeout(30000));
+      if (!result.confirmed) throw new StationError('station_unconfirmed');
       this.states.set(serial, result.state);
       this.metrics.accepted++;
     } catch (error) {
       this.metrics.failed++;
-      if (error instanceof EufyError && error.code === "station_busy")
-        throw new StationError("station_busy", 409);
-      if (error instanceof EufyError && error.code === "guard_mode_rejected")
-        throw new StationError("station_rejected");
-      throw new StationError("station_unconfirmed");
+      if (error instanceof EufyError && error.code === 'station_busy')
+        throw new StationError('station_busy', 409);
+      if (error instanceof EufyError && error.code === 'guard_mode_rejected')
+        throw new StationError('station_rejected');
+      throw new StationError('station_unconfirmed');
     } finally {
       this.changed();
     }
@@ -119,13 +112,13 @@ export class MegaBackend extends EventEmitter implements Backend {
   private ready = false;
   private timer?: NodeJS.Timeout;
   private refreshing = false;
-  auth: AuthState = { state: "unconfigured" };
+  auth: AuthState = { state: 'unconfigured' };
   readonly pictures = new Map<string, Picture>();
   readonly recordings: MegaRecordings;
   readonly stations: MegaStations;
   constructor(
     private storage: Storage,
-    private readonly liveBusy: () => boolean | "live_busy" | "live_stopping",
+    private readonly liveBusy: () => boolean | 'live_busy' | 'live_stopping',
     private factory: (options: ClientOptions) => EufyMegaClient = (options) =>
       new EufyMegaClient(options),
   ) {
@@ -137,14 +130,14 @@ export class MegaBackend extends EventEmitter implements Backend {
       async (serial) => {
         const capabilities = await this.client!.getCameraCapabilities(serial);
         if (!capabilities.recordings.available)
-          throw new RecordingError("capability_unavailable", 503);
+          throw new RecordingError('capability_unavailable', 503);
       },
     );
     this.stations = new MegaStations(
       () => this.client,
       () => [...this.devices.values()],
       this.stationStates,
-      () => this.emit("change"),
+      () => this.emit('change'),
     );
   }
   get connected(): boolean {
@@ -165,10 +158,7 @@ export class MegaBackend extends EventEmitter implements Backend {
       close() {},
     };
   }
-  async login(
-    credentials?: Credentials,
-    options?: LoginOptions,
-  ): Promise<AuthState> {
+  async login(credentials?: Credentials, options?: LoginOptions): Promise<AuthState> {
     if (credentials) {
       this.client = this.factory({
         credentials: {
@@ -178,18 +168,17 @@ export class MegaBackend extends EventEmitter implements Backend {
         },
         sessionStore: {
           load: async () => {
-            const raw = await this.storage.read("mega-session.json");
+            const raw = await this.storage.read('mega-session.json');
             return raw ? JSON.parse(raw) : undefined;
           },
-          save: (session) =>
-            this.storage.write("mega-session.json", JSON.stringify(session)),
+          save: (session) => this.storage.write('mega-session.json', JSON.stringify(session)),
         },
       });
       this.bind(this.client);
     }
     const client = this.client;
-    if (!client || this.closed) throw new Error("Credentials required");
-    this.auth = { state: "connecting" };
+    if (!client || this.closed) throw new Error('Credentials required');
+    this.auth = { state: 'connecting' };
     const answer = options?.verifyCode
       ? { verifyCode: options.verifyCode }
       : options?.captcha
@@ -204,16 +193,14 @@ export class MegaBackend extends EventEmitter implements Backend {
     } catch (error) {
       if (
         error instanceof EufyError &&
-        ["authentication_rejected", "invalid_authentication"].includes(
-          error.code,
-        )
+        ['authentication_rejected', 'invalid_authentication'].includes(error.code)
       ) {
-        this.auth = { state: "error" };
+        this.auth = { state: 'error' };
         return this.auth;
       }
       throw error;
     }
-    if (authenticated.state !== "connected") {
+    if (authenticated.state !== 'connected') {
       this.auth = authenticated;
       return this.auth;
     }
@@ -221,15 +208,15 @@ export class MegaBackend extends EventEmitter implements Backend {
     await client.startEvents();
     if (this.closed) {
       await client.shutdown();
-      throw new Error("Bridge closed");
+      throw new Error('Bridge closed');
     }
     if (!this.timer) {
       this.timer = setInterval(() => void this.refresh(), 60000);
       this.timer.unref();
     }
     this.ready = true;
-    this.auth = { state: "connected" };
-    this.emit("change");
+    this.auth = { state: 'connected' };
+    this.emit('change');
     return this.auth;
   }
   private async discover(): Promise<void> {
@@ -237,24 +224,18 @@ export class MegaBackend extends EventEmitter implements Backend {
     const devices = await client.listDevices();
     const next = new Map(devices.map((d) => [d.id, d]));
     for (const device of this.devices.values())
-      if (device.kind === "camera" && !next.has(device.id)) {
+      if (device.kind === 'camera' && !next.has(device.id)) {
         this.pictures.delete(device.id);
-        this.emit("camera-removed", device.id);
+        this.emit('camera-removed', device.id);
       }
     this.devices = next;
     this.capabilities.clear();
-    for (const device of devices.filter((d) => d.kind === "camera"))
-      this.capabilities.set(
-        device.id,
-        await client.getCameraCapabilities(device.id),
-      );
-    for (const station of devices.filter((d) => d.kind === "station")) {
+    for (const device of devices.filter((d) => d.kind === 'camera'))
+      this.capabilities.set(device.id, await client.getCameraCapabilities(device.id));
+    for (const station of devices.filter((d) => d.kind === 'station')) {
       try {
         await client.connectStation(station.id);
-        this.stationStates.set(
-          station.id,
-          await client.refreshStationState(station.id),
-        );
+        this.stationStates.set(station.id, await client.refreshStationState(station.id));
       } catch (error) {
         this.stationStates.set(station.id, {
           id: station.id,
@@ -266,15 +247,12 @@ export class MegaBackend extends EventEmitter implements Backend {
           armDelay: 0,
           commandEncryption: null,
         });
-        this.emit(
-          "backend_fault",
-          error instanceof EufyError ? error.code : "connection_failed",
-        );
+        this.emit('backend_fault', error instanceof EufyError ? error.code : 'connection_failed');
       }
     }
     // HomeBase connection already requests existing cover images. This does not
     // start cameras or manufacture a new snapshot by briefly opening live video.
-    this.emit("change");
+    this.emit('change');
   }
   private async refresh(): Promise<void> {
     if (this.closed || this.refreshing || !this.client) return;
@@ -282,8 +260,8 @@ export class MegaBackend extends EventEmitter implements Backend {
     try {
       if (!this.client.connected) {
         this.auth = authState(await this.client.connect());
-        this.emit("change");
-        if (this.auth.state !== "connected") return;
+        this.emit('change');
+        if (this.auth.state !== 'connected') return;
         if (!this.streams.size && !this.recordings.busy) await this.discover();
       }
       if (!this.streams.size && !this.recordings.busy && !this.liveBusy()) {
@@ -293,15 +271,12 @@ export class MegaBackend extends EventEmitter implements Backend {
           // Restore station telemetry while idle without waking a camera.
           await this.client.connectStation(id);
           this.stationStates.set(id, await this.client.refreshStationState(id));
-          this.emit("change");
+          this.emit('change');
         }
       }
       if (!this.client.eventStatus.connected) await this.client.startEvents();
     } catch (error) {
-      this.emit(
-        "backend_fault",
-        error instanceof EufyError ? error.code : "connection_failed",
-      );
+      this.emit('backend_fault', error instanceof EufyError ? error.code : 'connection_failed');
     } finally {
       this.refreshing = false;
     }
@@ -313,50 +288,49 @@ export class MegaBackend extends EventEmitter implements Backend {
       const capabilities = await client.getCameraCapabilities(id);
       if (!this.closed && this.client === client && this.devices.has(id)) {
         this.capabilities.set(id, capabilities);
-        this.emit("change");
+        this.emit('change');
       }
     } catch {
       // Preserve the last software admission. Operations recheck the client guard.
     }
   }
   private bind(client: EufyMegaClient): void {
-    client.on("auth", (state) => {
-      if (state.state !== "connected" || this.ready)
-        this.auth = authState(state);
-      this.emit("change");
+    client.on('auth', (state) => {
+      if (state.state !== 'connected' || this.ready) this.auth = authState(state);
+      this.emit('change');
     });
-    client.on("device", (device) => {
+    client.on('device', (device) => {
       if (this.devices.has(device.id)) {
         this.devices.set(device.id, device);
-        if (device.kind === "camera") void this.refreshCapabilities(device.id);
-        this.emit("change");
+        if (device.kind === 'camera') void this.refreshCapabilities(device.id);
+        this.emit('change');
       }
     });
-    client.on("station", (state) => {
+    client.on('station', (state) => {
       this.stationStates.set(state.id, state);
-      this.emit("change");
+      this.emit('change');
     });
-    client.on("snapshot", (snapshot) => {
+    client.on('snapshot', (snapshot) => {
       this.pictures.set(snapshot.deviceId, {
         data: snapshot.data,
         mime: snapshot.mime,
         received: snapshot.receivedAt,
       });
-      this.emit("change");
+      this.emit('change');
     });
-    client.on("events-connection", () => this.emit("change"));
-    client.on("live-stop", (result) => {
+    client.on('events-connection', () => this.emit('change'));
+    client.on('live-stop', (result) => {
       // A cancelled start can stop the device before returning a media handle.
       // Established handles already deliver their result through handle.ended.
       const owned = this.streams.get(result.deviceId);
       if (owned && !owned.handle)
-        this.emit("live-stop", {
+        this.emit('live-stop', {
           serial: result.deviceId,
           confirmed: result.confirmed,
         });
     });
-    client.on("event", (event) => {
-      this.emit("notification", {
+    client.on('event', (event) => {
+      this.emit('notification', {
         id: event.id,
         serial: event.deviceId,
         event_type: event.type,
@@ -365,17 +339,12 @@ export class MegaBackend extends EventEmitter implements Backend {
         person_name: event.personName,
         recognition: event.recognition,
         occurred_at: event.occurredAt,
-        ...(event.vendorEventType === undefined
-          ? {}
-          : { eufy_event_type: event.vendorEventType }),
+        ...(event.vendorEventType === undefined ? {} : { eufy_event_type: event.vendorEventType }),
       });
-      this.emit("change");
+      this.emit('change');
     });
-    client.on("fault", (error) =>
-      this.emit(
-        "backend_fault",
-        error instanceof EufyError ? error.code : "device_failed",
-      ),
+    client.on('fault', (error) =>
+      this.emit('backend_fault', error instanceof EufyError ? error.code : 'device_failed'),
     );
   }
   canStartLive(serial: string): boolean {
@@ -383,20 +352,17 @@ export class MegaBackend extends EventEmitter implements Backend {
     const station = this.devices.get(serial)?.stationId;
     return (
       !!station &&
-      ![...this.streams.keys()].some(
-        (id) => this.devices.get(id)?.stationId === station,
-      )
+      ![...this.streams.keys()].some((id) => this.devices.get(id)?.stationId === station)
     );
   }
   async startLive(serial: string): Promise<void> {
     if (!this.client || !this.hasCamera(serial) || this.streams.has(serial))
-      throw new Error("Camera unavailable");
+      throw new Error('Camera unavailable');
     const client = this.client;
     const capability = (await client.getCameraCapabilities(serial)).live;
     if (this.closed || this.client !== client || this.streams.has(serial))
-      throw new Error("Camera unavailable");
-    if (!capability.available)
-      throw new Error(capability.reason ?? "capability_unavailable");
+      throw new Error('Camera unavailable');
+    if (!capability.available) throw new Error(capability.reason ?? 'capability_unavailable');
     const abort = new AbortController();
     const owned: {
       abort: AbortController;
@@ -413,25 +379,23 @@ export class MegaBackend extends EventEmitter implements Backend {
         owned.handle = handle;
         void handle.ended.then((result) => {
           if (this.streams.get(serial) === owned) this.streams.delete(serial);
-          this.emit("live-stop", { serial, confirmed: result.confirmed });
+          this.emit('live-stop', { serial, confirmed: result.confirmed });
         });
         const metadata = handle.metadata;
         const media: LiveMedia = {
           serial,
           videoCodec:
-            metadata.videoCodec === "h264"
-              ? "h264"
-              : metadata.videoCodec === "h265"
-                ? "hevc"
+            metadata.videoCodec === 'h264'
+              ? 'h264'
+              : metadata.videoCodec === 'h265'
+                ? 'hevc'
                 : null,
-          audioSupported: ["aac", "aac-lc", "aac-eld"].includes(
-            metadata.audioCodec,
-          ),
+          audioSupported: ['aac', 'aac-lc', 'aac-eld'].includes(metadata.audioCodec),
           fps: metadata.fps,
           video: handle.video,
           audio: handle.audio,
         };
-        this.emit("live-start", media);
+        this.emit('live-start', media);
       } catch (error) {
         if (this.streams.get(serial) === owned) this.streams.delete(serial);
         throw error;
@@ -448,43 +412,38 @@ export class MegaBackend extends EventEmitter implements Backend {
     }
     if (owned.handle) {
       const result = await owned.handle.stop();
-      if (!result.confirmed) throw new Error("Device stop unconfirmed");
+      if (!result.confirmed) throw new Error('Device stop unconfirmed');
     }
   }
   async recoverStation(serial: string): Promise<string[]> {
     if (!this.client || this.streams.size || this.recordings.busy)
-      throw new Error("Station still owned");
-    const result = await this.client.ensureLiveStopped(
-      serial,
-      AbortSignal.timeout(28000),
-    );
-    if (!result.confirmed) throw new Error("Device stop unconfirmed");
+      throw new Error('Station still owned');
+    const result = await this.client.ensureLiveStopped(serial, AbortSignal.timeout(28000));
+    if (!result.confirmed) throw new Error('Device stop unconfirmed');
     return [serial];
   }
   inventory(): CameraInfo[] {
     return [...this.devices.values()]
-      .filter((d) => d.kind === "camera")
+      .filter((d) => d.kind === 'camera')
       .map((d) => ({
         serial: d.id,
         name: d.name,
         model: d.model,
-        hardware: d.hardware ?? "",
-        software: d.firmware ?? "",
+        hardware: d.hardware ?? '',
+        software: d.firmware ?? '',
         battery: d.battery,
         capabilities: this.capabilities.get(d.id),
         snapshot_received_at: this.pictures.get(d.id)?.received ?? null,
       }));
   }
   hasCamera(serial: string): boolean {
-    return this.devices.get(serial)?.kind === "camera";
+    return this.devices.get(serial)?.kind === 'camera';
   }
   async close(): Promise<void> {
     this.closed = true;
     clearInterval(this.timer);
     this.recordings.close();
-    await Promise.allSettled(
-      [...this.streams.keys()].map((serial) => this.stopLive(serial)),
-    );
+    await Promise.allSettled([...this.streams.keys()].map((serial) => this.stopLive(serial)));
     try {
       await this.client?.shutdown();
     } finally {

@@ -1,5 +1,5 @@
-import type { EventEmitter } from "node:events";
-import type { Readable } from "node:stream";
+import type { EventEmitter } from 'node:events';
+import type { Readable } from 'node:stream';
 
 export interface Credentials {
   username: string;
@@ -12,25 +12,16 @@ export interface LoginOptions {
   force?: boolean;
 }
 export type AuthState = {
-  state:
-    | "unconfigured"
-    | "connected"
-    | "connecting"
-    | "error"
-    | "verify"
-    | "captcha";
+  state: 'unconfigured' | 'connected' | 'connecting' | 'error' | 'verify' | 'captcha';
   captcha?: string;
   captchaId?: string;
 };
 export interface MediaCapability {
   available: boolean;
-  status: "experimental" | "unsupported";
+  status: 'experimental' | 'unsupported';
   reason: string | null;
 }
-export type CameraCapabilities = Record<
-  "snapshot" | "live" | "recordings",
-  MediaCapability
->;
+export type CameraCapabilities = Record<'snapshot' | 'live' | 'recordings', MediaCapability>;
 export interface CameraInfo {
   serial: string;
   name: string;
@@ -88,17 +79,13 @@ export interface BackendRecordings {
     date: string,
     signal: AbortSignal,
   ): Promise<{ recordings: Recording[]; returned: number; complete: true }>;
-  calendar(
-    serials: string[],
-    month: string,
-    signal: AbortSignal,
-  ): Promise<{ days: string[] }>;
+  calendar(serials: string[], month: string, signal: AbortSignal): Promise<{ days: string[] }>;
   thumbnail(serial: string, id: string, signal: AbortSignal): Promise<Buffer>;
   video(
     serial: string,
     id: string,
     signal: AbortSignal,
-    format?: "h264" | "native",
+    format?: 'h264' | 'native',
   ): Promise<Buffer>;
   close(): void;
 }
@@ -116,7 +103,7 @@ export interface NotificationMetrics {
 }
 export interface LiveMedia {
   serial: string;
-  videoCodec: "h264" | "hevc" | null;
+  videoCodec: 'h264' | 'hevc' | null;
   audioSupported: boolean;
   fps: number;
   video: Readable;
@@ -138,9 +125,9 @@ export interface Backend extends EventEmitter {
   recoverStation(serial: string): Promise<string[]>;
   close(): Promise<void>;
 }
-export type BackendName = "legacy" | "mega";
+export type BackendName = 'legacy' | 'mega';
 export function backendName(value: string | undefined): BackendName {
-  if (value === undefined || value === "legacy") return "legacy";
-  if (value === "mega") return "mega";
-  throw new Error("EUFY_BACKEND must be legacy or mega");
+  if (value === undefined || value === 'legacy') return 'legacy';
+  if (value === 'mega') return 'mega';
+  throw new Error('EUFY_BACKEND must be legacy or mega');
 }
