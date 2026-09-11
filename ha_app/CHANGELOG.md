@@ -1,5 +1,22 @@
 # Changelog
 
+
+## 0.8.3 - Unpublished
+
+- Include bounded received model/type details in unsupported-device discovery
+  logs, with eufy-mega-client 0.12.1. Keep distinct pairs visible while suppressing
+  duplicate pairs within one discovery pass.
+- Revalidate both fields before logging. Replace invalid or absent values with
+  `unavailable`. Never log device identities, account details or raw inventory.
+- Preserve usable cameras in mixed inventories, existing error codes and the
+  empty-camera setup guard. No C30 mapping or hardware-support claim changes.
+- When the app offers this version, update and restart the bridge, then read
+  its normal Logs tab. Live-video diagnostics need not be enabled. See the
+  [diagnostic guide](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/DISCOVERY_DIAGNOSTICS.md).
+- Keep integration version metadata aligned for packaging. The integration has
+  no behavior changes. Retain the previous bridge and its private data backup
+  for rollback through the normal Supervisor restore path.
+
 ## 0.8.2 - Unpublished
 
 - Report discovery rejection codes in the bridge log when devices are missing

@@ -4,6 +4,7 @@ import {
   EufyError,
   type ClientOptions,
   type Device,
+  type DiscoveryIssue,
   type StationState,
   type LiveStream,
   type AuthState as MegaAuth,
@@ -26,6 +27,25 @@ import type {
 } from './backend.js';
 
 const modes = [0, 1, 2, 3, 4, 5, 47, 63];
+function discoveryDetail(issue: DiscoveryIssue): string | undefined {
+  if (issue.code !== 'unsupported_device') return undefined;
+  // Revalidate even library-sanitized values at this logging boundary. These
+  // bounds affect diagnostics only. Never stringify the issue or its identity.
+  const model =
+    typeof issue.deviceModel === 'string' &&
+    issue.deviceModel.length === 5 &&
+    /^T[A-Z0-9]{4}$/.test(issue.deviceModel)
+      ? issue.deviceModel
+      : 'unavailable';
+  const type =
+    typeof issue.deviceType === 'number' &&
+    Number.isInteger(issue.deviceType) &&
+    issue.deviceType >= 0 &&
+    issue.deviceType <= 65535
+      ? issue.deviceType
+      : 'unavailable';
+  return `device_model=${model} device_type=${type}`;
+}
 const authState = (state: MegaAuth): AuthState => {
   switch (state.state) {
     case 'connected':
@@ -223,10 +243,14 @@ export class MegaBackend extends EventEmitter implements Backend {
   private async discover(): Promise<void> {
     const client = this.client!;
     const { devices, issues } = await client.discoverDevices();
-    // listDevices discards the reasons for missing or unusable devices. Report
-    // each library-owned code once, without serials or raw inventory details.
-    for (const code of new Set(issues.map((issue) => issue.code)))
-      this.emit('backend_fault', code);
+    const reported = new Set<string>();
+    for (const issue of issues) {
+      const detail = discoveryDetail(issue);
+      const key = `${issue.code} ${detail ?? ''}`;
+      if (reported.has(key)) continue;
+      reported.add(key);
+      this.emit('backend_fault', issue.code, ...(detail ? [detail] : []));
+    }
     verifyInventory(await migrationInventory(this.storage), devices);
     const next = new Map(devices.map((d) => [d.id, d]));
     for (const device of this.devices.values())
