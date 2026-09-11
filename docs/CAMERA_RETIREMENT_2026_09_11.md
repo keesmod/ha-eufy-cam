@@ -45,7 +45,9 @@ Fresh discovery confirmed T8160 firmware 3.4.3.0 and T8213 firmware 0.2.1.8 thro
 
 The HA alarm state matched current HomeBase mode 0, armed away. No security mode was changed. After one controlled bridge restart, connected discovery returned within 2.01 seconds after restart, with all expected cameras, identities and idle state preserved. This proves restart/session recovery, not every possible network-failure condition.
 
-A bounded 300-second HA event subscription received no matching real camera event. It closed cleanly. Connected push is not event-delivery evidence. The real-notification gate remains open until a controlled physical event is observed on this build.
+Earlier bounded observations received no matching event. The user confirmed that no physical action was performed during the first requested doorbell attempt, so that attempt does not demonstrate a notification defect.
+
+On 11 September, a fresh observation on the same verified 0.8.0 image received a real HA `eufy_viewer_event` of kind `ring` after the user was prompted to act. The event matched the inventoried T8213, firmware 0.2.1.8, at 216.63 seconds after subscription. The observer reported one matching event, closed its subscriptions and exited successfully. No event was injected. This accepts actual doorbell delivery on this tuple, without claiming every event type or model was physically tested. The fresh bridge restart also preserved four cameras, fifteen identities and idle state, reconnecting in 3.02 seconds.
 
 ## Rollback
 
@@ -53,12 +55,14 @@ The old 0.7.1 image, matching integration and exact private data backup were res
 
 Both camera tuples passed stored snapshots, changing live video with nonzero audio, confirmed stop and complete recording playback with seeking again. T8160 decoded 41 live video and 197 audio frames. T8213 decoded 45 live video and 166 audio frames. Both had zero active or quarantined streams and zero transport recovery attempts. The same 55-record and six-record queries were complete, with recording decode counts of 910/930 and 484/488 video/audio frames.
 
-## Remaining gates
+## Final recovery and remaining obligations
 
 The test controller was confirmed stopped before production restarted. Production recovered on its original bridge and integration 0.7.1 with four cameras, fifteen entities, connected authentication and zero active or quarantined streams. Boot, watchdog and automatic-update settings exactly matched their private backup. Production HA configuration validation passed.
 
 The test installation returned to its original integration 0.5.1 and fifteen entities. Its temporary controller was removed and its helpers and migration baseline were archived outside the active HA configuration. Test HA configuration validation passed. The recovery guard exited normally. All backups and release images were retained.
 
- Hardware #31 remains open for its real-notification gate. Python security #30 remains open because the supported HA release pins the affected cryptography version. Neither software CI nor the isolated test-driver version clears that obligation.
+The final doorbell run also stopped its test controller before restoring production and the original test integration. Recovery, settings readback and HA configuration checks passed again.
+
+Hardware #31 now has evidence for its final real-notification criterion. Python security [#30](https://github.com/keesmod/ha-eufy-cam/issues/30#issuecomment-5635391239) remains open because supported HA pins the affected cryptography version. The user accepted this substantiated limitation for #24 after the separate security assessment proved that the supported dependency constraints cannot resolve with the fixed version. The Python audit still fails. No advisory was dismissed and no audit was suppressed. Neither software CI nor the isolated test-driver version remediates that vulnerability.
 
 T8134 live/recovery work in camera #10 and client #21, #22 and #56 remains open. These two tested tuples do not establish support for other models or topologies. No product release, production retirement, mower change or backup deletion is included.
