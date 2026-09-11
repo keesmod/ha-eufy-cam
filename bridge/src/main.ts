@@ -3,7 +3,7 @@ import {backendName} from "./backend.js";
 import { Eufy } from "./eufy.js";
 import { createBridge } from "./server.js";
 import { Storage } from "./storage.js";
-import { logBackendFault } from "./backend-log.js";
+import { logBackendFault, logDiscoveryDiagnostic } from "./backend-log.js";
 
 const token = process.env.EUFY_BRIDGE_TOKEN;
 if (!token || token.length < 32) throw new Error("EUFY_BRIDGE_TOKEN must contain at least 32 characters");
@@ -14,6 +14,7 @@ if (!id) { id = randomUUID(); await storage.write("bridge-id", id); }
 const eufy = new Eufy(storage,selectedBackend, process.env.EUFY_DIAGNOSTICS === "true");
 if (eufy.diagnostics.enabled) console.info("Eufy live diagnostics enabled. Disable after troubleshooting.");
 eufy.on("backend_fault", logBackendFault);
+eufy.on("discovery_diagnostic", logDiscoveryDiagnostic);
 eufy.on("storage_error", () => console.error("Unable to persist bridge session"));
 eufy.on("restore_retry", () => console.error("Eufy session restore failed; retrying when the network is ready"));
 const server = createBridge(eufy, token, id);

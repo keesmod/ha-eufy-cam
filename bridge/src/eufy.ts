@@ -257,6 +257,7 @@ export class Eufy extends EventEmitter {
       this.emit('change');
     });
     backend.on('storage_error', () => this.emit('storage_error'));
+    backend.on('discovery_diagnostic', line => this.emit('discovery_diagnostic', line));
     backend.on('backend_fault', (code, detail) =>
       this.emit('backend_fault', code, ...(detail ? [detail] : [])));
     backend.on('notification', (event) => this.emit('notification', event));

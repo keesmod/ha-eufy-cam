@@ -1,6 +1,24 @@
 # Changelog
 
 
+## 0.8.4 - Unpublished
+
+- Add a bounded discovery support report to the normal bridge log, including
+  bridge/library/Node versions, platform, safe cloud results, authentication,
+  inventory counts, model/firmware, anonymous ownership, media software guards,
+  migration counts and push startup. Users can share one startup excerpt.
+- Include discovery data when setup is blocked. Keep existing rejection codes
+  and model/type details. Label missing observations as unknown, suppress
+  unchanged repeated rows and end each report with a row count.
+- Allowlist every output field and value. Never include identities, names,
+  account data, addresses, tokens, raw errors or raw cloud inventory.
+- Keep library 0.12.1, device admission and command behavior unchanged. Align
+  integration metadata for packaging without changing integration behavior.
+- Update and restart the bridge, then copy the Eufy discovery and Eufy backend
+  lines from the normal Logs tab. Debug is not needed. See the
+  [support guide](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/DISCOVERY_DIAGNOSTICS.md).
+  Keep the previous bridge and its private-data backup for rollback.
+
 ## 0.8.3 - Unpublished
 
 - Include bounded received model/type details in unsupported-device discovery
