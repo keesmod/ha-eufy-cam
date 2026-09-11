@@ -1,60 +1,75 @@
 name: Compatibility report
-description: Share a successful or partial installation, including existing HomeBase playback.
-title: "[Compatibility] HomeBase / camera model"
+description: Share working, failed or untested camera features on your installation.
+title: "[Compatibility] Camera model and connection"
 body:
   - type: markdown
     attributes:
-      value: "Thank you for testing. Partial results help too. Use model numbers, never serial numbers. No credentials or camera footage are needed."
+      value: |
+        Reporting is voluntary and never required to upgrade. Partial results help.
+        If an existing issue covers the same problem, add your results there instead.
+        Use model numbers, never serial numbers. Do not attach footage or raw logs.
+        Report only checks you performed. There is no need to test every feature.
+  - type: input
+    id: observation_date
+    attributes:
+      label: Observation date
+      description: When did you perform these checks? Include the duration if relevant.
+      placeholder: "2026-09-11, about 10 minutes"
+    validations:
+      required: true
   - type: input
     id: versions
     attributes:
       label: Software versions
-      description: Home Assistant version, integration version AND bridge version.
-      placeholder: "HA 2026.9.0; integration 0.3.0; bridge 0.3.0"
+      description: Home Assistant, integration and bridge versions. Include the Mega client version if known. Write unknown for a version you cannot find.
+      placeholder: "HA 2026.9.1, integration 0.8.0, bridge 0.8.0, client unknown"
     validations:
       required: true
   - type: textarea
     id: hardware
     attributes:
       label: Models and firmware
-      description: HomeBase model/firmware and each tested camera model/firmware. No serial numbers.
+      description: Camera model/firmware and the HomeBase model/firmware it connects to, or state standalone. For multiple combinations, identify which results belong to each. No serial numbers.
     validations:
       required: true
   - type: input
     id: environment
     attributes:
       label: Installation and viewing environment
-      description: HA OS or other install; bridge App or Docker; amd64/aarch64; browser/phone; LAN/VPN/proxy.
-    validations:
-      required: true
-  - type: dropdown
-    id: recording
-    attributes:
-      label: An existing HomeBase recording played through to the end in HA
-      options:
-        - "Yes"
-        - "Partly: started but did not finish"
-        - "No"
-        - "Not tested"
+      description: HA OS or other install, bridge App or Docker, amd64/aarch64, browser or phone/app version, LAN/VPN/proxy. Distinguish local and remote attempts. No private addresses.
     validations:
       required: true
   - type: textarea
     id: outcomes
     attributes:
       label: Test outcomes
-      description: Write pass, fail or not tested for each item; include errors and approximate clip duration if useful.
+      description: Replace not tested with pass, fail or not applicable where appropriate. Add how you checked it, any error and the relevant model/route. Leaving items untested is fine.
       value: |
-        Camera inventory and idle snapshots:
-        Existing clip also visible/playable in Eufy app:
-        Date/camera filters and calendar:
-        Stored previews and previous/next playback:
-        Live picture:
-        Audible sound:
-        Closing viewers and returning to snapshots:
-        Phone background / dashboard navigation:
-        Remaining bridge streams (if checked):
+        Discovery of expected cameras and HomeBase: not tested
+        Available state and battery: not tested
+        Stored snapshots: not tested
+        Live video: not tested
+        Audible live audio with sound enabled: not tested
+        Recording listing and date/camera filters: not tested
+        Recording video, sound, playback to end and seeking: not tested
+        An actual supported event arriving in HA: not tested
+        Closing and reopening viewers: not tested
+        Confirmed device stop and remaining bridge streams: not tested
+        Restart recovery with the same devices/entities: not tested
+        Phone background or dashboard navigation: not tested
     validations:
       required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Method, errors and limits (optional)
+      description: Describe partial behavior or repeatability. A closed popup alone does not prove device stop. A snapshot can be old. Do not trigger unsafe failures to fill this form.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Reviewed diagnostic excerpt (optional)
+      description: Include only relevant redacted lines. Remove credentials, account details, serials, recording paths and private addresses. Never attach raw captures, full debug logs, bridge storage or footage.
+      render: text
   - type: checkboxes
     id: privacy
     attributes:
