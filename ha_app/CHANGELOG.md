@@ -53,6 +53,11 @@ The C30 model is already recognized by the library. The reporter's actual
 model/type, topology and discovery result are still needed to locate the failure.
 No additional hardware or media support is claimed.
 
+The existing Home Assistant Python dependency limitation tracked in
+[issue #30](https://github.com/keesmod/ha-eufy-cam/issues/30) remains unresolved.
+The affected cryptography dependency and its alert are unchanged. This release
+does not fix that vulnerability or claim a clean Python dependency audit.
+
 ## 0.8.1 - 2026-09-11
 
 - Upgrade the camera bridge to the verified eufy-mega-client 0.12.0 release.
