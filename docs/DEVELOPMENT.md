@@ -77,3 +77,104 @@ Home Assistant's cold component setup loads all registered config entries itself
 The SDK adapter's live-media fixture produces paced H.264 until the viewer closes. A finite file is unsuitable here: the A/V relay can reach EOF and stop the session before the JPEG decoder returns its first frame. The former fixture was reproduced hanging with a one-second JPEG-decoder delay; the continuous fixture passes that same delay. Producer failure and early viewer closure reject the frame wait, and the fixture has a 15-second deadline with producer cleanup in `finally`.
 
 CI separates bridge build, tests and dependency audit. Bridge tests have a 30-second per-test limit and a three-minute step limit; jobs have a ten-minute limit. Timeouts fail the run. No automatic retries or skipped assertions mask failures.
+
+## Diagnostic report contract
+
+The [collection guide](DISCOVERY_DIAGNOSTICS.md) is the user-facing reference.
+This contract covers discovery, authentication and connection diagnostics. It
+is not a general recorder of camera commands, event payloads or media activity.
+
+The [library diagnostic API](https://github.com/keesmod/eufy-mega-client/blob/main/docs/DIAGNOSTICS.md)
+owns bounded received cloud/discovery context. `DiscoveryIssue.deviceId` and
+`context.parentId` are private correlation values and must never be serialized
+into a shared report. The camera bridge owns anonymous references, lifecycle
+logging, retention and the authenticated download. The HA integration owns its
+version/setup context and independently validates the bridge output. Other
+consumers retain their own endpoints and sessions.
+
+`bridge/src/discovery-diagnostics.ts` constructs allowlisted records. The normal
+logger prefixes their JSON with `Eufy discovery:`. Existing `Eufy backend:` error
+lines remain available. `MegaBackend` supplies library and connection observations,
+and `Eufy` retains setup-failure evidence when its backend is cleaned up.
+
+The bridge's Bearer-authenticated `GET /v1/diagnostics` returns:
+
+| Field | Meaning |
+|---|---|
+| `schema` | Report format version, currently integer `2` |
+| `generated_at` | Download generation time in UTC ISO format with milliseconds |
+| `last_discovery` | Complete latest summary, device/issue rows and end record |
+| `recent_events` | At most 100 recent cloud, connection, station-connection and fault records |
+
+Records carry `diagnostic=discovery`, `schema=2` and a UTC `timestamp`. An `event`
+selects the record shape:
+
+| Event | Contents |
+|---|---|
+| `summary` | Actual bridge/library/Node/platform versions, outcome, discovery counts, inventory availability, migration-baseline/missing counts, truncation and report number |
+| `device` | Anonymous reference, model/firmware/hardware, observed availability, owner relationship/status and per-feature software capabilities |
+| `issue` | Source inventory row, fixed reason, bounded model/type/firmware and parent context, anonymous links where known |
+| `end` | Report number and number of device/issue rows emitted |
+| `cloud` | Named allowlisted operation, HTTP status, numeric result and elapsed milliseconds |
+| `connection` | Authentication or push-event phase, outcome, push status and software versions |
+| `station_connection` | Report number, anonymous device reference, model, connect/refresh/observation phase, status and fixed reason |
+| `fault` | Fixed error code and report number when available |
+
+`report` groups discovery rows within a backend lifetime. `ref` is one-based in
+that report, while `inventory_row` is the separate zero-based source position.
+Neither references nor report counters are persistent identities. Recent events
+can precede the latest discovery, so keep their timestamps and report numbers.
+`last_discovery` describes its collection time, and later transitions belong in
+`recent_events`. `generated_at` does not make old observations current.
+
+A HomeBase status can be `not_checked`, `connected`, `disconnected` or `error`.
+A camera's own station status is `not_applicable`, with `owner_status` describing
+its actual owner instead. Nullable booleans must not turn unknown/error states
+into a successful or failed connection. A present parent row does not prove
+support, connectivity or playback. Preserve observed availability and software
+capabilities as separate evidence.
+
+### Bounds and compatibility
+
+- Retain at most 99 device rows and 99 issue rows plus summary/end, and at most
+  100 recent events. The download is cached in memory, without extra cloud or
+  device calls. Restarting loses earlier retained events and collects new startup
+  evidence. Do not introduce unbounded retention or polling for logging.
+- Models are exactly five characters matching `T[A-Z0-9]{4}`. Device types are
+  integers from 0 through 65535. Numeric dotted versions contain one to four
+  components of one to four digits, with a maximum length of 19. Do not coerce,
+  trim, truncate or infer rejected values. Use fixed enum/error-code allowlists.
+- Unchanged discovery logs emit only summary/end with `unchanged=true` and zero
+  emitted rows. The download still contains complete rows. Repeated identical
+  connection states and consecutive identical generic faults are suppressed.
+  Error phases and changes of state remain distinguishable.
+- `custom_components/eufy_viewer/diagnostics.py` revalidates keys and values before
+  exporting them. Unknown fields are omitted and invalid values become safe
+  sentinels. Its bridge request has a 1 MiB response bound and a ten-second outer
+  deadline. Unsupported schemas, malformed reports and unavailable bridges have
+  explicit outcomes. HA's standard envelope may add system information.
+- The report schema is distinct from bridge protocol `1`. Document additive
+  fields and update both bridge construction and HA validation together. Plan a
+  new schema for incompatible shape or meaning changes, including how older
+  integrations refuse or handle it. Never assume an unknown field survives an
+  older integration's allowlist.
+
+### Changing diagnostics
+
+For a new field, record its source, purpose, sensitivity, validation bounds,
+missing-value meaning and required component versions. Update the appropriate
+library API docs, this contract and the collection guide. Change canonical bridge
+source first and regenerate `ha_app` with `scripts/prepare_ha_app.py`.
+
+Test the public-library to bridge/logger/download path and the independent HA
+filter. Cover hostile values, missing context, anonymous correlation, accepted
+and rejected mixed inventories, failed/empty setup, authentication on the endpoint,
+bounded retention, deduplication and preservation of complete downloads. Include
+connection loss/recovery when that path changes. Synthetic diagnostics tests must
+not open live camera streams or access production accounts.
+
+Existing coverage lives in `bridge/test/discovery-diagnostics.test.ts`,
+`bridge/test/mega-backend.test.ts`, `bridge/test/server.test.ts`, and
+`tests/test_diagnostics.py`. Follow [diagnostic release checks](RELEASING.md#diagnostic-release-checks)
+when shipping a change. Markdown and issue-form wording changes alone need no
+runtime version bump, deployment or live-device test.

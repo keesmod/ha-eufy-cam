@@ -96,10 +96,12 @@ Live WebRTC video uses Home Assistant's [go2rtc integration](https://www.home-as
 | The bridge will not start | Check its logs. The token must contain at least 32 characters. |
 | Integration setup cannot connect | Start the bridge first. The current HAOS app uses `http://127.0.0.1:8063`, older apps use their hostname on port 8080. For Docker, use the configured address reachable from HA. |
 | Integration setup rejects the bridge token | Copy the same token configured in the app or in Docker's `bridge.env`. Do not enter the Eufy password in this field. |
-| Eufy login succeeds but cameras are missing | Sign into the Eufy app with the dedicated account and check that it has accepted device-sharing access. |
+| Eufy login succeeds but cameras are missing | Check device-sharing access in the Eufy app with the dedicated account, then collect a [complete discovery report](DISCOVERY_DIAGNOSTICS.md). |
 | Live view fails immediately in the macOS app | Update the integration, restart Home Assistant and refresh the dashboard in the app. Live video uses JPEG without audio. Use Safari for live audio. |
 | Recordings stay black in the macOS app | Update the integration, restart Home Assistant and refresh the app. Open Events, load the date and select a recording. Follow the upgrade guide when updating the bridge. |
 | The cards do not appear | Check the resource URL and module type, then reload the browser. |
+
+For missing devices or failed setup, follow the [diagnostic collection guide](DISCOVERY_DIAGNOSTICS.md) for required versions, a complete startup excerpt or one HA download, and privacy checks.
 
 If the problem remains, [report a bug](https://github.com/keesmod/ha-eufy-cam/issues/new?template=bug_report.yml) with your HA installation type, both component versions and the error. Follow the [support guidance](../.github/SUPPORT.md) before sharing logs.
 

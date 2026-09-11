@@ -89,6 +89,7 @@ See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases) for cha
 You can upgrade without us having tested your exact camera. Available functions
 still depend on the model and connection. See [known results and limitations](docs/COMPATIBILITY.md).
 
+- **Missing devices or failed setup?** Collect a [complete diagnostic report](docs/DISCOVERY_DIAGNOSTICS.md).
 - **Something does not work?** Check [troubleshooting](docs/INSTALLATION.md#troubleshooting).
   For live video or sound, see [playback and connection requirements](docs/USAGE.md#honest-snapshot-and-streaming-limits).
 - **Share your experience:** [report working or failing features](https://github.com/keesmod/ha-eufy-cam/issues/new?template=compatibility.yml).
