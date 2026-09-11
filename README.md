@@ -40,8 +40,9 @@ recording capabilities from the Mega client. Available software is marked
 experimental. Unsupported operations show a reason and cannot start media.
 Older bridges without this optional metadata keep their existing behavior.
 See [capability evidence](docs/CAMERA_CAPABILITIES.md) for validation and limits.
-The unpublished integration 0.7.2 [candidate](docs/CAMERA_RELEASE_CANDIDATE_0_7_2.md)
-adds release evidence and keeps bridge 0.7.1 and client 0.10.0.
+The unpublished integration 0.7.3 removes the generic experimental/hardware
+warning from camera cards. It retains the 0.7.2 [candidate evidence](docs/CAMERA_RELEASE_CANDIDATE_0_7_2.md),
+bridge 0.7.1 and client 0.10.0.
 
 ## Installation
 
@@ -107,7 +108,7 @@ From version 0.4.2, the integration registers the shared JavaScript resource aut
 3. To browse recordings across cameras, add an **Eufy Events** card too. It uses the same resource and selects all accessible Viewer cameras by default.
 4. Open a live view, then close it. To check recordings, choose a date with a clip you can already see in the Eufy app and play that clip.
 
-If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.7.2` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
+If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.7.3` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
 
 If you manage resources in YAML, the integration leaves that configuration untouched. Add the module to your existing `lovelace.resources` list and update the version after upgrades:
 
@@ -115,7 +116,7 @@ If you manage resources in YAML, the integration leaves that configuration untou
 lovelace:
   resource_mode: yaml
   resources:
-    - url: /eufy_viewer/eufy-viewer-card.js?v=0.7.2
+    - url: /eufy_viewer/eufy-viewer-card.js?v=0.7.3
       type: module
 ```
 
@@ -156,8 +157,8 @@ first, including the exact hardware and feature limits.
 5. Verify identities, snapshots, actual live video/audio and confirmed stop, recordings, an actual supported event and observed HomeBase mode. Connected push alone does not prove event delivery. See [notifications](docs/NOTIFICATIONS.md).
 6. Keep the old packages and private backup until validation and recovery pass.
 
-Integration **0.7.2** is an unpublished candidate. After separate publication
-authorization, its metadata/documentation update can retain bridge **0.7.1**.
+Integration **0.7.3** is unpublished. After separate publication authorization,
+its card warning fix can retain bridge **0.7.1**.
 See the [candidate upgrade and rollback notes](docs/CAMERA_RELEASE_CANDIDATE_0_7_2.md).
 
 Keeping the bridge's data preserves its identity, credentials and session. The integration keeps your existing camera entities. If your bridge is listed under **Local apps**, the repository app is a separate installation and will not update that local copy. Back up its private data and token before migrating; a new empty data directory creates a different bridge identity. See [support](.github/SUPPORT.md) if you need help moving an older installation.
