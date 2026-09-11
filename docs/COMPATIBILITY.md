@@ -1,5 +1,18 @@
 # Compatibility and community testing
 
+You can install ordinary upgrades without a maintainer having tested your exact
+hardware. Missing test evidence is not an incompatibility verdict. Actual missing
+protocol support and [migration checks](MEGA_MIGRATION.md) still apply, including
+the check that existing devices remain present. Reports are voluntary.
+
+We record unconfirmed implementation, reported working, confirmed behavior,
+known problems and not implemented per feature. A reproducible community report
+can establish confirmed behavior without maintainer ownership of the device.
+Keep versions, firmware, topology, date and source with every result. Partial
+reports count, and historical evidence keeps its original date after upgrades.
+See the [shared policy](https://github.com/keesmod/eufy-mega-client/blob/main/docs/COMMUNITY_VALIDATION.md)
+and [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md).
+
 The historical results below come from one maintainer installation. The dated
 0.7.1 acceptance now records exact models and firmware. These results do not
 certify whole camera families or additional installations.
@@ -44,13 +57,17 @@ seeking passed for both tuples. Fifteen HA identities and dashboard/automation
 content were preserved. A real T8160 person event reached HA after a fresh
 upgrade. Cleanup and recovery passed. See the [full record](CAMERA_UPGRADE_ROLLBACK_2026_09_11.md).
 
-Integration 0.7.2 is an unpublished documentation/metadata candidate using bridge
-0.7.1 and client 0.10.0. It has no new physical test or support claim. See
-[candidate notes and remaining obligations](CAMERA_RELEASE_CANDIDATE_0_7_2.md).
+The historical 0.7.2 candidate used bridge 0.7.1 and client 0.10.0 without a new
+physical claim. The later [0.8.0 acceptance](https://github.com/keesmod/ha-eufy-cam/issues/31)
+covers the declared T8160/T8213/T8030 combinations, migration and retained-release
+rollback, including a real doorbell event. Other combinations retain their own
+evidence. See the [0.8.0 upgrade guide](MEGA_MIGRATION.md).
 
 ## Report your installation
 
-Our first target is **10 independent HomeBase 3 installations**. You do not need to be a developer. A partial result is useful too.
+You do not need to be a developer or complete every check. There is no required
+number of reports before a release. Report both successes and failures on the
+features you use, with the date and exact known versions.
 
 1. Follow the [installation instructions](../README.md#installation). Record the integration and bridge versions separately.
 2. Confirm your cameras appear and show their latest received snapshots. An older snapshot is expected when no new image has arrived.
@@ -58,13 +75,23 @@ Our first target is **10 independent HomeBase 3 installations**. You do not need
 4. Check the camera filter and, if another clip exists, **Next recording** and **Previous recording**. Open the calendar and check a known recording day; calendar marks describe the whole HomeBase.
 5. Close recordings. Open **Watch live**, optionally enable sound, then close it. Confirm you return to the snapshot. Report sound as untested if you could not hear it.
 6. If practical, leave the dashboard or background your phone during viewing. Note any continuing playback or failure when returning. Visual closure alone does not prove the physical camera stopped; report bridge diagnostics if available.
+   Also note any supported real event you observed and whether the same devices
+   recovered after a normal restart. Do not provoke network or device failures.
 7. [Submit a compatibility report](https://github.com/keesmod/ha-eufy-cam/issues/new?template=compatibility.yml) with model numbers, firmware, browser/phone and each outcome. No serial numbers, account details or footage are needed.
 
-For failures, use the [bug form](https://github.com/keesmod/ha-eufy-cam/issues/new?template=bug_report.yml). See [support guidance](../.github/SUPPORT.md) before attaching logs. Maintainers will distinguish a reported result from an independently reproduced one.
+For an existing problem, add your results to its original issue. A new problem
+that needs investigation can use the [bug form](https://github.com/keesmod/ha-eufy-cam/issues/new?template=bug_report.yml).
+The compatibility form also accepts failed and partial results. See
+[support guidance](../.github/SUPPORT.md) before optionally sharing diagnostics.
+Review every excerpt before submitting it. A maintainer reviews the method and
+results before recording the claim, including its limits and source.
 
 ## Community results
 
 [Camera #10](https://github.com/keesmod/ha-eufy-cam/issues/10) contains partial
 T8134 reporter evidence for discovery, stored snapshots, battery, person events
-and recording video/audio. Live playback and session recovery remain unresolved
-in client #21/#22/#56. This is reporter evidence, not independent full acceptance.
+and recording video/audio. A [later iOS report](https://github.com/keesmod/ha-eufy-cam/issues/10#issuecomment-5631252411)
+observed working live video with no audio. Its exact app/component versions and
+route were not specified. Keep that result alongside the remote Cloudflare
+failure. The requested 0.7.1 retest, audio diagnosis and session recovery remain
+open. These scoped reports do not establish full T8134 acceptance.

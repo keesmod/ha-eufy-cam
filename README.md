@@ -9,7 +9,12 @@ Browse and play Eufy HomeBase recordings in Home Assistant. Choose a date, filte
 
 On Home Assistant OS, the app runs on your HA machine and Home Assistant manages its container. You do not need to install Docker yourself. You can also put the bridge on a separate Docker host, for example to keep video processing off a Raspberry Pi.
 
-[Installation](#installation) · [Docker instructions](docs/DOCKER.md) · [Tested compatibility](docs/COMPATIBILITY.md) · [Upgrading](#upgrading)
+[Installation](#installation) · [Docker instructions](docs/DOCKER.md) · [Compatibility and community results](docs/COMPATIBILITY.md) · [Upgrading](#upgrading)
+
+An ordinary upgrade does not require a maintainer test of your exact camera.
+Follow the upgrade guide and check known limitations for your setup. You can
+voluntarily [report working, failed or untested features](https://github.com/keesmod/ha-eufy-cam/issues/new?template=compatibility.yml).
+For an existing problem, add results to its original issue.
 
 ![Home Assistant dashboard playing an existing HomeBase recording; private areas obscured](docs/media/ha-dashboard-demo.gif)
 
@@ -40,9 +45,9 @@ recording capabilities from the Mega client. Available software is marked
 experimental. Unsupported operations show a reason and cannot start media.
 Older bridges without this optional metadata keep their existing behavior.
 See [capability evidence](docs/CAMERA_CAPABILITIES.md) for validation and limits.
-The unpublished integration 0.7.3 removes the generic experimental/hardware
-warning from camera cards. It retains the 0.7.2 [candidate evidence](docs/CAMERA_RELEASE_CANDIDATE_0_7_2.md),
-bridge 0.7.1 and client 0.10.0.
+Version 0.8.0 includes the removal of the generic experimental/hardware warning
+from camera cards. Actual unsupported-operation reasons remain. Historical
+[candidate evidence](docs/CAMERA_RELEASE_CANDIDATE_0_7_2.md) retains its tested versions.
 
 ## Installation
 
