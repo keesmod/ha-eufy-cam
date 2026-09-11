@@ -6,31 +6,36 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import { EufySecurity, VideoCodec } from 'eufy-security-client';
+import type { Backend, AuthState } from '../src/backend.js';
 import { Eufy } from '../src/eufy.js';
 import { Storage } from '../src/storage.js';
 
-test('SDK adapter disables cloud polling, converts real media, and retains last frame on close', { timeout: 20_000 }, async () => {
+function fixtureBackend(login: () => Promise<AuthState> = async () => ({ state: 'connected' })): Backend {
+  const backend = Object.assign(new EventEmitter(), {
+    connected: true,
+    auth: { state: 'connected' } as AuthState,
+    pictures: new Map(),
+    recordings: { busy: false, metrics: {}, close() {} },
+    stations: undefined,
+    notifications: { metrics: {}, close() {} },
+    inventory: () => [], hasCamera: () => true, canStartLive: () => true,
+    startLive: async () => {}, stopLive: async () => {}, recoverStation: async () => [],
+    login: async () => { backend.auth = await login(); return backend.auth; },
+    close: async () => {},
+  });
+  return backend as unknown as Backend;
+}
+const provider = { login: async (): Promise<AuthState> => ({ state: 'connected' }) };
+const makeBridge = (storage: Storage) => new Eufy(storage, 'mega', false, () => fixtureBackend(() => provider.login()));
+
+test('shared bridge converts real media and retains last frame on close', { timeout: 20_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'eufy-viewer-test-'));
   const storage = new Storage(directory);
   const calls: string[] = [];
-  const sdk = Object.assign(new EventEmitter(), {
-    isConnected: () => true,
-    connect: async () => { sdk.emit('connect'); },
-    close: () => {},
-    setCameraMaxLivestreamDuration: (seconds: number) => assert.equal(seconds, 120),
-    startStationLivestream: async (serial: string) => { calls.push(`start:${serial}`); },
-    stopStationLivestream: async (serial: string) => { calls.push(`stop:${serial}`); },
-  });
-  const original = EufySecurity.initialize;
-  EufySecurity.initialize = async config => {
-    assert.equal(config.pollingIntervalMinutes, 0);
-    assert.equal(config.acceptInvitations, false);
-    assert.equal(typeof config.persistentData, 'string');
-    assert.ok(Array.isArray(JSON.parse(config.persistentData!).push_persistentIds));
-    return sdk as unknown as EufySecurity;
-  };
-  const bridge = new Eufy(storage);
+  const backend = fixtureBackend();
+  backend.startLive = async serial => { calls.push(`start:${serial}`); };
+  backend.stopLive = async serial => { calls.push(`stop:${serial}`); };
+  const bridge = new Eufy(storage, 'mega', false, () => backend);
   let producer: ChildProcess | undefined;
   let producerClosed: Promise<unknown> | undefined;
   const controller = new AbortController();
@@ -54,7 +59,7 @@ test('SDK adapter disables cloud polling, converts real media, and retains last 
     let stderr = '';
     producer.stderr!.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-4096); });
     producer.on('exit', (code, signal) => controller.abort(new Error(`Test producer exited (${code ?? signal}): ${stderr}`)));
-    sdk.emit('station livestream start', {}, { getSerial: () => 'CAM123' }, { videoCodec: VideoCodec.H264 }, producer.stdout, Readable.from([]));
+    backend.emit('live-start', { serial: 'CAM123', videoCodec: 'h264', audioSupported: false, fps: 8, video: producer.stdout, audio: Readable.from([]) });
     const [jpeg] = await frame;
     clearTimeout(deadline);
     assert.equal(jpeg[0], 255); assert.equal(jpeg[1], 216);
@@ -71,25 +76,23 @@ test('SDK adapter disables cloud polling, converts real media, and retains last 
     controller.abort();
     producer?.kill("SIGKILL");
     await producerClosed?.catch(() => {});
-    EufySecurity.initialize = original;
     await bridge.close(); await rm(directory, { recursive: true, force: true });
   }
 });
 
 test('saved login stays connecting through delayed initialization and retries boot network failures', async t => {
   const storage = new Storage('/unused');
-  t.mock.method(storage, 'read', async (name: string) => name === 'credentials.json' ? JSON.stringify({ username: 'fixture', password: 'fixture', country: 'NL' }) : undefined);
+  t.mock.method(storage, 'read', async (name: string) => name === 'mega-credentials.json' ? JSON.stringify({ username: 'fixture', password: 'fixture', country: 'NL' }) : undefined);
   t.mock.method(storage, 'write', async () => {});
-  const sdk = Object.assign(new EventEmitter(), { isConnected: () => true, connect: async () => {}, close: () => {}, setCameraMaxLivestreamDuration: () => {} });
   let attempts = 0;
-  let initialized!: (sdk: EufySecurity) => void;
+  let initialized!: (state: AuthState) => void;
   const pending = new EventEmitter();
   const initialization = once(pending, 'initializing');
-  t.mock.method(EufySecurity, 'initialize', async () => {
+  t.mock.method(provider, 'login', async () => {
     if (++attempts === 1) throw new Error('DNS unavailable during boot');
-    return new Promise<EufySecurity>(resolve => { initialized = resolve; pending.emit('initializing'); });
+    return new Promise<AuthState>(resolve => { initialized = resolve; pending.emit('initializing'); });
   });
-  const bridge = new Eufy(storage);
+  const bridge = makeBridge(storage);
   const states: string[] = [];
   bridge.on('change', () => states.push(bridge.auth.state));
   const retry = once(bridge, 'restore_retry');
@@ -102,7 +105,7 @@ test('saved login stays connecting through delayed initialization and retries bo
     await initialization;
     assert.equal(attempts, 2);
     assert.equal(bridge.auth.state, 'connecting');
-    initialized(sdk as unknown as EufySecurity);
+    initialized({ state: 'connected' } as AuthState);
     await restoring;
     assert.equal(bridge.auth.state, 'connected');
     assert.ok(!states.includes('unconfigured') && !states.includes('error'));
@@ -114,14 +117,13 @@ test('restore distinguishes no account, corrupt storage and a genuine verificati
   const storage = new Storage('/unused');
   const read = t.mock.method(storage, 'read', async () => undefined as string | undefined);
   t.mock.method(storage, 'write', async () => {});
-  const bridge = new Eufy(storage);
+  const bridge = makeBridge(storage);
   try {
     await bridge.restore(); assert.equal(bridge.auth.state, 'unconfigured');
-    read.mock.mockImplementation(async () => 'broken json');
+    read.mock.mockImplementation(async (name: string) => name === 'mega-credentials.json' ? 'broken json' : undefined);
     await assert.rejects(bridge.restore()); assert.equal(bridge.auth.state, 'error');
-    read.mock.mockImplementation(async (name: string) => name === 'credentials.json' ? JSON.stringify({ username: 'fixture', password: 'fixture', country: 'NL' }) : undefined);
-    const sdk = Object.assign(new EventEmitter(), { isConnected: () => false, connect: async () => { sdk.emit('tfa request'); }, close: () => {}, setCameraMaxLivestreamDuration: () => {} });
-    const initialize = t.mock.method(EufySecurity, 'initialize', async () => sdk as unknown as EufySecurity);
+    read.mock.mockImplementation(async (name: string) => name === 'mega-credentials.json' ? JSON.stringify({ username: 'fixture', password: 'fixture', country: 'NL' }) : undefined);
+    const initialize = t.mock.method(provider, 'login', async () => ({ state: 'verify' } as AuthState));
     await bridge.restore(); assert.equal(bridge.auth.state, 'verify');
     assert.equal(initialize.mock.callCount(), 1);
   } finally { await bridge.close(); }
@@ -129,9 +131,9 @@ test('restore distinguishes no account, corrupt storage and a genuine verificati
 
 test('shutdown cancels pending automatic restore retry', async t => {
   const storage = new Storage('/unused');
-  t.mock.method(storage, 'read', async (name: string) => name === 'credentials.json' ? '{}' : undefined);
-  const initialize = t.mock.method(EufySecurity, 'initialize', async () => { throw new Error('offline'); });
-  const bridge = new Eufy(storage);
+  t.mock.method(storage, 'read', async (name: string) => name === 'mega-credentials.json' ? '{}' : undefined);
+  const initialize = t.mock.method(provider, 'login', async () => { throw new Error('offline'); });
+  const bridge = makeBridge(storage);
   const retry = once(bridge, 'restore_retry');
   const restoring = bridge.restore();
   await retry;
@@ -152,15 +154,14 @@ test('refusing reauthentication during a viewer leaves the connected session int
 
 test('explicit credentials recover during automatic restore backoff without overlapping SDK owners', async t => {
   const storage = new Storage('/unused');
-  t.mock.method(storage, 'read', async (name: string) => name === 'credentials.json' ? JSON.stringify({ username: 'old', password: 'fixture', country: 'NL' }) : undefined);
+  t.mock.method(storage, 'read', async (name: string) => name === 'mega-credentials.json' ? JSON.stringify({ username: 'old', password: 'fixture', country: 'NL' }) : undefined);
   t.mock.method(storage, 'write', async () => {});
-  const sdk = Object.assign(new EventEmitter(), { isConnected: () => true, connect: async () => {}, close: () => {}, setCameraMaxLivestreamDuration: () => {} });
   let attempts = 0;
-  t.mock.method(EufySecurity, 'initialize', async () => {
+  t.mock.method(provider, 'login', async () => {
     if (++attempts === 1) throw new Error('Saved settings cannot initialize');
-    return sdk as unknown as EufySecurity;
+    return { state: 'connected' } as AuthState;
   });
-  const bridge = new Eufy(storage);
+  const bridge = makeBridge(storage);
   const retry = once(bridge, 'restore_retry');
   const restoring = bridge.restore();
   try {
@@ -175,18 +176,17 @@ test('explicit credentials recover during automatic restore backoff without over
 
 test('manual recovery waits for in-flight automatic initialization to settle', async t => {
   const storage = new Storage('/unused');
-  t.mock.method(storage, 'read', async (name: string) => name === 'credentials.json' ? '{}' : undefined);
+  t.mock.method(storage, 'read', async (name: string) => name === 'mega-credentials.json' ? '{}' : undefined);
   t.mock.method(storage, 'write', async () => {});
   let rejectOld!: (error: Error) => void;
   const starting = new EventEmitter();
   const started = once(starting, 'started');
   let attempts = 0;
-  const sdk = Object.assign(new EventEmitter(), { isConnected: () => true, connect: async () => {}, close: () => {}, setCameraMaxLivestreamDuration: () => {} });
-  t.mock.method(EufySecurity, 'initialize', async () => {
-    if (++attempts === 1) return new Promise<EufySecurity>((_resolve, reject) => { rejectOld = reject; starting.emit('started'); });
-    return sdk as unknown as EufySecurity;
+  t.mock.method(provider, 'login', async () => {
+    if (++attempts === 1) return new Promise<AuthState>((_resolve, reject) => { rejectOld = reject; starting.emit('started'); });
+    return { state: 'connected' } as AuthState;
   });
-  const bridge = new Eufy(storage);
+  const bridge = makeBridge(storage);
   const restoring = bridge.restore();
   try {
     await started;

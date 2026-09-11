@@ -79,6 +79,20 @@ def metadata(root):
         ):
             raise ValueError("Generated HA app source differs from canonical bridge")
     package_lock = read_json(root, "bridge/package-lock.json")
+    if any(
+        name == "node_modules/eufy-security-client"
+        or name.endswith("/node_modules/eufy-security-client")
+        or "eufy-security-client" in item.get("dependencies", {})
+        for name, item in package_lock["packages"].items()
+    ):
+        raise ValueError("Retired legacy dependency remains in the package lock")
+    for directory in ("bridge/src", "ha_app/src"):
+        for path in (root / directory).rglob("*.ts"):
+            if path.name in {"legacy-backend.ts", "sdk-compat.ts"} or re.search(
+                r"(?:from\s*|import\s*\(?)[\"']eufy-security-client(?:/|[\"'])",
+                path.read_text(),
+            ):
+                raise ValueError("Retired legacy runtime remains in shipped source")
     url = bridge["dependencies"]["@keesmod/eufy-mega-client"]
     match = re.fullmatch(
         r"https://github.com/keesmod/eufy-mega-client/releases/download/v(\d+\.\d+\.\d+)/keesmod-eufy-mega-client-\1\.tgz",

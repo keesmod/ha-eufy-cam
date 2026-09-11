@@ -18,7 +18,7 @@ Limits: 5 MB cached snapshot, 1 MB state message, 256 KB live JPEG, 4 viewers pe
 
 Upstream references used independently:
 
-- [Eufy Security Client](https://github.com/bropat/eufy-security-client), package release `4.1.1-1`, pinned in `bridge/package-lock.json`.
+- [Eufy Mega client](https://github.com/keesmod/eufy-mega-client), release `0.10.0`, pinned by exact tarball URL and SHA512 in `bridge/package-lock.json`. Its permitted protocol adaptation retains MIT and Apache-2.0 attribution. No eufy-security-client runtime package is shipped.
 - [Eufy WebSocket protocol](https://github.com/bropat/eufy-security-ws/tree/master/docs), inspected during architecture selection; this project does not require that server.
 - [Home Assistant camera entity](https://developers.home-assistant.io/docs/core/entity/camera/).
 - [Home Assistant WebSocket extension API](https://developers.home-assistant.io/docs/frontend/extending/websocket-api/).
@@ -47,3 +47,9 @@ Recording failures use allowlisted JSON error codes: HTTP 409 `live_busy`, `live
 - HA exposes `/api/eufy_viewer/events?entities=camera.one,camera.two&date=…` or `&month=…`, mapping bridge serials to entity IDs and dropping non-public fields. Every requested entity is authorized before any bridge call. HomeBase calendar markers additionally require read access to every current bridge camera, since the firmware does not support camera-filtered day presence. Restricted users can still browse their own cameras' dated events.
 - HA thumbnail URL: `/api/eufy_viewer/recordings/{entity_id}/{id}/thumbnail`, with the same authenticated entity permission checks as video. All replies have `Cache-Control: no-store`.
 - Event JSON is limited to 4 MiB and 10,000 records across a request; preview memory in the card is capped at 24 images. The list uses 12 visual tiles per page. SDK query limits expand 100 → 500 → 2,000 → 10,000; the final full limit is rejected. This is verified prefix expansion on the pinned HB3 firmware, not a claimed universal Eufy continuation cursor. The SDK's `start_time` did not act as a cursor on the tested device.
+
+## Migration admission
+
+0.8.0 advertises `migration.version: 1` in authenticated state. The integration prepares its expected camera/station IDs against the previous connected bridge and sends that private baseline to `POST /v1/migration`. The endpoint requires the existing bridge token and matching bridge identity. It writes an immutable allowlisted inventory, accepts identical retries, and rejects replacement or busy-owner writes. No sessions or credentials belong in the request.
+
+The bridge validates the expected inventory before accepting Mega discovery. Existing shared credentials require a prepared baseline. A legacy baseline requires new user-entered Mega credentials. Old credentials and sessions are retained for rollback. Authenticated state exposes fixed migration error codes, never raw errors or private paths.

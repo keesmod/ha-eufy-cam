@@ -125,9 +125,8 @@ export interface Backend extends EventEmitter {
   recoverStation(serial: string): Promise<string[]>;
   close(): Promise<void>;
 }
-export type BackendName = 'legacy' | 'mega';
+export type BackendName = 'mega';
 export function backendName(value: string | undefined): BackendName {
-  if (value === undefined || value === 'legacy') return 'legacy';
-  if (value === 'mega') return 'mega';
-  throw new Error('EUFY_BACKEND must be legacy or mega');
+  if (value === undefined || value === 'mega') return 'mega';
+  throw new Error('Only Mega is supported. Legacy users must follow docs/MEGA_MIGRATION.md before upgrading.');
 }

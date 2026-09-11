@@ -15,7 +15,7 @@ On Home Assistant OS, the app runs on your HA machine and Home Assistant manages
 
 This demo shows the dashboard, event list and playback from a real installation. Private areas are obscured and the silent walkthrough is edited between actions. [Watch the MP4](docs/media/ha-dashboard-demo.mp4).
 
-This project is independent of Eufy and Anker. Version 0.6.0 adds the independent [Eufy Mega client](https://github.com/keesmod/eufy-mega-client), tested with T8030 HomeBase 3, T8160 cameras and the T8213 doorbell. Version 0.6.2 also enables discovery of T8142 eufyCam S220 / 2C Pro and T8134 SoloCam S220 paired with T8030; S220 hardware validation remains pending. The existing [bropat client](https://github.com/bropat/eufy-security-client) remains selectable as `legacy`. Each bridge uses one backend and its separate session. See [Mega migration and rollback](docs/MEGA_MIGRATION.md) before upgrading an existing app.
+This project is independent of Eufy and Anker. Version 0.8.0 uses the independent [Eufy Mega client](https://github.com/keesmod/eufy-mega-client) as its only camera backend. **Breaking change: update the HA integration before the bridge.** Follow the [four upgrade steps](docs/MEGA_MIGRATION.md). Existing device identities and private backups are preserved. Support remains specific to the model, firmware and topology in the [compatibility evidence](docs/COMPATIBILITY.md).
 
 Version 0.6.4 fixes missing recording audio on Apple players by including AAC decoder configuration in the MP4 header. Close and reopen prepared clips after updating the bridge.
 
@@ -66,7 +66,7 @@ The bridge comes from the Home Assistant **app store**, separate from HACS. Olde
    ```
 
 3. Find **Eufy Security Viewer Bridge** in the new repository and select **Install**. The first installation builds the container and can take several minutes.
-4. Open the app's **Configuration** tab. Select `backend: mega` for the tested T8030/T8160/T8213 installation. The default `legacy` retains the existing client; other hardware has not passed Mega acceptance. Set `token` to a unique, randomly generated secret of at least 32 characters, then save. A password manager can generate one. This token connects Home Assistant to the bridge; it is separate from your Eufy password. Keep it for step 2.
+4. Open the app's **Configuration** tab. Set `token` to a unique, randomly generated secret of at least 32 characters, then save. A password manager can generate one. This token connects Home Assistant to the bridge; it is separate from your Eufy password. Keep it for step 2.
 5. Start the app and enable **Start on boot**. Check its **Logs** tab if it fails to start.
 6. App version 0.6.0 uses the bridge URL `http://127.0.0.1:8063`. It shares the HA host network and listens only on loopback. Older apps used `http://HOSTNAME:8080`; reconfigure the existing integration entry when upgrading.
 
@@ -108,7 +108,7 @@ From version 0.4.2, the integration registers the shared JavaScript resource aut
 3. To browse recordings across cameras, add an **Eufy Events** card too. It uses the same resource and selects all accessible Viewer cameras by default.
 4. Open a live view, then close it. To check recordings, choose a date with a clip you can already see in the Eufy app and play that clip.
 
-If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.7.3` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
+If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.8.0` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
 
 If you manage resources in YAML, the integration leaves that configuration untouched. Add the module to your existing `lovelace.resources` list and update the version after upgrades:
 
@@ -116,7 +116,7 @@ If you manage resources in YAML, the integration leaves that configuration untou
 lovelace:
   resource_mode: yaml
   resources:
-    - url: /eufy_viewer/eufy-viewer-card.js?v=0.7.3
+    - url: /eufy_viewer/eufy-viewer-card.js?v=0.8.0
       type: module
 ```
 
@@ -145,25 +145,19 @@ If the problem remains, [report a bug](https://github.com/keesmod/ha-eufy-cam/is
 
 ## Upgrading
 
-The current published release is **0.7.1** for both bridge and integration. It
-includes capability controls and live JPEG fallback without audio. Select `mega`
-for the tested T8030/T8160/T8213 installation. Read [Mega migration and rollback](docs/MEGA_MIGRATION.md)
-first, including the exact hardware and feature limits.
+**0.8.0 is a breaking change and is currently an unpublished candidate.**
+Update the HA integration first. It automatically prepares your device list for
+the bridge update. Legacy users will need to sign in to Mega again.
 
-1. Close viewers and recording dialogs. Back up HA and private bridge data.
-2. Stop the old bridge and install bridge **0.7.1**. Keep its token and data and start only one owner. For Docker, follow the [update steps](docs/DOCKER.md#update-the-docker-bridge).
-3. Install integration **0.7.1** and restart HA. Keep the same integration entry. The HAOS app endpoint is `http://127.0.0.1:8063`. Complete a fresh Mega login challenge if required.
-4. Reload the dashboard. For YAML resources, update the existing module URL's cache version to the installed integration version and reload resources.
-5. Verify identities, snapshots, actual live video/audio and confirmed stop, recordings, an actual supported event and observed HomeBase mode. Connected push alone does not prove event delivery. See [notifications](docs/NOTIFICATIONS.md).
-6. Keep the old packages and private backup until validation and recovery pass.
+Follow the [four short upgrade steps and recovery instructions](docs/MEGA_MIGRATION.md).
+Keep your existing integration, token, bridge data and backup. Do not start two
+bridges at once. The current published release remains 0.7.1 until a new release
+has passed acceptance and is published.
 
-Integration **0.7.3** is unpublished. After separate publication authorization,
-its card warning fix can retain bridge **0.7.1**.
-See the [candidate upgrade and rollback notes](docs/CAMERA_RELEASE_CANDIDATE_0_7_2.md).
-
-Keeping the bridge's data preserves its identity, credentials and session. The integration keeps your existing camera entities. If your bridge is listed under **Local apps**, the repository app is a separate installation and will not update that local copy. Back up its private data and token before migrating; a new empty data directory creates a different bridge identity. See [support](.github/SUPPORT.md) if you need help moving an older installation.
-
-If moving from another Eufy integration, follow the [migration checklist](docs/ALARM_MIGRATION_2026-09-06.md#moving-from-another-eufy-integration) before stopping its bridge. When upgrading from 0.1.x, also check the WebRTC media requirements above.
+A bridge under **Local apps** is a separate installation and is not updated by
+the repository app. Keep its existing private data and token when moving it.
+See [support](.github/SUPPORT.md) for older installations. Migration from a
+different Eufy integration follows the [alarm migration checklist](docs/ALARM_MIGRATION_2026-09-06.md#moving-from-another-eufy-integration).
 
 ## Events timeline
 
@@ -217,7 +211,7 @@ Sessions have a **two-minute absolute limit**; continuing requires another tap. 
 | Integration | Home Assistant ≥ 2026.9.0; built-in `camera`, `http`, `lovelace`, `websocket_api`; `go2rtc-client` 0.4.0 (installed automatically); HA-managed `go2rtc` for WebRTC |
 | Card | Bundled JavaScript, Home Assistant frontend and a modern browser; no separate frontend runtime package |
 | Bridge | Node.js 24, FFmpeg and tini; all included in the app/container |
-| Bridge libraries | `@keesmod/eufy-mega-client` 0.1.0 from its checksum-pinned GitHub release for `mega`; `eufy-security-client` 4.1.1-1 for `legacy`; `ws` 8.21.3. MIT licensed, with dependencies pinned by `bridge/package-lock.json`. |
+| Bridge libraries | `@keesmod/eufy-mega-client` 0.10.0 from its checksum-pinned GitHub release and `ws` 8.21.3. Mega retains MIT and Apache-2.0 attribution. Dependencies are pinned by `bridge/package-lock.json`. |
 | External services | Eufy account with camera access, Eufy cloud/push connectivity and local connectivity to camera/HomeBase |
 
 No MQTT, separately installed RTSP server, existing Eufy integration or `eufy-security-ws` app is required. WebRTC uses HA's managed go2rtc and its FFmpeg audio conversion. Upgrade the bridge and integration together for the new transport. A dedicated shared Eufy account is recommended for ongoing use. Simultaneous operation with another Eufy client using the same account has only been briefly observed, not long-term validated. TypeScript, Playwright and Python test tools are development-only dependencies.
@@ -228,7 +222,7 @@ See [architecture and safety](docs/ARCHITECTURE.md), [bridge protocol](docs/PROT
 
 ## Existing HomeBase recordings
 
-Confirmed on HomeBase 3 T8030, firmware 3.8.6.0, with eufy-security-client 4.1.1-1. The bridge uses the working calendar query `10006` with an empty device filter and `[selected day, next day]`, then filters returned records to the authorized camera. Legacy `10017` is not used. Only device-returned paths can be downloaded; the browser receives opaque expiring IDs.
+Previous release hardware evidence covers HomeBase 3 T8030 firmware 3.8.6.0 through Mega 0.10.0. New-build acceptance remains in camera #31. The bridge uses the working calendar query `10006` with an empty device filter and `[selected day, next day]`, then filters returned records to the authorized camera. Legacy `10017` is not used. Only device-returned paths can be downloaded; the browser receives opaque expiring IDs.
 
 The bridge expands the existing query limit to retrieve the selected day on the tested HB3 firmware. Ambiguous boundaries, inconsistent responses and the final safety ceiling are reported as errors instead of silent truncation. Firmware-wide pagination and bulk retention/export completeness are not claimed. One query or download runs at a time; close live viewers before loading recordings. Clip preparation is limited to 60 seconds and 32 MiB, with no persistent video cache. Failed requests require an explicit retry. See [recording protocol and live evidence](docs/RECORDINGS_PROBE_2026-09-06.md).
 
@@ -238,7 +232,7 @@ In the bridge app configuration, enable `diagnostics: true`, save and restart
 that app. The option defaults to false and older saved configurations may omit
 it. Reproduce one live-view attempt and copy the lines containing
 `"diagnostic":"live"` from the app logs. Disable the option and restart after
-collecting the evidence. It applies to both Mega and legacy backends.
+collecting the evidence. It applies to the Mega backend.
 
 For Docker, set `EUFY_DIAGNOSTICS=true` and recreate the bridge container with
 its existing data volume. Remove it or set it to `false` afterward.

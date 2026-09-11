@@ -8,6 +8,37 @@ import type { Eufy } from '../src/eufy.js';
 
 const token = 'x'.repeat(32);
 
+test('migration transfer requires authentication and reports only fixed refusal codes', async () => {
+  const { MigrationError } = await import('../src/migration.js');
+  const accepted: unknown[] = [];
+  const fake = Object.assign(new EventEmitter(), {
+    auth: {state:'error'}, backendName:'mega', migrationError:'inventory_required',
+    inventory: () => [], pictures: new Map(),
+    hub: new StreamHub({start:async()=>{},stop:async()=>{},disposeMedia:()=>{}}),
+    acceptMigration: async (value: unknown) => {
+      if ((value as {bridge_id:string}).bridge_id !== 'bridge-test') throw new MigrationError('bridge_identity_mismatch');
+      accepted.push(value);
+    },
+  });
+  const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
+  server.listen(0,'127.0.0.1'); await once(server,'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const url = `http://127.0.0.1:${address.port}/v1/migration`;
+  try {
+    assert.equal((await fetch(url,{method:'POST',body:'{}'})).status,401);
+    assert.deepEqual(accepted,[]);
+    const headers = {Authorization:`Bearer ${token}`};
+    const wrong = await fetch(url,{method:'POST',headers,body:'{"bridge_id":"other"}'});
+    assert.equal(wrong.status,409);
+    assert.deepEqual(await wrong.json(),{error:'bridge_identity_mismatch'});
+    const baseline = {bridge_id:'bridge-test',version:1,backend:'legacy',cameras:['CAM'],stations:[]};
+    const result = await fetch(url,{method:'POST',headers,body:JSON.stringify(baseline)});
+    assert.equal(result.status,200);
+    assert.deepEqual(await result.json(),{accepted:true});
+    assert.deepEqual(accepted,[baseline]);
+  } finally { server.emit('shutdown'); server.closeAllConnections(); server.close(); await once(server,'close'); }
+});
+
 test('authenticated bridge snapshots never start; websocket close stops last viewer', async () => {
   const calls: string[] = [];
   const fake = Object.assign(new EventEmitter(), {
