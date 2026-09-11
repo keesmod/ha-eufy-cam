@@ -55,7 +55,7 @@ const integer = (value: unknown, min: number, max: number): number | null =>
   typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
     ? value
     : null;
-const version = (value: unknown): string =>
+export const diagnosticVersion = (value: unknown): string =>
   typeof value === 'string' &&
   value.length <= 19 &&
   !/[^0-9.]/.test(value) &&
@@ -64,7 +64,9 @@ const version = (value: unknown): string =>
     : 'unavailable';
 function packageVersion(path: string): string {
   try {
-    return version(JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')).version);
+    return diagnosticVersion(
+      JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')).version,
+    );
   } catch {
     return 'unavailable';
   }
@@ -72,7 +74,7 @@ function packageVersion(path: string): string {
 export const diagnosticSoftware = () => ({
   bridge: packageVersion('../package.json'),
   library: packageVersion('../node_modules/@keesmod/eufy-mega-client/package.json'),
-  node: version(process.versions.node),
+  node: diagnosticVersion(process.versions.node),
   platform: ['linux', 'darwin', 'win32'].includes(process.platform) ? process.platform : 'other',
   arch: ['x64', 'arm64', 'arm'].includes(process.arch) ? process.arch : 'other',
 });
@@ -83,13 +85,114 @@ const cloudRoutes = new Map([
   ['/openapi/oauth/key/exchange', 'key_exchange'],
   ['/app/sendmsg/verify_code', 'verification'],
 ]);
+export interface SupportReport {
+  schema: 2;
+  generated_at: string;
+  last_discovery: Record<string, unknown>[];
+  recent_events: Record<string, unknown>[];
+}
+type ConnectionStatus = 'not_checked' | 'connected' | 'disconnected' | 'error' | 'not_applicable';
 export class DiscoveryDiagnostics {
   private sequence = 0;
   private previous = '';
+  private refs = new Map<string, number>();
+  private pendingReport = 0;
+  private models = new Map<string, string>();
+  private stationOutcomes = new Map<string, ConnectionStatus>();
+  private stationEvents = new Map<
+    number,
+    {
+      report: number;
+      phase: string;
+      status: ConnectionStatus;
+      reason: string | null;
+    }
+  >();
+  private lastDiscovery: Record<string, unknown>[] = [];
+  private recentEvents: Record<string, unknown>[] = [];
+  private connections = new Map<string, string>();
+  private lastFault = '';
+  prepare(result: DiscoveryResult): void {
+    this.refs = new Map(result.devices.slice(0, 99).map((device, index) => [device.id, index + 1]));
+    this.pendingReport = this.sequence + 1;
+    this.models = new Map(
+      result.devices.slice(0, 99).map((device) => [device.id, model(device.model)]),
+    );
+    this.stationOutcomes.clear();
+    this.lastFault = '';
+  }
+  report(): SupportReport {
+    return JSON.parse(
+      JSON.stringify({
+        schema: 2,
+        generated_at: new Date().toISOString(),
+        last_discovery: this.lastDiscovery,
+        recent_events: this.recentEvents,
+      }),
+    );
+  }
+  station(
+    id: string,
+    phase: 'connect' | 'refresh_state' | 'observation',
+    status: ConnectionStatus,
+    reason?: string,
+  ): void {
+    const ref = this.refs.get(id);
+    if (ref === undefined) return;
+    const code = reason ? diagnosticCode(reason) : null;
+    const previous = this.stationEvents.get(ref);
+    this.stationOutcomes.set(id, status);
+    if (
+      previous?.report === this.pendingReport &&
+      previous.status === status &&
+      previous.reason === code &&
+      (status !== 'error' || previous.phase === phase)
+    )
+      return;
+    this.stationEvents.set(ref, {
+      report: this.pendingReport,
+      phase,
+      status,
+      reason: code,
+    });
+    this.emit({
+      event: 'station_connection',
+      report: this.pendingReport,
+      device_ref: ref,
+      model: this.models.get(id) ?? 'unavailable',
+      phase,
+      status,
+      reason: code,
+    });
+  }
+
+  fault(code: unknown): void {
+    const safe = diagnosticCode(code);
+    if (safe === this.lastFault) return;
+    this.lastFault = safe;
+    this.emit({
+      event: 'fault',
+      code: safe,
+      report: this.pendingReport || null,
+    });
+  }
   constructor(private readonly output: (line: string) => void) {}
-  private emit(value: object): void {
+  private record(value: Record<string, unknown>): Record<string, unknown> {
+    return {
+      diagnostic: 'discovery',
+      schema: 2,
+      timestamp: new Date().toISOString(),
+      ...value,
+    };
+  }
+  private emit(value: Record<string, unknown>): void {
+    const record = this.record(value);
+    if (!['summary', 'device', 'issue', 'end'].includes(String(value.event))) {
+      this.recentEvents.push(record);
+      if (this.recentEvents.length > 100) this.recentEvents.shift();
+    }
     try {
-      this.output(JSON.stringify({ diagnostic: 'discovery', schema: 1, ...value }));
+      this.output(JSON.stringify(record));
     } catch {
       /* Logging must never alter authentication, discovery or ownership. */
     }
@@ -106,13 +209,25 @@ export class DiscoveryDiagnostics {
     });
   }
   connection(phase: 'authentication' | 'events', outcome: string, pushConnected: boolean): void {
+    const safeOutcome = [
+      'connected',
+      'disconnected',
+      'connecting',
+      'captcha',
+      'verify',
+      'error',
+    ].includes(outcome)
+      ? outcome
+      : diagnosticCode(outcome);
+    const signature = JSON.stringify([safeOutcome, pushConnected === true]);
+    if (this.connections.get(phase) === signature) return;
+    this.connections.set(phase, signature);
+    this.lastFault = '';
     this.emit({
       event: 'connection',
       software: diagnosticSoftware(),
       phase,
-      outcome: ['connected', 'captcha', 'verify', 'error'].includes(outcome)
-        ? outcome
-        : diagnosticCode(outcome),
+      outcome: safeOutcome,
       push_connected: pushConnected === true,
     });
   }
@@ -124,10 +239,20 @@ export class DiscoveryDiagnostics {
     capabilities: ReadonlyMap<string, CameraCapabilities>,
     states: ReadonlyMap<string, StationState>,
   ): void {
+    if (result && this.pendingReport !== this.sequence + 1) this.prepare(result);
     const devices = result?.devices.slice(0, 99) ?? [];
     const issues = result?.issues.slice(0, 99) ?? [];
     const refs = new Map(devices.map((device, index) => [device.id, index + 1]));
     const accepted = new Set(devices.map((device) => device.id));
+    const connectionStatus = (id: string): ConnectionStatus =>
+      this.stationOutcomes.get(id) ??
+      (!states.has(id)
+        ? 'not_checked'
+        : states.get(id)!.connected === true
+          ? 'connected'
+          : 'disconnected');
+    const connectionBoolean = (status: ConnectionStatus): boolean | null =>
+      status === 'connected' ? true : status === 'disconnected' ? false : null;
     const rows = devices.map((device, index) => {
       const relationship = result?.relationships.find((row) => row.deviceId === device.id);
       const owner =
@@ -150,8 +275,8 @@ export class DiscoveryDiagnostics {
         ref: index + 1,
         kind: ['camera', 'station'].includes(device.kind) ? device.kind : 'unavailable',
         model: model(device.model),
-        firmware: version(device.firmware),
-        hardware: version(device.hardware),
+        firmware: diagnosticVersion(device.firmware),
+        hardware: diagnosticVersion(device.hardware),
         availability: ['online', 'offline', 'disabled'].includes(device.availability ?? '')
           ? device.availability
           : null,
@@ -162,10 +287,19 @@ export class DiscoveryDiagnostics {
         relationship_reason:
           relationship && 'reason' in relationship ? diagnosticCode(relationship.reason) : null,
         owner_ref: owner ?? null,
-        station_connected:
-          device.kind === 'station' && states.has(device.id)
-            ? states.get(device.id)?.connected === true
+        owner_connected:
+          relationship?.kind === 'station'
+            ? connectionBoolean(connectionStatus(relationship.ownerId))
             : null,
+        owner_status:
+          relationship?.kind === 'standalone'
+            ? 'not_applicable'
+            : relationship?.kind === 'station'
+              ? connectionStatus(relationship.ownerId)
+              : 'not_checked',
+        station_status: device.kind !== 'station' ? 'not_applicable' : connectionStatus(device.id),
+        station_connected:
+          device.kind === 'station' ? connectionBoolean(connectionStatus(device.id)) : null,
         media:
           device.kind === 'camera'
             ? {
@@ -183,6 +317,19 @@ export class DiscoveryDiagnostics {
       device_ref: issue.deviceId === null ? null : (refs.get(issue.deviceId) ?? null),
       model: model(issue.deviceModel),
       device_type: integer(issue.deviceType, 0, 65535),
+      firmware: diagnosticVersion(issue.context?.firmware),
+      hardware: diagnosticVersion(issue.context?.hardware),
+      parent_status: ['none', 'self', 'present', 'missing', 'ambiguous', 'invalid'].includes(
+        issue.context?.parentStatus ?? '',
+      )
+        ? issue.context!.parentStatus
+        : 'unavailable',
+      owner_ref:
+        issue.context?.parentStatus === 'present' && issue.context.parentId
+          ? (refs.get(issue.context.parentId) ?? null)
+          : null,
+      parent_model: model(issue.context?.parentModel),
+      parent_firmware: diagnosticVersion(issue.context?.parentFirmware),
     }));
     const summary = {
       event: 'summary',
@@ -208,8 +355,22 @@ export class DiscoveryDiagnostics {
     const unchanged = snapshot === this.previous;
     this.previous = snapshot;
     const report = ++this.sequence;
+    this.pendingReport = report;
+    this.lastDiscovery = [
+      this.record({ ...summary, report, unchanged: false }),
+      ...[...rows, ...rejections].map((row) => this.record({ ...row, report })),
+      this.record({
+        event: 'end',
+        report,
+        rows: rows.length + rejections.length,
+      }),
+    ];
     this.emit({ ...summary, report, unchanged });
     if (!unchanged) for (const row of [...rows, ...rejections]) this.emit({ ...row, report });
-    this.emit({ event: 'end', report, rows: unchanged ? 0 : rows.length + rejections.length });
+    this.emit({
+      event: 'end',
+      report,
+      rows: unchanged ? 0 : rows.length + rejections.length,
+    });
   }
 }

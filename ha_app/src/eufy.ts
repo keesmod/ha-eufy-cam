@@ -1,3 +1,4 @@
+import { DiscoveryDiagnostics, type SupportReport } from './discovery-diagnostics.js';
 import { EventEmitter } from 'node:events';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -27,6 +28,8 @@ const unavailable = async (): Promise<never> => {
 export class Eufy extends EventEmitter {
   migrationError: string | null = null;
   private backend?: Backend;
+  private failedSupportReport?: SupportReport;
+  private readonly setupDiagnostics = new DiscoveryDiagnostics(line => this.emit('discovery_diagnostic', line));
   private loginBusy = false;
   private migrationBusy = false;
   private restoring = false;
@@ -115,6 +118,7 @@ export class Eufy extends EventEmitter {
   ) {
     super();
     this.diagnostics.enabled = diagnostics;
+    this.on('backend_fault', code => { if (!this.backend) this.setupDiagnostics.fault(code); });
   }
   restore(): Promise<void> {
     if (this.restoreTask) return this.restoreTask;
@@ -239,6 +243,7 @@ export class Eufy extends EventEmitter {
     } catch (error) {
       if (error instanceof MigrationError) {
         this.migrationError = error.code;
+        this.failedSupportReport = this.backend?.supportReport?.() ?? this.failedSupportReport;
         await this.backend?.close();
         this.backend = undefined;
         this.emit('backend_fault', error.code);
@@ -360,6 +365,13 @@ export class Eufy extends EventEmitter {
     if (!this.backend || this.hub.active || this.recordings.busy)
       throw new Error('Station still owned');
     return this.backend.recoverStation(serial);
+  }
+  supportReport(): SupportReport {
+    const setup = this.setupDiagnostics.report();
+    const report = this.backend?.supportReport?.() ?? this.failedSupportReport ?? setup;
+    return {...report, generated_at:setup.generated_at, recent_events:
+      report === setup ? setup.recent_events : [...report.recent_events, ...setup.recent_events]
+        .sort((a,b) => String(a.timestamp).localeCompare(String(b.timestamp))).slice(-100)};
   }
   inventory(): CameraInfo[] {
     return (

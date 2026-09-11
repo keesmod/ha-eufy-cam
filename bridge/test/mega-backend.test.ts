@@ -573,11 +573,50 @@ for (const empty of [false,true])
       const rows=lines.map(line=>JSON.parse(line));
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
-      assert.equal(summary.software.library,'0.12.1');
+      assert.equal(summary.software.library,'0.12.2');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
       assert.doesNotMatch(lines.join('\n'),/PRIVATE|BASE|CAM/);
       assert.equal(bridge.diagnostics.enabled,false);
+      assert.equal(bridge.supportReport().last_discovery.find(row=>row.event==='summary')?.outcome,empty?'camera_inventory_empty':'accepted');
     }finally{await bridge.close();}
   });
+
+for(const phase of ['connect','refresh_state'] as const)
+  test(`station ${phase} failures and subsequent connection events are anonymous`, async () => {
+    const f=fixture();
+    if(phase==='connect')f.client.connectStation=async()=>{throw new EufyError('connection_failed');};
+    else f.client.refreshStationState=async()=>{throw new EufyError('invalid_response');};
+    try {
+      await f.backend.login({username:'fixture',password:'fixture',country:'NL'});
+      let report=f.backend.supportReport();
+      const failure=report.recent_events.find(row=>row.event==='station_connection'&&row.status==='error')!;
+      assert.equal(failure.phase,phase);assert.equal(failure.device_ref,1);
+      assert.equal(report.last_discovery.find(row=>row.event==='device'&&row.ref===1)?.station_status,'error');
+      f.client.emit('station',{id:'BASE',connected:true});
+      f.client.emit('station',{id:'BASE',connected:true});
+      f.client.emit('station',{id:'BASE',connected:false});
+      f.client.emit('events-connection',false);f.client.emit('events-connection',false);
+      f.client.emit('events-connection',true);
+      report=f.backend.supportReport();
+      assert.equal(report.recent_events.filter(row=>row.event==='station_connection'&&row.status==='connected').length,1);
+      assert.deepEqual(report.recent_events.filter(row=>row.event==='connection'&&row.phase==='events').slice(-2).map(row=>row.outcome),['disconnected','connected']);
+      assert.doesNotMatch(JSON.stringify(report),/BASE|CAM|fixture/);
+      assert.deepEqual(f.calls,[]);
+    } finally {await f.backend.close();}
+  });
+
+test('setup errors before backend creation are retained without raw storage errors', async () => {
+  const {Eufy}=await import('../src/eufy.js');
+  const f=fixture();
+  f.storage.read=async()=>'{PRIVATE';
+  const bridge=new Eufy(f.storage,'mega',false,()=>f.backend);
+  try {
+    await assert.rejects(bridge.login({username:'fixture',password:'fixture',country:'NL'}));
+    const report=bridge.supportReport();
+    assert.equal(report.recent_events.at(-1)!.event,'fault');
+    assert.equal(report.recent_events.at(-1)!.code,'inventory_invalid');
+    assert.doesNotMatch(JSON.stringify(report),/PRIVATE|fixture/);
+  } finally {await bridge.close();}
+});

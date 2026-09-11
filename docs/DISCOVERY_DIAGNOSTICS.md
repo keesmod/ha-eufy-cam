@@ -15,7 +15,7 @@ Eufy backend: unsupported_device device_model=T9999 device_type=95
 ```
 
 Each distinct code/model/type combination appears once per discovery pass.
-The bridge refreshes discovery periodically, so a later pass can repeat a line.
+A later discovery pass can repeat a line.
 Only exact five-character model codes and integer types from 0 through 65535
 are shown. A missing, malformed or out-of-bounds value appears as `unavailable`.
 Values are never shortened, trimmed, coerced or inferred from a serial number.
@@ -65,14 +65,45 @@ so. The same report number groups its rows. Unknown values are `null` or
 omitting duplicate rows. Restarting the bridge produces a full new report.
 
 This is a report of the public discovery result, not the full cloud response.
-Library 0.12.1 does not expose rejected-device firmware, rejected-device parent
-relationships or ignored non-security rows. The report cannot reconstruct
-those details and does not infer model/type from a serial number. A cloud request
-failure yields `inventory_available=false`, not proof that the account is empty.
-Logs reduce follow-up questions, but cannot guarantee a diagnosis when the
-vendor omits data or a new protocol observation is needed.
+A cloud request failure yields `inventory_available=false`, not proof that the
+account is empty. Logs cannot establish why data omitted by the vendor is absent.
 
 The report does not include names, serials, tokens, account identifiers, addresses,
 raw errors, payloads, images or alarm state. Each row is bounded and the report
 contains at most 99 device and 99 issue rows, plus its summary/end markers.
 Review the short excerpt before sharing it. No automatic upload is performed.
+
+## Single support download, bridge and integration 0.8.5
+
+In Home Assistant open Settings > Devices & services > Eufy Security Viewer.
+Use the integration entry's menu and select **Download diagnostics**. The standard
+HA download includes HA/integration versions, the complete latest discovery and
+up to 100 recent diagnostic events. Restart the updated bridge once to collect
+fresh startup evidence, then download the report after the problem occurs.
+The integration can request the report even when its setup failed. A bridge that
+is unreachable or predates the endpoint yields an explicit unavailable result.
+Bridge-only operators can retrieve the same cached report through the existing
+Bearer-authenticated `GET /v1/diagnostics` route. No device or cloud requests are
+triggered by a download. No automatic upload or issue submission is performed.
+Review the file before attaching it to a support issue.
+
+Schema 2 retains `station_connected` for compatibility and adds `station_status`
+and `owner_status`. Status values distinguish `not_checked`, `connected`,
+`disconnected`, `error` and `not_applicable`. Camera rows use `owner_connected`
+for their HomeBase connection. Camera availability remains the last cloud/device
+observation and does not prove current media reachability. A failed connection or
+state refresh has an anonymous `device_ref`, model, phase and fixed reason.
+Timestamped station and push connection transitions record loss and recovery.
+Repeated identical states are suppressed. Recent events name their report number
+because anonymous references are valid only within that discovery report.
+The download preserves full rows even when repeated log reports omit them.
+
+Library 0.12.2 adds rejected-device firmware/hardware and received parent context.
+`parent_status=present` means one matching security inventory row, not proof that
+it is a supported or connected HomeBase. Other states distinguish absent, self,
+missing, ambiguous or invalid parents. `owner_ref` links only to a recognized
+parent in the same report. Parent model/firmware can describe an unrecognized
+parent without exposing its identity. Invalid values stay unavailable, and raw
+identifiers never enter the logger or download. This does not infer a C30 mapping
+or establish the cause of issue #40. Ignored non-security rows remain outside
+this report.
