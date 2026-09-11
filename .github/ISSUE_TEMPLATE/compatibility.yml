@@ -68,7 +68,16 @@ body:
     id: diagnostics
     attributes:
       label: Reviewed diagnostic excerpt (optional)
-      description: Include only relevant redacted lines. Remove credentials, account details, serials, recording paths and private addresses. Never attach raw captures, full debug logs, bridge storage or footage.
+      description: >-
+        For missing devices or failed setup, follow
+        https://github.com/keesmod/ha-eufy-cam/blob/main/docs/DISCOVERY_DIAGNOSTICS.md
+        and include one complete discovery report, including accepted devices,
+        issue rows and connection/error records. Bridge 0.8.5 includes library
+        0.12.2. The HA download also requires integration 0.8.5. If that integration
+        update is unavailable, use the bridge startup logs. Other failures can
+        use a relevant reviewed excerpt. Remove credentials, account details,
+        serials, recording paths and private addresses. Never attach raw captures,
+        full debug logs, bridge storage or footage.
       render: text
   - type: checkboxes
     id: privacy

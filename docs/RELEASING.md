@@ -96,6 +96,32 @@ Keep unresolved validation in its existing issue without silently widening a
 support claim. Documentation and report-form changes take effect on GitHub after
 merge and do not need a product version bump, HA deployment or live-device test.
 
+## Diagnostic release checks
+
+When a release changes diagnostic behavior, include these checks in its existing
+validation. The [collection guide](DISCOVERY_DIAGNOSTICS.md) owns user steps and
+the [report contract](DEVELOPMENT.md#diagnostic-report-contract) owns field meaning,
+privacy bounds and schema compatibility.
+
+- Verify the exact published library URL/integrity and actual installed library
+  version, then test the consuming bridge and HA filter with the same report.
+  Check supported schema versions and the older-integration fallback explicitly.
+- Verify the complete download and normal startup logs with debug disabled,
+  including failed setup and rejected devices. Confirm bounded retention, private
+  value exclusion and authenticated access. Exercise failure paths synthetically
+  without forcing production outages or waking cameras for log collection.
+- State separately which bridge, library and integration versions each collection
+  method needs. Confirm that the bridge update is available through its documented
+  channel and the integration version is publicly released before telling HACS
+  users to install it. Until then, document the available bridge-log alternative.
+- Update collection instructions, support links and issue-form wording together
+  when the process changes. Users should be asked for one complete bounded
+  discovery report for missing devices, including accepted rows and context.
+- For an authorized deployment, retain backups and verify installed versions and
+  the actual log/download route. Record what was observed and what remains
+  synthetic or untested. Diagnostics success is not proof of camera hardware or
+  media support. Documentation-only changes need no deployment or live check.
+
 ## Failure and recovery
 
 A failed or cancelled build cannot publish. A download, checksum or package
