@@ -21,7 +21,9 @@ for feature-specific hardware claims and remaining obligations. Historical
 observation windows do not establish battery life or a reliability guarantee.
 
 The dated [upgrade and rollback rehearsal](CAMERA_UPGRADE_ROLLBACK_2026_09_11.md)
-records the tested versions, outcomes and remaining acceptance work.
+records the tested versions and completed acceptance for that installation.
+Integration candidate 0.7.2 changes metadata and documentation only and retains
+bridge 0.7.1. See its [candidate notes](CAMERA_RELEASE_CANDIDATE_0_7_2.md).
 
 ## Prepare and migrate
 

@@ -42,19 +42,20 @@ remain required. These fixtures establish no new physical model support.
 mower acceptance dependency, which remains open. Release run 34577433886 published client 0.10.0 from commit
 `41690f73f1ed4397f378a6eb9ba6612fc41d998a`. The downloaded manifest and
 package hashes match the validated workflow output, and the bridge lockfile
-checks the downloaded package with SHA512. Camera #19 still requires full
-software CI with this actual released package before acceptance.
+checks the downloaded package with SHA512. Camera #19 passed full software CI
+against that published package in [PR #25](https://github.com/keesmod/ha-eufy-cam/pull/25),
+with [merged-main validation](https://github.com/keesmod/ha-eufy-cam/actions/runs/34578769443).
+Its acceptance includes 69 bridge tests, 85 HA tests at 96.21% coverage and 38
+browser tests. Synthetic media decoding does not establish physical support.
 
-Physical eufyCam/doorbell acceptance remains in client #55/#58. SoloCam #56 and
-camera #10 retain T8134 live/recovery evidence. Migration is camera #20, camera
-release is #21, and complete legacy retirement is #24. No unavailable hardware
-is declared supported and the programme remains open.
+Physical acceptance for the exact T8160/T8030 and T8213/T8030 tuples passed in
+client #55/#58. Camera #20 passed the bounded upgrade/rollback and real T8160
+event rehearsal. Read the [dated evidence](CAMERA_UPGRADE_ROLLBACK_2026_09_11.md)
+for firmware, versions, feature outcomes and cleanup. These results do not extend
+to every model or topology in either family.
 
-Local validation passed 84 HA tests with 96.21% coverage and 38 browser tests,
-including synthetic local WebRTC video/audio decoding and confirmed cleanup.
-Ruff, types, workflow checks and release-tool tests passed. A clean consumer
-imports the published compiled camera client without mower configuration.
-
-The prepared bridge and integration version is 0.7.0. No private session or entity
-migration is required. Retain the prior integration, bridge release and private
-data for rollback. This story does not establish live deployment acceptance.
+SoloCam client #21/#22/#56 and [camera #10](https://github.com/keesmod/ha-eufy-cam/issues/10)
+retain T8134 live/recovery obligations. Legacy retirement remains camera #24.
+The [0.7.2 candidate](CAMERA_RELEASE_CANDIDATE_0_7_2.md) consolidates release
+preparation in #21. E6 and the programme remain open for the remaining models
+and validation. This documentation adds no runtime or hardware-support claim.

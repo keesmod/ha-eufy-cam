@@ -1,6 +1,25 @@
 # Changelog
 
-## 0.7.1 - Unreleased
+## 0.7.2 - Candidate, not published
+
+- Consolidate the completed camera capability and upgrade/rollback evidence,
+  including exact model, firmware, topology and feature limits.
+- Keep bridge 0.7.1 and the pinned Mega client 0.10.0. Only integration version
+  metadata and documentation change. No media, authentication or device-command
+  behavior changes and no additional hardware support is claimed.
+- Preserve the legacy selection until camera #24 completes its separate gate.
+  T8134 live/recovery and other family obligations remain open.
+
+See [candidate notes](docs/CAMERA_RELEASE_CANDIDATE_0_7_2.md) for reproducible
+packaging, software validation and publication boundaries. After separately
+authorized publication, update the integration while keeping bridge 0.7.1.
+Retain the integration 0.7.1 archive, existing entry and private backup for
+rollback. A backend/version migration still follows the [migration guide](docs/MEGA_MIGRATION.md).
+No publication or deployment is authorized by preparation story #21. The
+existing Python dependency alert is recorded in the candidate notes and remains
+an explicit gate for later publication/deployment acceptance.
+
+## 0.7.1 - 2026-09-11
 
 - Automatically switch failed WebRTC playback to live JPEG over the existing
   authenticated Home Assistant connection. The player displays "Live video
@@ -17,7 +36,7 @@ JPEG fallback has no audio and requires a working HA connection. It cannot fix
 an unavailable camera. T8134 live-audio validation remains pending. Preserve a
 backup and version 0.6.4 for rollback.
 
-## 0.7.0 - Unreleased
+## 0.7.0 - Included in 0.7.1
 
 - Carry camera snapshot, live and recording software capabilities into HA and
   both cards. Mark available operations experimental and show unsupported reasons.
@@ -28,7 +47,7 @@ backup and version 0.6.4 for rollback.
 - Pin the verified published client 0.10.0 package with SHA512 integrity. No new hardware
   support is claimed. Camera migration, release and legacy retirement remain open.
 - No session or entity migration is required. Keep the previous integration,
-  bridge package and private data for rollback. This version is not published.
+  bridge package and private data for rollback. There was no separate 0.7.0 publication.
 
 ## 0.6.4 - 2026-09-10
 
