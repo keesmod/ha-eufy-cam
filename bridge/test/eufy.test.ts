@@ -9,6 +9,7 @@ import { Readable } from 'node:stream';
 import type { Backend, AuthState } from '../src/backend.js';
 import { Eufy } from '../src/eufy.js';
 import { Storage } from '../src/storage.js';
+import { logBackendFault } from '../src/backend-log.js';
 
 function fixtureBackend(login: () => Promise<AuthState> = async () => ({ state: 'connected' })): Backend {
   const backend = Object.assign(new EventEmitter(), {
@@ -197,5 +198,26 @@ test('manual recovery waits for in-flight automatic initialization to settle', a
     assert.equal((await recovery).state, 'connected');
     await restoring;
     assert.equal(attempts, 2);
+  } finally { await bridge.close(); }
+});
+
+
+test('default bridge logger receives discovery detail through the Eufy event relay', async (t) => {
+  const storage = new Storage('/unused');
+  storage.read = async () => undefined;
+  storage.write = async () => {};
+  const backend = fixtureBackend();
+  const bridge = new Eufy(storage, 'mega', false, () => backend);
+  const output = t.mock.method(console, 'error', () => {});
+  bridge.on('backend_fault', logBackendFault);
+  try {
+    await bridge.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    backend.emit('backend_fault', 'unsupported_device', 'device_model=T9999 device_type=95');
+    backend.emit('backend_fault', 'unsupported_station');
+    assert.deepEqual(output.mock.calls.map(call => call.arguments), [
+      ['Eufy backend:', 'unsupported_device', 'device_model=T9999 device_type=95'],
+      ['Eufy backend:', 'unsupported_station'],
+    ]);
+    assert.equal(bridge.diagnostics.enabled, false);
   } finally { await bridge.close(); }
 });
