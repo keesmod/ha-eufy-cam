@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.2 - Unpublished
+
+- Report discovery rejection codes in the bridge log when devices are missing
+  or have unsupported connections. Previously the bridge discarded these reasons.
+- Log each reason once per discovery, without device identities or raw inventory.
+  Device admission, migration checks and camera commands are unchanged.
+- Keep integration and bridge version metadata aligned for packaging. The HA
+  integration has no behavior changes. Use the normal update steps and preserve
+  the previous bridge and private data for rollback.
+
+This diagnostic fix does not establish the cause of all missing devices in
+[issue #40](https://github.com/keesmod/ha-eufy-cam/issues/40). Exact reporter models,
+connection details and login results are still needed.
+
 ## 0.8.1 - 2026-09-11
 
 - Upgrade the camera bridge to the verified eufy-mega-client 0.12.0 release.
