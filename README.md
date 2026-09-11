@@ -35,7 +35,7 @@ A Eufy cloud recording subscription is not needed to play the tested HomeBase fi
 
 ## Camera capabilities
 
-The upcoming 0.7.0 bridge and integration display per-camera snapshot, live and
+The upcoming 0.7.1 bridge and integration display per-camera snapshot, live and
 recording capabilities from the Mega client. Available software is marked
 experimental. Unsupported operations show a reason and cannot start media.
 Older bridges without this optional metadata keep their existing behavior.
@@ -105,7 +105,7 @@ From version 0.4.2, the integration registers the shared JavaScript resource aut
 3. To browse recordings across cameras, add an **Eufy Events** card too. It uses the same resource and selects all accessible Viewer cameras by default.
 4. Open a live view, then close it. To check recordings, choose a date with a clip you can already see in the Eufy app and play that clip.
 
-If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.7.0` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
+If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.7.1` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
 
 If you manage resources in YAML, the integration leaves that configuration untouched. Add the module to your existing `lovelace.resources` list and update the version after upgrades:
 
@@ -113,7 +113,7 @@ If you manage resources in YAML, the integration leaves that configuration untou
 lovelace:
   resource_mode: yaml
   resources:
-    - url: /eufy_viewer/eufy-viewer-card.js?v=0.7.0
+    - url: /eufy_viewer/eufy-viewer-card.js?v=0.7.1
       type: module
 ```
 
@@ -147,7 +147,7 @@ Version **0.6.4** fixes silent recordings on Apple players and requires both the
 1. Close live viewers and recording dialogs. Back up Home Assistant and the bridge's private data before updating.
 2. Stop the old bridge and update **Eufy Security Viewer Bridge** to **0.6.4**. Select the intended backend, keep the existing token and start only this bridge. For Docker, follow the [bridge update steps](docs/DOCKER.md#update-the-docker-bridge), keeping the same data volume and token.
 3. Update **Eufy Security Viewer** to **0.6.4** in HACS and restart Home Assistant. Reconfigure the existing integration entry to `http://127.0.0.1:8063` for the HAOS app, keeping its token. Do not delete and recreate the entry. Complete a fresh Mega login challenge if requested.
-4. Reload the dashboard. For YAML resources, update the existing module URL to `/eufy_viewer/eufy-viewer-card.js?v=0.7.0` and reload resources first.
+4. Reload the dashboard. For YAML resources, update the existing module URL to `/eufy_viewer/eufy-viewer-card.js?v=0.7.1` and reload resources first.
 5. Check that the push connection sensor is connected. Test a real detection and inspect its event entity or listen to `eufy_viewer_event`. A recognized person should produce one `person` event with `person_name` and `recognition: known`. See [notification examples](docs/NOTIFICATIONS.md).
 6. Confirm cameras and HomeBase controls remain available. Event support does not change Eufy's detection settings or phone notification preferences.
 
@@ -248,3 +248,24 @@ identifiers, tokens, addresses, media grants, images or raw SDK/encoder errors.
 Attempt numbers reset when the app restarts. Ordinary logs from other components
 are outside this filter, so review any additional logs before sharing them.
 This option does not change timeouts, keep cameras awake or enable SDK debug.
+
+### Automatic live-video fallback
+
+When WebRTC signaling, connection or playback fails, the viewer switches once
+to live JPEG through the existing authenticated HA connection. The live popup
+shows **Live video without sound** and hides its audio button. WebRTC is kept
+when it works. The next explicit opening can try WebRTC again.
+
+The bridge initiates fallback five seconds before the initial viewer deadline
+(normally after 15 seconds for a new stream, or five seconds when joining an
+existing stream), or six seconds without a subsequent playback acknowledgement.
+These thresholds leave room to display JPEG within the existing 20/10-second
+viewer deadlines. Switching
+never extends those deadlines, starts another camera or resets the two-minute
+maximum session lifetime. Hidden or disconnected viewers still expire.
+
+Each viewer switches independently. Other viewers can continue using WebRTC.
+HA logs a fixed fallback reason, and optional bridge diagnostics add matching
+`fallback_*` categories. No raw ICE candidates, upstream error text or tokens
+are logged. This does not add audio to JPEG or change network-provider terms.
+Upgrade the integration and bridge together for this protocol capability.

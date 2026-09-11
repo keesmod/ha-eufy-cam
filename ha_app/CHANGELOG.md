@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.1 - Unreleased
+
+- Automatically switch failed WebRTC playback to live JPEG over the existing
+  authenticated Home Assistant connection. The player displays "Live video
+  without sound" and hides the audio control after switching.
+- Reuse the exact bridge socket and camera owner. Revoke only that viewer's
+  WebRTC media grant. Do not issue another camera start, reconnect, extend the
+  original lease or reset the absolute viewing limit. Ignore late WebRTC ACKs.
+- Log fixed fallback reasons in HA and opt-in bridge diagnostics, without
+  exposing upstream errors, media URLs or device identifiers.
+
+Update the bridge and HACS integration together and restart HA. Keep the
+existing account, token and data. WebRTC still provides audio when it works.
+JPEG fallback has no audio and requires a working HA connection. It cannot fix
+an unavailable camera. T8134 live-audio validation remains pending. Preserve a
+backup and version 0.6.4 for rollback.
+
 ## 0.7.0 - Unreleased
 
 - Carry camera snapshot, live and recording software capabilities into HA and

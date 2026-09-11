@@ -168,6 +168,42 @@ test('camera recovery clears the stale unavailable message without starting a st
   await expect(page.locator('.status')).toHaveText('Live view ended. Tap again to watch.');
 });
 
+for (const failure of ['offer', 'connection']) test(`WebRTC ${failure} failure downgrades the existing subscription with a visible no-audio notice`, async ({ page }) => {
+  await page.evaluate(failure => {
+    card._hass.states['camera.front'].attributes.viewer_webrtc = true;
+    window.RTCPeerConnection = class extends EventTarget {
+      iceGatheringState = 'complete'; connectionState = 'new'; localDescription = null;
+      addTransceiver() {}
+      async createOffer() { if (failure === 'offer') throw new Error('private upstream details'); return { type: 'offer', sdp: 'test' }; }
+      async setLocalDescription(offer) { this.localDescription = offer; }
+      close() { this.connectionState = 'closed'; this.onconnectionstatechange?.(); }
+    };
+  }, failure);
+  await page.getByRole('button', { name: 'Watch live', exact: true }).click();
+  await page.evaluate(() => receive({ type: 'ready', subscription: 9, fallback: true }));
+  if (failure === 'connection') {
+    await expect.poll(() => page.evaluate(() => acks.some(m => m.offer))).toBe(true);
+    await page.evaluate(() => { card._rtc.connectionState = 'failed'; card._rtc.onconnectionstatechange(); });
+  }
+  await expect.poll(() => page.evaluate(() => acks.filter(m => m.type === 'eufy_viewer/fallback').length)).toBe(1);
+  expect(await page.evaluate(() => calls.length)).toBe(1);
+  expect(await page.evaluate(() => closeCount)).toBe(0);
+  await page.evaluate(() => {
+    receive({ type: 'fallback' });
+    receive({ type: 'answer', sdp: 'late-answer-must-be-ignored' });
+    const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 16;
+    receive({ type: 'frame', subscription: 9, sequence: 2, jpeg: canvas.toDataURL('image/jpeg').split(',')[1] });
+  });
+  await expect(page.locator('dialog .live-status')).toHaveText('Live video without sound');
+  await expect(page.locator('dialog .live-status')).toBeVisible();
+  await expect(page.locator('img.live')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Enable sound' })).toBeHidden();
+  await expect.poll(() => page.evaluate(() => acks.some(m => m.type === 'eufy_viewer/ack' && m.sequence === 2))).toBe(true);
+  expect(await page.evaluate(() => calls.length)).toBe(1);
+  await page.getByRole('button', { name: 'Close live view', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+});
+
 test('capability status disables media controls and never fetches unsupported snapshots', async ({ page }) => {
   await page.evaluate(() => {
     const denied = { available: false, status: 'unsupported', reason: 'standalone_transport_unverified' };

@@ -3,9 +3,10 @@ interface CameraState { state: string; attributes: { friendly_name?: string; cap
 interface CardConfig { entity: string; name?: string }
 interface FrameEvent { type: "frame"; subscription: number; sequence: number; jpeg: string }
 interface EndEvent { type: "ended" }
+interface FallbackEvent { type: "fallback" }
 type Unsubscribe = () => Promise<void>;
-type RTCEvent = { type: "ready"; subscription: number } | { type: "answer"; sdp: string } | { type: "candidate"; candidate: string } | { type: "tick"; subscription: number; sequence: number };
-type ViewerEvent = FrameEvent | EndEvent | RTCEvent;
+type RTCEvent = { type: "ready"; subscription: number; fallback?: boolean } | { type: "answer"; sdp: string } | { type: "candidate"; candidate: string } | { type: "tick"; subscription: number; sequence: number };
+type ViewerEvent = FrameEvent | EndEvent | FallbackEvent | RTCEvent;
 interface HAConnection extends EventTarget {
   subscribeMessage(callback: (event: ViewerEvent) => void, message: Record<string, unknown>, options: { resubscribe: boolean }): Promise<Unsubscribe>;
 }
@@ -16,8 +17,8 @@ declare global { interface Window { customCards: CardDefinition[] } }
 
 /** Eufy Viewer: snapshots at rest, a single explicit user gesture per live session. */
 const TEXT = {
-  en: { capability_unavailable: "This media operation is unavailable for the camera connection.", live: "Watch live", close: "Close live view", connecting: "Connecting…", ended: "Live view ended. Tap again to watch.", unavailable: "Camera unavailable", noSnapshot: "No snapshot received yet", title: "Camera", error: "Live view failed. Tap again to retry.", sound: "Enable sound", mute: "Mute sound", recordings: "Recordings", date: "Date", load: "Show recordings", loading: "Loading HomeBase recordings…", preparing: "Preparing recording…", empty: "No recordings returned for this camera and date.", recordingError: "HomeBase recording unavailable. Load the date again.", live_busy: "A live viewer is still open. Close it and load the date again.", live_stopping: "The previous live session is still stopping. Wait a moment and load the date again.", recording_busy: "Another recording is being prepared. Wait a moment and try again.", recording_expired: "This recording link has expired. Load the date again.", recording_unavailable: "The HomeBase connection is unavailable. Try again shortly.", closeRecordings: "Close recordings", results: "recordings returned", homebaseTime: "HomeBase time" },
-  nl: { capability_unavailable: "Deze mediafunctie is niet beschikbaar voor de cameraverbinding.", live: "Live bekijken", close: "Livebeeld sluiten", connecting: "Verbinden…", ended: "Livebeeld gestopt. Tik opnieuw om te kijken.", unavailable: "Camera niet beschikbaar", noSnapshot: "Nog geen snapshot ontvangen", title: "Camera", error: "Livebeeld mislukt. Tik opnieuw om te proberen.", sound: "Geluid aan", mute: "Geluid uit", recordings: "Opnames", date: "Datum", load: "Opnames tonen", loading: "HomeBase-opnames laden…", preparing: "Opname voorbereiden…", empty: "Geen opnames teruggegeven voor deze camera en datum.", recordingError: "HomeBase-opname niet beschikbaar. Laad de datum opnieuw.", live_busy: "Er staat nog een livebeeld open. Sluit dit en laad de datum opnieuw.", live_stopping: "De vorige live-sessie wordt nog afgesloten. Wacht even en laad de datum opnieuw.", recording_busy: "Er wordt al een opname voorbereid. Wacht even en probeer opnieuw.", recording_expired: "Deze opnamelink is verlopen. Laad de datum opnieuw.", recording_unavailable: "De HomeBase-verbinding is niet beschikbaar. Probeer het zo opnieuw.", closeRecordings: "Opnames sluiten", results: "opnames teruggegeven", homebaseTime: "HomeBase-tijd" },
+  en: { capability_unavailable: "This media operation is unavailable for the camera connection.", videoOnly: "Live video without sound", switching: "Switching to live video without sound…", live: "Watch live", close: "Close live view", connecting: "Connecting…", ended: "Live view ended. Tap again to watch.", unavailable: "Camera unavailable", noSnapshot: "No snapshot received yet", title: "Camera", error: "Live view failed. Tap again to retry.", sound: "Enable sound", mute: "Mute sound", recordings: "Recordings", date: "Date", load: "Show recordings", loading: "Loading HomeBase recordings…", preparing: "Preparing recording…", empty: "No recordings returned for this camera and date.", recordingError: "HomeBase recording unavailable. Load the date again.", live_busy: "A live viewer is still open. Close it and load the date again.", live_stopping: "The previous live session is still stopping. Wait a moment and load the date again.", recording_busy: "Another recording is being prepared. Wait a moment and try again.", recording_expired: "This recording link has expired. Load the date again.", recording_unavailable: "The HomeBase connection is unavailable. Try again shortly.", closeRecordings: "Close recordings", results: "recordings returned", homebaseTime: "HomeBase time" },
+  nl: { capability_unavailable: "Deze mediafunctie is niet beschikbaar voor de cameraverbinding.", videoOnly: "Livebeeld zonder geluid", switching: "Omschakelen naar livebeeld zonder geluid…", live: "Live bekijken", close: "Livebeeld sluiten", connecting: "Verbinden…", ended: "Livebeeld gestopt. Tik opnieuw om te kijken.", unavailable: "Camera niet beschikbaar", noSnapshot: "Nog geen snapshot ontvangen", title: "Camera", error: "Livebeeld mislukt. Tik opnieuw om te proberen.", sound: "Geluid aan", mute: "Geluid uit", recordings: "Opnames", date: "Datum", load: "Opnames tonen", loading: "HomeBase-opnames laden…", preparing: "Opname voorbereiden…", empty: "Geen opnames teruggegeven voor deze camera en datum.", recordingError: "HomeBase-opname niet beschikbaar. Laad de datum opnieuw.", live_busy: "Er staat nog een livebeeld open. Sluit dit en laad de datum opnieuw.", live_stopping: "De vorige live-sessie wordt nog afgesloten. Wacht even en laad de datum opnieuw.", recording_busy: "Er wordt al een opname voorbereid. Wacht even en probeer opnieuw.", recording_expired: "Deze opnamelink is verlopen. Laad de datum opnieuw.", recording_unavailable: "De HomeBase-verbinding is niet beschikbaar. Probeer het zo opnieuw.", closeRecordings: "Opnames sluiten", results: "opnames teruggegeven", homebaseTime: "HomeBase-tijd" },
 };
 
 export class EufyViewerCard extends HTMLElement {
@@ -31,6 +32,10 @@ export class EufyViewerCard extends HTMLElement {
   private _snapshotKey: string | null;
   private _unavailable = false;
   private _startup?: number;
+  private _jpegFallback = false;
+  private _fallbackPending = false;
+  private _fallbackSupported = false;
+  private _rtcSubscription?: number;
   private _observer?: IntersectionObserver;
   private _preview: HTMLButtonElement;
   private _snapshot: HTMLImageElement;
@@ -81,6 +86,7 @@ export class EufyViewerCard extends HTMLElement {
         dialog{border:0;border-radius:16px;padding:0;width:min(960px,94vw);max-width:94vw;background:var(--card-background-color,#fff);color:var(--primary-text-color,#111)}
         dialog::backdrop{background:#000b}.bar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;gap:16px}
         .close{border:0;border-radius:8px;padding:10px 14px;color:inherit;background:var(--secondary-background-color,#eee)}
+        .live-status:not(:empty){padding:0 16px 12px;font-size:14px}
         .record-open{margin-top:12px}.record-filters{display:flex;gap:12px;align-items:end;flex-wrap:wrap;padding:0 16px 12px}.record-filters label{display:grid;gap:5px;font-size:13px}input{font:inherit;padding:8px;border:1px solid var(--divider-color,#aaa);border-radius:8px;background:transparent;color:inherit}
         .record-status{padding:0 16px 12px;font-size:14px}.record-list{max-height:40vh;overflow:auto;padding:0 16px 16px;display:grid;gap:8px}.record-row{text-align:left;min-height:44px}.record-video{width:100%;max-height:45vh;background:#10161e;display:block}.record-dialog{max-height:90vh;overflow:auto}
       </style>
@@ -88,7 +94,7 @@ export class EufyViewerCard extends HTMLElement {
         <button class="preview" type="button"><img class="snapshot" alt="" hidden><span class="empty"></span><span class="play" aria-hidden="true">▶</span></button>
         <div class="capability" role="note"></div><div class="meta"><div class="name"></div><div class="status" role="status" aria-live="polite"></div><button class="close record-open" type="button"></button></div>
       </ha-card>
-      <dialog aria-labelledby="live-title"><div class="bar"><span id="live-title"></span><button class="sound close" type="button" hidden></button><button class="close stop" type="button"></button></div><img class="live" alt=""><video class="live video" playsinline autoplay muted hidden></video></dialog>
+      <dialog aria-labelledby="live-title"><div class="bar"><span id="live-title"></span><button class="sound close" type="button" hidden></button><button class="close stop" type="button"></button></div><div class="live-status" role="status" aria-live="polite"></div><img class="live" alt=""><video class="live video" playsinline autoplay muted hidden></video></dialog>
       <dialog class="record-dialog" aria-labelledby="record-title"><div class="bar"><span id="record-title"></span><button class="close record-close" type="button"></button></div><div class="record-filters"><label><span class="date-label"></span><input type="date" class="record-date"></label><button class="close record-load" type="button"></button></div><div class="record-status" role="status" aria-live="polite"></div><video class="record-video" playsinline controls hidden></video><div class="record-list"></div></dialog>`;
     this._recordDialog = this.shadowRoot!.querySelector<HTMLDialogElement>(".record-dialog")!;
     this._recordVideo = this.shadowRoot!.querySelector<HTMLVideoElement>(".record-video")!;
@@ -252,7 +258,10 @@ export class EufyViewerCard extends HTMLElement {
       this._recordStatus("");
     } catch (error) { if (generation === this._recordGeneration && this._recordDialog.open) { this._clearRecording(); this._recordStatus(this._recordingFailure(error)); } }
   }
-  _status(message: string) { this.shadowRoot!.querySelector<HTMLElement>(".status")!.textContent = message; }
+  _status(message: string) {
+    this.shadowRoot!.querySelector<HTMLElement>(".status")!.textContent = message;
+    this.shadowRoot!.querySelector<HTMLElement>(".live-status")!.textContent = message;
+  }
   _watching(generation: number) { return this._open && generation === this._generation && this.isConnected && this._visible && document.visibilityState === "visible" && this._dialog.open; }
   async _start() {
     if (this._open || this._preview.disabled || !this._hass || !this._config || !this._visible || document.visibilityState !== "visible") return;
@@ -261,6 +270,10 @@ export class EufyViewerCard extends HTMLElement {
     const webrtc = Boolean(this._hass.states[this._config.entity]?.attributes.viewer_webrtc)
       && typeof RTCPeerConnection === "function"
       && typeof this._video.requestVideoFrameCallback === "function";
+    this._jpegFallback = !webrtc;
+    this._fallbackPending = false;
+    this._fallbackSupported = false;
+    this._rtcSubscription = undefined;
     this._live.hidden = webrtc; this._video.hidden = !webrtc; this._sound.hidden = !webrtc;
     this._video.muted = true; this._sound.textContent = this._text().sound;
     this._open = true;
@@ -277,9 +290,18 @@ export class EufyViewerCard extends HTMLElement {
   async _event(event: ViewerEvent, generation: number) {
     if (!this._watching(generation)) return;
     if (event.type === "ended") { this._stop("ended"); return; }
+    if (event.type === "fallback") {
+      this._fallbackPending = false;
+      this._jpegFallback = true;
+      this._closeRTC();
+      this._live.hidden = false; this._video.hidden = true; this._sound.hidden = true;
+      this._status(this._text().videoOnly);
+      return;
+    }
     if (event.type !== "frame") {
+      if (this._jpegFallback || this._fallbackPending) return;
       try { await this._rtcEvent(event, generation); }
-      catch { if (generation === this._generation) this._stop("error"); }
+      catch { if (generation === this._generation) await this._fallback("signaling_error", generation); }
       return;
     }
     let url;
@@ -294,7 +316,7 @@ export class EufyViewerCard extends HTMLElement {
       const old = this._frameUrl;
       this._frameUrl = url; this._live.src = url;
       if (old) URL.revokeObjectURL(old);
-      this._status("");
+      this._status(this._jpegFallback ? this._text().videoOnly : "");
       // A hidden/suspended page does not paint or acknowledge frames.
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       if (!this._watching(generation) || !this._hass) return;
@@ -302,23 +324,46 @@ export class EufyViewerCard extends HTMLElement {
       if (!result.accepted && this._watching(generation)) this._stop("ended");
     } catch { if (url && url !== this._frameUrl) URL.revokeObjectURL(url); if (generation === this._generation) this._stop("error"); }
   }
+  private _closeRTC() {
+    if (this._videoCallback !== undefined) this._video.cancelVideoFrameCallback(this._videoCallback);
+    this._videoCallback = undefined;
+    this._tick = undefined;
+    if (this._rtc) { this._rtc.onconnectionstatechange = null; this._rtc.ontrack = null; this._rtc.close(); }
+    this._rtc = undefined; this._rtcCandidates = [];
+    this._video.pause();
+    (this._video.srcObject as MediaStream | null)?.getTracks().forEach(track => track.stop());
+    this._video.srcObject = null;
+  }
+  private async _fallback(reason: "connection_failed" | "signaling_error" | "playback_error", generation: number) {
+    if (!this._watching(generation) || this._jpegFallback || this._fallbackPending) return;
+    if (!this._fallbackSupported || this._rtcSubscription === undefined) { this._stop("error"); return; }
+    this._fallbackPending = true;
+    this._closeRTC();
+    this._status(this._text().switching);
+    try {
+      const result = await this._hass!.callWS({ type: "eufy_viewer/fallback", subscription: this._rtcSubscription, reason });
+      if (!result.accepted && this._watching(generation) && !this._jpegFallback) this._stop("error");
+    } catch { if (this._watching(generation) && !this._jpegFallback) this._stop("error"); }
+  }
   async _rtcEvent(event: RTCEvent, generation: number) {
     if (event.type === "ready") {
+      this._fallbackSupported = event.fallback === true;
+      this._rtcSubscription = event.subscription;
       if (this._rtc || !this._video.requestVideoFrameCallback) throw new Error("WebRTC unavailable");
       const pc = this._rtc = new RTCPeerConnection({ iceServers: [] });
       pc.addTransceiver("video", { direction: "recvonly" });
       pc.addTransceiver("audio", { direction: "recvonly" });
       const stream = new MediaStream(); this._video.srcObject = stream;
       pc.ontrack = event => {
-        if (!this._watching(generation)) return;
+        if (!this._watching(generation) || this._rtc !== pc) return;
         stream.addTrack(event.track);
-        void this._video.play().catch(() => { if (this._watching(generation)) this._stop("error"); });
+        void this._video.play().catch(() => { if (this._rtc === pc) void this._fallback("playback_error", generation); });
       };
       pc.onconnectionstatechange = () => {
-        if (this._watching(generation) && ["disconnected", "failed", "closed"].includes(pc.connectionState)) this._stop("ended");
+        if (this._rtc === pc && ["disconnected", "failed", "closed"].includes(pc.connectionState)) void this._fallback("connection_failed", generation);
       };
       const offer = await pc.createOffer();
-      if (!this._watching(generation)) return;
+      if (!this._watching(generation) || this._rtc !== pc) return;
       // Gather local candidates before forwarding; HA supplies server candidates.
       await pc.setLocalDescription(offer);
       await new Promise<void>((resolve, reject) => {
@@ -327,15 +372,15 @@ export class EufyViewerCard extends HTMLElement {
         const changed = () => { if (pc.iceGatheringState === "complete") { clearTimeout(timer); pc.removeEventListener("icegatheringstatechange", changed); resolve(); } };
         pc.addEventListener("icegatheringstatechange", changed);
       });
-      if (!this._watching(generation)) return;
+      if (!this._watching(generation) || this._rtc !== pc) return;
       const result = await this._hass!.callWS({ type: "eufy_viewer/signal", subscription: event.subscription, offer: pc.localDescription!.sdp });
       if (!result.accepted) throw new Error("Offer rejected");
-      if (this._watching(generation)) this._painted(generation);
+      if (this._watching(generation) && this._rtc === pc) this._painted(generation);
     } else if (event.type === "answer") {
       const pc = this._rtc;
       if (!pc || pc.remoteDescription) throw new Error("Unexpected answer");
       await pc.setRemoteDescription({ type: "answer", sdp: event.sdp });
-      if (!this._watching(generation)) return;
+      if (!this._watching(generation) || this._rtc !== pc) return;
       for (const candidate of this._rtcCandidates.splice(0)) await pc.addIceCandidate(candidate);
     } else if (event.type === "candidate") {
       if (!this._rtc || event.candidate.length > 2048 || this._rtcCandidates.length >= 64) throw new Error("Invalid candidate");
@@ -349,24 +394,19 @@ export class EufyViewerCard extends HTMLElement {
   }
   _painted(generation: number) {
     this._videoCallback = this._video.requestVideoFrameCallback(() => {
-      if (!this._watching(generation)) return;
+      if (!this._watching(generation) || !this._rtc || this._fallbackPending || this._jpegFallback) return;
       clearTimeout(this._startup); this._status("");
       const tick = this._tick; this._tick = undefined;
       if (tick) void this._hass!.callWS({ type: "eufy_viewer/ack", ...tick }).then(result => {
-        if (!result.accepted && this._watching(generation)) this._stop("ended");
-      }).catch(() => { if (this._watching(generation)) this._stop("error"); });
+        if (!result.accepted && this._watching(generation) && !this._jpegFallback && !this._fallbackPending) this._stop("ended");
+      }).catch(() => { if (this._watching(generation) && !this._jpegFallback && !this._fallbackPending) this._stop("error"); });
       this._painted(generation);
     });
   }
   _stop(reason?: "ended" | "error") {
     this._generation++; this._open = false;
     clearTimeout(this._startup);
-    if (this._videoCallback !== undefined) this._video.cancelVideoFrameCallback(this._videoCallback);
-    this._videoCallback = undefined; this._tick = undefined;
-    this._rtc?.close(); this._rtc = undefined; this._rtcCandidates = [];
-    this._video.pause();
-    const media = this._video.srcObject as MediaStream | null;
-    media?.getTracks().forEach(track => track.stop()); this._video.srcObject = null;
+    this._closeRTC();
     const unsubscribe = this._unsubscribe; this._unsubscribe = null;
     if (unsubscribe) Promise.resolve().then(unsubscribe).catch(() => {});
     if (this._dialog.open) this._dialog.close();

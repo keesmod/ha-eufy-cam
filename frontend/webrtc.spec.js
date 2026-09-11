@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { readFile, mkdtemp, writeFile, rm } from 'node:fs/promises';
-import { spawn } from 'node:child_process';
+import { promisify } from 'node:util';
+import { execFile, spawn } from 'node:child_process';
 import { once, EventEmitter } from 'node:events';
 import { tmpdir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
@@ -11,10 +12,11 @@ import { createBridge } from '../bridge/src/server.ts';
 
 // Real FFmpeg, go2rtc, encrypted WebRTC and decoded audio/video in Chromium.
 // Only Eufy hardware and Home Assistant dispatch are simulated.
-for (const ending of ['close', 'navigation', 'frozen']) test(`real WebRTC audio/video stops after ${ending}`, async ({ page }) => {
+for (const ending of ['close', 'navigation', 'frozen', 'blocked', 'media-loss']) test(`real WebRTC audio/video stops after ${ending}`, async ({ page }, testInfo) => {
   test.setTimeout(60000);
   const binary = process.env.GO2RTC_BINARY;
   test.skip(!binary, 'Set GO2RTC_BINARY for the media acceptance test');
+  const { stdout: jpeg } = await promisify(execFile)('ffmpeg', ['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=green:s=16x16','-frames:v','1','-f','image2pipe','-vcodec','mjpeg','pipe:1'], { encoding: 'buffer' });
   const directory = await mkdtemp(join(tmpdir(), 'eufy-rtc-'));
   const config = join(directory, 'go2rtc.yaml');
   const address = Object.values(networkInterfaces()).flat().find(a => a?.family === 'IPv4' && !a.internal)?.address;
@@ -33,7 +35,7 @@ for (const ending of ['close', 'navigation', 'frozen']) test(`real WebRTC audio/
       video.stderr.resume(); audio.stderr.resume();
       media.start('CAM123','h264',video.stdout,audio.stdout,true,15); hub.started('CAM123');
 
-      ticks=setInterval(()=>hub.frame('CAM123',Buffer.from('tick')),125);
+      ticks=setInterval(()=>hub.frame('CAM123',jpeg),125);
     },
     stop: async()=>{stops++;hub.stopped('CAM123');},
     disposeMedia:()=>{clearInterval(ticks);media.stop('CAM123');video?.kill();audio?.kill();},
@@ -49,10 +51,11 @@ for (const ending of ['close', 'navigation', 'frozen']) test(`real WebRTC audio/
     await page.goto(bridgeUrl+'/fixture');
     const source=await readFile(new URL('../custom_components/eufy_viewer/frontend/eufy-viewer-card.js',import.meta.url),'utf8');
     await page.addScriptTag({content:source,type:'module'});
-    let sequence=0;
+    let sequence=0, jpegMode=false;
     await page.exposeFunction('backendWatch',async()=>{
       cameraWs=new WebSocket(bridgeUrl+'/v1/live/CAM123?transport=webrtc',{headers:{Authorization:'Bearer '+'x'.repeat(32)}});
-      cameraWs.on('message',async raw=>{
+      cameraWs.on('message',async (raw,binary)=>{
+        if(binary) { await deliver({type:'frame',subscription:1,sequence:++sequence,jpeg:raw.toString('base64')}); return; }
         const message=JSON.parse(raw.toString());
         if(message.type==='ready') {
           const query=new URLSearchParams({name:'acceptance'});
@@ -61,18 +64,29 @@ for (const ending of ['close', 'navigation', 'frozen']) test(`real WebRTC audio/
           signaling=new WebSocket(goUrl+'/api/ws?src=acceptance');
           signaling.on('message',raw=>{
             const message=JSON.parse(raw.toString());
-            if(message.type==='webrtc'&&message.value.type==='answer')void deliver({type:'answer',sdp:message.value.sdp});
-            else if(message.type==='webrtc/candidate')void deliver({type:'candidate',candidate:message.value});
+            if(message.type==='webrtc'&&message.value.type==='answer')void deliver({type:'answer',sdp:ending==='blocked'?message.value.sdp.replaceAll(address,'192.0.2.1'):message.value.sdp});
+            else if(message.type==='webrtc/candidate')void deliver({type:'candidate',candidate:ending==='blocked'?message.value.replaceAll(address,'192.0.2.1'):message.value});
             else if(message.type==='error'){console.error('go2rtc fixture:',message.value);void deliver({type:'ended'});}
           });
-          await once(signaling,'open');await deliver({type:'ready',subscription:1});
+          await once(signaling,'open');await deliver({type:'ready',subscription:1,fallback:message.fallback});
+        } else if(message.type==='fallback') {
+          jpegMode=true;
+          signaling?.close();
+          void fetch(goUrl+'/api/streams?src=acceptance',{method:'DELETE'}).catch(()=>{});
+          await deliver({type:'fallback'});
         } else if(message.type==='tick')await deliver({type:'tick',subscription:1,sequence:++sequence});
       });
       await once(cameraWs,'open');
     });
     await page.exposeFunction('backendCall',async message=>{
-      if(message.type==='eufy_viewer/ack'){acks++;cameraWs.send('ack');}
-      else if(message.offer){signaling.send(JSON.stringify({type:'webrtc',value:{type:'offer',sdp:message.offer,ice_servers:[]}}));}
+      if(message.type==='eufy_viewer/ack'){acks++;cameraWs.send(jpegMode?'ack:jpeg':'ack');}
+      else if(message.type==='eufy_viewer/fallback')cameraWs.send('fallback:'+message.reason);
+      else if(message.offer){
+        // Model a remote browser whose advertised media address is unreachable.
+        // Both directions are replaced, so peer-reflexive ICE cannot bridge the fixture.
+        const offer=ending==='blocked'?message.offer.replace(/(a=candidate:[^\r\n]*? )(?:[0-9.]+|[a-zA-Z0-9-]+\.local)( \d+ typ)/g,'$1192.0.2.2$2'):message.offer;
+        signaling.send(JSON.stringify({type:'webrtc',value:{type:'offer',sdp:offer,ice_servers:[]}}));
+      }
       return{accepted:true};
     });
     await page.exposeFunction('backendClose',()=>{signaling?.close();cameraWs?.close();});
@@ -85,12 +99,25 @@ for (const ending of ['close', 'navigation', 'frozen']) test(`real WebRTC audio/
     });
     expect(starts).toBe(0);
     await page.getByRole('button',{name:'Watch live',exact:true}).click();
+    if(ending!=='blocked') {
     await expect.poll(()=>page.locator('video.video').evaluate(v=>v.videoWidth),{timeout:20000}).toBe(1280);
     await page.getByRole('button',{name:'Enable sound',exact:true}).click();
     expect(await page.locator('video.video').evaluate(v=>v.muted)).toBe(false);
     await expect.poll(()=>page.evaluate(async()=>[...(await card._rtc?.getStats())?.values()??[]].some(s=>s.type==='inbound-rtp'&&s.kind==='audio'&&s.packetsReceived>0&&s.totalAudioEnergy>0)),{timeout:10000}).toBe(true);
     await expect.poll(()=>acks).toBeGreaterThan(2);
-    if (ending === 'close') await page.getByRole('button',{name:'Close live view',exact:true}).click();
+    }
+    if(ending==='blocked'||ending==='media-loss') {
+      const beforeFallbackAcks=acks;
+      if(ending==='media-loss')rtc.kill();
+      await expect(page.locator('dialog .live-status')).toHaveText('Live video without sound',{timeout:20000});
+      await expect(page.locator('img.live')).toBeVisible();
+      await expect.poll(()=>page.locator('img.live').evaluate(v=>v.naturalWidth)).toBe(16);
+      await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeHidden();
+      await expect.poll(()=>acks).toBeGreaterThan(beforeFallbackAcks+3);
+      expect(starts).toBe(1); expect(stops).toBe(0);
+      await page.screenshot({path:testInfo.outputPath('jpeg-fallback.png')});
+      await page.getByRole('button',{name:'Close live view',exact:true}).click();
+    } else if (ending === 'close') await page.getByRole('button',{name:'Close live view',exact:true}).click();
     else if (ending === 'navigation') await page.goto('about:blank');
     else {
       await page.evaluate(() => card._video.cancelVideoFrameCallback(card._videoCallback));

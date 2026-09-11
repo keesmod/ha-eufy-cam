@@ -49,14 +49,21 @@ export class StreamHub {
     return true;
   }
 
-  ack(serial: string, peer: Peer): void {
+  remaining(serial: string, peer: Peer): number {
+    const camera = this.cameras.get(serial);
+    const viewer = camera?.viewers.get(peer);
+    return camera?.phase !== 'stopping' && viewer ? Math.max(0, viewer.deadline - this.now()) : 0;
+  }
+
+  ack(serial: string, peer: Peer): boolean {
     const viewer = this.cameras.get(serial)?.viewers.get(peer);
     // A heartbeat without a delivered frame MUST NOT keep a camera awake.
-    if (!viewer?.outstanding) return;
-    if (viewer.deadline <= this.now()) { this.control.diagnostic?.(serial, "viewer_timeout"); this.detach(serial, peer); return; }
+    if (!viewer?.outstanding) return false;
+    if (viewer.deadline <= this.now()) { this.control.diagnostic?.(serial, "viewer_timeout"); this.detach(serial, peer); return false; }
     this.control.diagnostic?.(serial, "frame_ack");
     viewer.outstanding = false;
     viewer.deadline = this.now() + 10_000;
+    return true;
   }
 
   frame(serial: string, frame: Buffer): void {
