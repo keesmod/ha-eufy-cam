@@ -51,14 +51,21 @@ Enter the bridge token at the hidden prompt. The helper saves the device list,
 waits while you back up and update the bridge, then transfers the list automatically.
 Use your actual bridge address. Do not share the generated private inventory file.
 
+## Older or other integrations
+
+A bridge under **Local apps** is a separate installation and is not updated by
+the repository app. Keep its existing private data and token when moving it.
+See [support](../.github/SUPPORT.md) for older installations. Migration from a
+different Eufy integration follows the [alarm migration checklist](ALARM_MIGRATION_2026-09-06.md#moving-from-another-eufy-integration).
+
 ## Support limits
 
-The previous hardware rehearsal covers T8160 firmware 3.4.3.0 and T8213 firmware
-0.2.1.8 through T8030 firmware 3.8.6.0. Acceptance of the new 0.8.0 build remains
-tracked in [#31](https://github.com/keesmod/ha-eufy-cam/issues/31) until completed.
+The 0.8.0 hardware rehearsal covers T8160 firmware 3.4.3.0 and T8213 firmware
+0.2.1.8 through T8030 firmware 3.8.6.0. Its completed acceptance is recorded in
+[#31](https://github.com/keesmod/ha-eufy-cam/issues/31).
 T8134 live playback and recovery remain open in [#10](https://github.com/keesmod/ha-eufy-cam/issues/10).
 Check the [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md)
 before migrating other models. Recognition alone does not prove support.
 
-Technical evidence and remaining security gates are in [#24](https://github.com/keesmod/ha-eufy-cam/issues/24).
+Technical evidence and the accepted security limitation are recorded in [#24](https://github.com/keesmod/ha-eufy-cam/issues/24).
 An unpublished candidate or green software CI is not hardware acceptance.
