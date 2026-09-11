@@ -18,7 +18,9 @@ from .const import DOMAIN
 from .coordinator import EufyCoordinator
 
 
-def camera_access(request: web.Request, entity_id: str) -> tuple[EufyCoordinator, str]:
+def camera_access(
+    request: web.Request, entity_id: str, *, require_recordings: bool = True
+) -> tuple[EufyCoordinator, str]:
     """Resolve the current owner only after checking the caller permission."""
     hass = request.app[KEY_HASS]
     if not request[KEY_HASS_USER].permissions.check_entity(entity_id, POLICY_READ):
@@ -46,7 +48,9 @@ def camera_access(request: web.Request, entity_id: str) -> tuple[EufyCoordinator
         or coordinator.data.auth != "connected"
     ):
         raise web.HTTPServiceUnavailable
-    if not coordinator.data.cameras[serial].permits("recordings"):
+    if require_recordings and not coordinator.data.cameras[serial].permits(
+        "recordings"
+    ):
         raise web.HTTPServiceUnavailable(
             text='{"error":"capability_unavailable"}', content_type="application/json"
         )
@@ -173,7 +177,7 @@ class EventsView(HomeAssistantView):
                     )
                     if calendar_entity is None:
                         raise web.HTTPForbidden
-                    camera_access(request, calendar_entity)
+                    camera_access(request, calendar_entity, require_recordings=False)
 
         async def fetch() -> dict[str, Any]:
             days: set[str] = set()
