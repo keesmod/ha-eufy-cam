@@ -115,25 +115,58 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         changed(); return;
       }
       const serial = live![1]!;
-      const webrtc = new URL(request.url ?? "/", "http://bridge").searchParams.get("transport") === "webrtc";
+      let webrtc = new URL(request.url ?? "/", "http://bridge").searchParams.get("transport") === "webrtc";
       const grant = webrtc ? eufy.media.grant(serial) : null;
       let ready = false;
+      let downgraded = false;
+      let pendingFrame: Buffer | undefined;
+      let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
+      const fallback = (reason: 'startup_timeout' | 'playback_timeout' | 'connection_failed' | 'signaling_error' | 'playback_error') => {
+        if (!webrtc || ws.readyState !== WebSocket.OPEN) return;
+        webrtc = false;
+        downgraded = true;
+        clearTimeout(fallbackTimer);
+        if (grant) eufy.media.revoke(grant);
+        eufy.diagnostics?.mark(serial, `fallback_${reason}`);
+        ws.send(JSON.stringify({ type: 'fallback', reason }));
+        // Re-deliver the outstanding frame in JPEG form. This is NOT an ack and
+        // does not extend the lease, reset its lifetime or start another camera.
+        if (pendingFrame) ws.send(pendingFrame, { binary: true });
+        pendingFrame = undefined;
+      };
+      const scheduleFallback = (delay: number, reason: 'startup_timeout' | 'playback_timeout') => {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = setTimeout(() => fallback(reason), delay);
+        fallbackTimer.unref();
+      };
       const peer: Peer = {
         send: frame => {
           if (!webrtc) { ws.send(frame, { binary: true }); return; }
+          pendingFrame = frame;
           if (!ready) {
             ready = true;
             // The encoder has the actual stream metadata before its first frame.
-            ws.send(JSON.stringify({ type: "ready", path: `/v1/media/${grant}`, audio: eufy.media.audioSupported(serial) }));
+            ws.send(JSON.stringify({ type: "ready", path: `/v1/media/${grant}`, audio: eufy.media.audioSupported(serial), fallback: true, fallback_after_ms: Math.max(1, Math.ceil(eufy.hub.remaining(serial, peer) - 5000)) }));
           }
           ws.send(JSON.stringify({ type: "tick" }));
         },
-        close: (code, reason) => { ws.close(code, reason); setTimeout(() => ws.terminate(), 500).unref(); },
+        close: (code, reason) => { clearTimeout(fallbackTimer); pendingFrame = undefined; ws.close(code, reason); setTimeout(() => ws.terminate(), 500).unref(); },
         get bufferedAmount() { return ws.bufferedAmount; },
       };
-      ws.on("close", () => { if (grant) eufy.media.revoke(grant); eufy.hub.detach(serial, peer); });
-      ws.on("message", (data, binary) => { if (!binary && data.toString() === "ack") eufy.hub.ack(serial, peer); else ws.close(1008, "Invalid acknowledgement"); });
-      eufy.hub.attach(serial, peer);
+      ws.on("close", () => { clearTimeout(fallbackTimer); pendingFrame = undefined; if (grant) eufy.media.revoke(grant); eufy.hub.detach(serial, peer); });
+      ws.on("message", (data, binary) => {
+        const command = binary ? '' : data.toString();
+        if (command === 'ack' && downgraded) return; // Ignore in-flight WebRTC acknowledgements.
+        if (command === 'ack' || command === 'ack:jpeg' && downgraded) {
+          if (eufy.hub.ack(serial, peer)) {
+            pendingFrame = undefined;
+            if (webrtc) scheduleFallback(6000, 'playback_timeout');
+          }
+        } else if (command === 'fallback:connection_failed' || command === 'fallback:signaling_error' || command === 'fallback:playback_error') {
+          fallback(command.slice(9) as 'connection_failed' | 'signaling_error' | 'playback_error');
+        } else ws.close(1008, "Invalid acknowledgement");
+      });
+      if (eufy.hub.attach(serial, peer) && webrtc) scheduleFallback(Math.max(0, eufy.hub.remaining(serial, peer) - 5000), 'startup_timeout');
     });
   });
   const watchdog = setInterval(() => eufy.hub.tick(), 250);

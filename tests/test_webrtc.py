@@ -255,3 +255,142 @@ async def test_invalid_audio_capability_cannot_register_stream(
     await viewer.task
     rest.streams.add.assert_not_called()
     await client.close()
+
+
+@pytest.mark.parametrize(
+    "reason", ["connection_failed", "signaling_error", "playback_error"]
+)
+async def test_fallback_keeps_same_socket_and_rejects_other_owner(
+    hass, hass_ws_client, rtc_setup, caplog, reason
+):
+    socket, rest, session, connect = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client)
+    await socket.queue.put(
+        SimpleNamespace(
+            type=aiohttp.WSMsgType.TEXT,
+            data=json.dumps(
+                {
+                    "type": "ready",
+                    "path": "/v1/media/" + "a" * 64,
+                    "audio": True,
+                    "fallback": True,
+                }
+            ),
+        )
+    )
+    assert (await client.receive_json())["event"]["fallback"]
+    await socket.queue.put(
+        SimpleNamespace(type=aiohttp.WSMsgType.TEXT, data='{"type":"tick"}')
+    )
+    assert (await client.receive_json())["event"]["sequence"] == 1
+    other = await hass_ws_client(hass)
+    await other.send_json(
+        {"id": 1, "type": "eufy_viewer/fallback", "subscription": 1, "reason": reason}
+    )
+    assert not (await other.receive_json())["result"]["accepted"]
+    assert not socket.acks
+    await client.send_json(
+        {"id": 2, "type": "eufy_viewer/fallback", "subscription": 1, "reason": reason}
+    )
+    assert (await client.receive_json())["result"]["accepted"]
+    assert socket.acks == ["fallback:" + reason]
+    assert await viewer.fallback(reason)  # Duplicate requests never send twice.
+    assert socket.acks == ["fallback:" + reason]
+    await socket.queue.put(
+        SimpleNamespace(
+            type=aiohttp.WSMsgType.TEXT,
+            data=json.dumps({"type": "fallback", "reason": reason}),
+        )
+    )
+    assert (await client.receive_json())["event"] == {"type": "fallback"}
+    frame = b"\xff\xd8\xff\xd9"
+    await socket.queue.put(SimpleNamespace(type=aiohttp.WSMsgType.BINARY, data=frame))
+    event = (await client.receive_json())["event"]
+    assert event["type"] == "frame" and event["sequence"] == 2
+    assert not await viewer.ack(1)  # A stale WebRTC ACK cannot consume this frame.
+    assert await viewer.ack(2)
+    assert socket.acks == ["fallback:" + reason, "ack:jpeg"]
+    connect.assert_awaited_once()
+    assert not socket.closed.is_set()
+    assert not await viewer.signal("late-offer", None)
+    await client.close()
+    await hass.async_block_till_done()
+    assert socket.closed.is_set()
+    assert len(session.deleted) == 1
+    assert reason in caplog.text
+    assert "a" * 64 not in caplog.text
+
+
+async def test_bridge_startup_fallback_before_ready(hass, hass_ws_client, rtc_setup):
+    socket, rest, _, connect = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client)
+    await socket.queue.put(
+        SimpleNamespace(
+            type=aiohttp.WSMsgType.TEXT,
+            data='{"type":"fallback","reason":"startup_timeout"}',
+        )
+    )
+    assert (await client.receive_json())["event"]["type"] == "fallback"
+    await socket.queue.put(SimpleNamespace(type=aiohttp.WSMsgType.BINARY, data=b"jpeg"))
+    assert (await client.receive_json())["event"]["type"] == "frame"
+    assert not socket.acks
+    rest.streams.add.assert_not_awaited()
+    connect.assert_awaited_once()
+    await client.close()
+
+
+async def test_signaling_error_uses_supported_fallback(hass, hass_ws_client, rtc_setup):
+    socket, _, _, connect = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client)
+    await ready(client, socket)
+    viewer.fallback_supported = True
+    viewer._message(WsError("PRIVATE URL AND TOKEN"))
+    await hass.async_block_till_done()
+    assert socket.acks == ["fallback:signaling_error"]
+    assert not viewer.closed
+    connect.assert_awaited_once()
+    await client.close()
+
+
+async def test_stalled_go2rtc_setup_cannot_consume_fallback_budget(
+    hass, hass_ws_client, rtc_setup
+):
+    socket, rest, _, connect = rtc_setup
+    cancelled = asyncio.Event()
+
+    async def stall(*_args):
+        try:
+            await asyncio.Future()
+        finally:
+            cancelled.set()
+
+    rest.streams.add.side_effect = stall
+    client, viewer = await open_viewer(hass, hass_ws_client)
+    await socket.queue.put(
+        SimpleNamespace(
+            type=aiohttp.WSMsgType.TEXT,
+            data=json.dumps(
+                {
+                    "type": "ready",
+                    "path": "/v1/media/" + "a" * 64,
+                    "fallback": True,
+                    "fallback_after_ms": 10,
+                }
+            ),
+        )
+    )
+    await asyncio.wait_for(cancelled.wait(), 1)
+    await hass.async_block_till_done()
+    assert socket.acks == ["fallback:signaling_error"]
+    await socket.queue.put(
+        SimpleNamespace(
+            type=aiohttp.WSMsgType.TEXT,
+            data='{"type":"fallback","reason":"startup_timeout"}',
+        )
+    )
+    assert (await client.receive_json())["event"]["type"] == "fallback"
+    await socket.queue.put(SimpleNamespace(type=aiohttp.WSMsgType.BINARY, data=b"jpeg"))
+    assert (await client.receive_json())["event"]["type"] == "frame"
+    connect.assert_awaited_once()
+    assert not viewer.closed
+    await client.close()

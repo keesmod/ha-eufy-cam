@@ -41,6 +41,7 @@ class Viewer:
         self.closed = False
         self.pending = False
         self.sequence = 0
+        self.ack_command = "ack"
 
     @callback
     def cancel(self) -> None:
@@ -114,7 +115,7 @@ class Viewer:
             return False
         self.pending = False
         try:
-            await self.socket.send_str("ack")
+            await self.socket.send_str(self.ack_command)
         except aiohttp.ClientError, ConnectionError:
             self.cancel()
             return False
@@ -236,9 +237,35 @@ async def websocket_signal(
     connection.send_result(msg["id"], {"accepted": accepted})
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eufy_viewer/fallback",
+        vol.Required("subscription"): vol.All(int, vol.Range(min=1)),
+        vol.Required("reason"): vol.In(
+            ["connection_failed", "signaling_error", "playback_error"]
+        ),
+    }
+)
+@websocket_api.async_response
+async def websocket_fallback(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Only the owning authorized connection can downgrade its live transport."""
+    from .webrtc import WebRTCViewer
+
+    viewer = hass.data[DOMAIN]["viewers"].get((connection, msg["subscription"]))
+    accepted = bool(
+        isinstance(viewer, WebRTCViewer)
+        and connection.user.permissions.check_entity(viewer.entity_id, POLICY_READ)
+        and await viewer.fallback(msg["reason"])
+    )
+    connection.send_result(msg["id"], {"accepted": accepted})
+
+
 @callback
 def async_register_commands(hass: HomeAssistant) -> None:
     """Register authenticated commands once per HA process."""
     websocket_api.async_register_command(hass, websocket_watch)
     websocket_api.async_register_command(hass, websocket_ack)
     websocket_api.async_register_command(hass, websocket_signal)
+    websocket_api.async_register_command(hass, websocket_fallback)
