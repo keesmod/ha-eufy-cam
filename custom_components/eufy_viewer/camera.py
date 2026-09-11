@@ -51,6 +51,7 @@ class EufyCamera(EufyEntity, Camera):
             "snapshot_received_at": self.info.snapshot_received_at
             if self.info
             else None,
+            "capabilities": self.info.capabilities if self.info else {},
             "viewer_card": True,
             "viewer_webrtc": self.coordinator.data.webrtc,
         }
@@ -59,7 +60,7 @@ class EufyCamera(EufyEntity, Camera):
         self, width: int | None = None, height: int | None = None
     ) -> bytes | None:
         """Retrieve only the bridge's latest cached picture."""
-        if not self.available:
+        if not self.available or (self.info and not self.info.permits("snapshot")):
             return None
         try:
             image = await self.coordinator.api.snapshot(self.serial)

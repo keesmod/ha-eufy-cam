@@ -39,6 +39,7 @@ async def check_recording_error(response: aiohttp.ClientResponse) -> None:
         "recording_expired": 410,
         "history_incomplete": 503,
         "thumbnail_unavailable": 503,
+        "capability_unavailable": 503,
     }
     if isinstance(code, str) and statuses.get(code) == response.status:
         raise BridgeRecordingError(code, response.status)
@@ -59,6 +60,34 @@ class CameraInfo:
     software: str
     battery: float | None
     snapshot_received_at: str | None
+    capabilities: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def permits(self, feature: str) -> bool:
+        """Preserve older bridges while honoring explicit software admission."""
+        return self.capabilities.get(feature, {}).get("available") is not False
+
+    def capability_reason(self, feature: str) -> str:
+        """Only display validated capability reasons."""
+        reason = self.capabilities.get(feature, {}).get("reason")
+        return {
+            "standalone_transport_unverified": (
+                "Standalone camera transport is not implemented"
+            ),
+            "camera_media_unverified": (
+                "Media is unverified for this camera and owner firmware"
+            ),
+            "unsupported_station": "This connection owner is unsupported",
+            "invalid_connection_credentials": (
+                "The connection owner has no usable local credentials"
+            ),
+            "invalid_device_relationship": "The camera connection owner is invalid",
+            "device_initialization_failed": (
+                "The camera or connection owner could not initialize"
+            ),
+        }.get(
+            reason if isinstance(reason, str) else "",
+            "This media operation is unavailable",
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,8 +159,47 @@ class BridgeState:
                 received = item["snapshot_received_at"]
                 if received is not None and not isinstance(received, str):
                     raise ValueError
+                capabilities = {}
+                raw_capabilities = item.get("capabilities", {})
+                if not isinstance(raw_capabilities, dict):
+                    raise ValueError
+                for feature in ("snapshot", "live", "recordings"):
+                    if feature not in raw_capabilities:
+                        continue
+                    raw = raw_capabilities[feature]
+                    if (
+                        not isinstance(raw, dict)
+                        or type(raw.get("available")) is not bool
+                    ):
+                        raise ValueError
+                    status = raw.get("status")
+                    reason = raw.get("reason")
+                    capabilities[feature] = {
+                        "available": raw["available"],
+                        "status": status
+                        if status in ("experimental", "unsupported")
+                        else "unknown",
+                        "reason": reason
+                        if reason
+                        in {
+                            "standalone_transport_unverified",
+                            "camera_media_unverified",
+                            "unsupported_station",
+                            "invalid_connection_credentials",
+                            "invalid_device_relationship",
+                            "device_initialization_failed",
+                            "unknown_camera",
+                            "unknown_station",
+                        }
+                        else None,
+                    }
                 cameras[serial] = CameraInfo(
-                    **{key: item[key] for key in CameraInfo.__dataclass_fields__}
+                    **{
+                        key: item[key]
+                        for key in CameraInfo.__dataclass_fields__
+                        if key != "capabilities"
+                    },
+                    capabilities=capabilities,
                 )
             stations = {}
             items = data.get("stations", [])

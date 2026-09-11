@@ -10,7 +10,7 @@ import {
 } from '@keesmod/eufy-mega-client';
 import { Storage } from './storage.js';
 import { MegaRecordings } from './mega-recordings.js';
-import { StationError } from './errors.js';
+import { RecordingError, StationError } from './errors.js';
 import type {
   Backend,
   BackendStations,
@@ -18,6 +18,7 @@ import type {
   LoginOptions,
   AuthState,
   CameraInfo,
+  CameraCapabilities,
   LiveMedia,
   Picture,
   StationInfo,
@@ -29,7 +30,11 @@ const authState = (state: MegaAuth): AuthState => {
     case 'connected':
       return { state: 'connected' };
     case 'captcha_required':
-      return { state: 'captcha', captcha: state.image, captchaId: state.captchaId };
+      return {
+        state: 'captcha',
+        captcha: state.image,
+        captchaId: state.captchaId,
+      };
     case 'verification_required':
       return { state: 'verify' };
     default:
@@ -97,6 +102,7 @@ class MegaStations implements BackendStations {
 export class MegaBackend extends EventEmitter implements Backend {
   private client?: EufyMegaClient;
   private devices = new Map<string, Device>();
+  private capabilities = new Map<string, CameraCapabilities>();
   private stationStates = new Map<string, StationState>();
   private streams = new Map<
     string,
@@ -121,6 +127,11 @@ export class MegaBackend extends EventEmitter implements Backend {
       () => this.client,
       () => [...this.devices.values()],
       liveBusy,
+      async (serial) => {
+        const capabilities = await this.client!.getCameraCapabilities(serial);
+        if (!capabilities.recordings.available)
+          throw new RecordingError('capability_unavailable', 503);
+      },
     );
     this.stations = new MegaStations(
       () => this.client,
@@ -171,7 +182,10 @@ export class MegaBackend extends EventEmitter implements Backend {
     const answer = options?.verifyCode
       ? { verifyCode: options.verifyCode }
       : options?.captcha
-        ? { captchaId: options.captcha.captchaId, answer: options.captcha.captchaCode }
+        ? {
+            captchaId: options.captcha.captchaId,
+            answer: options.captcha.captchaCode,
+          }
         : undefined;
     let authenticated: AuthState;
     try {
@@ -215,9 +229,26 @@ export class MegaBackend extends EventEmitter implements Backend {
         this.emit('camera-removed', device.id);
       }
     this.devices = next;
+    this.capabilities.clear();
+    for (const device of devices.filter((d) => d.kind === 'camera'))
+      this.capabilities.set(device.id, await client.getCameraCapabilities(device.id));
     for (const station of devices.filter((d) => d.kind === 'station')) {
-      await client.connectStation(station.id);
-      this.stationStates.set(station.id, await client.refreshStationState(station.id));
+      try {
+        await client.connectStation(station.id);
+        this.stationStates.set(station.id, await client.refreshStationState(station.id));
+      } catch (error) {
+        this.stationStates.set(station.id, {
+          id: station.id,
+          connected: false,
+          guardMode: null,
+          currentMode: null,
+          alarm: false,
+          alarmDelay: 0,
+          armDelay: 0,
+          commandEncryption: null,
+        });
+        this.emit('backend_fault', error instanceof EufyError ? error.code : 'connection_failed');
+      }
     }
     // HomeBase connection already requests existing cover images. This does not
     // start cameras or manufacture a new snapshot by briefly opening live video.
@@ -250,6 +281,19 @@ export class MegaBackend extends EventEmitter implements Backend {
       this.refreshing = false;
     }
   }
+  private async refreshCapabilities(id: string): Promise<void> {
+    const client = this.client;
+    if (!client) return;
+    try {
+      const capabilities = await client.getCameraCapabilities(id);
+      if (!this.closed && this.client === client && this.devices.has(id)) {
+        this.capabilities.set(id, capabilities);
+        this.emit('change');
+      }
+    } catch {
+      // Preserve the last software admission. Operations recheck the client guard.
+    }
+  }
   private bind(client: EufyMegaClient): void {
     client.on('auth', (state) => {
       if (state.state !== 'connected' || this.ready) this.auth = authState(state);
@@ -258,6 +302,7 @@ export class MegaBackend extends EventEmitter implements Backend {
     client.on('device', (device) => {
       if (this.devices.has(device.id)) {
         this.devices.set(device.id, device);
+        if (device.kind === 'camera') void this.refreshCapabilities(device.id);
         this.emit('change');
       }
     });
@@ -279,7 +324,10 @@ export class MegaBackend extends EventEmitter implements Backend {
       // Established handles already deliver their result through handle.ended.
       const owned = this.streams.get(result.deviceId);
       if (owned && !owned.handle)
-        this.emit('live-stop', { serial: result.deviceId, confirmed: result.confirmed });
+        this.emit('live-stop', {
+          serial: result.deviceId,
+          confirmed: result.confirmed,
+        });
     });
     client.on('event', (event) => {
       this.emit('notification', {
@@ -300,6 +348,7 @@ export class MegaBackend extends EventEmitter implements Backend {
     );
   }
   canStartLive(serial: string): boolean {
+    if (!this.capabilities.get(serial)?.live.available) return false;
     const station = this.devices.get(serial)?.stationId;
     return (
       !!station &&
@@ -309,8 +358,17 @@ export class MegaBackend extends EventEmitter implements Backend {
   async startLive(serial: string): Promise<void> {
     if (!this.client || !this.hasCamera(serial) || this.streams.has(serial))
       throw new Error('Camera unavailable');
+    const client = this.client;
+    const capability = (await client.getCameraCapabilities(serial)).live;
+    if (this.closed || this.client !== client || this.streams.has(serial))
+      throw new Error('Camera unavailable');
+    if (!capability.available) throw new Error(capability.reason ?? 'capability_unavailable');
     const abort = new AbortController();
-    const owned: { abort: AbortController; handle?: LiveStream; starting: Promise<void> } = {
+    const owned: {
+      abort: AbortController;
+      handle?: LiveStream;
+      starting: Promise<void>;
+    } = {
       abort,
       starting: Promise.resolve(),
     };
@@ -374,6 +432,7 @@ export class MegaBackend extends EventEmitter implements Backend {
         hardware: d.hardware ?? '',
         software: d.firmware ?? '',
         battery: d.battery,
+        capabilities: this.capabilities.get(d.id),
         snapshot_received_at: this.pictures.get(d.id)?.received ?? null,
       }));
   }

@@ -209,3 +209,36 @@ async def test_recording_errors_allowlist(aiohttp_server, socket_enabled, code, 
             else:
                 assert not isinstance(error.value, BridgeRecordingError)
                 assert "secret" not in str(error.value)
+
+
+def test_capabilities_are_optional_and_unknown_fields_are_ignored():
+    data = copy.deepcopy(STATE)
+    data["cameras"][0]["future_optional"] = {"anything": True}
+    assert BridgeState.parse(data).cameras["CAM123"].permits("live")
+    data["cameras"][0]["capabilities"] = {
+        "live": {
+            "available": False,
+            "status": "future",
+            "reason": "standalone_transport_unverified",
+            "private_extra": "discard",
+        },
+        "future_feature": {"anything": True},
+    }
+    camera = BridgeState.parse(data).cameras["CAM123"]
+    assert not camera.permits("live")
+    assert camera.permits("snapshot")
+    assert (
+        camera.capability_reason("live")
+        == "Standalone camera transport is not implemented"
+    )
+    assert camera.capability_reason("snapshot") == "This media operation is unavailable"
+    assert camera.capabilities["live"]["status"] == "unknown"
+    assert "discard" not in str(camera.capabilities)
+    data["cameras"][0]["capabilities"]["live"]["reason"] = "secret upstream detail"
+    assert (
+        BridgeState.parse(data).cameras["CAM123"].capabilities["live"]["reason"] is None
+    )
+    for value in ([], {"live": []}, {"live": {"available": "false"}}):
+        data["cameras"][0]["capabilities"] = value
+        with pytest.raises(BridgeError):
+            BridgeState.parse(data)

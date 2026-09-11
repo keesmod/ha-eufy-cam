@@ -1,4 +1,4 @@
-interface EventCamera { state: string; attributes: { viewer_card?: boolean; friendly_name?: string } }
+interface EventCamera { state: string; attributes: { capabilities?: Record<string, { available: boolean }>; viewer_card?: boolean; friendly_name?: string } }
 interface EventsHA { language: string; states: Record<string, EventCamera>; connection: EventTarget; fetchWithAuth(path: string, init?: RequestInit): Promise<Response> }
 interface EventsConfig { entities?: string[]; title?: string }
 interface StoredEvent { entity_id: string; id: string; start: string; end: string; thumbnail: boolean }
@@ -27,9 +27,9 @@ export class EufyEventsCard extends HTMLElement {
   private leave = () => this.stop();
   private q<T extends HTMLElement>(selector: string) { return this.shadowRoot!.querySelector<T>(selector)!; }
   private get text() { return EVENTS_TEXT[this.ha?.language?.startsWith('nl') ? 'nl' : 'en']; }
-  private cameras() { return Object.keys(this.ha?.states ?? {}).filter(id => id.startsWith('camera.') && this.ha!.states[id].attributes.viewer_card && (!this.config.entities || this.config.entities.includes(id))).sort(); }
+  private cameras() { return Object.keys(this.ha?.states ?? {}).filter(id => id.startsWith('camera.') && this.ha!.states[id].attributes.viewer_card && this.ha!.states[id].attributes.capabilities?.recordings?.available !== false && (!this.config.entities || this.config.entities.includes(id))).sort(); }
   private name(id: string) { return this.ha?.states[id]?.attributes.friendly_name ?? id; }
-  private filtered() { const camera = this.q<HTMLSelectElement>('.camera').value; return this.records.filter(r => !camera || r.entity_id === camera); }
+  private filtered() { const camera = this.q<HTMLSelectElement>('.camera').value; return this.records.filter(r => this.cameras().includes(r.entity_id) && (!camera || r.entity_id === camera)); }
   static getStubConfig() { return {}; }
   getCardSize() { return 8; }
   getGridOptions() { return { columns: 12, rows: 'auto', min_columns: 6 }; }
@@ -64,7 +64,10 @@ export class EufyEventsCard extends HTMLElement {
   }
   set hass(value: EventsHA) {
     if (this.ha?.connection !== value.connection) { this.stop(); this.ha?.connection.removeEventListener('disconnected',this.leave); if(this.isConnected)value.connection.addEventListener('disconnected',this.leave); }
-    this.ha=value; this.labels();
+    const previous = this.cameras();
+    this.ha=value;
+    if (previous.some(id => !this.cameras().includes(id))) this.stop();
+    this.labels();
   }
   connectedCallback() {
     document.addEventListener('visibilitychange',this.visibilityChanged);window.addEventListener('pagehide',this.leave);this.ha?.connection.addEventListener('disconnected',this.leave);
@@ -77,6 +80,7 @@ export class EufyEventsCard extends HTMLElement {
     const cameras=this.cameras(), key=JSON.stringify(cameras.map(id=>[id,this.name(id)]))+this.text.all;
     if(key!==this.cameraKey){this.cameraKey=key;const select=this.q<HTMLSelectElement>('.camera'), selected=select.value;select.replaceChildren();for(const id of ['',...cameras]){const option=document.createElement('option');option.value=id;option.textContent=id?this.name(id):this.text.all;select.append(option);}select.value=cameras.includes(selected)?selected:'';}
     this.q<HTMLButtonElement>('.show').disabled=!cameras.length;
+    if (!cameras.length) { this.stop(); this.q('.status').textContent=this.ha?.language?.startsWith('nl')?'Geen camera met beschikbare opnames. Bekijk de camerakaart voor de reden.':'No camera with available recordings. See the camera card for the reason.'; }
   }
   private clearVideo() {const v=this.q<HTMLVideoElement>('video');v.pause();v.removeAttribute('src');v.load();v.hidden=true;this.playback.clear();}
   private closePlayer() {this.controller?.abort();this.clearVideo();const dialog=this.q<HTMLDialogElement>('dialog');if(dialog.open)dialog.close();}
@@ -96,6 +100,7 @@ export class EufyEventsCard extends HTMLElement {
   private async fetch(path: string, signal:AbortSignal) {signal.throwIfAborted();const response=await this.ha!.fetchWithAuth(path,{signal});if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error);}return response;}
   private query() {return `/api/eufy_viewer/events?entities=${encodeURIComponent(this.cameras().join(','))}`;}
   private load() {
+    if (!this.cameras().length) return;
     this.closePlayer();this.records=[];this.page=0;this.q('.tiles').replaceChildren();this.q('.pagination').hidden=true;
     for(const url of this.urls.values())URL.revokeObjectURL(url);this.urls.clear();
     this.loadedDate=this.q<HTMLInputElement>('.date').value;const date=this.loadedDate;
@@ -107,6 +112,7 @@ export class EufyEventsCard extends HTMLElement {
     });
   }
   private loadCalendar() {
+    if (!this.cameras().length) return;
     const month=this.q<HTMLInputElement>('.month').value;
     this.run(async signal=>{
       this.days.clear();this.renderCalendar();this.q('.legend').textContent=this.text.loading;
@@ -139,7 +145,7 @@ export class EufyEventsCard extends HTMLElement {
     }
   }
   private play(index:number) {
-    const records=this.filtered(),record=records[index];if(!record)return;this.selected=index;
+    const records=this.filtered(),record=records[index];if(!record || !this.cameras().includes(record.entity_id))return;this.selected=index;
     const dialog=this.q<HTMLDialogElement>('dialog');if(!dialog.open)dialog.showModal();
     this.q('.player-title').textContent=`${this.name(record.entity_id)} · ${record.start.replace('T',' ')}`;
     this.q<HTMLButtonElement>('.previous').disabled=index<=0;this.q<HTMLButtonElement>('.next').disabled=index>=records.length-1;
