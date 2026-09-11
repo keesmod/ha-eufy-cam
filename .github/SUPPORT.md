@@ -10,6 +10,10 @@ Check whether a matching existing clip plays in the Eufy app. For a recording fa
 
 ## Safe diagnostics
 
-Home Assistant offers **Download diagnostics** on the integration entry. Review the file before sharing it. Share only the relevant, redacted log excerpt around the failure, preferably with debug logging off. Do not upload full bridge debug logs or private bridge storage.
+For missing devices or failed setup, follow the [diagnostic collection guide](../docs/DISCOVERY_DIAGNOSTICS.md). It is the maintained reference for component versions and collection steps. Share one complete discovery report so accepted devices, rejected rows and their HomeBase relationships can be assessed together.
+
+Bridge 0.8.5 bundles library 0.12.2 and produces the full startup logs without enabling live-video diagnostics. Read the app's Logs tab even if the HA integration cannot load. The single-file HA download additionally requires integration 0.8.5. If that integration update is not available through HACS, use the bridge logs.
+
+For other failures, include the relevant reviewed excerpt around the problem. Review any diagnostic file before sharing it. Do not upload full raw debug logs or private bridge storage.
 
 Remove passwords, access/session tokens, email addresses, verification codes, cookies, serial numbers, recording paths, identifiable camera footage and private network addresses. Never attach `/data`, HA `.storage`, `secrets.yaml` or bridge environment files. A screenshot of a text error is usually sufficient; camera footage is not required.
