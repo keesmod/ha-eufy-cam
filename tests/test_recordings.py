@@ -234,3 +234,51 @@ async def test_unsupported_recordings_never_reach_bridge(
             assert (await response.json())["error"] == "capability_unavailable"
         query.assert_not_called()
         media.assert_not_called()
+
+
+async def test_unsupported_other_camera_keeps_authorized_calendar_available(
+    hass, hass_client, viewer_setup
+):
+    from custom_components.eufy_viewer.api import BridgeState
+
+    from .conftest import STATE
+
+    second = {
+        **STATE["cameras"][0],
+        "serial": "SOLO",
+        "name": "Standalone",
+        "capabilities": {
+            "recordings": {
+                "available": False,
+                "status": "unsupported",
+                "reason": "standalone_transport_unverified",
+            }
+        },
+    }
+    viewer_setup.runtime_data.async_set_updated_data(
+        BridgeState.parse({**STATE, "cameras": [STATE["cameras"][0], second]})
+    )
+    await hass.async_block_till_done()
+    client = await hass_client()
+    with patch.object(
+        viewer_setup.runtime_data.api,
+        "request",
+        AsyncMock(return_value={"days": ["2026-09-11"]}),
+    ) as query:
+        url = "/api/eufy_viewer/events?entities=camera.front_door&month=2026-09"
+        assert (await client.get(url)).status == 200
+        query.assert_awaited_once_with(
+            "GET", "/v1/recording-days?cameras=CAM123&month=2026-09"
+        )
+        permissions = Mock()
+        permissions.check_entity.side_effect = lambda entity, policy: (
+            entity != "camera.standalone"
+        )
+        with patch(
+            "homeassistant.auth.models.User.permissions",
+            new_callable=PropertyMock,
+            return_value=permissions,
+        ):
+            query.reset_mock()
+            assert (await client.get(url)).status == 403
+            query.assert_not_called()
