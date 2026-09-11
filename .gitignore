@@ -17,3 +17,6 @@ frontend/playwright-report/
 bridge.env
 
 bridge/.packages/
+
+# Private standalone migration inventory
+camera-migration-private.json

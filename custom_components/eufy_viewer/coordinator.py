@@ -17,6 +17,7 @@ from homeassistant.util import dt as dt_util
 
 from .api import BridgeAuthError, BridgeClient, BridgeError, BridgeState
 from .const import DOMAIN
+from .migration import prepare_migration
 from .notifications import EVENT_TYPES, notification_signal
 
 if TYPE_CHECKING:
@@ -66,6 +67,10 @@ class EufyCoordinator(DataUpdateCoordinator[BridgeState]):
                         state = BridgeState.parse(payload)
                         if state.bridge_id != self.entry.unique_id:
                             raise BridgeError("Bridge identity changed")
+                        if state.migration_error:
+                            state = await prepare_migration(
+                                self.hass, self.entry, self.api, state
+                            )
                         self.async_set_updated_data(state)
                         delay = 1.0
                         if state.auth != "connected":

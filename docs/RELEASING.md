@@ -112,8 +112,7 @@ versions distinct when only the integration changed.
 
 HACS offers the integration update. The bridge updates separately through the
 Home Assistant app store or Docker; the library is included with that bridge.
-Updating does not automatically switch a legacy installation to Mega. Follow
-[the migration guide](MEGA_MIGRATION.md) for the one-time backend/address change.
+For 0.8.0, prominently publish the breaking-change notice and [short migration guide](MEGA_MIGRATION.md). Users update the integration first so it can automatically prepare and transfer the inventory. Confirm #24, #30 and #31 acceptance before publication.
 
 Actionlint and GitHub Actions are pinned to verified versions/checksums. Update
 the pins deliberately and run the workflow validator. The common `release.py`,
