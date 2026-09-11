@@ -222,7 +222,11 @@ export class MegaBackend extends EventEmitter implements Backend {
   }
   private async discover(): Promise<void> {
     const client = this.client!;
-    const devices = await client.listDevices();
+    const { devices, issues } = await client.discoverDevices();
+    // listDevices discards the reasons for missing or unusable devices. Report
+    // each library-owned code once, without serials or raw inventory details.
+    for (const code of new Set(issues.map((issue) => issue.code)))
+      this.emit('backend_fault', code);
     verifyInventory(await migrationInventory(this.storage), devices);
     const next = new Map(devices.map((d) => [d.id, d]));
     for (const device of this.devices.values())
