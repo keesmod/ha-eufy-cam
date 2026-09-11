@@ -78,8 +78,16 @@ passed again.
 
 The upgrade event observer ran for 300 seconds. Push remained connected, but no
 actual camera event arrived. The subscription closed cleanly. Connected push is
-not sufficient evidence of event delivery. A fresh physical motion or doorbell
-event on the upgraded test installation remains required. No event was injected.
+not sufficient evidence of event delivery. A fresh controlled event observation
+was therefore performed after the user confirmed physical availability.
+
+The repeat restored the 0.6.4 baseline and verified the saved session and fifteen
+identities before upgrading again to 0.7.1/client 0.10.0. The authenticated HA
+event subscription received a real `person` event from T8160 firmware 3.4.3.0
+through T8030 firmware 3.8.6.0 after 72.3 seconds. The subscription closed cleanly
+with one matching event. Post-event readback preserved the same identities.
+No event was injected. This completes the upgrade event acceptance gate for the
+rehearsed installation. It does not establish an event claim for other models.
 
 The T8213 rollback test decoded 40 live video frames and 144 audio frames, with
 nonzero audio and the same confirmed clean stop. Its snapshot, complete six-record
@@ -98,8 +106,10 @@ boot, watchdog and automatic-update settings. Production HA configuration
 validation passed. No product release or production downgrade occurred.
 
 Nineteen targeted configuration-flow, entity and resource tests passed. The
-change adds documentation only. The story remains in Validation for the actual
-upgrade event gate, and no successor starts until that gate passes.
+change adds documentation only. All camera #20 acceptance checks are now backed
+by the baseline, upgrade, rollback, controlled event and recovery evidence above.
+The follow-up documentation records this final event evidence without changing
+runtime code or publishing a release.
 
 Software recognition or these two tuples do not resolve T8134 live playback and
 session recovery. Those remain in [camera #10](https://github.com/keesmod/ha-eufy-cam/issues/10)
