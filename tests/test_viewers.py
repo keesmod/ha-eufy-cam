@@ -203,3 +203,23 @@ async def test_unavailable_camera_and_viewer_limits(hass, hass_ws_client, viewer
             assert (await client.receive_json())["error"]["code"] == "busy"
         connect.assert_not_called()
     await client.close()
+
+
+async def test_unsupported_live_is_rejected_before_any_bridge_socket(
+    hass, hass_ws_client, viewer_setup
+):
+    info = viewer_setup.runtime_data.data.cameras["CAM123"]
+    info.capabilities["live"] = {
+        "available": False,
+        "status": "unsupported",
+        "reason": "standalone_transport_unverified",
+    }
+    with patch.object(viewer_setup.runtime_data.api, "websocket") as opening:
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {"id": 1, "type": "eufy_viewer/watch", "entity_id": "camera.front_door"}
+        )
+        result = await client.receive_json()
+        assert result["error"]["code"] == "capability_unavailable"
+        assert "Standalone" in result["error"]["message"]
+        opening.assert_not_called()

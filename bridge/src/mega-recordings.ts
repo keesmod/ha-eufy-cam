@@ -26,6 +26,7 @@ export class MegaRecordings implements BackendRecordings {
     private client: () => EufyMegaClient | undefined,
     private devices: () => Device[],
     private liveBusy: () => boolean | 'live_busy' | 'live_stopping',
+    private checkCapability: (serial: string) => Promise<void> = async () => {},
   ) {}
   get busy(): boolean {
     return !!this.operation;
@@ -93,6 +94,7 @@ export class MegaRecordings implements BackendRecordings {
     signal: AbortSignal,
   ): Promise<{ recordings: Recording[]; returned: number; complete: true }> {
     return this.run(signal, async (client, abort) => {
+      for (const serial of serials) await this.checkCapability(serial);
       const rows: MegaRecording[] = [];
       let returned = 0;
       const devices = this.devices();
@@ -139,6 +141,7 @@ export class MegaRecordings implements BackendRecordings {
     signal: AbortSignal,
   ): Promise<{ days: string[] }> {
     return this.run(signal, async (client, abort) => {
+      for (const serial of serials) await this.checkCapability(serial);
       const days = new Set<string>();
       for (const station of this.stations(serials)) {
         this.metrics.queries++;
@@ -154,6 +157,7 @@ export class MegaRecordings implements BackendRecordings {
     return ref.record;
   }
   async thumbnail(serial: string, id: string, signal: AbortSignal): Promise<Buffer> {
+    await this.checkCapability(serial);
     const record = this.reference(serial, id);
     return this.run(signal, (client, abort) => client.recordingThumbnail(record.id, abort));
   }
@@ -163,6 +167,7 @@ export class MegaRecordings implements BackendRecordings {
     signal: AbortSignal,
     format: 'h264' | 'native' = 'h264',
   ): Promise<Buffer> {
+    await this.checkCapability(serial);
     const record = this.reference(serial, id);
     return this.run(signal, async (client, abort) => {
       this.metrics.downloads++;

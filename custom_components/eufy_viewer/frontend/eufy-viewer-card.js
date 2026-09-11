@@ -134,8 +134,8 @@ class RecordingCodecError extends Error {
 
 /** Eufy Viewer: snapshots at rest, a single explicit user gesture per live session. */
 const TEXT = {
-    en: { videoOnly: "Live video without sound", switching: "Switching to live video without sound…", live: "Watch live", close: "Close live view", connecting: "Connecting…", ended: "Live view ended. Tap again to watch.", unavailable: "Camera unavailable", noSnapshot: "No snapshot received yet", title: "Camera", error: "Live view failed. Tap again to retry.", sound: "Enable sound", mute: "Mute sound", recordings: "Recordings", date: "Date", load: "Show recordings", loading: "Loading HomeBase recordings…", preparing: "Preparing recording…", empty: "No recordings returned for this camera and date.", recordingError: "HomeBase recording unavailable. Load the date again.", live_busy: "A live viewer is still open. Close it and load the date again.", live_stopping: "The previous live session is still stopping. Wait a moment and load the date again.", recording_busy: "Another recording is being prepared. Wait a moment and try again.", recording_expired: "This recording link has expired. Load the date again.", recording_unavailable: "The HomeBase connection is unavailable. Try again shortly.", closeRecordings: "Close recordings", results: "recordings returned", homebaseTime: "HomeBase time" },
-    nl: { videoOnly: "Livebeeld zonder geluid", switching: "Omschakelen naar livebeeld zonder geluid…", live: "Live bekijken", close: "Livebeeld sluiten", connecting: "Verbinden…", ended: "Livebeeld gestopt. Tik opnieuw om te kijken.", unavailable: "Camera niet beschikbaar", noSnapshot: "Nog geen snapshot ontvangen", title: "Camera", error: "Livebeeld mislukt. Tik opnieuw om te proberen.", sound: "Geluid aan", mute: "Geluid uit", recordings: "Opnames", date: "Datum", load: "Opnames tonen", loading: "HomeBase-opnames laden…", preparing: "Opname voorbereiden…", empty: "Geen opnames teruggegeven voor deze camera en datum.", recordingError: "HomeBase-opname niet beschikbaar. Laad de datum opnieuw.", live_busy: "Er staat nog een livebeeld open. Sluit dit en laad de datum opnieuw.", live_stopping: "De vorige live-sessie wordt nog afgesloten. Wacht even en laad de datum opnieuw.", recording_busy: "Er wordt al een opname voorbereid. Wacht even en probeer opnieuw.", recording_expired: "Deze opnamelink is verlopen. Laad de datum opnieuw.", recording_unavailable: "De HomeBase-verbinding is niet beschikbaar. Probeer het zo opnieuw.", closeRecordings: "Opnames sluiten", results: "opnames teruggegeven", homebaseTime: "HomeBase-tijd" },
+    en: { capability_unavailable: "This media operation is unavailable for the camera connection.", videoOnly: "Live video without sound", switching: "Switching to live video without sound…", live: "Watch live", close: "Close live view", connecting: "Connecting…", ended: "Live view ended. Tap again to watch.", unavailable: "Camera unavailable", noSnapshot: "No snapshot received yet", title: "Camera", error: "Live view failed. Tap again to retry.", sound: "Enable sound", mute: "Mute sound", recordings: "Recordings", date: "Date", load: "Show recordings", loading: "Loading HomeBase recordings…", preparing: "Preparing recording…", empty: "No recordings returned for this camera and date.", recordingError: "HomeBase recording unavailable. Load the date again.", live_busy: "A live viewer is still open. Close it and load the date again.", live_stopping: "The previous live session is still stopping. Wait a moment and load the date again.", recording_busy: "Another recording is being prepared. Wait a moment and try again.", recording_expired: "This recording link has expired. Load the date again.", recording_unavailable: "The HomeBase connection is unavailable. Try again shortly.", closeRecordings: "Close recordings", results: "recordings returned", homebaseTime: "HomeBase time" },
+    nl: { capability_unavailable: "Deze mediafunctie is niet beschikbaar voor de cameraverbinding.", videoOnly: "Livebeeld zonder geluid", switching: "Omschakelen naar livebeeld zonder geluid…", live: "Live bekijken", close: "Livebeeld sluiten", connecting: "Verbinden…", ended: "Livebeeld gestopt. Tik opnieuw om te kijken.", unavailable: "Camera niet beschikbaar", noSnapshot: "Nog geen snapshot ontvangen", title: "Camera", error: "Livebeeld mislukt. Tik opnieuw om te proberen.", sound: "Geluid aan", mute: "Geluid uit", recordings: "Opnames", date: "Datum", load: "Opnames tonen", loading: "HomeBase-opnames laden…", preparing: "Opname voorbereiden…", empty: "Geen opnames teruggegeven voor deze camera en datum.", recordingError: "HomeBase-opname niet beschikbaar. Laad de datum opnieuw.", live_busy: "Er staat nog een livebeeld open. Sluit dit en laad de datum opnieuw.", live_stopping: "De vorige live-sessie wordt nog afgesloten. Wacht even en laad de datum opnieuw.", recording_busy: "Er wordt al een opname voorbereid. Wacht even en probeer opnieuw.", recording_expired: "Deze opnamelink is verlopen. Laad de datum opnieuw.", recording_unavailable: "De HomeBase-verbinding is niet beschikbaar. Probeer het zo opnieuw.", closeRecordings: "Opnames sluiten", results: "opnames teruggegeven", homebaseTime: "HomeBase-tijd" },
 };
 export class EufyViewerCard extends HTMLElement {
     _config;
@@ -197,6 +197,7 @@ export class EufyViewerCard extends HTMLElement {
         :host{display:block;min-width:0}*{box-sizing:border-box}ha-card{display:block;overflow:hidden;border-radius:16px}button{font:inherit;cursor:pointer}
         .preview{display:block;width:100%;border:0;padding:0;position:relative;color:var(--primary-text-color);background:var(--card-background-color,#18212b)}
         .preview:focus-visible,.close:focus-visible{outline:3px solid var(--primary-color,#03a9f4);outline-offset:-3px}
+        .capability{padding:10px 16px;color:var(--secondary-text-color);font-size:12px;line-height:1.5}.capability:empty{display:none}
         .snapshot,.live{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#10161e}
         .snapshot[hidden],.empty[hidden],.live[hidden],.sound[hidden],.record-video[hidden]{display:none}.empty{display:grid;place-items:center;aspect-ratio:16/9;padding:24px;color:var(--secondary-text-color);font-size:13px;background:var(--secondary-background-color,#18212b)}
         .play{position:absolute;right:16px;bottom:16px;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:#0008;font-size:20px;color:white;pointer-events:none}.preview:disabled{cursor:default}.preview:disabled .play{display:none}
@@ -210,7 +211,7 @@ export class EufyViewerCard extends HTMLElement {
       </style>
       <ha-card>
         <button class="preview" type="button"><img class="snapshot" alt="" hidden><span class="empty"></span><span class="play" aria-hidden="true">▶</span></button>
-        <div class="meta"><div class="name"></div><div class="status" role="status" aria-live="polite"></div><button class="close record-open" type="button"></button></div>
+        <div class="capability" role="note"></div><div class="meta"><div class="name"></div><div class="status" role="status" aria-live="polite"></div><button class="close record-open" type="button"></button></div>
       </ha-card>
       <dialog aria-labelledby="live-title"><div class="bar"><span id="live-title"></span><button class="sound close" type="button" hidden></button><button class="close stop" type="button"></button></div><div class="live-status" role="status" aria-live="polite"></div><img class="live" alt=""><video class="live video" playsinline autoplay muted hidden></video></dialog>
       <dialog class="record-dialog" aria-labelledby="record-title"><div class="bar"><span id="record-title"></span><button class="close record-close" type="button"></button></div><div class="record-filters"><label><span class="date-label"></span><input type="date" class="record-date"></label><button class="close record-load" type="button"></button></div><div class="record-status" role="status" aria-live="polite"></div><video class="record-video" playsinline controls hidden></video><div class="record-list"></div></dialog>`;
@@ -300,8 +301,9 @@ export class EufyViewerCard extends HTMLElement {
         const state = this._hass.states[this._config.entity];
         const text = this._text();
         const available = state && !["unavailable", "unknown"].includes(state.state) && state.attributes.viewer_card;
-        this._preview.disabled = !available;
-        this.shadowRoot.querySelector(".record-open").disabled = !available;
+        const capabilities = state?.attributes.capabilities;
+        this._preview.disabled = !available || capabilities?.live?.available === false;
+        this.shadowRoot.querySelector(".record-open").disabled = !available || capabilities?.recordings?.available === false;
         for (const [selector, value] of [[".record-open", text.recordings], ["#record-title", text.recordings], [".record-close", text.closeRecordings], [".record-load", text.load], [".date-label", text.date]])
             this.shadowRoot.querySelector(selector).textContent = value;
         this._preview.setAttribute("aria-label", text.live);
@@ -312,7 +314,18 @@ export class EufyViewerCard extends HTMLElement {
         this.shadowRoot.querySelector("#record-title").textContent = `${title} · ${text.recordings}`;
         this._live.alt = title;
         this.shadowRoot.querySelector(".empty").textContent = text.noSnapshot;
-        const received = state?.attributes.snapshot_received_at;
+        const notes = Object.entries(capabilities ?? {}).filter(([feature]) => ["snapshot", "live", "recordings"].includes(feature)).map(([feature, capability]) => {
+            const label = feature === "live" ? text.live : feature === "recordings" ? text.recordings : "Snapshot";
+            if (capability.available === false)
+                return `${label}: ${this._capabilityReason(capability.reason)}`;
+            return capability.status === "experimental" ? `${label}: ${this._hass?.language?.startsWith("nl") ? "experimenteel, hardware niet bevestigd" : "experimental, hardware not confirmed"}` : "";
+        }).filter(Boolean);
+        this.shadowRoot.querySelector(".capability").textContent = notes.join(". ");
+        const received = capabilities?.snapshot?.available === false ? undefined : state?.attributes.snapshot_received_at;
+        if (capabilities?.live?.available === false && this._open)
+            this._stop();
+        if (capabilities?.recordings?.available === false && this._recordDialog.open)
+            this._closeRecordings();
         // A HA state update is not a reason to poll a snapshot URL.
         const url = state?.attributes.entity_picture;
         const key = `${url}|${received}`;
@@ -335,6 +348,17 @@ export class EufyViewerCard extends HTMLElement {
             this._status("");
         this._unavailable = !available;
     }
+    _permits(feature) { return this._hass?.states[this._config?.entity ?? ""]?.attributes.capabilities?.[feature]?.available !== false; }
+    _capabilityReason(reason) {
+        const nl = this._hass?.language?.startsWith("nl");
+        if (reason === "standalone_transport_unverified")
+            return nl ? "standalone cameraverbinding nog niet ondersteund" : "standalone camera transport is not implemented";
+        if (reason === "camera_media_unverified")
+            return nl ? "media onbewezen voor deze camera en HomeBase-firmware" : "media unverified for this camera and owner firmware";
+        if (reason === "invalid_connection_credentials")
+            return nl ? "bruikbare lokale verbindingsgegevens ontbreken" : "usable local connection credentials are missing";
+        return nl ? "niet beschikbaar voor deze cameraverbinding" : "unavailable for this camera connection";
+    }
     _recordStatus(text) { this.shadowRoot.querySelector(".record-status").textContent = text; }
     _clearRecording() {
         this._recordGeneration++;
@@ -352,15 +376,17 @@ export class EufyViewerCard extends HTMLElement {
         if (response.ok)
             return;
         const data = await response.json().catch(() => ({}));
-        const allowed = ["live_busy", "live_stopping", "recording_busy", "recording_expired", "recording_unavailable"];
+        const allowed = ["live_busy", "live_stopping", "recording_busy", "recording_expired", "recording_unavailable", "capability_unavailable"];
         throw new Error(allowed.includes(data.error) ? data.error : "recordingError");
     }
     _recordingFailure(error) {
         const code = error instanceof Error ? error.message : "recordingError";
         const text = this._text();
-        return ["live_busy", "live_stopping", "recording_busy", "recording_expired", "recording_unavailable"].includes(code) ? text[code] : text.recordingError;
+        return ["live_busy", "live_stopping", "recording_busy", "recording_expired", "recording_unavailable", "capability_unavailable"].includes(code) ? text[code] : text.recordingError;
     }
     async _loadRecordings() {
+        if (!this._permits("recordings"))
+            return;
         this._clearRecording();
         const generation = this._recordGeneration;
         const list = this.shadowRoot.querySelector(".record-list");
@@ -395,6 +421,8 @@ export class EufyViewerCard extends HTMLElement {
         }
     }
     async _playRecording(id) {
+        if (!this._permits("recordings"))
+            return;
         this._clearRecording();
         const generation = this._recordGeneration;
         if (!this._hass || !this._config || !this._recordDialog.open)
@@ -730,9 +758,9 @@ export class EufyEventsCard extends HTMLElement {
     leave = () => this.stop();
     q(selector) { return this.shadowRoot.querySelector(selector); }
     get text() { return EVENTS_TEXT[this.ha?.language?.startsWith('nl') ? 'nl' : 'en']; }
-    cameras() { return Object.keys(this.ha?.states ?? {}).filter(id => id.startsWith('camera.') && this.ha.states[id].attributes.viewer_card && (!this.config.entities || this.config.entities.includes(id))).sort(); }
+    cameras() { return Object.keys(this.ha?.states ?? {}).filter(id => id.startsWith('camera.') && this.ha.states[id].attributes.viewer_card && this.ha.states[id].attributes.capabilities?.recordings?.available !== false && (!this.config.entities || this.config.entities.includes(id))).sort(); }
     name(id) { return this.ha?.states[id]?.attributes.friendly_name ?? id; }
-    filtered() { const camera = this.q('.camera').value; return this.records.filter(r => !camera || r.entity_id === camera); }
+    filtered() { const camera = this.q('.camera').value; return this.records.filter(r => this.cameras().includes(r.entity_id) && (!camera || r.entity_id === camera)); }
     static getStubConfig() { return {}; }
     getCardSize() { return 8; }
     getGridOptions() { return { columns: 12, rows: 'auto', min_columns: 6 }; }
@@ -781,7 +809,10 @@ export class EufyEventsCard extends HTMLElement {
             if (this.isConnected)
                 value.connection.addEventListener('disconnected', this.leave);
         }
+        const previous = this.cameras();
         this.ha = value;
+        if (previous.some(id => !this.cameras().includes(id)))
+            this.stop();
         this.labels();
     }
     connectedCallback() {
@@ -812,6 +843,10 @@ export class EufyEventsCard extends HTMLElement {
             select.value = cameras.includes(selected) ? selected : '';
         }
         this.q('.show').disabled = !cameras.length;
+        if (!cameras.length) {
+            this.stop();
+            this.q('.status').textContent = this.ha?.language?.startsWith('nl') ? 'Geen camera met beschikbare opnames. Bekijk de camerakaart voor de reden.' : 'No camera with available recordings. See the camera card for the reason.';
+        }
     }
     clearVideo() { const v = this.q('video'); v.pause(); v.removeAttribute('src'); v.load(); v.hidden = true; this.playback.clear(); }
     closePlayer() { this.controller?.abort(); this.clearVideo(); const dialog = this.q('dialog'); if (dialog.open)
@@ -854,6 +889,8 @@ export class EufyEventsCard extends HTMLElement {
     } return response; }
     query() { return `/api/eufy_viewer/events?entities=${encodeURIComponent(this.cameras().join(','))}`; }
     load() {
+        if (!this.cameras().length)
+            return;
         this.closePlayer();
         this.records = [];
         this.page = 0;
@@ -875,6 +912,8 @@ export class EufyEventsCard extends HTMLElement {
         });
     }
     loadCalendar() {
+        if (!this.cameras().length)
+            return;
         const month = this.q('.month').value;
         this.run(async (signal) => {
             this.days.clear();
@@ -983,7 +1022,7 @@ export class EufyEventsCard extends HTMLElement {
     }
     play(index) {
         const records = this.filtered(), record = records[index];
-        if (!record)
+        if (!record || !this.cameras().includes(record.entity_id))
             return;
         this.selected = index;
         const dialog = this.q('dialog');

@@ -208,3 +208,34 @@ test('one viewer downgrades while another keeps WebRTC on the same camera', { ti
     assert.equal(starts, 1); assert.equal(stops, 1); assert.equal(hub.active, 0);
   } finally { sockets.forEach(ws => ws.terminate()); server.emit('shutdown'); server.close(); await once(server, 'close'); }
 });
+
+test('explicit unavailable capabilities reject cached snapshots and websocket media before the hub', async () => {
+  let starts = 0;
+  const denied = { available: false, status: 'unsupported', reason: 'camera_media_unverified' };
+  const fake = Object.assign(new EventEmitter(), {
+    auth: { state: 'connected' },
+    inventory: () => [{ serial: 'CAM123', capabilities: { snapshot: denied, live: denied, recordings: denied } }],
+    hasCamera: (serial: string) => serial === 'CAM123',
+    pictures: new Map([['CAM123', { data: Buffer.from('stale'), mime: 'image/jpeg' }]]),
+    hub: new StreamHub({ start: async () => { starts++; }, stop: async () => {}, disposeMedia: () => {} }),
+  });
+  const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const base = `http://127.0.0.1:${address.port}`;
+  const headers = { Authorization: `Bearer ${token}` };
+  try {
+    const response = await fetch(`${base}/v1/snapshot/CAM123`, { headers });
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: 'capability_unavailable' });
+    for (const suffix of ['', '?transport=webrtc']) {
+      const socket = new WebSocket(`${base}/v1/live/CAM123${suffix}`, { headers });
+      const closed = once(socket, 'close');
+      const [code, reason] = await closed;
+      assert.equal(code, 1008);
+      assert.equal(reason.toString(), 'capability_unavailable');
+    }
+    assert.equal(starts, 0);
+    assert.equal(fake.hub.active, 0);
+  } finally { server.emit('shutdown'); server.close(); await once(server, 'close'); }
+});

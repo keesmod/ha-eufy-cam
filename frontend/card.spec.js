@@ -203,3 +203,29 @@ for (const failure of ['offer', 'connection']) test(`WebRTC ${failure} failure d
   await page.getByRole('button', { name: 'Close live view', exact: true }).click();
   await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
 });
+
+test('capability status disables media controls and never fetches unsupported snapshots', async ({ page }) => {
+  await page.evaluate(() => {
+    const denied = { available: false, status: 'unsupported', reason: 'standalone_transport_unverified' };
+    card._hass.states['camera.front'].attributes.capabilities = { snapshot: denied, live: denied, recordings: denied, future: { anything: true } };
+    card._hass.states['camera.front'].attributes.entity_picture = '/api/camera_proxy/camera.front';
+    card._hass.states['camera.front'].attributes.snapshot_received_at = '2026-09-11T08:00:00Z';
+    card.hass = card._hass;
+  });
+  await expect(page.getByRole('button', { name: 'Watch live' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Recordings', exact: true })).toBeDisabled();
+  await expect(page.locator('.capability')).toContainText('standalone camera transport');
+  expect(await page.locator('img.snapshot').getAttribute('src')).toBeNull();
+  await page.evaluate(async () => { await card._start(); await card._loadRecordings(); await card._playRecording('a'.repeat(32)); });
+  expect(await page.evaluate(() => calls.length)).toBe(0);
+});
+
+test('experimental software is visible while live remains explicitly user started', async ({ page }) => {
+  await page.evaluate(() => {
+    card._hass.states['camera.front'].attributes.capabilities = { live: { available: true, status: 'experimental', reason: null } };
+    card.hass = card._hass;
+  });
+  await expect(page.locator('.capability')).toContainText('experimental, hardware not confirmed');
+  await expect(page.getByRole('button', { name: 'Watch live' })).toBeEnabled();
+  expect(await page.evaluate(() => calls.length)).toBe(0);
+});

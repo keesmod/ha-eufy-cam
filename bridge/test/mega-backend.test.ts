@@ -8,6 +8,7 @@ import {
   type EufyMegaClient,
   type ClientOptions,
   type Device,
+  type CameraCapabilities,
 } from '@keesmod/eufy-mega-client';
 import { MegaBackend } from '../src/mega-backend.js';
 import { Storage } from '../src/storage.js';
@@ -96,9 +97,31 @@ function fixture() {
   };
   const client = Object.assign(new EventEmitter(), {
     connected: true,
-    eventStatus: { connected: true, received: 1, duplicates: 2, lastReceivedAt: null },
+    eventStatus: {
+      connected: true,
+      received: 1,
+      duplicates: 2,
+      lastReceivedAt: null,
+    },
     connect: async () => ({ state: 'connected' as const }),
     listDevices: async () => devices,
+    getCameraCapabilities: async (_id: string): Promise<CameraCapabilities> => ({
+      snapshot: {
+        available: true,
+        status: 'experimental' as const,
+        reason: null as string | null,
+      },
+      live: {
+        available: true,
+        status: 'experimental' as const,
+        reason: null as string | null,
+      },
+      recordings: {
+        available: true,
+        status: 'experimental' as const,
+        reason: null as string | null,
+      },
+    }),
     connectStation: async () => state,
     refreshStationState: async () => state,
     startEvents: async () => {},
@@ -117,7 +140,13 @@ function fixture() {
         deviceId: 'CAM',
         video: Readable.from([]),
         audio: Readable.from([]),
-        metadata: { videoCodec: 'h264', audioCodec: 'aac', fps: 15, width: 1920, height: 1080 },
+        metadata: {
+          videoCodec: 'h264',
+          audioCodec: 'aac',
+          fps: 15,
+          width: 1920,
+          height: 1080,
+        },
         ended,
         stop: async () => {
           calls.push('stop');
@@ -152,7 +181,13 @@ test('Mega adapter preserves camera identity, notifications, and device-confirme
   const f = fixture();
   try {
     assert.equal(
-      (await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' })).state,
+      (
+        await f.backend.login({
+          username: 'fixture',
+          password: 'fixture',
+          country: 'NL',
+        })
+      ).state,
       'connected',
     );
     assert.deepEqual(f.reads, ['mega-session.json']);
@@ -194,7 +229,11 @@ test('Mega authentication failure does not load or fall back to the legacy SDK',
   };
   try {
     await assert.rejects(
-      f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' }),
+      f.backend.login({
+        username: 'fixture',
+        password: 'fixture',
+        country: 'NL',
+      }),
       { code: 'request_timeout' },
     );
   } finally {
@@ -213,14 +252,21 @@ test('Mega authentication failure does not load or fall back to the legacy SDK',
 test('an idle disconnected HomeBase reconnects without starting a camera or interrupting a viewer', async () => {
   const f = fixture();
   try {
-    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    await f.backend.login({
+      username: 'fixture',
+      password: 'fixture',
+      country: 'NL',
+    });
     let connections = 0;
     const connect = f.client.connectStation;
-    f.client.connectStation = async () => { connections++; return connect(); };
-    const refresh = () => (f.backend as unknown as {refresh(): Promise<void>}).refresh();
-    const state = (await connect());
+    f.client.connectStation = async () => {
+      connections++;
+      return connect();
+    };
+    const refresh = () => (f.backend as unknown as { refresh(): Promise<void> }).refresh();
+    const state = await connect();
     await f.backend.startLive('CAM');
-    f.client.emit('station', {...state, connected: false});
+    f.client.emit('station', { ...state, connected: false });
     await refresh();
     assert.equal(connections, 0);
     await f.backend.stopLive('CAM');
@@ -228,5 +274,96 @@ test('an idle disconnected HomeBase reconnects without starting a camera or inte
     assert.equal(connections, 1);
     assert.equal(f.backend.stations.inventory()[0]?.connected, true);
     assert.deepEqual(f.calls, ['start', 'stop']);
-  } finally { await f.backend.close(); }
+  } finally {
+    await f.backend.close();
+  }
+});
+
+test('standalone capability reasons reach inventory and prevent every media operation', async () => {
+  const f = fixture();
+  f.client.listDevices = async () => [{ ...devices[1]!, stationId: 'CAM', model: 'T8134' }];
+  f.client.getCameraCapabilities = async () => {
+    const denied = {
+      available: false,
+      status: 'unsupported' as const,
+      reason: 'standalone_transport_unverified',
+    };
+    return {
+      snapshot: { ...denied },
+      live: { ...denied },
+      recordings: { ...denied },
+    };
+  };
+  try {
+    await f.backend.login({
+      username: 'fixture',
+      password: 'fixture',
+      country: 'NL',
+    });
+    assert.deepEqual(f.backend.stations.inventory(), []);
+    assert.equal(
+      f.backend.inventory()[0]?.capabilities?.live.reason,
+      'standalone_transport_unverified',
+    );
+    assert.equal(f.backend.canStartLive('CAM'), false);
+    await assert.rejects(f.backend.startLive('CAM'), /standalone_transport_unverified/);
+    const abort = new AbortController();
+    for (const operation of [
+      () => f.backend.recordings.list('CAM', '2026-09-11', abort.signal),
+      () => f.backend.recordings.calendar(['CAM'], '2026-09', abort.signal),
+      () => f.backend.recordings.video('CAM', 'missing', abort.signal),
+      () => f.backend.recordings.thumbnail('CAM', 'missing', abort.signal),
+    ])
+      await assert.rejects(operation(), { code: 'capability_unavailable' });
+    assert.deepEqual(f.calls, []);
+    assert.equal(f.backend.recordings.metrics.queries, 0);
+    assert.equal(f.backend.recordings.metrics.downloads, 0);
+  } finally {
+    await f.backend.close();
+  }
+});
+
+test('a failed owner does not prevent camera setup and capability display', async () => {
+  const f = fixture();
+  f.client.connectStation = async () => {
+    throw new EufyError('invalid_connection_credentials');
+  };
+  try {
+    assert.equal(
+      (
+        await f.backend.login({
+          username: 'fixture',
+          password: 'fixture',
+          country: 'NL',
+        })
+      ).state,
+      'connected',
+    );
+    assert.equal(f.backend.inventory()[0]?.serial, 'CAM');
+    assert.equal(f.backend.stations.inventory()[0]?.connected, false);
+  } finally {
+    await f.backend.close();
+  }
+});
+
+test('concurrent capability reads cannot create two owners for one live start', async () => {
+  const f = fixture();
+  try {
+    await f.backend.login({
+      username: 'fixture',
+      password: 'fixture',
+      country: 'NL',
+    });
+    const outcomes = await Promise.allSettled([
+      f.backend.startLive('CAM'),
+      f.backend.startLive('CAM'),
+    ]);
+    assert.equal(outcomes.filter((result) => result.status === 'fulfilled').length, 1);
+    assert.equal(outcomes.filter((result) => result.status === 'rejected').length, 1);
+    assert.deepEqual(f.calls, ['start']);
+    await f.backend.stopLive('CAM');
+    assert.deepEqual(f.calls, ['start', 'stop']);
+  } finally {
+    await f.backend.close();
+  }
 });

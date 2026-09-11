@@ -7,7 +7,8 @@ export class RecordingError extends Error {
       | 'recording_unavailable'
       | 'recording_expired'
       | 'history_incomplete'
-      | 'thumbnail_unavailable',
+      | 'thumbnail_unavailable'
+      | 'capability_unavailable',
     readonly status: number,
   ) {
     super(code);

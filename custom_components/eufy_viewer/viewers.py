@@ -163,6 +163,12 @@ async def websocket_watch(
     ):
         connection.send_error(msg["id"], "unavailable", "Camera unavailable")
         return
+    info = coordinator.data.cameras[serial]
+    if not info.permits("live"):
+        connection.send_error(
+            msg["id"], "capability_unavailable", info.capability_reason("live")
+        )
+        return
     viewers = hass.data[DOMAIN]["viewers"]
     if (
         len(coordinator.viewers) >= 16

@@ -83,6 +83,7 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
       }
       const match = /^\/v1\/snapshot\/([A-Za-z0-9_-]{1,64})$/.exec(url.pathname);
       if (request.method === "GET" && match?.[1]) {
+        if (eufy.inventory().find(c => c.serial === match[1])?.capabilities?.snapshot.available === false) { json(response, 503, { error: "capability_unavailable" }); return; }
         const picture = eufy.pictures.get(match[1]);
         if (!picture) { json(response, 404, { error: "no_snapshot" }); return; }
         response.writeHead(200, { "Content-Type": picture.mime, "Content-Length": picture.data.length, "Cache-Control": "no-store" }); response.end(picture.data); return;
@@ -115,6 +116,7 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         changed(); return;
       }
       const serial = live![1]!;
+      if (eufy.inventory().find(c => c.serial === serial)?.capabilities?.live.available === false) { ws.close(1008, "capability_unavailable"); return; }
       let webrtc = new URL(request.url ?? "/", "http://bridge").searchParams.get("transport") === "webrtc";
       const grant = webrtc ? eufy.media.grant(serial) : null;
       let ready = false;
