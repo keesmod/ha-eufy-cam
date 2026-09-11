@@ -207,3 +207,30 @@ async def test_calendar_does_not_leak_days_of_other_cameras(
         )
         assert response.status == 403
         query.assert_not_called()
+
+
+async def test_unsupported_recordings_never_reach_bridge(
+    hass, hass_client, viewer_setup
+):
+    info = viewer_setup.runtime_data.data.cameras["CAM123"]
+    info.capabilities["recordings"] = {
+        "available": False,
+        "status": "unsupported",
+        "reason": "camera_media_unverified",
+    }
+    client = await hass_client()
+    with (
+        patch.object(viewer_setup.runtime_data.api, "request") as query,
+        patch.object(viewer_setup.runtime_data.api, "recording_video") as media,
+    ):
+        for path in (
+            BASE + "?date=2026-09-11",
+            BASE + "/" + CLIP,
+            BASE + "/" + CLIP + "/thumbnail",
+            "/api/eufy_viewer/events?entities=camera.front_door&date=2026-09-11",
+        ):
+            response = await client.get(path)
+            assert response.status == 503
+            assert (await response.json())["error"] == "capability_unavailable"
+        query.assert_not_called()
+        media.assert_not_called()

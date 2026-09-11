@@ -46,6 +46,10 @@ def camera_access(request: web.Request, entity_id: str) -> tuple[EufyCoordinator
         or coordinator.data.auth != "connected"
     ):
         raise web.HTTPServiceUnavailable
+    if not coordinator.data.cameras[serial].permits("recordings"):
+        raise web.HTTPServiceUnavailable(
+            text='{"error":"capability_unavailable"}', content_type="application/json"
+        )
     return coordinator, serial
 
 
