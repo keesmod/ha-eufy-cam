@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import logging
 import re
 from contextlib import suppress
 from secrets import token_hex
@@ -24,8 +26,17 @@ from homeassistant.auth.permissions.const import POLICY_READ
 from homeassistant.core import callback
 
 from .api import BridgeError
-from .const import DOMAIN
+from .const import DOMAIN, MAX_FRAME_BYTES
 from .viewers import Viewer
+
+_LOGGER = logging.getLogger(__name__)
+FALLBACK_REASONS = {
+    "startup_timeout",
+    "playback_timeout",
+    "connection_failed",
+    "signaling_error",
+    "playback_error",
+}
 
 
 class Go2RtcConnection(Protocol):
@@ -50,10 +61,14 @@ class WebRTCViewer(Viewer):
         self.ready = False
         self.offered = False
         self.registered = False
+        self.jpeg = False
+        self.fallback_supported = False
+        self.fallback_requested = False
+        self.cleanup_task: asyncio.Task[None] | None = None
 
     @callback
     def _message(self, message: ReceiveMessages) -> None:
-        if self.closed:
+        if self.closed or self.jpeg or self.fallback_requested:
             return
         if isinstance(message, WebRTCAnswer):
             self.connection.send_event(
@@ -65,12 +80,42 @@ class WebRTCViewer(Viewer):
             )
         elif isinstance(message, WsError):
             # Never forward upstream errors: these may contain private media URLs.
+            self.hass.async_create_background_task(
+                self._failed("signaling_error"), "Eufy WebRTC failure"
+            )
+
+    async def _failed(self, reason: str) -> None:
+        if not await self.fallback(reason) and not self.closed:
+            _LOGGER.warning("Live connection failed: %s", reason)
             self.connection.send_event(self.subscription, {"type": "ended"})
             self.cancel()
 
+    async def fallback(self, reason: str) -> bool:
+        """Change transport on this exact owner, without a reconnect or ack."""
+        if reason not in {"connection_failed", "signaling_error", "playback_error"}:
+            return False
+        if self.closed or not self.socket or not self.fallback_supported:
+            return False
+        if self.jpeg or self.fallback_requested:
+            return True
+        self.fallback_requested = True
+        self.pending = False
+        try:
+            await self.socket.send_str("fallback:" + reason)
+        except aiohttp.ClientError, ConnectionError:
+            self.cancel()
+            return False
+        return True
+
     async def signal(self, offer: str | None, candidate: str | None) -> bool:
         """Only the owning frontend connection may signal this lease."""
-        if self.closed or not self.ready or self.signaling is None:
+        if (
+            self.closed
+            or self.jpeg
+            or self.fallback_requested
+            or not self.ready
+            or self.signaling is None
+        ):
             return False
         try:
             async with asyncio.timeout(10):
@@ -85,8 +130,8 @@ class WebRTCViewer(Viewer):
                 else:
                     return False
         except Go2RtcClientError, aiohttp.ClientError, TimeoutError:
-            self.cancel()
-            return False
+            await self._failed("signaling_error")
+            return self.fallback_requested and not self.closed
         return not self.closed
 
     async def _prepare(self, path: str, audio: bool | None = None) -> None:
@@ -101,12 +146,12 @@ class WebRTCViewer(Viewer):
             sources.append(f"ffmpeg:{self.name}#audio=opus")
         client = Go2RtcRestClient(self.config.session, self.config.url)
         self.registered = True
-        async with asyncio.timeout(10):
+        async with asyncio.timeout(5):
             await client.streams.add(
                 self.name,
                 sources,
             )
-        if self.closed:
+        if self.closed or self.jpeg or self.fallback_requested:
             return
         self.signaling = Go2RtcWsClient(
             self.config.session, self.config.url, source=self.name
@@ -114,16 +159,23 @@ class WebRTCViewer(Viewer):
         self.signaling.subscribe(self._message)
         self.ready = True
         self.connection.send_event(
-            self.subscription, {"type": "ready", "subscription": self.subscription}
+            self.subscription,
+            {
+                "type": "ready",
+                "subscription": self.subscription,
+                "fallback": self.fallback_supported,
+            },
         )
 
     async def _cleanup(self) -> None:
-        if self.signaling:
+        signaling, self.signaling = self.signaling, None
+        registered, self.registered = self.registered, False
+        if signaling:
             with suppress(
                 asyncio.CancelledError, Go2RtcClientError, aiohttp.ClientError
             ):
-                await self.signaling.close()
-        if self.registered:
+                await signaling.close()
+        if registered:
             with suppress(Go2RtcClientError, aiohttp.ClientError, TimeoutError):
                 async with asyncio.timeout(5):
                     async with self.config.session.delete(
@@ -143,18 +195,72 @@ class WebRTCViewer(Viewer):
                     return
                 async with asyncio.timeout(125):
                     async for message in socket:
-                        if message.type != aiohttp.WSMsgType.TEXT:
-                            break
                         if not self.connection.user.permissions.check_entity(
                             self.entity_id, POLICY_READ
                         ):
+                            break
+                        if message.type == aiohttp.WSMsgType.BINARY:
+                            if (
+                                not self.jpeg
+                                or self.pending
+                                or len(message.data) > MAX_FRAME_BYTES
+                            ):
+                                raise BridgeError("Invalid fallback frame")
+                            self.pending = True
+                            self.sequence += 1
+                            self.connection.send_event(
+                                self.subscription,
+                                {
+                                    "type": "frame",
+                                    "subscription": self.subscription,
+                                    "sequence": self.sequence,
+                                    "jpeg": base64.b64encode(message.data).decode(
+                                        "ascii"
+                                    ),
+                                },
+                            )
+                            continue
+                        if message.type != aiohttp.WSMsgType.TEXT:
                             break
                         if len(message.data) > 1024:
                             raise BridgeError("Invalid media control")
                         data = json.loads(message.data)
                         if data.get("type") == "ready":
-                            await self._prepare(data.get("path", ""), data.get("audio"))
-                        elif data.get("type") == "tick" and self.ready:
+                            if self.jpeg:
+                                raise BridgeError("Unexpected ready after fallback")
+                            self.fallback_supported = data.get("fallback") is True
+                            budget = data.get("fallback_after_ms", 5000)
+                            if type(budget) is not int or not 1 <= budget <= 15000:
+                                raise BridgeError("Invalid startup budget")
+                            try:
+                                # Do not block JPEG control behind stalled go2rtc setup.
+                                async with asyncio.timeout(min(5000, budget) / 1000):
+                                    await self._prepare(
+                                        data.get("path", ""), data.get("audio")
+                                    )
+                            except Go2RtcClientError, aiohttp.ClientError, TimeoutError:
+                                await self._failed("signaling_error")
+                        elif data.get("type") == "fallback":
+                            reason = data.get("reason")
+                            if self.jpeg or reason not in FALLBACK_REASONS:
+                                raise BridgeError("Invalid fallback control")
+                            self.jpeg = True
+                            self.ack_command = "ack:jpeg"
+                            self.pending = False
+                            _LOGGER.warning(
+                                "Live video switched to JPEG without audio: %s", reason
+                            )
+                            self.connection.send_event(
+                                self.subscription, {"type": "fallback"}
+                            )
+                            self.cleanup_task = self.hass.async_create_background_task(
+                                self._cleanup(), "Eufy WebRTC transport cleanup"
+                            )
+                        elif data.get("type") == "tick" and self.fallback_requested:
+                            continue
+                        elif (
+                            data.get("type") == "tick" and self.ready and not self.jpeg
+                        ):
                             if self.pending:
                                 raise BridgeError("Invalid media backpressure")
                             self.pending = True
@@ -189,3 +295,5 @@ class WebRTCViewer(Viewer):
                 self.connection.send_event(self.subscription, {"type": "ended"})
             self.closed = True
             await self._cleanup()
+            if self.cleanup_task:
+                await self.cleanup_task

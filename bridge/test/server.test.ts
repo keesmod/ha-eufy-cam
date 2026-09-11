@@ -126,6 +126,89 @@ test('notification frames require opt-in and subscriptions are removed on discon
   } finally { clients.forEach(ws => ws.terminate()); server.emit('shutdown'); server.close(); await once(server, 'close'); }
 });
 
+for (const acknowledge of [false, true]) test(`JPEG downgrade preserves one camera owner and its deadline, ack=${acknowledge}`, { timeout: 5000 }, async t => {
+  const { MediaRelay } = await import('../src/media.js');
+  const calls: string[] = [];
+  let now = 0, acknowledgements = 0;
+  const media = new MediaRelay(() => {});
+  t.mock.method(media, 'audioSupported', () => true);
+  const hub = new StreamHub({ start: async () => { calls.push('start'); }, stop: async () => { calls.push('stop'); hub.stopped('CAM123'); }, disposeMedia: s => media.stop(s) }, () => now);
+  const originalAck = hub.ack.bind(hub);
+  t.mock.method(hub, 'ack', (s, peer) => { const accepted = originalAck(s, peer); if (accepted) acknowledgements++; return accepted; });
+  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {} });
+  const server = createBridge(fake as unknown as Eufy, token, 'test');
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const base = `http://127.0.0.1:${address.port}`;
+  const ws = new WebSocket(`${base}/v1/live/CAM123?transport=webrtc`, { headers: { Authorization: `Bearer ${token}` } });
+  const messages: { data: Buffer; binary: boolean }[] = [];
+  ws.on('message', (data, binary) => messages.push({ data: data as Buffer, binary }));
+  const until = async (count: number) => { while (messages.length < count) await once(ws, 'message'); };
+  const ack = async () => { const next = acknowledgements + 1; ws.send('ack:jpeg'); while (acknowledgements < next) await new Promise(r => setTimeout(r, 1)); };
+  try {
+    await once(ws, 'open'); now = 14000;
+    hub.frame('CAM123', Buffer.from('actual-jpeg-frame')); await until(2);
+    const ready = JSON.parse(messages[0]!.data.toString()); assert.equal(ready.fallback, true);
+    ws.send('fallback:connection_failed'); await until(4);
+    assert.deepEqual(JSON.parse(messages[2]!.data.toString()), { type: 'fallback', reason: 'connection_failed' });
+    assert.equal(messages[3]!.binary, true); assert.equal(messages[3]!.data.toString(), 'actual-jpeg-frame');
+    assert.equal((await fetch(base + ready.path)).status, 404);
+    assert.deepEqual(calls, ['start']);
+    ws.send('ack'); // A delayed WebRTC ACK must not acknowledge the JPEG replay.
+    const pong = once(ws, 'pong'); ws.ping(); await pong;
+    assert.equal(acknowledgements, 0);
+    const closed = once(ws, 'close');
+    if (acknowledge) {
+      await ack();
+      for (now = 19000; now < 120000; now += 5000) {
+        const next = messages.length + 1; hub.frame('CAM123', Buffer.from('next-frame')); await until(next);
+        assert.equal(messages.at(-1)!.binary, true); await ack();
+      }
+      now = 120000; hub.tick(); // Absolute lifetime wins over recent real ACKs.
+    } else { now = 20000; hub.tick(); }
+    await closed;
+    assert.deepEqual(calls, ['start', 'stop']);
+    assert.equal(hub.active, 0); assert.equal(hub.quarantined, 0);
+  } finally { ws.terminate(); server.emit('shutdown'); server.close(); await once(server, 'close'); }
+});
+
+test('one viewer downgrades while another keeps WebRTC on the same camera', { timeout: 5000 }, async t => {
+  const { MediaRelay } = await import('../src/media.js');
+  let starts = 0, stops = 0;
+  let stopObserved!: () => void;
+  const stopComplete = new Promise<void>(resolve => { stopObserved = resolve; });
+  const media = new MediaRelay(() => {});
+  t.mock.method(media, 'audioSupported', () => true);
+  const hub = new StreamHub({ start: async () => { starts++; }, stop: async () => { stops++; hub.stopped('CAM123'); stopObserved(); }, disposeMedia: s => media.stop(s) });
+  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {} });
+  const server = createBridge(fake as unknown as Eufy, token, 'test');
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const base = `http://127.0.0.1:${address.port}`;
+  const sockets = [0, 1].map(() => new WebSocket(`${base}/v1/live/CAM123?transport=webrtc`, { headers: { Authorization: `Bearer ${token}` } }));
+  const messages: Buffer[][] = [[], []];
+  sockets.forEach((ws, i) => ws.on('message', data => messages[i]!.push(data as Buffer)));
+  const until = async (i: number, n: number) => { while (messages[i]!.length < n) await once(sockets[i]!, 'message'); };
+  try {
+    await Promise.all(sockets.map(ws => once(ws, 'open')));
+    hub.frame('CAM123', Buffer.from('jpeg')); await Promise.all([until(0, 2), until(1, 2)]);
+    assert.ok(JSON.parse(messages[0]![0]!.toString()).fallback_after_ms <= 15000);
+    assert.ok(JSON.parse(messages[1]![0]!.toString()).fallback_after_ms <= 5000);
+    const secondGrant = JSON.parse(messages[1]![0]!.toString()).path.split('/').at(-1);
+    sockets[0]!.send('fallback:connection_failed'); await until(0, 4);
+    assert.equal(starts, 1); assert.equal(stops, 0);
+    assert.equal(messages[1]!.length, 2);
+    // Only the first viewer's grant is revoked. The second still serves media.
+    const reader = Object.assign(new EventEmitter(), { writeHead() {}, destroy() {}, writableLength: 0 });
+    assert.equal(media.serve(secondGrant, reader as any), true);
+    const firstClosed = once(sockets[0]!, 'close'); sockets[0]!.close(); await firstClosed;
+    const pong = once(sockets[1]!, 'pong'); sockets[1]!.ping(); await pong;
+    assert.equal(stops, 0); assert.equal(hub.active, 1);
+    const secondClosed = once(sockets[1]!, 'close'); sockets[1]!.close(); await Promise.all([secondClosed, stopComplete]);
+    assert.equal(starts, 1); assert.equal(stops, 1); assert.equal(hub.active, 0);
+  } finally { sockets.forEach(ws => ws.terminate()); server.emit('shutdown'); server.close(); await once(server, 'close'); }
+});
+
 test('explicit unavailable capabilities reject cached snapshots and websocket media before the hub', async () => {
   let starts = 0;
   const denied = { available: false, status: 'unsupported', reason: 'camera_media_unverified' };
