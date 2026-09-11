@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.1 - 2026-09-11
+
+- Upgrade the camera bridge to the verified eufy-mega-client 0.12.0 release.
+- Include its additional exact camera profiles and explicit unsupported-connection
+  reasons. See the [library release scope](https://github.com/keesmod/eufy-mega-client/blob/v0.12.0/docs/RELEASE_0_12_0.md).
+- Preserve camera identities, sessions and existing media capability checks.
+  New profiles have software coverage, not a whole-family hardware guarantee.
+- Retain bridge 0.8.0 and its private data backup for rollback. Existing 0.8.0
+  installations need no new login or session migration. Older installations
+  still follow the documented Mega migration steps.
+
 ## 0.8.0 - Candidate, not published
 
 **BREAKING CHANGE: Mega is now the only camera backend.** Existing users must
