@@ -553,3 +553,31 @@ test('discovery revalidates diagnostics and ignores extra issue fields at the br
     await f.backend.close();
   }
 });
+
+for (const empty of [false,true])
+  test(`support report crosses Eufy and its normal logger for ${empty?'blocked':'usable'} discovery`, async t => {
+    const {Eufy}=await import('../src/eufy.js');
+    const {logDiscoveryDiagnostic}=await import('../src/backend-log.js');
+    const f=fixture();
+    const original=f.client.discoverDevices;
+    f.client.discoverDevices=async()=>({...await original(),devices:empty?[]:devices,
+      issues:[{index:2,deviceId:'PRIVATE_REJECTED',code:'unsupported_device',deviceModel:'T9999',deviceType:95}]});
+    const bridge=new Eufy(f.storage,'mega',false,()=>f.backend);
+    const output=t.mock.method(console,'info',()=>{});
+    bridge.on('discovery_diagnostic',logDiscoveryDiagnostic);
+    try {
+      const login=bridge.login({username:'fixture',password:'fixture',country:'NL'});
+      if(empty) await assert.rejects(login,{code:'camera_inventory_empty'});
+      else await login;
+      const lines=output.mock.calls.map(call=>call.arguments[1] as string);
+      const rows=lines.map(line=>JSON.parse(line));
+      const summary=rows.find(row=>row.event==='summary');
+      assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
+      assert.equal(summary.software.library,'0.12.1');
+      assert.equal(summary.cameras,empty?0:1);
+      assert.equal(rows.filter(row=>row.event==='issue').length,1);
+      assert.equal(rows.find(row=>row.event==='issue').device_type,95);
+      assert.doesNotMatch(lines.join('\n'),/PRIVATE|BASE|CAM/);
+      assert.equal(bridge.diagnostics.enabled,false);
+    }finally{await bridge.close();}
+  });
