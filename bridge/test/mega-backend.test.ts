@@ -105,7 +105,7 @@ function fixture() {
       lastReceivedAt: null,
     },
     connect: async () => ({ state: 'connected' as const }),
-    listDevices: async () => devices,
+    listDevices: async (): Promise<Device[]> => (await client.discoverDevices()).devices,
     discoverDevices: async (): Promise<DiscoveryResult> => ({
       devices,
       relationships: [],
