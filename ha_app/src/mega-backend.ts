@@ -149,6 +149,7 @@ export class MegaBackend extends EventEmitter implements Backend {
       new EufyMegaClient(options),
   ) {
     super();
+    this.on('backend_fault', (code) => this.discoveryDiagnostics.fault(code));
     this.recordings = new MegaRecordings(
       () => this.client,
       () => [...this.devices.values()],
@@ -166,6 +167,7 @@ export class MegaBackend extends EventEmitter implements Backend {
       () => this.emit('change'),
     );
   }
+  supportReport() { return this.discoveryDiagnostics.report(); }
   get connected(): boolean {
     return this.ready && (this.client?.connected ?? false);
   }
@@ -276,6 +278,7 @@ export class MegaBackend extends EventEmitter implements Backend {
     const reportedStates = new Map<string, StationState>();
     try {
       result = await client.discoverDevices();
+      this.discoveryDiagnostics.prepare(result);
       const { devices, issues } = result;
       const reported = new Set<string>();
       for (const issue of issues) {
@@ -302,10 +305,14 @@ export class MegaBackend extends EventEmitter implements Backend {
         reportedCapabilities.set(device.id, capability);
       }
       for (const station of devices.filter((d) => d.kind === 'station')) {
+        let phase: 'connect' | 'refresh_state' = 'connect';
         try {
           await client.connectStation(station.id);
+          phase = 'refresh_state';
           this.stationStates.set(station.id, await client.refreshStationState(station.id));
+          this.discoveryDiagnostics.station(station.id, phase, this.stationStates.get(station.id)!.connected ? 'connected' : 'disconnected');
         } catch (error) {
+          this.discoveryDiagnostics.station(station.id, phase, 'error', error instanceof EufyError ? error.code : 'connection_failed');
           this.stationStates.set(station.id, {
             id: station.id,
             connected: false,
@@ -354,8 +361,16 @@ export class MegaBackend extends EventEmitter implements Backend {
           if (state.connected) continue;
           // Error/cancellation cleanup deliberately closes the device session.
           // Restore station telemetry while idle without waking a camera.
-          await this.client.connectStation(id);
-          this.stationStates.set(id, await this.client.refreshStationState(id));
+          let phase: 'connect' | 'refresh_state' = 'connect';
+          try {
+            await this.client.connectStation(id);
+            phase = 'refresh_state';
+            this.stationStates.set(id, await this.client.refreshStationState(id));
+            this.discoveryDiagnostics.station(id, phase, this.stationStates.get(id)!.connected ? 'connected' : 'disconnected');
+          } catch (error) {
+            this.discoveryDiagnostics.station(id, phase, 'error', error instanceof EufyError ? error.code : 'connection_failed');
+            throw error;
+          }
           this.emit('change');
         }
       }
@@ -381,6 +396,7 @@ export class MegaBackend extends EventEmitter implements Backend {
   }
   private bind(client: EufyMegaClient): void {
     client.on('auth', (state) => {
+      this.discoveryDiagnostics.connection('authentication', state.state, client.eventStatus?.connected === true);
       if (state.state !== 'connected' || this.ready) this.auth = authState(state);
       this.emit('change');
     });
@@ -393,6 +409,7 @@ export class MegaBackend extends EventEmitter implements Backend {
     });
     client.on('station', (state) => {
       this.stationStates.set(state.id, state);
+      this.discoveryDiagnostics.station(state.id, 'observation', state.connected ? 'connected' : 'disconnected');
       this.emit('change');
     });
     client.on('snapshot', (snapshot) => {
@@ -403,7 +420,10 @@ export class MegaBackend extends EventEmitter implements Backend {
       });
       this.emit('change');
     });
-    client.on('events-connection', () => this.emit('change'));
+    client.on('events-connection', (connected) => {
+      this.discoveryDiagnostics.connection('events', connected ? 'connected' : 'disconnected', connected === true);
+      this.emit('change');
+    });
     client.on('live-stop', (result) => {
       // A cancelled start can stop the device before returning a media handle.
       // Established handles already deliver their result through handle.ended.

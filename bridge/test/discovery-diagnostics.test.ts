@@ -28,7 +28,7 @@ test('support report includes software, inventory, anonymous ownership, firmware
     {snapshot:capability,live:capability,recordings:capability}]]),new Map());
   const rows=f.rows();
   assert.equal(rows.length,6);
-  assert.equal(rows[0].software.library,'0.12.1');
+  assert.equal(rows[0].software.library,'0.12.2');
   assert.equal(rows[0].software.bridge,diagnosticSoftware().bridge);
   assert.deepEqual([rows[0].cameras,rows[0].stations,rows[0].issues],[1,1,2]);
   assert.equal(rows[2].owner_ref,1);
@@ -99,4 +99,51 @@ test('diagnostic output failures cannot interrupt discovery or login', () => {
   assert.doesNotThrow(()=>reporter.inventory(result(),'accepted',undefined,true,new Map(),new Map()));
   assert.doesNotThrow(()=>reporter.connection('authentication','connected',false));
   assert.doesNotThrow(()=>reporter.cloud({path:'/passport/login',host:'PRIVATE',operation:'cloud_request',elapsedMs:0}));
+});
+
+test('owner status is explicit and station errors retain phase, reference and recovery', () => {
+  const f=collect();
+  const value=result();
+  value.issues[0]!.context={firmware:'0.2.1.8',hardware:'1',parentStatus:'present',parentId:'PRIVATE_BASE',parentModel:'T8030',parentFirmware:'3.8.6.0'};
+  f.reporter.prepare(value);
+  f.reporter.station('PRIVATE_BASE','connect','error','connection_failed');
+  f.reporter.inventory(value,'accepted',undefined,true,new Map(),new Map());
+  let report=f.reporter.report();
+  const camera=report.last_discovery.find(row=>row.event==='device'&&row.ref===2)!;
+  assert.equal(camera.station_status,'not_applicable');
+  assert.equal(camera.owner_status,'error');
+  assert.equal(camera.owner_connected,null);
+  const issue=report.last_discovery.find(row=>row.event==='issue')!;
+  assert.equal(issue.owner_ref,1); assert.equal(issue.firmware,'0.2.1.8');
+  assert.equal(issue.parent_model,'T8030');
+  const fault=report.recent_events.find(row=>row.event==='station_connection')!;
+  assert.equal(fault.device_ref,1);assert.equal(fault.phase,'connect');assert.equal(fault.reason,'connection_failed');
+  f.reporter.station('PRIVATE_BASE','refresh_state','connected');
+  f.reporter.station('PRIVATE_BASE','observation','connected');
+  f.reporter.station('PRIVATE_BASE','observation','connected');
+  f.reporter.station('PRIVATE_BASE','observation','disconnected');
+  f.reporter.station('PRIVATE_BASE','observation','disconnected');
+  f.reporter.station('PRIVATE_BASE','observation','connected');
+  report=f.reporter.report();
+  assert.deepEqual(report.recent_events.map(row=>row.status),['error','connected','disconnected','connected']);
+  assert.ok(report.recent_events.every(row=>typeof row.timestamp==='string'));
+  assert.doesNotMatch(JSON.stringify(report),/PRIVATE/);
+});
+
+test('downloads retain full unchanged inventory, isolate mutations and bound recent events', () => {
+  const f=collect();
+  f.reporter.inventory(result(),'accepted',undefined,true,new Map(),new Map());
+  f.reporter.inventory(result(),'accepted',undefined,true,new Map(),new Map());
+  const downloaded=f.reporter.report();
+  assert.equal(downloaded.last_discovery.length,6);
+  assert.equal(downloaded.last_discovery[0]!.report,2);
+  downloaded.last_discovery.length=0;
+  assert.equal(f.reporter.report().last_discovery.length,6);
+  for(let i=0;i<120;i++)f.reporter.connection('events',i%2?'connected':'disconnected',!!(i%2));
+  f.reporter.connection('events','connected',true);
+  assert.equal(f.reporter.report().recent_events.length,100);
+  assert.equal(f.reporter.report().recent_events.at(-1)!.outcome,'connected');
+  f.reporter.fault('PRIVATE_TOKEN');f.reporter.fault('PRIVATE_TOKEN');
+  assert.equal(f.reporter.report().recent_events.filter(row=>row.event==='fault').length,1);
+  assert.doesNotMatch(JSON.stringify(f.reporter.report()),/PRIVATE/);
 });

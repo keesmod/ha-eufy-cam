@@ -34,6 +34,10 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
     if (!authorized(request, token)) { json(response, 401, { error: "unauthorized" }); return; }
     void (async () => {
       const url = new URL(request.url ?? "/", "http://bridge");
+      if (request.method === "GET" && url.pathname === "/v1/diagnostics") {
+        response.setHeader('Content-Disposition', 'attachment; filename="eufy-diagnostics.json"');
+        json(response, 200, eufy.supportReport()); return;
+      }
       if (request.method === "GET" && url.pathname === "/v1/state") { json(response, 200, state()); return; }
       if (request.method === "POST" && url.pathname === "/v1/migration") {
         await eufy.acceptMigration(await body(request, 32768));
