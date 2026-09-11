@@ -15,7 +15,9 @@ packaging, software validation and publication boundaries. After separately
 authorized publication, update the integration while keeping bridge 0.7.1.
 Retain the integration 0.7.1 archive, existing entry and private backup for
 rollback. A backend/version migration still follows the [migration guide](docs/MEGA_MIGRATION.md).
-No publication or deployment is authorized by preparation story #21.
+No publication or deployment is authorized by preparation story #21. The
+existing Python dependency alert is recorded in the candidate notes and remains
+an explicit gate for later publication/deployment acceptance.
 
 ## 0.7.1 - 2026-09-11
 

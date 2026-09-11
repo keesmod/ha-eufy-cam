@@ -90,7 +90,7 @@ checks every ZIP member and byte against the tracked allowlist. Identical local
 builds establish reproducibility under that Python/zlib environment. Verify the
 Linux Actions bundle separately because compression versions can differ.
 
-Required CI remains the full Validate workflow: dependency and secret checks,
+Required CI remains the full Validate workflow: npm dependency audits,
 release-tool checks, HA lint/format/types/tests and coverage, HACS, Hassfest, app
 and bridge builds, bridge tests and clean container startup, browser/media tests,
 and verified release-package creation. The final `ci` gate requires every job.
@@ -113,3 +113,19 @@ attribution. No unlicensed mower source, schemas, constants, fixtures or tests
 are copied. Mower relicensing and HACS publication remain outside this camera
 candidate. Public artifacts must contain no sessions, credentials, captures,
 footage or private geometry.
+
+## Open dependency alert
+
+On 2026-09-11, GitHub reports [Dependabot alert #1](https://github.com/keesmod/ha-eufy-cam/security/dependabot/1)
+for `cryptography` 48.0.1 in `uv.lock`, advisory `GHSA-g6cj-pr64-35w5`, severity high.
+The advisory identifies PKCS#7 EnvelopedData decryption error/timing differences
+and lists 50.0.0 as the first patched version. The lock is unchanged by this
+candidate apart from the project version. It belongs to the HA development/test
+environment. The integration ZIP does not vendor this Python package, and an
+installed HA environment supplies its own dependencies. This does not establish
+that the host installation is unaffected.
+
+The existing CI security workflow audits npm package locks. Green CI does not
+clear this Python alert. Resolve or explicitly assess the advisory and record
+the affected environment before any later publication/deployment acceptance.
+The alert remains open. No exception, dismissal or dependency override is added.
