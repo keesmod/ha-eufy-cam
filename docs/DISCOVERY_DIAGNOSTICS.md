@@ -1,109 +1,112 @@
-# Missing-device diagnostics
+# Discovery support diagnostics
 
-Bridge 0.8.3 requires eufy-mega-client 0.12.1 for the received model/type details.
-The library is included in the bridge, so users do not install it separately.
+Use this guide when cameras or a HomeBase are missing, or when setup fails.
+Collect one complete report from the affected installation so support can compare
+accepted devices, rejected rows, firmware and HomeBase relationships together.
+No live stream or optional debug logging is needed to generate discovery evidence.
 
-When the Eufy Security Viewer Bridge app offers version 0.8.3 or later, update
-it and restart it. Open the app's **Logs** tab in Home Assistant and look for
-`Eufy backend: unsupported_device`. Discovery diagnostics work with the optional
-live-video diagnostics setting disabled.
+## Required versions and update channels
 
-A synthetic example is:
+| Collection method | Bridge | Bundled library | HA integration |
+|---|---|---|---|
+| Current startup logs, including rejected-device firmware and parent context | 0.8.5 | 0.12.2 | No integration update needed to read bridge logs |
+| One file through HA **Download diagnostics** | 0.8.5 | 0.12.2 | 0.8.5 |
+| Earlier structured startup reports, without rejected-device parent/firmware context | 0.8.4 | 0.12.1 | No integration update needed to read bridge logs |
+| Earlier unsupported-model/type error lines only | 0.8.3 | 0.12.1 | No integration update needed to read bridge logs |
 
-```text
-Eufy backend: unsupported_device device_model=T9999 device_type=95
-```
+These are the introduction versions. Later compatible releases retain the
+corresponding collection method. The bridge includes its library, so users do
+not install the library separately. Check the actual `software` values in the
+report rather than inferring them from a release title or the HACS version.
 
-Each distinct code/model/type combination appears once per discovery pass.
-A later discovery pass can repeat a line.
-Only exact five-character model codes and integer types from 0 through 65535
-are shown. A missing, malformed or out-of-bounds value appears as `unavailable`.
-Values are never shortened, trimmed, coerced or inferred from a serial number.
-The two fields are the received values, not the expected supported mapping.
+Update the bridge through the HA app store or the documented Docker update path.
+The integration updates separately through HACS. A version on `main` does not
+mean that its [public integration release](https://github.com/keesmod/ha-eufy-cam/releases)
+is available. If integration 0.8.5 is not offered, use the bridge logs. Follow the
+[upgrade and recovery guide](MEGA_MIGRATION.md) when upgrading an older setup.
 
-Share only these short diagnostic lines after reviewing them. Do not share
-serial numbers, account details, tokens, addresses or a raw inventory/debug log.
-Other discovery codes keep their existing form. Usable cameras remain available
-in a mixed inventory, and zero recognized cameras still blocks setup with
-`camera_inventory_empty` after the rejection reasons have been logged.
+## Collect the startup logs
 
-The C30 mapping remains T8224/type 95. A logged mismatch provides evidence for
-further investigation, but does not itself identify the missing physical device
-or prove a C30 fix. [Issue #40](https://github.com/keesmod/ha-eufy-cam/issues/40)
-remains open until the reporter's actual data and results establish the cause.
+1. Update the **Eufy Security Viewer Bridge** to 0.8.5 or a later compatible
+   release. Leave the optional live-video diagnostics setting disabled.
+2. Restart the bridge once. A Home Assistant restart is not needed for this log
+   collection. Wait until startup completes or an error appears, and complete
+   login verification if prompted.
+3. Open the app's **Logs** tab. For Docker, read the bridge container's logs.
+4. Copy all lines beginning with `Eufy discovery:` and `Eufy backend:` from that
+   startup attempt. Include `summary`, every `device` and `issue` row, the matching
+   `end` row, and connection/error records. If authentication fails before a
+   summary is produced, include the available diagnostic lines.
+5. Review the excerpt using the privacy guidance below, then attach it as a text
+   file or paste it in a code block on the existing issue.
 
+Keep the complete bounded report, including accepted devices. A final error line
+alone cannot explain whether the parent HomeBase was returned or connected.
+A fresh restart produces full rows even if repeated reports had been suppressed.
 
-## One startup excerpt for support, bridge 0.8.4
+## Download one file from Home Assistant
 
-Restart bridge 0.8.4 or later and wait until login completes or the error
-appears. Copy the lines starting with `Eufy discovery:` and `Eufy backend:`
-from the app's normal Logs tab. Include the `summary`, every `device` and
-`issue` row, the matching `end` row and the following `connection` result.
-Live-video diagnostics need not be enabled. The library is bundled with the
-bridge and does not need a separate user installation.
+With both bridge and integration 0.8.5 or later compatible versions installed:
 
-The report includes:
+1. Restart the bridge to obtain fresh startup evidence, then wait for startup or
+   the reported failure. Follow the integration's normal restart instructions if
+   you have just updated its files.
+2. Open **Settings > Devices & services > Eufy Security Viewer**.
+3. Open the integration entry's menu and select **Download diagnostics**.
+4. Review the file, then attach it to the existing issue.
 
-- The actual bridge, library and Node versions, operating system and architecture.
-- Named cloud steps with HTTP status, numeric result and elapsed time. Hostnames,
-  URLs, request bodies and account/session values are excluded.
-- Authentication/challenge outcome and push connection state after event startup.
-- Recognized camera/station counts and all discovery rejections, including
-  bounded received model/type values for unsupported devices.
-- Recognized models, numeric firmware/hardware versions, observed availability,
-  anonymous owner references and the result of HomeBase connection attempts.
-- Per-feature software admission and fixed reasons for unavailable snapshot,
-  live and recording operations. These are software guards, not a playback test.
-- Migration-baseline presence, expected/missing counts and any setup rejection.
+The file includes HA/integration versions, the complete latest discovery and up
+to 100 recent diagnostic events, alongside HA's standard system information.
+The integration can request the report even when its setup failed. An unreachable
+or older bridge returns an explicit unavailable result. Use its startup logs in
+that case. No automatic upload or issue submission takes place.
 
-`ref` and `owner_ref` are temporary positions within that report. They are not
-serials or stable identifiers. `inventory_row` is the library rejection's
-zero-based source position and is a separate numbering scheme. `device_ref`
-links an issue to a recognized device only when the public library result does
-so. The same report number groups its rows. Unknown values are `null` or
-`unavailable`. A later unchanged report keeps its summary and end marker while
-omitting duplicate rows. Restarting the bridge produces a full new report.
+Bridge-only consumers can use the existing Bearer authentication to request
+`GET /v1/diagnostics`. The response reads cached evidence and triggers no cloud
+or device requests. Never put the token in a shared command or URL.
 
-This is a report of the public discovery result, not the full cloud response.
-A cloud request failure yields `inventory_available=false`, not proof that the
-account is empty. Logs cannot establish why data omitted by the vendor is absent.
+## Interpret the report
 
-The report does not include names, serials, tokens, account identifiers, addresses,
-raw errors, payloads, images or alarm state. Each row is bounded and the report
-contains at most 99 device and 99 issue rows, plus its summary/end markers.
-Review the short excerpt before sharing it. No automatic upload is performed.
+The report covers the public library discovery result. A cloud request failure
+with `inventory_available=false` does not prove that the account has no devices.
+Ignored non-security rows and data omitted by Eufy are outside this report.
 
-## Single support download, bridge and integration 0.8.5
+The C30 mapping is already `T8224` with device type `95`. Discovery also depends
+on the values Eufy actually returns and the received owner relationship. The
+report helps distinguish discovery rejection, parent problems and setup failure.
+An unexpected model/type pair does not by itself identify the missing physical
+camera. [Issue #40](https://github.com/keesmod/ha-eufy-cam/issues/40) needs the
+reporter's evidence before its cause or a C30 fix can be established.
 
-In Home Assistant open Settings > Devices & services > Eufy Security Viewer.
-Use the integration entry's menu and select **Download diagnostics**. The standard
-HA download includes HA/integration versions, the complete latest discovery and
-up to 100 recent diagnostic events. Restart the updated bridge once to collect
-fresh startup evidence, then download the report after the problem occurs.
-The integration can request the report even when its setup failed. A bridge that
-is unreachable or predates the endpoint yields an explicit unavailable result.
-Bridge-only operators can retrieve the same cached report through the existing
-Bearer-authenticated `GET /v1/diagnostics` route. No device or cloud requests are
-triggered by a download. No automatic upload or issue submission is performed.
-Review the file before attaching it to a support issue.
+`ref`, `owner_ref` and `device_ref` are anonymous references within a report.
+`inventory_row` is a separate zero-based source position. Use the `report` number
+and timestamps together, and do not compare references across restarts.
 
-Schema 2 retains `station_connected` for compatibility and adds `station_status`
-and `owner_status`. Status values distinguish `not_checked`, `connected`,
-`disconnected`, `error` and `not_applicable`. Camera rows use `owner_connected`
-for their HomeBase connection. Camera availability remains the last cloud/device
-observation and does not prove current media reachability. A failed connection or
-state refresh has an anonymous `device_ref`, model, phase and fixed reason.
-Timestamped station and push connection transitions record loss and recovery.
-Repeated identical states are suppressed. Recent events name their report number
-because anonymous references are valid only within that discovery report.
-The download preserves full rows even when repeated log reports omit them.
+Camera rows use `owner_connected` and `owner_status` for the HomeBase connection.
+Their own `station_status` is `not_applicable`, so `station_connected=null` does
+not indicate a failed camera connection. Statuses distinguish `not_checked`,
+`connected`, `disconnected`, `error` and `not_applicable`. Camera availability is
+an observation, and media capabilities describe software admission. Neither is a
+fresh playback or reachability test.
 
-Library 0.12.2 adds rejected-device firmware/hardware and received parent context.
-`parent_status=present` means one matching security inventory row, not proof that
-it is a supported or connected HomeBase. Other states distinguish absent, self,
-missing, ambiguous or invalid parents. `owner_ref` links only to a recognized
-parent in the same report. Parent model/firmware can describe an unrecognized
-parent without exposing its identity. Invalid values stay unavailable, and raw
-identifiers never enter the logger or download. This does not infer a C30 mapping
-or establish the cause of issue #40. Ignored non-security rows remain outside
-this report.
+Rejected-device firmware and parent fields are included when available and valid.
+`parent_status=present` means a unique matching security row, not proof that it
+is a supported or connected HomeBase. Other values distinguish `none`, `self`,
+`missing`, `ambiguous` and `invalid`. Unknown or invalid output values remain
+`null` or `unavailable`. No model or type is inferred from a serial number.
+
+## Privacy and scope
+
+The dedicated report excludes device names, serial numbers, account identifiers,
+tokens, private addresses, raw errors, payloads, images and alarm state. Review
+both the excerpt and HA's standard diagnostic envelope before sharing them.
+Never attach `/data`, HA `.storage`, credentials, session stores, raw captures,
+full debug logs, recording paths or identifiable footage. See [safe diagnostics](../.github/SUPPORT.md#safe-diagnostics).
+
+The report is bounded to 99 device rows and 99 issue rows plus summary/end, with
+up to 100 recent events in the download. It reduces follow-up questions but cannot
+guarantee a diagnosis if Eufy omits the necessary data. Keep unrelated media,
+physical-device and hardware acceptance claims separate.
+
+Maintainers should follow the [report contract and change checklist](DEVELOPMENT.md#diagnostic-report-contract)
+and [diagnostic release checks](RELEASING.md#diagnostic-release-checks).
