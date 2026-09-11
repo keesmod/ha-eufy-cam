@@ -48,12 +48,13 @@ from its own commit, so the release cannot use an older green run.
 3. Inspect the successful run and download its `release-package` artifact. It
    contains integration, bridge and source ZIPs, `SHA256SUMS` and
    `release-manifest.json` with source commit, component versions and file hashes.
-4. Complete validation appropriate to the change. Protocol, device commands and
-   media changes need bounded tests on the declared hardware and HA routes, with
-   one controlling bridge, preserved private state and verified cleanup. Record
-   the observation duration and anything unproven. CI uses synthetic fixtures;
-   it cannot prove physical sound, battery life or a live migration. For changes
-   that do not affect hardware, record why those tests are unnecessary.
+4. Name the changed features and affected transport paths. Protocol, device
+   commands and media changes need bounded tests on representative affected
+   hardware and HA routes, with one controlling bridge, preserved private state
+   and verified cleanup. Reviewed community results can supply this evidence.
+   Record the exact versions, observation duration, method and anything unproven.
+   CI cannot prove physical sound, battery life or a live migration. Changes that
+   do not affect hardware need no new physical tests. Record that rationale.
 5. Run **Release** again on the same `main` commit and version, tick **publish**,
    and supply a sanitized acceptance summary or evidence link. The summary is
    included in the public release notes. Never include credentials, serials,
@@ -68,6 +69,32 @@ immediately before the draft becomes public. If it advanced, rerun from current
 main. New stable versions must be newer than the latest stable release. Reusing
 an existing tag at another commit is rejected. A merge or a pushed tag alone
 does not publish a release. Releases do not deploy to a Home Assistant instance.
+
+## Hardware coverage and release scope
+
+Follow the [community evidence policy](https://github.com/keesmod/eufy-mega-client/blob/main/docs/COMMUNITY_VALIDATION.md).
+A missing test for an otherwise implemented model is not a release or upgrade
+veto. Keep previously tested combinations with their original versions and dates.
+Do not demand every camera model or a fixed number of installations for each
+release. Maintainer ownership of the hardware is not required.
+
+State confirmed behavior, reported results, unconfirmed implementation, known
+problems and missing support separately. Required software/security checks and
+actual protocol, migration and safety gates remain. For a new protocol path or
+major migration, arrange voluntary testing of a recoverable candidate before a
+stable claim. The current workflow does not publish prerelease versions.
+
+Dependencies must match the release slice. Unchanged mower-map work cannot block
+a camera-focused library or camera release. Changed shared behavior still needs
+appropriate checks for affected consumers, and map or mower migrations retain
+their actual acceptance requirements. Missing expected devices remain a migration
+failure. A qualified release does not wait for completion of the whole programme.
+
+For a known regression, identify affected versions, feature, model/topology and
+recovery advice. Verify the fix on the affected path before claiming it resolved.
+Keep unresolved validation in its existing issue without silently widening a
+support claim. Documentation and report-form changes take effect on GitHub after
+merge and do not need a product version bump, HA deployment or live-device test.
 
 ## Failure and recovery
 
