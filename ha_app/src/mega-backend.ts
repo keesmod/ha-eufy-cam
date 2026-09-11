@@ -5,12 +5,14 @@ import {
   type ClientOptions,
   type Device,
   type DiscoveryIssue,
+  type DiscoveryResult,
   type StationState,
   type LiveStream,
   type AuthState as MegaAuth,
 } from '@keesmod/eufy-mega-client';
 import { Storage } from './storage.js';
-import { migrationInventory, verifyInventory } from './migration.js';
+import { migrationInventory, verifyInventory, type MigrationInventory } from './migration.js';
+import { DiscoveryDiagnostics, diagnosticCode } from './discovery-diagnostics.js';
 import { MegaRecordings } from './mega-recordings.js';
 import { RecordingError, StationError } from './errors.js';
 import type {
@@ -131,6 +133,9 @@ export class MegaBackend extends EventEmitter implements Backend {
   >();
   private closed = false;
   private ready = false;
+  private readonly discoveryDiagnostics = new DiscoveryDiagnostics((line) =>
+    this.emit('discovery_diagnostic', line),
+  );
   private timer?: NodeJS.Timeout;
   private refreshing = false;
   auth: AuthState = { state: 'unconfigured' };
@@ -182,6 +187,7 @@ export class MegaBackend extends EventEmitter implements Backend {
   async login(credentials?: Credentials, options?: LoginOptions): Promise<AuthState> {
     if (credentials) {
       this.client = this.factory({
+        diagnostics: (event) => this.discoveryDiagnostics.cloud(event),
         credentials: {
           email: credentials.username,
           password: credentials.password,
@@ -211,7 +217,17 @@ export class MegaBackend extends EventEmitter implements Backend {
     let authenticated: AuthState;
     try {
       authenticated = authState(await client.connect(answer));
+      this.discoveryDiagnostics.connection(
+        'authentication',
+        authenticated.state,
+        client.eventStatus?.connected === true,
+      );
     } catch (error) {
+      this.discoveryDiagnostics.connection(
+        'authentication',
+        error instanceof EufyError ? error.code : 'unclassified_error',
+        false,
+      );
       if (
         error instanceof EufyError &&
         ['authentication_rejected', 'invalid_authentication'].includes(error.code)
@@ -226,7 +242,17 @@ export class MegaBackend extends EventEmitter implements Backend {
       return this.auth;
     }
     await this.discover();
-    await client.startEvents();
+    try {
+      await client.startEvents();
+      this.discoveryDiagnostics.connection('events', 'connected', client.eventStatus?.connected === true);
+    } catch (error) {
+      this.discoveryDiagnostics.connection(
+        'events',
+        error instanceof EufyError ? error.code : 'unclassified_error',
+        false,
+      );
+      throw error;
+    }
     if (this.closed) {
       await client.shutdown();
       throw new Error('Bridge closed');
@@ -242,47 +268,76 @@ export class MegaBackend extends EventEmitter implements Backend {
   }
   private async discover(): Promise<void> {
     const client = this.client!;
-    const { devices, issues } = await client.discoverDevices();
-    const reported = new Set<string>();
-    for (const issue of issues) {
-      const detail = discoveryDetail(issue);
-      const key = `${issue.code} ${detail ?? ''}`;
-      if (reported.has(key)) continue;
-      reported.add(key);
-      this.emit('backend_fault', issue.code, ...(detail ? [detail] : []));
-    }
-    verifyInventory(await migrationInventory(this.storage), devices);
-    const next = new Map(devices.map((d) => [d.id, d]));
-    for (const device of this.devices.values())
-      if (device.kind === 'camera' && !next.has(device.id)) {
-        this.pictures.delete(device.id);
-        this.emit('camera-removed', device.id);
+    let result: DiscoveryResult | undefined;
+    let expected: MigrationInventory | undefined;
+    let baselineChecked = false;
+    let outcome = 'accepted';
+    const reportedCapabilities = new Map<string, CameraCapabilities>();
+    const reportedStates = new Map<string, StationState>();
+    try {
+      result = await client.discoverDevices();
+      const { devices, issues } = result;
+      const reported = new Set<string>();
+      for (const issue of issues) {
+        const detail = discoveryDetail(issue);
+        const key = `${issue.code} ${detail ?? ''}`;
+        if (reported.has(key)) continue;
+        reported.add(key);
+        this.emit('backend_fault', issue.code, ...(detail ? [detail] : []));
       }
-    this.devices = next;
-    this.capabilities.clear();
-    for (const device of devices.filter((d) => d.kind === 'camera'))
-      this.capabilities.set(device.id, await client.getCameraCapabilities(device.id));
-    for (const station of devices.filter((d) => d.kind === 'station')) {
-      try {
-        await client.connectStation(station.id);
-        this.stationStates.set(station.id, await client.refreshStationState(station.id));
-      } catch (error) {
-        this.stationStates.set(station.id, {
-          id: station.id,
-          connected: false,
-          guardMode: null,
-          currentMode: null,
-          alarm: false,
-          alarmDelay: 0,
-          armDelay: 0,
-          commandEncryption: null,
-        });
-        this.emit('backend_fault', error instanceof EufyError ? error.code : 'connection_failed');
+      expected = await migrationInventory(this.storage);
+      baselineChecked = true;
+      verifyInventory(expected, devices);
+      const next = new Map(devices.map((d) => [d.id, d]));
+      for (const device of this.devices.values())
+        if (device.kind === 'camera' && !next.has(device.id)) {
+          this.pictures.delete(device.id);
+          this.emit('camera-removed', device.id);
+        }
+      this.devices = next;
+      this.capabilities.clear();
+      for (const device of devices.filter((d) => d.kind === 'camera')) {
+        const capability = await client.getCameraCapabilities(device.id);
+        this.capabilities.set(device.id, capability);
+        reportedCapabilities.set(device.id, capability);
       }
+      for (const station of devices.filter((d) => d.kind === 'station')) {
+        try {
+          await client.connectStation(station.id);
+          this.stationStates.set(station.id, await client.refreshStationState(station.id));
+        } catch (error) {
+          this.stationStates.set(station.id, {
+            id: station.id,
+            connected: false,
+            guardMode: null,
+            currentMode: null,
+            alarm: false,
+            alarmDelay: 0,
+            armDelay: 0,
+            commandEncryption: null,
+          });
+          this.emit('backend_fault', error instanceof EufyError ? error.code : 'connection_failed');
+        }
+        reportedStates.set(station.id, this.stationStates.get(station.id)!);
+      }
+      // HomeBase connection already requests existing cover images. This does not
+      // start cameras or manufacture a new snapshot by briefly opening live video.
+      this.emit('change');
+    } catch (error) {
+      outcome = diagnosticCode(
+        error && typeof error === 'object' && 'code' in error ? error.code : undefined,
+      );
+      throw error;
+    } finally {
+      this.discoveryDiagnostics.inventory(
+        result,
+        outcome,
+        expected,
+        baselineChecked,
+        reportedCapabilities,
+        reportedStates,
+      );
     }
-    // HomeBase connection already requests existing cover images. This does not
-    // start cameras or manufacture a new snapshot by briefly opening live video.
-    this.emit('change');
   }
   private async refresh(): Promise<void> {
     if (this.closed || this.refreshing || !this.client) return;
@@ -304,7 +359,7 @@ export class MegaBackend extends EventEmitter implements Backend {
           this.emit('change');
         }
       }
-      if (!this.client.eventStatus.connected) await this.client.startEvents();
+      if (!this.client.eventStatus?.connected === true) await this.client.startEvents();
     } catch (error) {
       this.emit('backend_fault', error instanceof EufyError ? error.code : 'connection_failed');
     } finally {
