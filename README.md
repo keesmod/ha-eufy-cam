@@ -35,11 +35,13 @@ A Eufy cloud recording subscription is not needed to play the tested HomeBase fi
 
 ## Camera capabilities
 
-The upcoming 0.7.1 bridge and integration display per-camera snapshot, live and
+Bridge and integration 0.7.1 introduced per-camera snapshot, live and
 recording capabilities from the Mega client. Available software is marked
 experimental. Unsupported operations show a reason and cannot start media.
 Older bridges without this optional metadata keep their existing behavior.
 See [capability evidence](docs/CAMERA_CAPABILITIES.md) for validation and limits.
+The unpublished integration 0.7.2 [candidate](docs/CAMERA_RELEASE_CANDIDATE_0_7_2.md)
+adds release evidence and keeps bridge 0.7.1 and client 0.10.0.
 
 ## Installation
 
@@ -105,7 +107,7 @@ From version 0.4.2, the integration registers the shared JavaScript resource aut
 3. To browse recordings across cameras, add an **Eufy Events** card too. It uses the same resource and selects all accessible Viewer cameras by default.
 4. Open a live view, then close it. To check recordings, choose a date with a clip you can already see in the Eufy app and play that clip.
 
-If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.7.1` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
+If automatic registration fails, enable **Advanced mode** in your HA profile and open **Settings → Dashboards → three-dot menu → Resources**. Add `/eufy_viewer/eufy-viewer-card.js?v=0.7.2` as a **JavaScript module** before adding the cards. Edit an existing entry instead of adding a duplicate. Releases up to 0.4.1 also need this manual step. Use your installed integration version after `?v=`. This value refreshes the browser cache; it does not select an older copy of the card.
 
 If you manage resources in YAML, the integration leaves that configuration untouched. Add the module to your existing `lovelace.resources` list and update the version after upgrades:
 
@@ -113,7 +115,7 @@ If you manage resources in YAML, the integration leaves that configuration untou
 lovelace:
   resource_mode: yaml
   resources:
-    - url: /eufy_viewer/eufy-viewer-card.js?v=0.7.1
+    - url: /eufy_viewer/eufy-viewer-card.js?v=0.7.2
       type: module
 ```
 
@@ -142,14 +144,21 @@ If the problem remains, [report a bug](https://github.com/keesmod/ha-eufy-cam/is
 
 ## Upgrading
 
-Version **0.6.4** fixes silent recordings on Apple players and requires both the integration and bridge to be updated. The HAOS app now uses host networking and `http://127.0.0.1:8063`. Select `mega` for the tested T8030/T8160/T8213 installation. Existing H.264/H.265 playback, notifications and entity identities are preserved. Read [Mega migration and rollback](docs/MEGA_MIGRATION.md) first.
+The current published release is **0.7.1** for both bridge and integration. It
+includes capability controls and live JPEG fallback without audio. Select `mega`
+for the tested T8030/T8160/T8213 installation. Read [Mega migration and rollback](docs/MEGA_MIGRATION.md)
+first, including the exact hardware and feature limits.
 
-1. Close live viewers and recording dialogs. Back up Home Assistant and the bridge's private data before updating.
-2. Stop the old bridge and update **Eufy Security Viewer Bridge** to **0.6.4**. Select the intended backend, keep the existing token and start only this bridge. For Docker, follow the [bridge update steps](docs/DOCKER.md#update-the-docker-bridge), keeping the same data volume and token.
-3. Update **Eufy Security Viewer** to **0.6.4** in HACS and restart Home Assistant. Reconfigure the existing integration entry to `http://127.0.0.1:8063` for the HAOS app, keeping its token. Do not delete and recreate the entry. Complete a fresh Mega login challenge if requested.
-4. Reload the dashboard. For YAML resources, update the existing module URL to `/eufy_viewer/eufy-viewer-card.js?v=0.7.1` and reload resources first.
-5. Check that the push connection sensor is connected. Test a real detection and inspect its event entity or listen to `eufy_viewer_event`. A recognized person should produce one `person` event with `person_name` and `recognition: known`. See [notification examples](docs/NOTIFICATIONS.md).
-6. Confirm cameras and HomeBase controls remain available. Event support does not change Eufy's detection settings or phone notification preferences.
+1. Close viewers and recording dialogs. Back up HA and private bridge data.
+2. Stop the old bridge and install bridge **0.7.1**. Keep its token and data and start only one owner. For Docker, follow the [update steps](docs/DOCKER.md#update-the-docker-bridge).
+3. Install integration **0.7.1** and restart HA. Keep the same integration entry. The HAOS app endpoint is `http://127.0.0.1:8063`. Complete a fresh Mega login challenge if required.
+4. Reload the dashboard. For YAML resources, update the existing module URL's cache version to the installed integration version and reload resources.
+5. Verify identities, snapshots, actual live video/audio and confirmed stop, recordings, an actual supported event and observed HomeBase mode. Connected push alone does not prove event delivery. See [notifications](docs/NOTIFICATIONS.md).
+6. Keep the old packages and private backup until validation and recovery pass.
+
+Integration **0.7.2** is an unpublished candidate. After separate publication
+authorization, its metadata/documentation update can retain bridge **0.7.1**.
+See the [candidate upgrade and rollback notes](docs/CAMERA_RELEASE_CANDIDATE_0_7_2.md).
 
 Keeping the bridge's data preserves its identity, credentials and session. The integration keeps your existing camera entities. If your bridge is listed under **Local apps**, the repository app is a separate installation and will not update that local copy. Back up its private data and token before migrating; a new empty data directory creates a different bridge identity. See [support](.github/SUPPORT.md) if you need help moving an older installation.
 

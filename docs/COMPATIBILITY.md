@@ -1,6 +1,8 @@
 # Compatibility and community testing
 
-The initial evidence comes from one maintainer installation, not a broad device certification. Camera model numbers were not captured in the public validation record; camera names are not model identifiers. Reports from additional installations will be linked here as they are reviewed.
+The historical results below come from one maintainer installation. The dated
+0.7.1 acceptance now records exact models and firmware. These results do not
+certify whole camera families or additional installations.
 
 | Component or feature | Confirmed evidence | Still to confirm |
 |---|---|---|
@@ -32,6 +34,20 @@ unwanted stream starts. HA recorder independently covered gaps caused by an
 expired token in the auxiliary observer. This is not a completed 24-hour or
 battery-life test. See the library's [full results and limits](https://github.com/keesmod/eufy-mega-client/blob/main/docs/COMPATIBILITY.md).
 
+## Dated 0.7.1 hardware acceptance
+
+On 2026-09-11, camera #20 completed the 0.6.4 to 0.7.1 upgrade and actual rollback
+on HA 2026.9.1, amd64 and Node 24.21.0. T8160 firmware 3.4.3.0 and T8213 firmware
+0.2.1.8 used T8030 firmware 3.8.6.0. Stored snapshots, decoded live video/audio,
+confirmed stop, complete recording queries, decoded recording audio/video and
+seeking passed for both tuples. Fifteen HA identities and dashboard/automation
+content were preserved. A real T8160 person event reached HA after a fresh
+upgrade. Cleanup and recovery passed. See the [full record](CAMERA_UPGRADE_ROLLBACK_2026_09_11.md).
+
+Integration 0.7.2 is an unpublished documentation/metadata candidate using bridge
+0.7.1 and client 0.10.0. It has no new physical test or support claim. See
+[candidate notes and remaining obligations](CAMERA_RELEASE_CANDIDATE_0_7_2.md).
+
 ## Report your installation
 
 Our first target is **10 independent HomeBase 3 installations**. You do not need to be a developer. A partial result is useful too.
@@ -48,4 +64,7 @@ For failures, use the [bug form](https://github.com/keesmod/ha-eufy-cam/issues/n
 
 ## Community results
 
-No independent installation reports have been reviewed yet. This table will grow from linked reports; untested models will not be marked supported.
+[Camera #10](https://github.com/keesmod/ha-eufy-cam/issues/10) contains partial
+T8134 reporter evidence for discovery, stored snapshots, battery, person events
+and recording video/audio. Live playback and session recovery remain unresolved
+in client #21/#22/#56. This is reporter evidence, not independent full acceptance.

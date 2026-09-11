@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.1 - Unreleased
+## 0.7.1 - 2026-09-11
 
 - Automatically switch failed WebRTC playback to live JPEG over the existing
   authenticated Home Assistant connection. The player displays "Live video
@@ -17,7 +17,7 @@ JPEG fallback has no audio and requires a working HA connection. It cannot fix
 an unavailable camera. T8134 live-audio validation remains pending. Preserve a
 backup and version 0.6.4 for rollback.
 
-## 0.7.0 - Unreleased
+## 0.7.0 - Included in 0.7.1
 
 - Carry camera snapshot, live and recording software capabilities into HA and
   both cards. Mark available operations experimental and show unsupported reasons.
