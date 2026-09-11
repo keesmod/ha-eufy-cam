@@ -9,6 +9,7 @@ import {
   type ClientOptions,
   type Device,
   type CameraCapabilities,
+  type DiscoveryResult,
 } from '@keesmod/eufy-mega-client';
 import { MegaBackend } from '../src/mega-backend.js';
 import { Storage } from '../src/storage.js';
@@ -104,7 +105,12 @@ function fixture() {
       lastReceivedAt: null,
     },
     connect: async () => ({ state: 'connected' as const }),
-    listDevices: async () => devices,
+    listDevices: async (): Promise<Device[]> => (await client.discoverDevices()).devices,
+    discoverDevices: async (): Promise<DiscoveryResult> => ({
+      devices,
+      relationships: [],
+      issues: [],
+    }),
     getCameraCapabilities: async (_id: string): Promise<CameraCapabilities> => ({
       snapshot: {
         available: true,
@@ -279,9 +285,41 @@ test('an idle disconnected HomeBase reconnects without starting a camera or inte
   }
 });
 
+for (const empty of [false, true])
+  test(`discovery reports rejection codes without identities for ${empty ? 'empty' : 'mixed'} inventory`, async () => {
+    const f = fixture();
+    const faults: unknown[][] = [];
+    f.backend.on('backend_fault', (...args) => faults.push(args));
+    f.client.discoverDevices = async () => ({
+      devices: empty ? [] : devices,
+      relationships: [],
+      issues: [
+        { index: 2, deviceId: 'PRIVATE-FLOODLIGHT', code: 'unsupported_device' },
+        { index: 3, deviceId: 'PRIVATE-OTHER-CAMERA', code: 'unsupported_device' },
+        { index: 4, deviceId: 'PRIVATE-ORPHAN', code: 'unsupported_station' },
+      ],
+    });
+    try {
+      const login = f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+      if (empty) await assert.rejects(login, { code: 'camera_inventory_empty' });
+      else assert.equal((await login).state, 'connected');
+      assert.deepEqual(faults, [['unsupported_device'], ['unsupported_station']]);
+      assert.equal(f.backend.inventory().length, empty ? 0 : 1);
+      assert.equal(f.backend.stations.inventory().length, empty ? 0 : 1);
+      assert.deepEqual(f.calls, []);
+    } finally {
+      await f.backend.close();
+    }
+  });
+
 test('standalone capability reasons reach inventory and prevent every media operation', async () => {
   const f = fixture();
   f.client.listDevices = async () => [{ ...devices[1]!, stationId: 'CAM', model: 'T8134' }];
+  f.client.discoverDevices = async () => ({
+    devices: await f.client.listDevices(),
+    relationships: [],
+    issues: [],
+  });
   f.client.getCameraCapabilities = async () => {
     const denied = {
       available: false,
