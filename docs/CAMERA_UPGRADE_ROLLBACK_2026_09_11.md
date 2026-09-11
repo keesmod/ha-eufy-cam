@@ -63,10 +63,43 @@ for T8160 and 32.27 seconds for T8213. Playback audio was nonzero in both stages
 HA's resource cache version is expected to change on upgrade and is excluded from
 the dashboard-content equality check.
 
-## Acceptance status
+## Rollback and acceptance status
 
-Actual event acceptance, rollback readback and final cleanup are pending. This
-document does not close the story or claim those checks passed.
+The old bridge image, matching integration and private configuration/session
+backup were restored. An offline recursive byte comparison passed before the
+old bridge started. Runtime then reported bridge/integration 0.6.4 and client
+0.1.1 again. The existing saved login restored authentication. All fifteen entity
+identities and the four dashboard/automation files remained unchanged.
+
+The T8160 rollback test decoded 43 live video frames and 208 audio frames, with
+nonzero audio, a confirmed stop, no quarantine and no transport recovery. Its
+stored snapshot and the same complete 55-record query and recording playback
+passed again.
+
+The upgrade event observer ran for 300 seconds. Push remained connected, but no
+actual camera event arrived. The subscription closed cleanly. Connected push is
+not sufficient evidence of event delivery. A fresh physical motion or doorbell
+event on the upgraded test installation remains required. No event was injected.
+
+The T8213 rollback test decoded 40 live video frames and 144 audio frames, with
+nonzero audio and the same confirmed clean stop. Its snapshot, complete six-record
+query, 484 video frames, 488 audio frames and seeking passed again. Rollback media
+acceptance therefore passed for both tuples.
+
+The test controller was stopped and removed before production restarted. The
+original test integration 0.5.1 was restored and HA configuration validation
+passed. Test helpers were archived outside the active HA configuration. The
+recovery guard exited. Backups and release images were retained.
+
+Production recovered on its original 0.7.1 image. Readback confirmed all fifteen
+identities, four available cameras, unchanged dashboard/automation content,
+connected authentication and push, zero active/quarantined streams, and restored
+boot, watchdog and automatic-update settings. Production HA configuration
+validation passed. No product release or production downgrade occurred.
+
+Nineteen targeted configuration-flow, entity and resource tests passed. The
+change adds documentation only. The story remains in Validation for the actual
+upgrade event gate, and no successor starts until that gate passes.
 
 Software recognition or these two tuples do not resolve T8134 live playback and
 session recovery. Those remain in [camera #10](https://github.com/keesmod/ha-eufy-cam/issues/10)
