@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.8 - 2026-09-13
+
+- Add separate Docker opt-in `EUFY_RECORDING_ACCELERATION=nvidia` for required
+  HEVC-to-H.264 recording conversion. Keep native HEVC and H.264 remuxing and
+  copied AAC audio. Software remains the default, including HAOS.
+- Bound GPU conversion and retry once with software on the same downloaded
+  bytes after confirmed process cleanup. Preserve cancellation, output limits
+  and the overall deadline. Block conversion after unconfirmed cleanup.
+- Add anonymous recording-route diagnostics and document the reported T600 live
+  validation separately from pending NVIDIA recording validation.
+
+Update integration and bridge when this version is published. Back up the
+previous installation and preserve its token/data. Disable the new option and
+recreate the container to return to software. Actual NVIDIA recording operation
+requires a compatible GPU test before claiming hardware support.
+
 ## 0.8.7 - 2026-09-13
 
 - Add experimental Docker opt-in NVIDIA live transcoding with

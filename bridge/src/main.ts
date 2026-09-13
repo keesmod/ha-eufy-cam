@@ -1,3 +1,5 @@
+import { RecordingTranscoder, recordingAcceleration } from './recording-media.js';
+import { MegaBackend } from './mega-backend.js';
 import { liveAcceleration } from './live-transcoder.js';
 import { randomUUID } from "node:crypto";
 import {backendName} from "./backend.js";
@@ -9,13 +11,18 @@ import { logBackendFault, logDiscoveryDiagnostic } from "./backend-log.js";
 const token = process.env.EUFY_BRIDGE_TOKEN;
 if (!token || token.length < 32) throw new Error("EUFY_BRIDGE_TOKEN must contain at least 32 characters");
 const acceleration = liveAcceleration(process.env.EUFY_LIVE_ACCELERATION);
+const recordingMode = recordingAcceleration(process.env.EUFY_RECORDING_ACCELERATION);
+const recordingMedia = new RecordingTranscoder(recordingMode, event => {
+  if (process.env.EUFY_DIAGNOSTICS === "true") console.info(JSON.stringify(event));
+});
 const selectedBackend = backendName(process.env.EUFY_BACKEND);
 const storage = new Storage(process.env.EUFY_DATA_DIR ?? "/data");
 let id = await storage.read("bridge-id");
 if (!id) { id = randomUUID(); await storage.write("bridge-id", id); }
-const eufy = new Eufy(storage,selectedBackend, process.env.EUFY_DIAGNOSTICS === "true");
+const eufy = new Eufy(storage,selectedBackend, process.env.EUFY_DIAGNOSTICS === "true",
+  (storage, busy) => new MegaBackend(storage, busy, undefined, recordingMedia));
 eufy.media.acceleration = acceleration;
-if (eufy.diagnostics.enabled) console.info("Eufy live diagnostics enabled. Disable after troubleshooting.");
+if (eufy.diagnostics.enabled) console.info("Eufy media diagnostics enabled. Disable after troubleshooting.");
 eufy.on("backend_fault", logBackendFault);
 eufy.on("discovery_diagnostic", logDiscoveryDiagnostic);
 eufy.on("storage_error", () => console.error("Unable to persist bridge session"));

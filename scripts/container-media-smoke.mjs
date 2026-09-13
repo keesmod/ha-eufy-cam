@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { PassThrough } from 'node:stream';
+import { RecordingTranscoder } from '/app/dist/recording-media.js';
 import { LiveTranscoder } from '/app/dist/live-transcoder.js';
 import { StreamDiagnostics } from '/app/dist/diagnostics.js';
 function ffmpeg(args) {
@@ -29,8 +30,31 @@ for (const codec of ['h264', 'hevc']) {
       assert.equal(probe.status, 0);
       assert.deepEqual(JSON.parse(probe.stdout).streams.map(stream => stream.codec_name).sort(), ['aac', 'h264']);
       const decode = spawnSync('ffmpeg', ['-v', 'error', '-i', 'pipe:0', '-f', 'null', '-'], { input: encoded, timeout: 5000 });
-      assert.equal(decode.status, 0); assert.equal(decode.stderr.length, 0);
+      assert.equal(decode.status, 0); assert.equal(decode.stderr.length, 0, decode.stderr.toString());
       console.log(`${codec} ${mode}: real A/V software output and cleanup passed`);
     } finally { clearTimeout(timer); session.stop(); }
   }
+  // Raw recording tracks have no packet timestamps. Use a synthetic stream
+  // without frame reordering for native remux checks. Keep the original HEVC
+  // fixture above for the existing live decoding/transcoding checks.
+  const recordingBytes = codec === 'hevc'
+    ? ffmpeg(['-f', 'lavfi', '-i', 'testsrc=size=320x180:rate=15', '-t', '1', '-pix_fmt', 'yuv420p', '-c:v', 'libx265', '-preset', 'ultrafast', '-threads', '1', '-x265-params', 'pools=none:frame-threads=1:bframes=0', '-f', 'hevc', 'pipe:1'])
+    : videoBytes;
+  for (const mode of ['software', 'nvidia']) {
+    for (const format of ['native', 'h264']) {
+      const events = [];
+      const output = await new RecordingTranscoder(mode, e => events.push(e.event)).mux(
+        { videoCodec: codec, fps: 15 }, recordingBytes, audioBytes, AbortSignal.timeout(15000), format);
+      const transcode = codec === 'hevc' && format === 'h264';
+      assert.ok(events.includes(transcode ? 'recording_active_software' : 'recording_remuxed'));
+      assert.equal(events.includes('recording_software_fallback'), transcode && mode === 'nvidia');
+      const probe = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name', '-of', 'json', '-i', 'pipe:0'], { input: output, timeout: 5000 });
+      assert.equal(probe.status, 0);
+      assert.deepEqual(JSON.parse(probe.stdout).streams.map(s => s.codec_name).sort(), ['aac', transcode ? 'h264' : codec]);
+      const decode = spawnSync('ffmpeg', ['-v', 'error', '-i', 'pipe:0', '-f', 'null', '-'], { input: output, timeout: 5000 });
+      assert.equal(decode.status, 0); assert.equal(decode.stderr.length, 0, decode.stderr.toString());
+      console.log(`recording ${codec} ${format} ${mode}: decoded complete MP4 A/V`);
+    }
+  }
+
 }

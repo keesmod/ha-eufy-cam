@@ -13,6 +13,7 @@ import {
 import { Storage } from './storage.js';
 import { migrationInventory, verifyInventory, type MigrationInventory } from './migration.js';
 import { DiscoveryDiagnostics, diagnosticCode } from './discovery-diagnostics.js';
+import { RecordingTranscoder } from './recording-media.js';
 import { MegaRecordings } from './mega-recordings.js';
 import { RecordingError, StationError } from './errors.js';
 import type {
@@ -147,6 +148,7 @@ export class MegaBackend extends EventEmitter implements Backend {
     private readonly liveBusy: () => boolean | 'live_busy' | 'live_stopping',
     private factory: (options: ClientOptions) => EufyMegaClient = (options) =>
       new EufyMegaClient(options),
+    recordingMedia = new RecordingTranscoder(),
   ) {
     super();
     this.on('backend_fault', (code) => this.discoveryDiagnostics.fault(code));
@@ -159,6 +161,7 @@ export class MegaBackend extends EventEmitter implements Backend {
         if (!capabilities.recordings.available)
           throw new RecordingError('capability_unavailable', 503);
       },
+      recordingMedia,
     );
     this.stations = new MegaStations(
       () => this.client,

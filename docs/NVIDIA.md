@@ -1,9 +1,9 @@
-# Optional NVIDIA live transcoding
+# Optional NVIDIA media transcoding
 
 This experimental Docker option requests NVIDIA decoding and H.264 encoding for
-live A/V. It keeps `libx264` software transcoding as the default. It does not
-change JPEG previews, recordings, camera transport or Home Assistant identities.
-It does not establish a latency fix for issue #48.
+live A/V and, from bridge 0.8.8, HEVC-to-H.264 recording conversion. Each has a
+separate opt-in setting. Software remains the default. JPEG previews, camera
+transport and Home Assistant identities are unchanged.
 
 ## Requirements and image checks
 
@@ -11,7 +11,8 @@ Use a Linux Docker host with a compatible NVIDIA GPU, an already working host
 driver and NVIDIA Container Toolkit configured for Docker. Check the GPU's
 H.264/HEVC decode profiles and H.264 encode support in NVIDIA's
 [codec support matrix](https://developer.nvidia.com/video-encode-and-decode-gpu-support-matrix-new).
-The T600 mentioned in issue #49 has not been tested by this project.
+A community reporter confirmed live NVENC/NVDEC on a T600 with bridge 0.8.7.
+Recording conversion has separate hardware validation requirements below.
 
 The bridge image uses Debian Bookworm's FFmpeg from `node:24-bookworm-slim`.
 The Docker host can run a different distribution, including Debian 13. The
@@ -133,8 +134,77 @@ This evidence concerns the built images, not every future Debian package.
 
 Software checks cover command construction, startup error and timeout fallback,
 replay bounds, cancellation, runtime failure and real FFmpeg software output.
-No compatible NVIDIA GPU is available in the development environment. NVENC and
-NVDEC operation, T600 compatibility, A/V synchronisation, CPU/GPU load, picture
-quality, concurrent-session limits and startup performance remain unvalidated.
-Issue #49 stays open for that acceptance. Compare the same codec, camera, image
+No compatible NVIDIA GPU is available in the development environment. The
+community live validation below adds evidence for one installation. Other
+GPU/driver combinations, picture quality and concurrent-session limits still
+need their own evidence. Compare the same codec, camera, image
 and host on software and NVIDIA before drawing performance conclusions.
+
+## Recording playback
+
+From bridge 0.8.8, add `EUFY_RECORDING_ACCELERATION=nvidia` to the same Docker
+service with the GPU exposure and driver capabilities described above. It is
+independent of `EUFY_LIVE_ACCELERATION`. Both accept only `software` or `nvidia`,
+and both default to software. HAOS retains software defaults.
+
+NVIDIA is used only when an HEVC recording must be converted to H.264 for the
+player. H.264 recordings and native HEVC playback copy the existing video and AAC
+into MP4 without decoding or encoding. Zero GPU activity is expected for these
+remuxes, which preserve the original picture and avoid unnecessary conversion.
+The browser still owns decoding and displaying the resulting recording.
+
+Conversion requests CUDA decoding and `h264_nvenc` encoding at the original
+resolution and frame rate. NVENC uses preset p4, the high-quality tune, VBR with
+CQ 23 and no B frames. These settings do not imply identical quality to software.
+Pixel-format conversion can transfer frames through system memory. AAC is copied.
+
+The complete recording is downloaded once. Hardware gets at most 10 seconds,
+within the existing 45-second total conversion deadline. After a failure, the
+bridge waits up to one second for confirmed process termination, discards all
+partial output and makes one software attempt on the same downloaded bytes with
+the remaining time. It does not repeat a camera download. Failed hardware is
+disabled for recordings until bridge restart, independently of live acceleration.
+Native remuxing retains its 20-second deadline and output remains capped at 32 MiB.
+The existing overall recording-operation deadline also remains in effect.
+
+Cancellation or oversized output does not trigger fallback. If process cleanup
+cannot be confirmed, further recording conversion is blocked until restart to
+prevent overlapping processes. A failed software attempt ends the operation.
+
+With `EUFY_DIAGNOSTICS=true`, recording logs contain only an anonymous attempt
+number, elapsed conversion time and one of these events:
+
+| Event | Meaning |
+| --- | --- |
+| `recording_active_nvidia` | NVIDIA completed the MP4 conversion |
+| `recording_active_software` | Software completed the MP4 conversion |
+| `recording_remuxed` | Compatible video and audio were copied without transcoding |
+| `recording_hardware_failed` | The hardware attempt failed |
+| `recording_hardware_timeout` | The hardware attempt reached its deadline |
+| `recording_software_fallback` | One software replacement was selected |
+
+Elapsed time starts after the recording download, so it is not total playback
+startup time. Completion identifies the encoder route. Confirm NVDEC/NVENC engine
+activity separately on the GPU while preparing a new HEVC-to-H.264 recording.
+The bridge finishes preparing the MP4 before playback starts, so GPU activity
+can already be zero while the browser plays it. Native playback or a cached MP4
+cannot validate conversion acceleration. Compare the same clip on software and
+NVIDIA, checking duration, audio sync, picture quality, elapsed time and GPU load.
+
+Disable recording acceleration by removing `EUFY_RECORDING_ACCELERATION` or
+setting it to `software`, then recreate the container with the same data and token.
+
+## Community live validation
+
+On 2026-09-13, a reporter using a T600 4 GB, driver 610.57.04, Debian 13/Docker,
+HomeBase 3 T8030 and cameras T8416/T8417/T8425 confirmed live video/audio and actual
+NVENC/NVDEC activity with bridge 0.8.7 and client 0.12.2. Activity stopped when
+live view closed and resumed on reopening. See the
+[reported hardware test](https://github.com/keesmod/ha-eufy-cam/issues/49#issuecomment-5653261791).
+This validates that reported installation's live path, not NVIDIA recording
+conversion, every camera individually or other GPU/driver combinations.
+
+Recording command, fallback, deadline, cancellation and byte-limit checks use
+synthetic tests. Real CPU FFmpeg tests verify complete H.264/AAC output, native
+remuxing and missing-GPU fallback. Actual NVIDIA recording conversion remains
+pending a compatible GPU test in issue #54.
