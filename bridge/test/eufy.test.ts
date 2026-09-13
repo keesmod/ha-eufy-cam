@@ -40,7 +40,7 @@ test('shared bridge converts real media and retains last frame on close', { time
   let producer: ChildProcess | undefined;
   let producerClosed: Promise<unknown> | undefined;
   const controller = new AbortController();
-  const deadline = setTimeout(() => controller.abort(new Error("No decoded frame within 15 seconds")), 15_000);
+  const deadline = setTimeout(() => controller.abort(new Error("No decoded frame within 3 seconds")), 3_000);
   try {
     assert.equal((await bridge.login({ username: 'test@example.invalid', password: 'fixture-only', country: 'NL' })).state, 'connected');
     assert.deepEqual(calls, []);
@@ -60,7 +60,11 @@ test('shared bridge converts real media and retains last frame on close', { time
     let stderr = '';
     producer.stderr!.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-4096); });
     producer.on('exit', (code, signal) => controller.abort(new Error(`Test producer exited (${code ?? signal}): ${stderr}`)));
+    const ready = once(bridge, 'media-ready');
     backend.emit('live-start', { serial: 'CAM123', videoCodec: 'h264', audioSupported: false, fps: 8, video: producer.stdout, audio: Readable.from([]) });
+    assert.deepEqual(await ready, ['CAM123']);
+    assert.equal(bridge.metrics.frames, 0, 'Actual metadata is ready before JPEG decoding');
+    assert.equal(bridge.media.audioSupported('CAM123'), false);
     const [jpeg] = await frame;
     clearTimeout(deadline);
     assert.equal(jpeg[0], 255); assert.equal(jpeg[1], 216);

@@ -313,6 +313,10 @@ export class Eufy extends EventEmitter {
             'error',
             '-threads',
             '1',
+            '-probesize',
+            '32768',
+            '-analyzeduration',
+            '100000',
             '-f',
             codec,
             '-i',
@@ -358,6 +362,7 @@ export class Eufy extends EventEmitter {
         });
         video.on('error', () => this.hub.end(serial, 'Camera transport failed'));
         video.pipe(encoder.stdin);
+        this.emit('media-ready', serial);
       },
     );
   }

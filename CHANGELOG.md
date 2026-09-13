@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.8.6 - 2026-09-13
+
+### Live startup
+
+- Start WebRTC signaling when the live encoder has actual audio metadata,
+  without waiting for the JPEG fallback decoder's first frame.
+- Bound FFmpeg analysis for both video and AAC inputs and the JPEG decoder.
+  Keep analyzed packets so the initial keyframe remains available.
+- Retain at most 1 MB of initial encoded output for at most two seconds so
+  signaling can attach readers without losing the first video keyframe.
+  Viewer revocation, slow-reader limits, fallback and camera stop ownership
+  remain enforced.
+
+### Upgrade and recovery
+
+Update the integration and bridge together to 0.8.6 when available. This is a
+software startup fix. The exact T8425/T8030 Docker startup time in issue #48
+still needs an observation on that installation. No networking change is
+required. Back up the previous integration, bridge and private bridge data
+before updating. Restore that matching backup to roll back.
+
 ## 0.8.5 - 2026-09-11
 
 ### Logging improvements for diagnostics

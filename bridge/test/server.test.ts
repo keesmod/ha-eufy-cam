@@ -67,11 +67,12 @@ test('authenticated bridge snapshots never start; websocket close stops last vie
   } finally { server.emit('shutdown'); server.close(); await once(server, 'close'); }
 });
 
-for (const hasAudio of [false, true]) test(`WebRTC grants report audio=${hasAudio} after the first frame and expire with their owner`, { timeout: 5000 }, async t => {
+for (const hasAudio of [false, true]) test(`WebRTC grants report audio=${hasAudio} before the first JPEG frame and expire with their owner`, { timeout: 5000 }, async t => {
   const { MediaRelay } = await import('../src/media.js');
   const calls: string[] = [];
   const media = new MediaRelay(() => {});
-  t.mock.method(media, 'audioSupported', () => hasAudio);
+  let metadata: boolean | undefined;
+  t.mock.method(media, 'audioSupported', () => metadata);
   const hub = new StreamHub({ start: async s => { calls.push(`start:${s}`); }, stop: async s => { calls.push(`stop:${s}`); }, disposeMedia: s => media.stop(s) });
   const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {} });
   const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
@@ -93,12 +94,18 @@ for (const hasAudio of [false, true]) test(`WebRTC grants report audio=${hasAudi
     await once(ws, 'open');
     assert.deepEqual(messages, [], 'No fabricated audio capability before media arrives');
     const first = once(ws, 'message');
-    hub.frame('CAM123', Buffer.from('jpeg-not-forwarded'));
+    metadata = hasAudio;
+    fake.emit('media-ready', 'OTHER');
+    fake.emit('media-ready', 'CAM123');
     const [ready] = await first;
     const message = JSON.parse(ready.toString());
     assert.equal(message.type, 'ready'); assert.match(message.path, /^\/v1\/media\/[a-f0-9]{64}$/);
     assert.deepEqual(calls, ['start:CAM123']);
     assert.equal(message.audio, hasAudio);
+    assert.equal(messages.length, 1, 'Ready does not fabricate a delivered frame');
+    assert.equal(fake.listenerCount('media-ready'), 0);
+    fake.emit('media-ready', 'CAM123');
+    hub.frame('CAM123', Buffer.from('jpeg-not-forwarded'));
     await bothMessages;
     assert.equal(messages.length, 2);
     assert.equal(messages[1]!.binary, false);
@@ -286,4 +293,29 @@ test('support download is authenticated, available during failed setup and start
     assert.equal(response.headers.get('cache-control'),'no-store');
     assert.deepEqual(await response.json(),report);
   } finally {server.emit('shutdown');server.closeAllConnections();server.close();await once(server,'close');}
+});
+
+test('closing before live metadata removes readiness listeners and never renews ownership', { timeout: 5000 }, async () => {
+  const { MediaRelay } = await import('../src/media.js');
+  let stops = 0;
+  let stopped!: () => void;
+  const stopComplete = new Promise<void>(resolve => { stopped = resolve; });
+  const media = new MediaRelay(() => {});
+  const hub = new StreamHub({ start: async () => {}, stop: async () => { stops++; hub.stopped('CAM123'); stopped(); }, disposeMedia: s => media.stop(s) });
+  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: () => true, pictures: new Map(), hub, media, metrics: {} });
+  const server = createBridge(fake as unknown as Eufy, token, 'test');
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const ws = new WebSocket(`http://127.0.0.1:${address.port}/v1/live/CAM123?transport=webrtc`, { headers: { Authorization: `Bearer ${token}` } });
+  const messages: unknown[] = []; ws.on('message', data => messages.push(data));
+  try {
+    await once(ws, 'open');
+    assert.equal(fake.listenerCount('media-ready'), 1);
+    ws.send('ack'); // No delivered frame means no lease renewal.
+    const pong = once(ws, 'pong'); ws.ping(); await pong;
+    const closed = once(ws, 'close'); ws.close(); await Promise.all([closed, stopComplete]);
+    assert.equal(fake.listenerCount('media-ready'), 0);
+    fake.emit('media-ready', 'CAM123');
+    assert.deepEqual(messages, []); assert.equal(stops, 1); assert.equal(hub.active, 0);
+  } finally { ws.terminate(); server.emit('shutdown'); server.close(); await once(server, 'close'); }
 });
