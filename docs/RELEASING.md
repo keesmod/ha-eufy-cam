@@ -124,6 +124,15 @@ privacy bounds and schema compatibility.
 
 ## Failure and recovery
 
+The publisher retains the release ID returned when GitHub creates the draft.
+Subsequent reads, uploads and publication use that ID. Downloads use asset IDs,
+so delayed tag/list indexing cannot hide a draft created by the same run. An ID
+read that returns 404 is retried up to four attempts, with 1, 2 and 4 seconds
+between attempts and a 10-second timeout per request. Other errors stop the run.
+Writes are never retried automatically. If creation has an uncertain outcome or
+ID reads remain unavailable, inspect the exact draft and rerun only the failed
+job after confirming its tag, commit, notes and assets.
+
 A failed or cancelled build cannot publish. A download, checksum or package
 mismatch leaves the candidate as a draft. Rerunning the same commit can resume
 missing uploads; reuse the original acceptance summary. Draft notes must match
