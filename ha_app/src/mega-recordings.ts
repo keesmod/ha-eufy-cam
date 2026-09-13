@@ -7,7 +7,7 @@ import {
   type RecordingDownload,
 } from '@keesmod/eufy-mega-client';
 import { RecordingError } from './errors.js';
-import { muxRecording } from './recording-media.js';
+import { RecordingTranscoder } from './recording-media.js';
 import type { BackendRecordings, Recording } from './backend.js';
 
 /** Keeps bridge handles, conversion and limits stable across both backends. */
@@ -27,6 +27,7 @@ export class MegaRecordings implements BackendRecordings {
     private devices: () => Device[],
     private liveBusy: () => boolean | 'live_busy' | 'live_stopping',
     private checkCapability: (serial: string) => Promise<void> = async () => {},
+    private readonly media = new RecordingTranscoder(),
   ) {}
   get busy(): boolean {
     return !!this.operation;
@@ -183,7 +184,7 @@ export class MegaRecordings implements BackendRecordings {
         const metadata = transfer.metadata;
         const codec =
           metadata.videoCodec === 'h264' ? 'h264' : metadata.videoCodec === 'h265' ? 'hevc' : null;
-        const output = await muxRecording(
+        const output = await this.media.mux(
           { videoCodec: codec, fps: metadata.fps },
           Buffer.concat(video),
           Buffer.concat(audio),
