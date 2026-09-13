@@ -12,6 +12,8 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import time
+from urllib.parse import quote
 
 import release_project as project
 
@@ -156,17 +158,18 @@ def build(folder, requested=None):
 class GitHub:
     def __init__(self, repo):
         self.repo = repo
+        self.release_ids = {}
 
-    def api(self, suffix, payload=None, missing=False):
+    def api(self, suffix, payload=None, missing=False, method=None, timeout=60):
         args = ["gh", "api", "repos/" + self.repo + suffix]
         if payload is not None:
-            args.extend(["--method", "POST", "--input", "-"])
+            args.extend(["--method", method or "POST", "--input", "-"])
         result = subprocess.run(
             args,
             input=None if payload is None else json.dumps(payload),
             text=True,
             capture_output=True,
-            timeout=60,
+            timeout=timeout,
         )
         if missing and result.returncode and "HTTP 404" in result.stderr:
             return None
@@ -185,59 +188,118 @@ class GitHub:
             obj = self.api("/git/tags/" + obj["sha"])["object"]
         raise ValueError("Too many nested tags")
 
+    def remember_release(self, tag, result):
+        require(
+            isinstance(result, dict)
+            and type(result.get("id")) is int
+            and result["id"] > 0
+            and result.get("tag_name") == tag,
+            "Release response has an invalid identity",
+        )
+        require(
+            self.release_ids.get(tag, result["id"]) == result["id"],
+            "Release ID changed during publication",
+        )
+        self.release_ids[tag] = result["id"]
+        return result
+
     def release(self, tag):
+        if tag in self.release_ids:
+            # A newly created draft may not be indexed by tag/list yet. Read
+            # only its confirmed ID, with four attempts and no write retries.
+            for attempt in range(4):
+                result = self.api(
+                    "/releases/" + str(self.release_ids[tag]), missing=True, timeout=10
+                )
+                if result is not None:
+                    return self.remember_release(tag, result)
+                if attempt < 3:
+                    time.sleep(2**attempt)
+            raise ValueError(
+                "Release ID is not visible after bounded reads; retry after inspection"
+            )
         result = self.api("/releases/tags/" + tag, missing=True)
         if result is not None:
-            return result
-        # GitHub's tag endpoint may omit drafts. Find the exact draft in the
-        # authenticated release list; never treat another draft as this release.
+            return self.remember_release(tag, result)
+        # Only initial discovery of an existing release needs tag/list lookup.
         page = 1
         while True:
             releases = self.api(f"/releases?per_page=100&page={page}")
             for candidate in releases:
                 if candidate["tag_name"] == tag:
-                    return self.api("/releases/" + str(candidate["id"]))
+                    self.remember_release(tag, candidate)
+                    return self.release(tag)
             if len(releases) < 100:
                 return None
             page += 1
 
     def download(self, tag, folder):
-        command(
-            "gh", "release", "download", tag, "--repo", self.repo, "--dir", str(folder)
-        )
+        for asset in self.release(tag)["assets"]:
+            name, asset_id = asset["name"], asset["id"]
+            require(
+                Path(name).name == name and name not in ("", ".", ".."),
+                "Unsafe asset name",
+            )
+            require(type(asset_id) is int and asset_id > 0, "Invalid release asset ID")
+            with (folder / name).open("xb") as output:
+                result = subprocess.run(
+                    [
+                        "gh",
+                        "api",
+                        f"repos/{self.repo}/releases/assets/{asset_id}",
+                        "--header",
+                        "Accept: application/octet-stream",
+                    ],
+                    stdout=output,
+                    stderr=subprocess.PIPE,
+                    timeout=180,
+                )
+            require(result.returncode == 0, "Release asset download failed: " + name)
 
     def create(self, tag, commit, notes):
-        command(
-            "gh",
-            "release",
-            "create",
-            tag,
-            "--repo",
-            self.repo,
-            "--verify-tag",
-            "--target",
-            commit,
-            "--draft",
-            "--title",
-            tag,
-            "--notes-file",
-            str(notes),
+        # Keep the POST response, including the authoritative release ID. Never
+        # retry creation: an uncertain response requires inspection on rerun.
+        result = self.api(
+            "/releases",
+            {
+                "tag_name": tag,
+                "target_commitish": commit,
+                "name": tag,
+                "body": notes.read_text(),
+                "draft": True,
+                "prerelease": False,
+            },
         )
+        self.remember_release(tag, result)
+        require(
+            result.get("draft") is True
+            and result.get("prerelease") is False
+            and result.get("target_commitish") == commit,
+            "Created release does not match the draft candidate",
+        )
+        return result
 
     def upload(self, tag, path):
-        command("gh", "release", "upload", tag, str(path), "--repo", self.repo)
-
-    def publish(self, tag):
+        release_id = self.release_ids[tag]
         command(
             "gh",
-            "release",
-            "edit",
-            tag,
-            "--repo",
-            self.repo,
-            "--draft=false",
-            "--latest",
+            "api",
+            "--method",
+            "POST",
+            f"https://uploads.github.com/repos/{self.repo}/releases/{release_id}/assets?name={quote(path.name, safe='')}",
+            "--header",
+            "Content-Type: application/octet-stream",
+            "--input",
+            str(path),
         )
+
+    def publish(self, tag):
+        result = self.api(
+            "/releases/" + str(self.release_ids[tag]),
+            {"draft": False, "make_latest": "true"},
+            method="PATCH",
+        )
+        return self.remember_release(tag, result)
 
 
 def check_remote(github, meta, commit):
@@ -339,9 +401,7 @@ def publish(folder, requested, manifest_digest, acceptance, github=None):
         with tempfile.TemporaryDirectory() as temp:
             notes = Path(temp) / "notes.md"
             notes.write_text(notes_text)
-            github.create(tag, commit, notes)
-        release = github.release(tag)
-    require(release is not None, "Created draft is not visible; retry after inspection")
+            release = github.create(tag, commit, notes)
     require(
         (release.get("body") or "").replace("\r\n", "\n").strip() == notes_text.strip(),
         "Draft release notes differ; reuse the original acceptance summary or inspect the draft",
@@ -354,8 +414,7 @@ def publish(folder, requested, manifest_digest, acceptance, github=None):
     release = github.release(tag)
     verify_remote(github, tag, release, folder, meta, commit, manifest_digest)
     check_remote(github, meta, commit)
-    github.publish(tag)
-    release = github.release(tag)
+    release = github.publish(tag)
     require(release and not release["draft"], "Release did not become public")
     require(github.tag_commit(tag) == commit, "Published tag changed")
     verify_remote(github, tag, release, folder, meta, commit, manifest_digest)
