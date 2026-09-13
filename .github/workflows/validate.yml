@@ -87,6 +87,7 @@ jobs:
         working-directory: bridge
       - run: docker build -t eufy-viewer-bridge:test ./bridge
       - run: docker run --rm --network none -e EUFY_BRIDGE_TOKEN=00000000000000000000000000000000 -v "${{ github.workspace }}/scripts/container-smoke.mjs:/tmp/smoke.mjs:ro" --entrypoint node eufy-viewer-bridge:test /tmp/smoke.mjs
+      - run: docker run --rm --network none -v "${{ github.workspace }}/scripts/container-media-smoke.mjs:/tmp/media-smoke.mjs:ro" --entrypoint node eufy-viewer-bridge:test /tmp/media-smoke.mjs
   card:
     runs-on: ubuntu-latest
     timeout-minutes: 10

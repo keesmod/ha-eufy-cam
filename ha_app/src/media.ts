@@ -1,14 +1,16 @@
 /** Encoded A/V fan-out. Readers cannot start or renew camera ownership. */
 import { StreamDiagnostics } from './diagnostics.js';
-import { spawn, type ChildProcess } from 'node:child_process';
-import type { Readable, Writable } from 'node:stream';
+import { LiveTranscoder, type LiveAcceleration } from './live-transcoder.js';
+import type { Readable } from 'node:stream';
 import type { ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
 export class MediaRelay {
   private audioTracks = new Map<string, boolean>();
   audioSupported(serial: string): boolean | undefined { return this.audioTracks.get(serial); }
-  private encoders = new Map<string, ChildProcess>();
+  private encoders = new Map<string, LiveTranscoder>();
+  acceleration: LiveAcceleration = 'software';
+  private hardwareFailed = false;
   private readers = new Map<string, Set<ServerResponse>>();
   private grants = new Map<string, string>();
   private grantReaders = new Map<string, Set<ServerResponse>>();
@@ -40,29 +42,12 @@ export class MediaRelay {
   }
   start(serial: string, codec: 'h264' | 'hevc', video: Readable, audio: Readable, hasAudio: boolean, fps = 15): void {
     if (this.encoders.has(serial)) throw new Error('Duplicate media encoder');
-    // Both elementary-stream formats are known. Bound each input's analysis
-    // separately, retaining probed packets and the initial keyframe.
-    const args = ['-hide_banner', '-loglevel', 'error', '-threads', '1', '-fflags', '+genpts', '-probesize', '32768', '-analyzeduration', '100000', '-r', String(Math.max(1, Math.min(30, fps || 15))), '-f', codec, '-i', 'pipe:0'];
-    if (hasAudio) args.push('-thread_queue_size', '64', '-probesize', '32768', '-analyzeduration', '100000', '-f', 'aac', '-i', 'pipe:3');
-    args.push('-map', '0:v:0');
-    if (hasAudio) args.push('-map', '1:a:0', '-c:a', 'aac', '-b:a', '64k', '-ar', '48000', '-ac', '1');
-    args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-vf', "scale='min(1920,iw)':-2", '-threads', '1', '-g', '30');
-    args.push('-mpegts_flags', '+resend_headers', '-muxdelay', '0', '-muxpreload', '0', '-f', 'mpegts', 'pipe:1');
-    const process = spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] });
-    this.encoders.set(serial, process);
     const startup = { chunks: [] as Buffer[], bytes: 0, timer: undefined as ReturnType<typeof setTimeout> | undefined };
     this.startup.set(serial, startup);
     this.audioTracks.set(serial, hasAudio);
-    this.diagnostics.encoder(serial, 'media', process);
-    const failed = () => { if (this.encoders.get(serial) === process) this.failed(serial); };
-    process.on('error', failed); process.on('exit', failed);
-    process.stdin!.on('error', failed);
-    video.pipe(process.stdin!);
-    const input = process.stdio[3] as Writable;
-    input.on('error', failed);
-    if (hasAudio) audio.pipe(input);
-    process.stdout!.on('data', (chunk: Buffer) => {
-      if (this.encoders.get(serial) !== process) return;
+    const encoder = new LiveTranscoder(serial, codec, video, audio, hasAudio, fps,
+      this.hardwareFailed ? 'software' : this.acceleration, this.diagnostics, (chunk) => {
+      if (this.encoders.get(serial) !== encoder) return;
       this.diagnostics.mark(serial, 'media_output');
       if (this.startup.get(serial) === startup) {
         if (!startup.timer) {
@@ -77,7 +62,10 @@ export class MediaRelay {
         if (reader.writableLength > 1_000_000) reader.destroy();
         else reader.write(chunk);
       }
-    });
+    }, () => { if (this.encoders.get(serial) === encoder) this.failed(serial); },
+      () => { this.hardwareFailed = true; });
+    this.encoders.set(serial, encoder);
+    encoder.start();
   }
   private clearStartup(serial: string): void {
     const startup = this.startup.get(serial);
@@ -89,7 +77,7 @@ export class MediaRelay {
     const process = this.encoders.get(serial); this.encoders.delete(serial);
     this.audioTracks.delete(serial);
     this.clearStartup(serial);
-    if (process) { process.stdin?.destroy(); (process.stdio[3] as Writable)?.destroy(); process.kill('SIGKILL'); }
+    process?.stop();
     for (const reader of this.readers.get(serial) ?? []) reader.destroy();
     this.readers.delete(serial);
     for (const [key, camera] of this.grants) if (camera === serial) this.revoke(key);

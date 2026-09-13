@@ -109,3 +109,9 @@ Before these steps, update and restart the HA integration and wait for its migra
 6. The already-updated HA integration transfers the saved device list. Complete a new Mega login if requested, then check the cameras.
 
 If the replacement fails, stop and remove that container and recreate the previous image with the same settings. Keep the previous image and private backup until you have verified the update.
+
+## Optional NVIDIA acceleration
+
+Software transcoding remains the default. For an existing compatible NVIDIA GPU
+on a Linux Docker host, see the [experimental setup and fallback guide](NVIDIA.md).
+The HAOS app has no GPU requirement.
