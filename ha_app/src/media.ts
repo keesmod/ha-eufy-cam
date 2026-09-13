@@ -12,6 +12,7 @@ export class MediaRelay {
   private readers = new Map<string, Set<ServerResponse>>();
   private grants = new Map<string, string>();
   private grantReaders = new Map<string, Set<ServerResponse>>();
+  private startup = new Map<string, { chunks: Buffer[]; bytes: number; timer?: ReturnType<typeof setTimeout> }>();
   constructor(private readonly failed: (serial: string) => void, private readonly diagnostics = new StreamDiagnostics()) {}
   grant(serial: string): string {
     const key = randomBytes(32).toString('hex'); this.grants.set(key, serial); return key;
@@ -32,18 +33,25 @@ export class MediaRelay {
     this.diagnostics.mark(serial, 'media_reader');
     response.writeHead(200, { 'Content-Type': 'video/mp2t', 'Cache-Control': 'no-store' });
     response.on('close', () => { readers.delete(response); owned.delete(response); });
+    // Signaling can still take longer than the first encode. Replay a bounded
+    // initial prefix so new readers receive its MPEG-TS headers and keyframe.
+    for (const chunk of this.startup.get(serial)?.chunks ?? []) response.write(chunk);
     return true;
   }
   start(serial: string, codec: 'h264' | 'hevc', video: Readable, audio: Readable, hasAudio: boolean, fps = 15): void {
     if (this.encoders.has(serial)) throw new Error('Duplicate media encoder');
-    const args = ['-hide_banner', '-loglevel', 'error', '-threads', '1', '-fflags', '+genpts', '-probesize', '1000000', '-analyzeduration', '1000000', '-r', String(Math.max(1, Math.min(30, fps || 15))), '-f', codec, '-i', 'pipe:0'];
-    if (hasAudio) args.push('-thread_queue_size', '64', '-f', 'aac', '-i', 'pipe:3');
+    // Both elementary-stream formats are known. Bound each input's analysis
+    // separately, retaining probed packets and the initial keyframe.
+    const args = ['-hide_banner', '-loglevel', 'error', '-threads', '1', '-fflags', '+genpts', '-probesize', '32768', '-analyzeduration', '100000', '-r', String(Math.max(1, Math.min(30, fps || 15))), '-f', codec, '-i', 'pipe:0'];
+    if (hasAudio) args.push('-thread_queue_size', '64', '-probesize', '32768', '-analyzeduration', '100000', '-f', 'aac', '-i', 'pipe:3');
     args.push('-map', '0:v:0');
     if (hasAudio) args.push('-map', '1:a:0', '-c:a', 'aac', '-b:a', '64k', '-ar', '48000', '-ac', '1');
     args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-vf', "scale='min(1920,iw)':-2", '-threads', '1', '-g', '30');
     args.push('-mpegts_flags', '+resend_headers', '-muxdelay', '0', '-muxpreload', '0', '-f', 'mpegts', 'pipe:1');
     const process = spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] });
     this.encoders.set(serial, process);
+    const startup = { chunks: [] as Buffer[], bytes: 0, timer: undefined as ReturnType<typeof setTimeout> | undefined };
+    this.startup.set(serial, startup);
     this.audioTracks.set(serial, hasAudio);
     this.diagnostics.encoder(serial, 'media', process);
     const failed = () => { if (this.encoders.get(serial) === process) this.failed(serial); };
@@ -54,7 +62,16 @@ export class MediaRelay {
     input.on('error', failed);
     if (hasAudio) audio.pipe(input);
     process.stdout!.on('data', (chunk: Buffer) => {
+      if (this.encoders.get(serial) !== process) return;
       this.diagnostics.mark(serial, 'media_output');
+      if (this.startup.get(serial) === startup) {
+        if (!startup.timer) {
+          startup.timer = setTimeout(() => this.clearStartup(serial), 2000);
+          startup.timer.unref();
+        }
+        if (startup.bytes + chunk.length > 1_000_000) this.clearStartup(serial);
+        else { startup.chunks.push(chunk); startup.bytes += chunk.length; }
+      }
       for (const reader of this.readers.get(serial) ?? []) {
         // A slow consumer is disconnected instead of holding the camera pipeline.
         if (reader.writableLength > 1_000_000) reader.destroy();
@@ -62,9 +79,16 @@ export class MediaRelay {
       }
     });
   }
+  private clearStartup(serial: string): void {
+    const startup = this.startup.get(serial);
+    clearTimeout(startup?.timer);
+    if (startup) { startup.chunks = []; startup.bytes = 0; }
+    this.startup.delete(serial);
+  }
   stop(serial: string): void {
     const process = this.encoders.get(serial); this.encoders.delete(serial);
     this.audioTracks.delete(serial);
+    this.clearStartup(serial);
     if (process) { process.stdin?.destroy(); (process.stdio[3] as Writable)?.destroy(); process.kill('SIGKILL'); }
     for (const reader of this.readers.get(serial) ?? []) reader.destroy();
     this.readers.delete(serial);

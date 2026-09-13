@@ -132,11 +132,22 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
       let downgraded = false;
       let pendingFrame: Buffer | undefined;
       let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
+      const mediaReady = (camera: string) => {
+        if (camera !== serial || ready || !webrtc || ws.readyState !== WebSocket.OPEN || eufy.hub.remaining(serial, peer) <= 0) return;
+        const audio = eufy.media.audioSupported(serial);
+        if (audio === undefined) return;
+        ready = true;
+        eufy.off('media-ready', mediaReady);
+        // Metadata is available at encoder start. JPEG decoding must not gate
+        // reader attachment and discard the first encoded video/keyframe.
+        ws.send(JSON.stringify({ type: "ready", path: `/v1/media/${grant}`, audio, fallback: true, fallback_after_ms: Math.max(1, Math.ceil(eufy.hub.remaining(serial, peer) - 5000)) }));
+      };
       const fallback = (reason: 'startup_timeout' | 'playback_timeout' | 'connection_failed' | 'signaling_error' | 'playback_error') => {
         if (!webrtc || ws.readyState !== WebSocket.OPEN) return;
         webrtc = false;
         downgraded = true;
         clearTimeout(fallbackTimer);
+        eufy.off('media-ready', mediaReady);
         if (grant) eufy.media.revoke(grant);
         eufy.diagnostics?.mark(serial, `fallback_${reason}`);
         ws.send(JSON.stringify({ type: 'fallback', reason }));
@@ -154,17 +165,12 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         send: frame => {
           if (!webrtc) { ws.send(frame, { binary: true }); return; }
           pendingFrame = frame;
-          if (!ready) {
-            ready = true;
-            // The encoder has the actual stream metadata before its first frame.
-            ws.send(JSON.stringify({ type: "ready", path: `/v1/media/${grant}`, audio: eufy.media.audioSupported(serial), fallback: true, fallback_after_ms: Math.max(1, Math.ceil(eufy.hub.remaining(serial, peer) - 5000)) }));
-          }
           ws.send(JSON.stringify({ type: "tick" }));
         },
-        close: (code, reason) => { clearTimeout(fallbackTimer); pendingFrame = undefined; ws.close(code, reason); setTimeout(() => ws.terminate(), 500).unref(); },
+        close: (code, reason) => { clearTimeout(fallbackTimer); eufy.off('media-ready', mediaReady); pendingFrame = undefined; ws.close(code, reason); setTimeout(() => ws.terminate(), 500).unref(); },
         get bufferedAmount() { return ws.bufferedAmount; },
       };
-      ws.on("close", () => { clearTimeout(fallbackTimer); pendingFrame = undefined; if (grant) eufy.media.revoke(grant); eufy.hub.detach(serial, peer); });
+      ws.on("close", () => { clearTimeout(fallbackTimer); eufy.off('media-ready', mediaReady); pendingFrame = undefined; if (grant) eufy.media.revoke(grant); eufy.hub.detach(serial, peer); });
       ws.on("message", (data, binary) => {
         const command = binary ? '' : data.toString();
         if (command === 'ack' && downgraded) return; // Ignore in-flight WebRTC acknowledgements.
@@ -177,7 +183,11 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
           fallback(command.slice(9) as 'connection_failed' | 'signaling_error' | 'playback_error');
         } else ws.close(1008, "Invalid acknowledgement");
       });
-      if (eufy.hub.attach(serial, peer) && webrtc) scheduleFallback(Math.max(0, eufy.hub.remaining(serial, peer) - 5000), 'startup_timeout');
+      if (webrtc) eufy.on('media-ready', mediaReady);
+      if (eufy.hub.attach(serial, peer) && webrtc) {
+        scheduleFallback(Math.max(0, eufy.hub.remaining(serial, peer) - 5000), 'startup_timeout');
+        mediaReady(serial); // A second viewer joins an encoder already running.
+      }
     });
   });
   const watchdog = setInterval(() => eufy.hub.tick(), 250);
