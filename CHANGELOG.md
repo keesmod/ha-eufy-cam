@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.8.7 - 2026-09-13
+
+- Add experimental Docker opt-in NVIDIA live transcoding with
+  `EUFY_LIVE_ACCELERATION=nvidia`. Software remains the default, including HAOS.
+- Bound hardware startup to five seconds and 8 MiB of initial A/V. On a startup
+  error, retry once with software inside the same camera session. Disable GPU
+  attempts until bridge restart after a hardware failure. A later encoder failure
+  ends the view safely, and the next view uses software.
+- Add anonymous active-encoder and fallback events to opt-in live diagnostics.
+  Document GPU exposure, driver capabilities and recovery in the
+  [NVIDIA guide](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/NVIDIA.md).
+
+Update both integration and bridge when this version is published. Preserve the
+existing token and bridge data. Back up the previous matching installation for
+rollback. Omit the acceleration setting to retain software operation.
+
+No NVIDIA GPU was available for validation. T600 support, NVDEC/NVENC operation,
+A/V synchronisation, image quality and performance remain unvalidated in issue
+#49. This feature does not establish a startup-latency fix for issue #48. The
+existing Python dependency limitation in issue #30 remains unchanged.
+
 ## 0.8.6 - 2026-09-13
 
 ### Live startup

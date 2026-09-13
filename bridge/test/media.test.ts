@@ -19,8 +19,8 @@ test('real FFmpeg produces bounded decoded JPEG frames from fragmented H264', as
 
 // Feed one second of permitted synthetic media, then keep the camera inputs
 // open. Startup must not need more footage or EOF to finish stream probing.
-for (const codec of ['h264', 'hevc'] as const) for (const hasAudio of [false, true]) {
-  test(`live ${codec}, audio=${hasAudio} produces decodable A/V before input EOF`, { timeout: 10000 }, async t => {
+for (const codec of ['h264', 'hevc'] as const) for (const hasAudio of [false, true]) for (const mode of ['software', 'nvidia'] as const) {
+  test(`live ${codec}, audio=${hasAudio}, acceleration=${mode} produces decodable A/V before input EOF`, { timeout: 10000 }, async t => {
     const { spawnSync } = await import('node:child_process');
     const { PassThrough } = await import('node:stream');
     const { EventEmitter } = await import('node:events');
@@ -34,6 +34,7 @@ for (const codec of ['h264', 'hevc'] as const) for (const hasAudio of [false, tr
     const video = new PassThrough(), audio = new PassThrough();
     const failures: string[] = [];
     const media = new MediaRelay(serial => failures.push(serial));
+    media.acceleration = mode;
     const chunks: Buffer[] = [];
     const response = Object.assign(new EventEmitter(), {
       writableLength: 0, writeHead() {},
