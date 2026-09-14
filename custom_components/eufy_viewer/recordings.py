@@ -74,7 +74,7 @@ class RecordingsView(HomeAssistantView):
         entity_id: str,
         recording_id: str | None = None,
         media: str | None = None,
-    ) -> web.Response:
+    ) -> web.StreamResponse:
         """Cancel the bridge request if the browser leaves during preparation."""
         if media not in {None, "thumbnail"}:
             raise web.HTTPBadRequest
@@ -89,10 +89,18 @@ class RecordingsView(HomeAssistantView):
         async def fetch() -> Any:
             if recording_id:
                 if media == "thumbnail":
-                    return await coordinator.api.recording_video(
-                        serial, recording_id, thumbnail=True
+                    return await coordinator.api.recording_thumbnail(
+                        serial, recording_id
                     )
-                return await coordinator.api.recording_video(serial, recording_id)
+                from .const import DOMAIN
+
+                playback = request.app[KEY_HASS].data[DOMAIN]["playback"]
+                async with playback.reserve() as body:
+                    await coordinator.api.recording_media(
+                        serial, recording_id, target=body
+                    )
+                    camera_access(request, entity_id)
+                    return await playback.send(request, body)
             return await coordinator.api.request(
                 "GET", f"/v1/recordings/{serial}?date={date}"
             )
@@ -110,7 +118,7 @@ class RecordingsView(HomeAssistantView):
 
 async def serve(
     request: web.Request, operation: Any, content_type: str | None = None
-) -> web.Response:
+) -> web.StreamResponse:
     """A disconnected viewer always cancels the one bounded upstream operation."""
     task = asyncio.create_task(operation)
     try:
@@ -120,6 +128,8 @@ async def serve(
                 if request.transport is None or request.transport.is_closing():
                     raise asyncio.CancelledError
             result = task.result()
+        if isinstance(result, web.StreamResponse):
+            return result
         if content_type:
             return web.Response(
                 body=result,
@@ -147,7 +157,7 @@ class EventsView(HomeAssistantView):
     name = "api:eufy_viewer:events"
     requires_auth = True
 
-    async def get(self, request: web.Request) -> web.Response:
+    async def get(self, request: web.Request) -> web.StreamResponse:
         """Return authorized event handles or HomeBase-wide calendar markers."""
         entities = list(dict.fromkeys(request.query.get("entities", "").split(",")))
         if (

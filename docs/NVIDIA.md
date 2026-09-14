@@ -176,12 +176,14 @@ The private FFmpeg progress pipe is drained separately from MP4 and error output
 After a failure, the
 bridge waits up to one second for confirmed process termination, discards all
 partial output and makes one software attempt on the same downloaded bytes with
-the remaining time. It does not repeat a camera download. Failed hardware is
-disabled for recordings until bridge restart, independently of live acceleration.
-Native remuxing retains its 20-second deadline and output remains capped at 32 MiB.
+the remaining time. It does not repeat a camera download. From bridge 0.8.14, failure applies only to that request. The next request
+tries the configured encoder again. Live acceleration has separate ownership.
+Native remuxing retains its 20-second deadline. Output uses a private file with
+a separate 256 MiB disk allowance. See [storage ownership](RECORDING_STORAGE.md).
 The existing overall recording-operation deadline also remains in effect.
 
-Cancellation or oversized output does not trigger fallback. If process cleanup
+Cancellation, storage errors and oversized output do not trigger fallback or
+disable later NVIDIA requests. If process cleanup
 cannot be confirmed, further recording conversion is blocked until restart to
 prevent overlapping processes. A failed software attempt ends the operation.
 
@@ -197,7 +199,7 @@ fallback events. Each line has an anonymous attempt number and elapsed time:
 | `recording_hardware_failed` | The hardware attempt failed |
 | `recording_hardware_timeout` | The hardware attempt reached its deadline |
 | `recording_software_fallback` | One software replacement was selected |
-| `recording_hardware_disabled` | This request used software because an earlier hardware failure opened the circuit breaker |
+| `recording_failed` | Preparation failed without a hardware retry, including a storage limit or storage error |
 
 Failure details identify process/input errors, empty output, output limits,
 unconfirmed cleanup or timeout. A timeout names `hardware_progress` or

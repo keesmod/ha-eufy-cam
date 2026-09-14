@@ -1,4 +1,6 @@
+import { tmpdir } from 'node:os';
 import { test } from 'node:test';
+process.env.EUFY_DATA_DIR = tmpdir();
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
@@ -74,7 +76,7 @@ test('recording cancellation before the media handle arrives is counted and rele
     () => false,
   );
   const rows = await recordings.list('CAM', '2026-09-08', abort.signal);
-  const transfer = recordings.video('CAM', rows.recordings[0]!.id, abort.signal);
+  const transfer = recordings.video('CAM', rows.recordings[0]!.id, abort.signal, async () => {});
   const rejected = assert.rejects(transfer, { code: 'recording_unavailable' });
   await opening;
   assert.equal(recordings.busy, true);
@@ -362,7 +364,7 @@ test('standalone capability reasons reach inventory and prevent every media oper
     for (const operation of [
       () => f.backend.recordings.list('CAM', '2026-09-11', abort.signal),
       () => f.backend.recordings.calendar(['CAM'], '2026-09', abort.signal),
-      () => f.backend.recordings.video('CAM', 'missing', abort.signal),
+      () => f.backend.recordings.video('CAM', 'missing', abort.signal, async () => {}),
       () => f.backend.recordings.thumbnail('CAM', 'missing', abort.signal),
     ])
       await assert.rejects(operation(), { code: 'capability_unavailable' });

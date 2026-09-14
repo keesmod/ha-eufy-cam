@@ -1,5 +1,7 @@
+import { RecordingError } from './errors.js';
 import { spawn, type ChildProcess } from 'node:child_process';
-import type { Readable, Writable } from 'node:stream';
+import type { Readable } from 'node:stream';
+import { stat } from 'node:fs/promises';
 
 export interface RecordingMetadata {
   videoCodec: 'h264' | 'hevc' | null;
@@ -12,21 +14,23 @@ export interface RecordingMedia {
   processing: 'remux' | 'software' | 'nvidia';
   fallback: boolean;
 }
-export interface RecordingResult { body: Buffer; media: RecordingMedia }
+export interface RecordingResult { path: string; size: number; media: RecordingMedia }
+export interface RecordingFiles { video: string; audio?: string; output: string }
 export type RecordingAcceleration = 'software' | 'nvidia';
 export function recordingAcceleration(value?: string): RecordingAcceleration {
   if (value === undefined || value === 'software') return 'software';
   if (value === 'nvidia') return 'nvidia';
   throw new Error('EUFY_RECORDING_ACCELERATION must be software or nvidia');
 }
-const LIMIT = 32 * 1024 * 1024;
+// Disk budget, independent of the client's compressed source download limit.
+export const RECORDING_BYTES = 256 * 1024 * 1024;
 type Event = 'recording_active_nvidia' | 'recording_active_software' | 'recording_remuxed'
-  | 'recording_hardware_failed' | 'recording_hardware_timeout' | 'recording_hardware_disabled' | 'recording_software_fallback';
+  | 'recording_hardware_failed' | 'recording_hardware_timeout' | 'recording_failed' | 'recording_software_fallback';
 export interface RecordingDiagnostic {
   diagnostic: 'recording'; attempt: number; elapsed_ms: number; event: Event;
   failure?: ConversionFailure;
 }
-type FailureReason = 'spawn' | 'process' | 'video_input' | 'audio_input' | 'timeout'
+type FailureReason = 'spawn' | 'process' | 'output_io' | 'timeout'
   | 'cancelled' | 'output_limit' | 'cleanup_unconfirmed' | 'empty_output';
 interface ConversionFailure {
   reason: FailureReason;
@@ -41,6 +45,7 @@ interface ConversionFailure {
 }
 // Fixed labels are always safe to log. Unknown text requires explicit diagnostics.
 const ffmpegFailures = [
+  ['storage', /No space left on device|Disk quota exceeded|Read-only file system|Error opening output.*Permission denied|av_interleaved_write_frame.*Input.output error/i],
   ['memory', /CUDA_ERROR_OUT_OF_MEMORY|out of memory/i],
   ['cuda_device', /CUDA_ERROR_(?:NO_DEVICE|INVALID_DEVICE|DEVICE_UNAVAILABLE)|no CUDA.capable device|Cannot load libcuda/i],
   ['cuda_driver', /CUDA_ERROR_(?:INSUFFICIENT_DRIVER|SYSTEM_DRIVER_MISMATCH|NOT_INITIALIZED)|minimum required Nvidia driver|driver does not support/i],
@@ -71,27 +76,27 @@ function recordingErrorText(tail: string, truncated: boolean): string {
     .trim();
   return (truncated ? '[earlier output omitted] ' : '') + text.slice(0, 2000);
 }
-class ConversionError extends Error {
-  constructor(readonly retryable: boolean, readonly details: ConversionFailure) { super('Recording conversion failed'); }
+class ConversionError extends RecordingError {
+  constructor(readonly retryable: boolean, readonly details: ConversionFailure) { super(['output_limit', 'output_io'].includes(details.reason) ? 'recording_storage_unavailable' : 'recording_unavailable', 503); }
   get timedOut(): boolean { return this.details.reason === 'timeout'; }
 }
 
 /** Failures remain visible without enabling verbose live/media diagnostics. */
 export function logRecordingDiagnostic(event: RecordingDiagnostic, verbose: boolean,
   warning: (line: string) => void = console.warn, info: (line: string) => void = console.info): void {
-  if (event.event === 'recording_hardware_failed' || event.event === 'recording_hardware_timeout') warning(JSON.stringify(event));
+  if (event.event === 'recording_hardware_failed' || event.event === 'recording_hardware_timeout' || event.event === 'recording_failed') warning(JSON.stringify(event));
   else if (verbose) info(JSON.stringify(event));
 }
 
-export function recordingArgs(metadata: RecordingMetadata, hasAudio: boolean, format: 'h264' | 'native', mode: RecordingAcceleration): string[] {
+export function recordingArgs(metadata: RecordingMetadata, hasAudio: boolean, format: 'h264' | 'native', mode: RecordingAcceleration, files: RecordingFiles, bytes = RECORDING_BYTES): string[] {
   const codec = metadata.videoCodec;
   if (codec !== 'h264' && codec !== 'hevc') throw new Error('Unsupported recording codec');
   const transcode = codec === 'hevc' && format === 'h264';
   const hardware = transcode && mode === 'nvidia';
-  const args = ['-hide_banner', '-loglevel', 'error', '-threads', '2'];
+  const args = ['-nostdin', '-hide_banner', '-loglevel', 'error', '-threads', '2'];
   if (hardware) args.push('-progress', 'pipe:4', '-stats_period', '0.5', '-nostats', '-hwaccel', 'cuda');
-  args.push('-r', String(metadata.fps || 15), '-f', codec, '-i', 'pipe:0');
-  if (hasAudio) args.push('-f', 'aac', '-i', 'pipe:3');
+  args.push('-r', String(metadata.fps || 15), '-f', codec, '-i', files.video);
+  if (hasAudio) args.push('-f', 'aac', '-i', files.audio!);
   args.push('-map', '0:v:0', '-c:v', transcode ? hardware ? 'h264_nvenc' : 'libx264' : 'copy');
   if (codec === 'hevc' && !transcode) args.push('-tag:v', 'hvc1');
   if (transcode) {
@@ -100,34 +105,30 @@ export function recordingArgs(metadata: RecordingMetadata, hasAudio: boolean, fo
     args.push('-pix_fmt', 'yuv420p', '-threads', '2');
   }
   if (hasAudio) args.push('-map', '1:a:0', '-c:a', 'copy', '-bsf:a', 'aac_adtstoasc');
-  // Keep one buffered MP4 fragment and discover AAC before writing its header.
-  // This preserves full duration and audio in native Apple playback.
-  args.push('-movflags', 'frag_custom+empty_moov+delay_moov+default_base_moof',
-    '-frag_size', String(LIMIT), '-f', 'mp4', 'pipe:1');
+  // Seekable output avoids buffering a whole MP4 fragment inside FFmpeg.
+  // faststart keeps duration, audio discovery and native Apple seeking intact.
+  args.push('-y', '-fs', String(bytes), '-movflags', '+faststart', '-f', 'mp4', files.output);
   return args;
 }
 
 /** Converts downloaded bytes only. Never owns or repeats a camera transfer. */
 export class RecordingTranscoder {
-  private hardwareFailed = false;
   private unavailable = false;
   private sequence = 0;
   constructor(
     private readonly acceleration: RecordingAcceleration = 'software',
     private readonly diagnostic: (event: RecordingDiagnostic) => void = () => {},
-    private readonly launch: (args: string[]) => ChildProcess = args => spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'] }),
-    private readonly limits = { conversionMs: 45_000, remuxMs: 20_000, hardwareMs: 10_000, cleanupMs: 1000, bytes: LIMIT },
+    private readonly launch: (args: string[]) => ChildProcess = args => spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe', 'ignore', 'pipe'] }),
+    private readonly limits = { conversionMs: 45_000, remuxMs: 20_000, hardwareMs: 10_000, cleanupMs: 1000, bytes: RECORDING_BYTES },
     private readonly includeErrorText = false,
   ) {}
-  async mux(metadata: RecordingMetadata, video: Buffer, audio: Buffer, signal: AbortSignal, format: 'h264' | 'native' = 'h264'): Promise<Buffer> {
-    return (await this.muxResult(metadata, video, audio, signal, format)).body;
-  }
-  async muxResult(metadata: RecordingMetadata, video: Buffer, audio: Buffer, signal: AbortSignal, requested: RecordingFormat = 'h264', hevcSupported = false): Promise<RecordingResult> {
+  async muxResult(metadata: RecordingMetadata, files: RecordingFiles, signal: AbortSignal, requested: RecordingFormat = 'h264', hevcSupported = false): Promise<RecordingResult> {
     signal.throwIfAborted();
     const format = requested === 'auto' ? (this.acceleration === 'nvidia' || !hevcSupported ? 'h264' : 'native') : requested;
     const source = metadata.videoCodec;
     if (source !== 'h264' && source !== 'hevc') throw new Error('Unsupported recording codec');
-    const result = (body: Buffer, processing: RecordingMedia['processing']): RecordingResult => ({ body, media: { source, output: transcode ? 'h264' : source, processing, fallback: transcode && this.acceleration === 'nvidia' && this.hardwareFailed } });
+    let fallback = false;
+    const result = (size: number, processing: RecordingMedia['processing']): RecordingResult => ({ path: files.output, size, media: { source, output: transcode ? 'h264' : source, processing, fallback } });
     if (this.unavailable) throw new Error('Recording converter requires restart');
     const transcode = metadata.videoCodec === 'hevc' && format === 'h264';
     const started = performance.now(), attempt = ++this.sequence;
@@ -138,10 +139,10 @@ export class RecordingTranscoder {
     const run = (mode: RecordingAcceleration) => {
       const remaining = deadline - performance.now();
       if (remaining <= 0) throw new ConversionError(false, { reason: 'timeout', ffmpeg: [] });
-      return this.convert(recordingArgs(metadata, !!audio.length, format, mode), video, audio, signal,
+      return this.convert(recordingArgs(metadata, !!files.audio, format, mode, files, this.limits.bytes), files.output, signal,
         remaining, mode === 'nvidia' && transcode ? this.limits.hardwareMs : undefined);
     };
-    if (transcode && this.acceleration === 'nvidia' && !this.hardwareFailed) {
+    if (transcode && this.acceleration === 'nvidia') {
       try {
         const output = await run('nvidia');
         signal.throwIfAborted();
@@ -149,25 +150,33 @@ export class RecordingTranscoder {
         return result(output, 'nvidia');
       } catch (error) {
         signal.throwIfAborted();
-        this.hardwareFailed = true;
-        mark(error instanceof ConversionError && error.timedOut ? 'recording_hardware_timeout' : 'recording_hardware_failed',
-          error instanceof ConversionError ? error.details : { reason: 'process', ffmpeg: [] });
-        if (!(error instanceof ConversionError) || !error.retryable || performance.now() >= deadline) throw error;
+        if (!(error instanceof ConversionError) || !error.retryable) {
+          mark('recording_failed', error instanceof ConversionError ? error.details : undefined);
+          throw error;
+        }
+        mark(error.timedOut ? 'recording_hardware_timeout' : 'recording_hardware_failed',
+          error.details);
+        if (performance.now() >= deadline) throw error;
+        fallback = true;
         mark('recording_software_fallback');
       }
-    } else if (transcode && this.acceleration === 'nvidia') mark('recording_hardware_disabled');
-    const output = await run('software');
+    }
+    let output: number;
+    try { output = await run('software'); }
+    catch (error) {
+      signal.throwIfAborted();
+      mark('recording_failed', error instanceof ConversionError ? error.details : undefined);
+      throw error;
+    }
     signal.throwIfAborted();
     mark(transcode ? 'recording_active_software' : 'recording_remuxed');
     return result(output, transcode ? 'software' : 'remux');
   }
-  private convert(args: string[], video: Buffer, audio: Buffer, signal: AbortSignal, timeout: number, hardwareIdleMs?: number): Promise<Buffer> {
+  private convert(args: string[], output: string, signal: AbortSignal, timeout: number, hardwareIdleMs?: number): Promise<number> {
     signal.throwIfAborted();
     return new Promise((resolve, reject) => {
       let child: ChildProcess;
       try { child = this.launch(args); } catch { reject(new ConversionError(true, { reason: 'spawn', ffmpeg: [] })); return; }
-      const input = child.stdio[3] as Writable;
-      const parts: Buffer[] = [];
       let size = 0, settled = false, failure: ConversionError | undefined;
       let cleanupTimer: NodeJS.Timeout | undefined;
       let tail = '', stderrSeen = false, stderrTruncated = false, progressTail = '', encodedFrames = 0;
@@ -175,7 +184,7 @@ export class RecordingTranscoder {
       const progress = child.stdio[4] as Readable | undefined;
       const categories = new Set<string>();
       const error = (retryable: boolean, reason: FailureReason) => new ConversionError(retryable,
-        { reason, timeout_ms: Math.round(hardwareIdleMs ?? timeout), output_bytes: size,
+        { reason, output_bytes: size,
           ...(hardwareIdleMs === undefined ? {} : { encoded_frames: encodedFrames }), ffmpeg: [] });
       const finish = (error?: ConversionError) => {
         if (settled) return;
@@ -186,16 +195,14 @@ export class RecordingTranscoder {
         if (error) {
           error.details.ffmpeg = categories.size ? [...categories] : stderrSeen ? ['unclassified'] : [];
           if (this.includeErrorText && stderrSeen && !categories.size) error.details.ffmpeg_detail = recordingErrorText(tail, stderrTruncated);
-          parts.length = 0; reject(error);
-        } else resolve(Buffer.concat(parts));
+          reject(error);
+        } else resolve(size);
         tail = ''; progressTail = '';
       };
       const fail = (cause: ConversionError) => {
         if (settled || failure) return;
         failure = cause;
         clearTimeout(timer); clearTimeout(progressTimer);
-        parts.length = 0;
-        child.stdin?.destroy(); input.destroy();
         // A replacement may start only after close confirms the old process is gone.
         cleanupTimer = setTimeout(() => {
           this.unavailable = true;
@@ -209,9 +216,7 @@ export class RecordingTranscoder {
         cause.details.timeout_scope = scope; cause.details.timeout_ms = Math.round(budget);
         fail(cause);
       };
-      // A complete MP4 is buffered until conversion ends. Its output bytes cannot
-      // distinguish a long, healthy encode from a hung GPU. Watch encoded frames,
-      // while the original overall deadline remains fixed across both attempts.
+      // Frame progress identifies a stalled encoder independently of file writes.
       const refreshProgress = () => {
         clearTimeout(progressTimer);
         progressTimer = setTimeout(() => timedOut('hardware_progress', hardwareIdleMs!), hardwareIdleMs!);
@@ -230,12 +235,6 @@ export class RecordingTranscoder {
       if (hardwareIdleMs !== undefined) { progress?.on('data', observeProgress); refreshProgress(); }
       else progress?.resume();
       signal.addEventListener('abort', abort, { once: true });
-      child.stdout!.on('data', (chunk: Buffer) => {
-        if (settled || failure) return;
-        size += chunk.length;
-        if (size > this.limits.bytes) fail(error(false, 'output_limit'));
-        else parts.push(chunk);
-      });
       child.stderr!.on('data', (chunk: Buffer) => {
         if (settled) return;
         stderrSeen ||= chunk.length > 0;
@@ -248,18 +247,20 @@ export class RecordingTranscoder {
         }
       });
       child.once('error', () => fail(error(true, 'process')));
-      child.once('close', (code, signal) => {
+      child.once('close', async (code, signal) => {
+        clearTimeout(timer); clearTimeout(progressTimer); clearTimeout(cleanupTimer);
+        try { size = (await stat(output)).size; } catch { /* Missing output is a failure. */ }
+        if (categories.has('storage') && (!failure || failure.retryable)) failure = error(false, 'output_io');
+        if (size >= this.limits.bytes && !failure) failure = error(false, 'output_limit');
         const cause = failure ?? (code !== 0 || !size ? error(true, code !== 0 ? 'process' : 'empty_output') : undefined);
         if (cause) {
+          cause.details.output_bytes = size;
           cause.details.exit_code = typeof code === 'number' && Number.isInteger(code) && code >= 0 && code <= 255 ? code : null;
           cause.details.signal = signal == null ? null : ['SIGKILL', 'SIGTERM', 'SIGSEGV', 'SIGABRT', 'SIGBUS', 'SIGILL'].includes(signal) ? signal : 'other';
         }
         finish(cause);
       });
-      child.stdin!.on('error', () => fail(error(true, 'video_input')));
-      input.on('error', () => fail(error(true, 'audio_input')));
       if (signal.aborted) abort();
-      else { child.stdin!.end(video); input.end(audio); }
     });
   }
 }

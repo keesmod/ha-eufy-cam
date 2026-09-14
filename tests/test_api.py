@@ -11,6 +11,7 @@ from custom_components.eufy_viewer.api import (
     BridgeState,
     normalize_url,
 )
+from custom_components.eufy_viewer.recording_file import RecordingFile
 
 from .conftest import STATE
 
@@ -174,13 +175,21 @@ async def test_recording_media_type_auth_and_redirect_boundary(
     server = await aiohttp_server(app)
     async with ClientSession() as session:
         api = BridgeClient(session, str(server.make_url("")), "test")
-        assert await api.recording_video("CAM123", "abc") == b"finite clip"
-        assert await api.recording_video("CAM123", "abc", native=True) == b"finite clip"
+        target = RecordingFile()
+        await target.open()
+        try:
+            await api.recording_media("CAM123", "abc", target=target)
+            assert await target.read(0, target.size) == b"finite clip"
+            await api.recording_media(
+                "CAM123", "abc", target=target, output_format="native"
+            )
+        finally:
+            target.close()
         assert formats == [None, "native"]
         for response_mode in ("redirect", "html"):
             mode = response_mode
             with pytest.raises(BridgeError):
-                await api.recording_video("CAM123", "abc")
+                await api.recording_media("CAM123", "abc")
 
 
 @pytest.mark.parametrize(
@@ -199,7 +208,7 @@ async def test_recording_errors_allowlist(aiohttp_server, socket_enabled, code, 
         api = BridgeClient(session, str(server.make_url("")), "test")
         for action in (
             api.request("GET", "/v1/recordings/CAM123?date=2026-09-06"),
-            api.recording_video("CAM123", "a" * 32),
+            api.recording_media("CAM123", "a" * 32),
         ):
             with pytest.raises(BridgeError) as error:
                 await action
@@ -291,9 +300,22 @@ async def test_media_headers_and_auto_parameters(aiohttp_server, socket_enabled)
     server = await aiohttp_server(app)
     async with ClientSession() as session:
         api = BridgeClient(session, str(server.make_url("")), "test")
-        assert await api.recording_media(
-            "CAM123", "abc", output_format="auto", hevc_supported=True
-        ) == (b"mp4", media)
+        target = RecordingFile()
+        await target.open()
+        try:
+            assert (
+                await api.recording_media(
+                    "CAM123",
+                    "abc",
+                    target=target,
+                    output_format="auto",
+                    hevc_supported=True,
+                )
+                == media
+            )
+            assert await target.read(0, target.size) == b"mp4"
+        finally:
+            target.close()
         with pytest.raises(BridgeError):
             await api.recording_media("CAM123", "abc", output_format="bad")
 

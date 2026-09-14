@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 // Synthetic media only. Run in the built image with --network none, no GPU.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -43,8 +46,15 @@ for (const codec of ['h264', 'hevc']) {
   for (const mode of ['software', 'nvidia']) {
     for (const format of ['native', 'h264']) {
       const events = [];
-      const output = await new RecordingTranscoder(mode, e => events.push(e.event)).mux(
-        { videoCodec: codec, fps: 15 }, recordingBytes, audioBytes, AbortSignal.timeout(15000), format);
+      const dir = mkdtempSync(join(tmpdir(), 'recording-smoke-'));
+      const files = { video: join(dir, 'video'), audio: join(dir, 'audio'), output: join(dir, 'output') };
+      writeFileSync(files.video, recordingBytes); writeFileSync(files.audio, audioBytes);
+      let output;
+      try {
+        const result = await new RecordingTranscoder(mode, e => events.push(e.event)).muxResult(
+          { videoCodec: codec, fps: 15 }, files, AbortSignal.timeout(15000), format);
+        output = readFileSync(result.path);
+      } finally { rmSync(dir, { recursive: true, force: true }); }
       const transcode = codec === 'hevc' && format === 'h264';
       assert.ok(events.includes(transcode ? 'recording_active_software' : 'recording_remuxed'));
       assert.equal(events.includes('recording_software_fallback'), transcode && mode === 'nvidia');

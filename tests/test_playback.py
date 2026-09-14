@@ -1,13 +1,13 @@
 """Native playback retains authentication, range support and bounded lifetime."""
 
 import asyncio
-from unittest.mock import AsyncMock, Mock, PropertyMock, patch
+from unittest.mock import ANY, AsyncMock, Mock, PropertyMock, patch
 
 import pytest
 
 from custom_components.eufy_viewer.playback import PlaybackView
 
-from .test_recordings import BASE, CLIP
+from .test_recordings import BASE, CLIP, file_download
 from .test_viewers import viewer_setup as _viewer_setup
 
 viewer_setup = _viewer_setup
@@ -21,7 +21,9 @@ async def test_signed_playback_ranges_permissions_and_close(
     native = await hass_client_no_auth()
     body = b"0123456789"
     with patch.object(
-        viewer_setup.runtime_data.api, "recording_video", AsyncMock(return_value=body)
+        viewer_setup.runtime_data.api,
+        "recording_media",
+        AsyncMock(side_effect=file_download(body)),
     ) as download:
         assert (await native.post(PREPARE)).status == 401
         response = await client.post(PREPARE)
@@ -70,17 +72,21 @@ async def test_signed_playback_ranges_permissions_and_close(
         assert (await native.delete(data["url"])).status == 401
         assert (await client.delete(data["path"])).status == 204
         assert (await native.get(data["url"])).status == 404
-        download.assert_awaited_once_with("CAM123", CLIP)
+        download.assert_awaited_once_with(
+            "CAM123", CLIP, target=ANY, output_format="h264", hevc_supported=False
+        )
 
 
 async def test_expiry_and_capacity_release_memory(hass, hass_client, viewer_setup):
     client = await hass_client()
     with (
         patch.object(
-            viewer_setup.runtime_data.api, "recording_video", return_value=b"mp4"
+            viewer_setup.runtime_data.api,
+            "recording_media",
+            side_effect=file_download(b"mp4"),
         ),
         patch("custom_components.eufy_viewer.playback.PLAYBACK_SECONDS", 0.1),
-        patch("custom_components.eufy_viewer.playback.MAX_PLAYBACK_BYTES", 3),
+        patch("custom_components.eufy_viewer.playback.MAX_RECORDING_FILES", 1),
     ):
         response = await client.post(PREPARE)
         first = await response.json()
@@ -96,17 +102,19 @@ async def test_expiry_and_capacity_release_memory(hass, hass_client, viewer_setu
 async def test_prepare_denial_errors_and_cancel(hass, hass_client, viewer_setup):
     client = await hass_client()
     with patch.object(
-        viewer_setup.runtime_data.api, "recording_video", AsyncMock()
+        viewer_setup.runtime_data.api, "recording_media", AsyncMock()
     ) as api:
         assert (await client.post(PREPARE.replace(CLIP, "bad"))).status == 400
         api.assert_not_awaited()
         for body in (b"", b"1234"):
-            api.return_value = body
-            with patch("custom_components.eufy_viewer.playback.MAX_CLIP_BYTES", 3):
+            api.side_effect = file_download(body)
+            with patch(
+                "custom_components.eufy_viewer.recording_file.RECORDING_BYTES", 3
+            ):
                 assert (await client.post(PREPARE)).status == 502
     started, cancelled = asyncio.Event(), asyncio.Event()
 
-    async def pending(*_):
+    async def pending(*_, **kwargs):
         started.set()
         try:
             await asyncio.Future()
@@ -115,7 +123,7 @@ async def test_prepare_denial_errors_and_cancel(hass, hass_client, viewer_setup)
 
     with (
         patch.object(
-            viewer_setup.runtime_data.api, "recording_video", side_effect=pending
+            viewer_setup.runtime_data.api, "recording_media", side_effect=pending
         ),
         patch.object(PlaybackView, "add") as add,
     ):
@@ -133,7 +141,9 @@ async def test_unload_releases_prepared_recordings(hass, hass_client, viewer_set
 
     client = await hass_client()
     with patch.object(
-        viewer_setup.runtime_data.api, "recording_video", return_value=b"mp4"
+        viewer_setup.runtime_data.api,
+        "recording_media",
+        side_effect=file_download(b"mp4"),
     ):
         data = await (await client.post(PREPARE)).json()
     cache = hass.data[DOMAIN]["playback"]
@@ -148,13 +158,17 @@ async def test_native_preparation_is_explicit_and_validated(
 ):
     client = await hass_client()
     with patch.object(
-        viewer_setup.runtime_data.api, "recording_video", AsyncMock(return_value=b"mp4")
+        viewer_setup.runtime_data.api,
+        "recording_media",
+        AsyncMock(side_effect=file_download(b"mp4")),
     ) as download:
         assert (await client.post(PREPARE + "?format=unknown")).status == 400
         download.assert_not_awaited()
         response = await client.post(PREPARE + "?format=native")
         assert response.status == 200
-        download.assert_awaited_once_with("CAM123", CLIP, native=True)
+        download.assert_awaited_once_with(
+            "CAM123", CLIP, target=ANY, output_format="native", hevc_supported=False
+        )
         data = await response.json()
         assert await (await client.get(data["path"])).read() == b"mp4"
         assert (await client.delete(data["path"])).status == 204
@@ -166,7 +180,9 @@ async def test_auto_older_bridge_uses_browser_capability(
 ):
     client = await hass_client()
     with patch.object(
-        viewer_setup.runtime_data.api, "recording_video", return_value=b"mp4"
+        viewer_setup.runtime_data.api,
+        "recording_media",
+        side_effect=file_download(b"mp4"),
     ) as download:
         response = await client.post(
             PREPARE + f"?format=auto&hevc_supported={str(supported).lower()}"
@@ -175,7 +191,11 @@ async def test_auto_older_bridge_uses_browser_capability(
         data = await response.json()
         assert "media" not in data
         download.assert_awaited_once_with(
-            "CAM123", CLIP, **({"native": True} if supported else {})
+            "CAM123",
+            CLIP,
+            target=ANY,
+            output_format="native" if supported else "h264",
+            hevc_supported=False,
         )
         await client.delete(data["path"])
 
@@ -197,7 +217,7 @@ async def test_new_bridge_preparation_returns_own_media(
         "fallback": True,
     }
     with patch.object(
-        coordinator.api, "recording_media", return_value=(b"mp4", media)
+        coordinator.api, "recording_media", side_effect=file_download(b"mp4", media)
     ) as download:
         for query in ("?format=auto&hevc_supported=1", "?format=bad"):
             assert (await client.post(PREPARE + query)).status == 400
@@ -207,7 +227,7 @@ async def test_new_bridge_preparation_returns_own_media(
         data = await response.json()
         assert data["media"] == media
         download.assert_awaited_once_with(
-            "CAM123", CLIP, output_format="auto", hevc_supported=True
+            "CAM123", CLIP, target=ANY, output_format="auto", hevc_supported=True
         )
         assert await (await client.get(data["path"])).read() == b"mp4"
         await client.delete(data["path"])

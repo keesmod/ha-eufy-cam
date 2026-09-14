@@ -1,3 +1,8 @@
+import { createWriteStream } from 'node:fs';
+import { rm, stat } from 'node:fs/promises';
+import { join } from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { recordingWorkspace } from './recording-workspace.js';
 import { randomBytes } from 'node:crypto';
 import {
   EufyError,
@@ -55,6 +60,8 @@ export class MegaRecordings implements BackendRecordings {
       return await action(client, operation.signal);
     } catch (error) {
       if (error instanceof RecordingError) throw error;
+      if (['ENOSPC', 'EDQUOT', 'EROFS', 'EACCES'].includes((error as NodeJS.ErrnoException)?.code ?? ''))
+        throw new RecordingError('recording_storage_unavailable', 503);
       if (
         error instanceof EufyError &&
         [
@@ -162,35 +169,34 @@ export class MegaRecordings implements BackendRecordings {
     const record = this.reference(serial, id);
     return this.run(signal, (client, abort) => client.recordingThumbnail(record.id, abort));
   }
-  async video(
-    serial: string,
-    id: string,
-    signal: AbortSignal,
-    format: 'h264' | 'native' = 'h264',
-  ): Promise<Buffer> {
-    return (await this.videoResult(serial, id, signal, format)).body;
-  }
-  async videoResult(serial: string, id: string, signal: AbortSignal, format: RecordingFormat = 'h264', hevcSupported = false): Promise<RecordingResult> {
+  async video(serial: string, id: string, signal: AbortSignal,
+    consume: (result: RecordingResult, signal: AbortSignal) => Promise<void>,
+    format: RecordingFormat = 'h264', hevcSupported = false): Promise<void> {
     await this.checkCapability(serial);
     const record = this.reference(serial, id);
     return this.run(signal, async (client, abort) => {
       this.metrics.downloads++;
       let transfer: RecordingDownload | undefined;
-      const video: Buffer[] = [],
-        audio: Buffer[] = [];
+      const directory = await recordingWorkspace();
+      const video = join(directory, 'video'), audio = join(directory, 'audio');
       try {
         transfer = await client.downloadRecording(record.id, abort);
-        transfer.video.on('data', (chunk) => video.push(chunk));
-        transfer.audio.on('data', (chunk) => audio.push(chunk));
-        const result = await transfer.completed;
+        const downloads = [
+          pipeline(transfer.video, createWriteStream(video, { mode: 0o600 }), { signal: abort }),
+          pipeline(transfer.audio, createWriteStream(audio, { mode: 0o600 }), { signal: abort }),
+          transfer.completed,
+        ] as const;
+        // On any write/transfer error cancel the source and wait for both writers.
+        let result;
+        try { [, , result] = await Promise.all(downloads); }
+        catch (error) { await transfer.cancel(); await Promise.allSettled(downloads); throw error; }
         if (!result.complete) throw new RecordingError('recording_unavailable', 503);
         const metadata = transfer.metadata;
         const codec =
           metadata.videoCodec === 'h264' ? 'h264' : metadata.videoCodec === 'h265' ? 'hevc' : null;
         const output = await this.media.muxResult(
           { videoCodec: codec, fps: metadata.fps },
-          Buffer.concat(video),
-          Buffer.concat(audio),
+          { video, audio: (await stat(audio)).size ? audio : undefined, output: join(directory, 'output.mp4') },
           abort,
           format,
           hevcSupported,
@@ -198,10 +204,11 @@ export class MegaRecordings implements BackendRecordings {
         if (output.media.processing !== 'remux') this.metrics.transcoded++;
         else this.metrics.remuxed++;
         this.metrics.completed++;
-        return output;
+        await consume(output, abort);
       } finally {
         if (abort.aborted) this.metrics.cancelled++;
-        await transfer?.cancel();
+        try { await transfer?.cancel(); }
+        finally { await rm(directory, { recursive: true, force: true }); }
       }
     });
   }

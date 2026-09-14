@@ -1,7 +1,7 @@
 """Recording access must enforce HA entity permissions and propagate cancellation."""
 
 import asyncio
-from unittest.mock import AsyncMock, Mock, PropertyMock, patch
+from unittest.mock import ANY, AsyncMock, Mock, PropertyMock, patch
 
 import pytest
 
@@ -13,6 +13,17 @@ viewer_setup = _viewer_setup
 
 BASE = "/api/eufy_viewer/recordings/camera.front_door"
 CLIP = "a" * 32
+
+
+def file_download(body, media=None):
+    async def download(*_, target, **kwargs):
+        try:
+            await target.write(body)
+        except ValueError as err:
+            raise BridgeError("Recording storage limit") from err
+        return media
+
+    return download
 
 
 async def test_history_and_clip_are_authenticated_entity_routes(
@@ -27,12 +38,14 @@ async def test_history_and_clip_are_authenticated_entity_routes(
         assert await response.json() == data
         assert response.headers["Cache-Control"] == "no-store"
         query.assert_awaited_once_with("GET", "/v1/recordings/CAM123?date=2026-09-05")
-    with patch.object(api, "recording_video", AsyncMock(return_value=b"mp4")) as video:
+    with patch.object(
+        api, "recording_media", AsyncMock(side_effect=file_download(b"mp4"))
+    ) as video:
         response = await client.get(BASE + "/" + CLIP)
         assert response.status == 200
         assert response.content_type == "video/mp4"
         assert await response.read() == b"mp4"
-        video.assert_awaited_once_with("CAM123", CLIP)
+        video.assert_awaited_once_with("CAM123", CLIP, target=ANY)
 
 
 async def test_denied_entity_and_invalid_paths_never_reach_bridge(
@@ -42,7 +55,7 @@ async def test_denied_entity_and_invalid_paths_never_reach_bridge(
     api = viewer_setup.runtime_data.api
     with (
         patch.object(api, "request") as query,
-        patch.object(api, "recording_video") as video,
+        patch.object(api, "recording_media") as video,
     ):
         for url, status in [
             (BASE, 400),
@@ -66,7 +79,7 @@ async def test_upstream_error_is_redacted(hass, hass_client, viewer_setup):
     client = await hass_client()
     with patch.object(
         viewer_setup.runtime_data.api,
-        "recording_video",
+        "recording_media",
         side_effect=BridgeError("secret path and token"),
     ):
         response = await client.get(BASE + "/" + CLIP)
@@ -79,7 +92,7 @@ async def test_browser_abort_cancels_pending_download(hass, hass_client, viewer_
     started = asyncio.Event()
     cancelled = asyncio.Event()
 
-    async def pending(*_):
+    async def pending(*_, **kwargs):
         started.set()
         try:
             await asyncio.Future()
@@ -87,7 +100,7 @@ async def test_browser_abort_cancels_pending_download(hass, hass_client, viewer_
             cancelled.set()
 
     with patch.object(
-        viewer_setup.runtime_data.api, "recording_video", side_effect=pending
+        viewer_setup.runtime_data.api, "recording_media", side_effect=pending
     ):
         task = asyncio.create_task(client.get(BASE + "/" + CLIP))
         await asyncio.wait_for(started.wait(), 2)
@@ -140,10 +153,12 @@ async def test_events_and_calendar_map_camera_permissions(
         response = await client.get(url + "&month=2026-09")
         assert response.status == 200
         assert await response.json() == {"days": ["2026-09-05"], "scope": "homebase"}
-    with patch.object(api, "recording_video", AsyncMock(return_value=b"jpeg")) as image:
+    with patch.object(
+        api, "recording_thumbnail", AsyncMock(return_value=b"jpeg")
+    ) as image:
         response = await client.get(BASE + "/" + CLIP + "/thumbnail")
         assert response.content_type == "image/jpeg"
-        image.assert_awaited_once_with("CAM123", CLIP, thumbnail=True)
+        image.assert_awaited_once_with("CAM123", CLIP)
 
 
 async def test_events_reject_partial_malformed_and_unauthorized_results(
@@ -221,7 +236,7 @@ async def test_unsupported_recordings_never_reach_bridge(
     client = await hass_client()
     with (
         patch.object(viewer_setup.runtime_data.api, "request") as query,
-        patch.object(viewer_setup.runtime_data.api, "recording_video") as media,
+        patch.object(viewer_setup.runtime_data.api, "recording_media") as media,
     ):
         for path in (
             BASE + "?date=2026-09-11",

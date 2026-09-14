@@ -5,6 +5,7 @@ export class RecordingError extends Error {
       | 'live_stopping'
       | 'recording_busy'
       | 'recording_unavailable'
+      | 'recording_storage_unavailable'
       | 'recording_expired'
       | 'history_incomplete'
       | 'thumbnail_unavailable'

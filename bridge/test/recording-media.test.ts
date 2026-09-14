@@ -1,4 +1,8 @@
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, appendFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
+process.env.EUFY_DATA_DIR = tmpdir();
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
@@ -11,16 +15,31 @@ class Process extends EventEmitter {
   killed = false;
   kill() { this.killed = true; queueMicrotask(() => this.emit('close', null)); return true; }
 }
-const tick = () => new Promise(resolve => setImmediate(resolve));
+const tick = () => new Promise(resolve => setTimeout(resolve, 10));
 const metadata = { videoCodec: 'hevc' as const, fps: 15 };
+const paths = { video: 'video', audio: 'audio', output: 'output' };
+function buffered(core: RecordingTranscoder) {
+  const muxResult = (metadata: any, video: Buffer, audio: Buffer, signal: AbortSignal, format: any = 'h264', hevc = false) => {
+    const dir = mkdtempSync(join(tmpdir(), 'eufy-test-recording-'));
+    const files = { video: join(dir, 'video'), audio: audio.length ? join(dir, 'audio') : undefined, output: join(dir, 'output') };
+    writeFileSync(files.video, video); if (files.audio) writeFileSync(files.audio, audio);
+    return core.muxResult(metadata, files, signal, format, hevc)
+      .then(result => ({ ...result, body: readFileSync(result.path) }))
+      .finally(() => rmSync(dir, { recursive: true, force: true }));
+  };
+  return { muxResult, mux: (...args: Parameters<typeof muxResult>) => muxResult(...args).then(r => r.body) };
+}
 function fixture(overrides = {}, mode: 'nvidia' | 'software' = 'nvidia', detail = false) {
   const children: Process[] = [], commands: string[][] = [], events: any[] = [];
   const media = new RecordingTranscoder(mode, event => events.push(event), args => {
-    commands.push(args); const child = new Process(); children.push(child); return child as unknown as ChildProcess;
+    commands.push(args); const child = new Process();
+    writeFileSync(args.at(-1)!, Buffer.alloc(0));
+    child.stdout.on('data', chunk => appendFileSync(args.at(-1)!, chunk));
+    children.push(child); return child as unknown as ChildProcess;
   }, { conversionMs: 1000, remuxMs: 1000, hardwareMs: 500, cleanupMs: 30, bytes: 1024, ...overrides }, detail);
   const abort = new AbortController();
-  const run = () => media.mux(metadata, Buffer.from('original-video'), Buffer.from('original-audio'), abort.signal);
-  return { media, children, commands, events, abort, run };
+  const run = () => buffered(media).mux(metadata, Buffer.from('original-video'), Buffer.from('original-audio'), abort.signal);
+  return { core: media, media: buffered(media), children, commands, events, abort, run };
 }
 function complete(child: Process, value = 'complete-mp4') { child.stdout.write(value); child.emit('close', 0); }
 
@@ -31,15 +50,15 @@ test('recording acceleration is independently opt-in and validated', () => {
 });
 test('native HEVC and H264 are copied even when NVIDIA is selected', () => {
   for (const [codec, format] of [['h264', 'native'], ['h264', 'h264'], ['hevc', 'native']] as const) {
-    const args = recordingArgs({ videoCodec: codec, fps: 15 }, true, format, 'nvidia');
+    const args = recordingArgs({ videoCodec: codec, fps: 15 }, true, format, 'nvidia', paths);
     assert.equal(args[args.indexOf('-c:v') + 1], 'copy'); assert.ok(!args.includes('cuda'));
     assert.ok(args.includes('aac_adtstoasc'));
     assert.equal(args.includes('hvc1'), codec === 'hevc');
   }
-  const args = recordingArgs(metadata, true, 'h264', 'nvidia');
+  const args = recordingArgs(metadata, true, 'h264', 'nvidia', paths);
   assert.ok(args.indexOf('-hwaccel') < args.indexOf('-i')); assert.ok(args.includes('h264_nvenc'));
   assert.ok(args.includes('yuv420p')); assert.ok(!args.includes('libx264'));
-  assert.throws(() => recordingArgs({ videoCodec: null, fps: 15 }, false, 'h264', 'nvidia'));
+  assert.throws(() => recordingArgs({ videoCodec: null, fps: 15 }, false, 'h264', 'nvidia', paths));
 });
 test('hardware success returns complete output and anonymous diagnostics', async () => {
   const f = fixture(); const result = f.run(); complete(f.children[0]!);
@@ -52,11 +71,11 @@ test('failure discards partial hardware output and reuses both tracks once after
   f.children[0]!.stdout.write('discard-me'); f.children[0]!.emit('error', new Error('private driver details'));
   assert.equal(f.children.length, 1); await tick(); assert.equal(f.children[0]!.killed, true);
   assert.equal(f.children.length, 2); assert.ok(f.commands[1]!.includes('libx264'));
-  assert.equal(f.children[1]!.stdin.read().toString(), 'original-video');
-  assert.equal(f.children[1]!.audio.read().toString(), 'original-audio');
+  assert.equal(readFileSync(f.commands[1]![f.commands[1]!.indexOf('-i') + 1]!, 'utf8'), 'original-video');
+  assert.equal(readFileSync(f.commands[1]![f.commands[1]!.lastIndexOf('-i') + 1]!, 'utf8'), 'original-audio');
   complete(f.children[1]!); assert.equal((await result).toString(), 'complete-mp4');
   assert.ok(!JSON.stringify(f.events).includes('private'));
-  const next = f.run(); assert.ok(f.commands[2]!.includes('libx264')); complete(f.children[2]!); await next;
+  const next = f.run(); assert.ok(f.commands[2]!.includes('h264_nvenc')); complete(f.children[2]!); await next;
 });
 test('hardware deadline falls back within the shared conversion deadline', async () => {
   const f = fixture({ hardwareMs: 10 }); const result = f.run();
@@ -77,8 +96,10 @@ test('unconfirmed process cleanup blocks retries and subsequent conversions unti
 });
 test('output size cap never falls back or returns partial media', async () => {
   const f = fixture({ bytes: 4 }); const result = f.run(); const rejected = assert.rejects(result);
-  f.children[0]!.stdout.write('oversized'); await rejected;
-  assert.equal(f.children.length, 1); assert.equal(f.children[0]!.killed, true);
+  complete(f.children[0]!, 'oversized'); await rejected;
+  assert.equal(f.children.length, 1);
+  assert.equal(f.events[0].event, 'recording_failed');
+  const next = f.run(); assert.ok(f.commands[1]!.includes('h264_nvenc')); complete(f.children[1]!, 'ok'); await next;
 });
 test('software failure is not retried and total timeout remains bounded', async () => {
   const f = fixture({ conversionMs: 35, hardwareMs: 10 });
@@ -104,7 +125,7 @@ test('real software and missing-GPU HEVC conversion preserve decodable H264/AAC 
   const audio = generate(['-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','1','-c:a','aac','-f','adts','pipe:1']);
   for (const mode of ['software','nvidia'] as const) {
     const events: string[] = [];
-    const output = await new RecordingTranscoder(mode, e => events.push(e.event)).mux(metadata, video, audio, AbortSignal.timeout(15000));
+    const output = await buffered(new RecordingTranscoder(mode, e => events.push(e.event))).mux(metadata, video, audio, AbortSignal.timeout(15000));
     assert.ok(events.includes('recording_active_software') || events.includes('recording_active_nvidia'));
     if (mode === 'nvidia' && !events.includes('recording_active_nvidia')) assert.ok(events.includes('recording_software_fallback'));
     const probe = spawnSync('ffprobe', ['-v','error','-show_entries','stream=codec_name','-of','json','-i','pipe:0'], { input: output, timeout: 5000 });
@@ -128,9 +149,9 @@ test('bridge fallback converts one completed transfer while retaining recording 
         cancel: async () => { cancellations++; } };
     },
   };
-  const recordings = new MegaRecordings(() => client as any, () => [{ id: 'CAM', stationId: 'BASE', kind: 'camera' }] as any, () => false, undefined, f.media);
+  const recordings = new MegaRecordings(() => client as any, () => [{ id: 'CAM', stationId: 'BASE', kind: 'camera' }] as any, () => false, undefined, f.core);
   const rows = await recordings.list('CAM', '2026-09-13', f.abort.signal);
-  const result = recordings.video('CAM', rows.recordings[0]!.id, f.abort.signal);
+  const result = recordings.video('CAM', rows.recordings[0]!.id, f.abort.signal, async () => {});
   while (!f.children.length) await tick();
   assert.ok(recordings.busy); f.children[0]!.emit('error', new Error('missing GPU')); await tick();
   assert.ok(recordings.busy); assert.equal(downloads, 1); assert.equal(f.children.length, 2);
@@ -151,13 +172,13 @@ test('Auto resolves each codec with configured acceleration and browser support'
       assert.deepEqual((await result).media, { source: codec, output: transcode ? 'h264' : codec, processing: transcode ? mode : 'remux', fallback: false });
     }
 });
-test('result describes actual software fallback and circuit breaker per request', async () => {
+test('result describes actual software fallback belongs only to the failed request', async () => {
   const f = fixture();
   const result = f.media.muxResult(metadata, Buffer.from('v'), Buffer.from('a'), f.abort.signal, 'auto', true);
   f.children[0]!.emit('error', new Error('GPU failed')); await tick(); complete(f.children[1]!);
   assert.deepEqual((await result).media, { source: 'hevc', output: 'h264', processing: 'software', fallback: true });
   const next = f.media.muxResult(metadata, Buffer.from('v'), Buffer.alloc(0), f.abort.signal, 'auto', true);
-  complete(f.children[2]!); assert.equal((await next).media.fallback, true);
+  complete(f.children[2]!); assert.equal((await next).media.fallback, false);
   const native = f.media.muxResult(metadata, Buffer.from('v'), Buffer.alloc(0), f.abort.signal, 'native', true);
   complete(f.children[3]!); assert.deepEqual((await native).media, { source: 'hevc', output: 'hevc', processing: 'remux', fallback: false });
 });
@@ -169,17 +190,17 @@ test('hardware failure reports bounded categories and exit details without priva
   child.stderr.write('private-path private-token CUDA_ERROR_OUT_OF_');
   child.stderr.write('MEMORY\nOpenEncodeSessionEx failed: out of memory (10)');
   // An input pipe can fail before stderr and close arrive.
-  child.stdin.emit('error', new Error('private-input-error'));
+  child.emit('error', new Error('private-input-error'));
   child.stderr.write('\nNo decoder surfaces left');
   child.emit('close', 1, null);
   await tick(); complete(f.children[1]!); await result;
   const failed = f.events.find(e => e.event === 'recording_hardware_failed');
-  assert.deepEqual(failed.failure, { reason: 'video_input', timeout_ms: 500, output_bytes: 7, encoded_frames: 0,
+  assert.deepEqual(failed.failure, { reason: 'process', output_bytes: 7, encoded_frames: 0,
     exit_code: 1, signal: null, ffmpeg: ['memory', 'nvenc_open_session', 'decode'] });
   assert.ok(!JSON.stringify(f.events).includes('private'));
   const next = f.run(); complete(f.children[2]!); await next;
   assert.equal(f.events.filter(e => e.event === 'recording_hardware_failed').length, 1);
-  assert.ok(f.events.some(e => e.event === 'recording_hardware_disabled' && e.attempt === 2));
+  assert.ok(f.events.some(e => e.event === 'recording_active_nvidia' && e.attempt === 2));
 });
 
 test('FFmpeg classification handles large writes and isolates attempts', async () => {
@@ -287,13 +308,13 @@ test('real paced FFmpeg conversion survives the former ten-second cutoff and pre
     // Exercise the actual process/watchdog with a paced CPU encoder. This is
     // deliberately not evidence of NVENC/NVDEC execution on physical hardware.
     assert.ok(requested.includes('pipe:4'));
-    const args = recordingArgs(metadata, true, 'h264', 'software');
+    const args = recordingArgs(metadata, true, 'h264', 'software', { video: requested[requested.indexOf('-i') + 1]!, audio: requested[requested.lastIndexOf('-i') + 1]!, output: requested.at(-1)! });
     args.unshift('-progress', 'pipe:4', '-stats_period', '0.25');
     args.splice(args.indexOf('-i'), 0, '-readrate', '1');
     return spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'] });
   });
   const started = performance.now();
-  const result = await media.muxResult(metadata, video, audio, AbortSignal.timeout(25000), 'auto', true);
+  const result = await buffered(media).muxResult(metadata, video, audio, AbortSignal.timeout(25000), 'auto', true);
   assert.ok(performance.now() - started > 10000);
   assert.equal(launches, 1); assert.deepEqual(events, ['recording_active_nvidia']);
   assert.equal(result.media.fallback, false);

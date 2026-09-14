@@ -43,7 +43,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             )
         ]
     )
-    playback = PlaybackView()
+    playback = PlaybackView(hass.config.path(".eufy_recordings"))
     hass.http.register_view(PreparePlaybackView(playback))
     hass.http.register_view(playback)
     hass.http.register_view(RecordingsView())
