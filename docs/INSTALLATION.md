@@ -105,3 +105,41 @@ For missing devices or failed setup, follow the [diagnostic collection guide](DI
 
 If the problem remains, [report a bug](https://github.com/keesmod/ha-eufy-cam/issues/new?template=bug_report.yml) with your HA installation type, both component versions and the error. Follow the [support guidance](../.github/SUPPORT.md) before sharing logs.
 
+
+
+## Recording playback format
+
+The camera and events players share an **Auto / Native / H.264** selector.
+The choice is remembered in this browser for this Home Assistant address.
+When browser storage is unavailable, the choice lasts until the page reloads.
+Changing the mode prepares the selected recording again and restores its
+position and paused state.
+
+- **Auto**, the default, keeps H.264 recordings without video re-encoding.
+  HEVC converts to H.264 when the bridge is configured with
+  `EUFY_RECORDING_ACCELERATION=nvidia` or when the browser reports no HEVC
+  support. Otherwise HEVC is offered natively, with one H.264 fallback for
+  codec or decoding errors.
+- **Native** preserves the source video codec. If this browser cannot decode
+  it, choose H.264 manually.
+- **H.264** converts HEVC using the configured acceleration and existing bounded
+  software fallback. An H.264 source still only remuxes.
+
+The media indicator reports how the selected recording was prepared: Native
+remux, Software transcode or NVIDIA transcode. It also identifies software used
+after a NVIDIA failure. This describes completed preparation, not ongoing GPU
+load. It never guesses the result from the configured acceleration.
+
+This behavior requires integration/card 0.8.12 and bridge 0.8.11. With an older
+bridge, Auto uses browser compatibility alone and processing is shown as unknown.
+Update the bridge, then the integration, restart Home Assistant and refresh the
+dashboard. Back up both components first and retain their previous files for
+rollback. No credential or entity migration is required.
+
+The bridge advertises `recording_playback: 1` in its authenticated state.
+Recording requests accept `format=auto` and `hevc_supported=true|false` in
+addition to the existing formats. Successful MP4 responses include
+`X-Eufy-Recording-Media` with `source`, `output`, `processing` and `fallback`.
+HA forwards validated metadata as the optional `media` object alongside the
+existing signed playback URL. Missing or invalid metadata leaves playback usable
+and shows processing as unknown.

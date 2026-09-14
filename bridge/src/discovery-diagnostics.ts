@@ -86,6 +86,7 @@ const cloudRoutes = new Map([
   ['/app/sendmsg/verify_code', 'verification'],
 ]);
 export interface SupportReport {
+  live_audio?: import("./live-audio-diagnostics.js").LiveAudioReport[];
   schema: 2;
   generated_at: string;
   last_discovery: Record<string, unknown>[];

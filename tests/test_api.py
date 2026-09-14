@@ -242,3 +242,75 @@ def test_capabilities_are_optional_and_unknown_fields_are_ignored():
         data["cameras"][0]["capabilities"] = value
         with pytest.raises(BridgeError):
             BridgeState.parse(data)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        "",
+        "x" * 257,
+        "{",
+        "null",
+        "[]",
+        '{"source": "hevc"}',
+        '{"source":"hevc","output":"h264","processing":"nvidia","fallback":true}',
+        '{"source":"hevc","output":"h264","processing":"remux","fallback":false}',
+        '{"source":"h264","output":"h264","processing":"software","fallback":false}',
+        '{"source":"hevc","output":"h264","processing":"unknown","fallback":false}',
+        '{"source":[],"output":"h264","processing":"software","fallback":false}',
+        '{"source":"hevc","output":"h264","processing":"software","fallback":1}',
+    ],
+)
+def test_recording_metadata_rejects_invalid_or_incoherent_facts(value):
+    from custom_components.eufy_viewer.api import recording_media_header
+
+    assert recording_media_header(value) is None
+
+
+async def test_media_headers_and_auto_parameters(aiohttp_server, socket_enabled):
+    import json
+
+    media = {
+        "source": "hevc",
+        "output": "h264",
+        "processing": "software",
+        "fallback": True,
+    }
+
+    async def route(request):
+        assert dict(request.query) == {"format": "auto", "hevc_supported": "true"}
+        return web.Response(
+            body=b"mp4",
+            content_type="video/mp4",
+            headers={"X-Eufy-Recording-Media": json.dumps(media)},
+        )
+
+    app = web.Application()
+    app.router.add_get("/v1/recordings/CAM123/abc/video", route)
+    server = await aiohttp_server(app)
+    async with ClientSession() as session:
+        api = BridgeClient(session, str(server.make_url("")), "test")
+        assert await api.recording_media(
+            "CAM123", "abc", output_format="auto", hevc_supported=True
+        ) == (b"mp4", media)
+        with pytest.raises(BridgeError):
+            await api.recording_media("CAM123", "abc", output_format="bad")
+
+
+def test_state_advertises_playback_extension_only_for_exact_version():
+    from custom_components.eufy_viewer.api import BridgeState
+
+    for version, supported in [
+        (1, True),
+        (True, False),
+        ("1", False),
+        (2, False),
+        (None, False),
+    ]:
+        assert (
+            BridgeState.parse(
+                {**STATE, "recording_playback": version}
+            ).recording_playback
+            is supported
+        )

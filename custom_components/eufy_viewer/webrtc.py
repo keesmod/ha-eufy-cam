@@ -85,7 +85,7 @@ class WebRTCViewer(Viewer):
         """One sample per fixed stage, without extending camera ownership."""
         trigger = report.get("trigger")
         if (
-            trigger not in {"startup", "playing", "unmuted", "fallback"}
+            trigger not in {"startup", "playing", "unmuted", "fallback", "audio_check"}
             or trigger in self.browser_triggers
         ):
             return False
@@ -189,13 +189,17 @@ class WebRTCViewer(Viewer):
             return self.fallback_requested and not self.closed
         return not self.closed
 
-    async def _prepare(self, path: str, audio: bool | None = None) -> None:
+    async def _prepare(
+        self, path: str, audio: bool | None = None, audio_attempt: Any = None
+    ) -> None:
         if self.ready or not re.fullmatch(r"/v1/media/[a-f0-9]{64}", path):
             raise BridgeError("Invalid media grant")
         if audio is not None and not isinstance(audio, bool):
             raise BridgeError("Invalid media audio capability")
         if audio is not None:
             self.playback_evidence["audio_expected"] = audio
+        if type(audio_attempt) is int and 1 <= audio_attempt < 2**48:
+            self.playback_evidence["audio_attempt"] = audio_attempt
         sources = [self.coordinator.api.url + path]
         # Older bridges omit this field. Preserve their A/V behavior, but never
         # ask go2rtc to convert audio when this stream is explicitly video-only.
@@ -294,7 +298,9 @@ class WebRTCViewer(Viewer):
                                 # Do not block JPEG control behind stalled go2rtc setup.
                                 async with asyncio.timeout(min(5000, budget) / 1000):
                                     await self._prepare(
-                                        data.get("path", ""), data.get("audio")
+                                        data.get("path", ""),
+                                        data.get("audio"),
+                                        data.get("audio_attempt"),
                                     )
                             except Go2RtcClientError, aiohttp.ClientError, TimeoutError:
                                 await self._failed("signaling_error")

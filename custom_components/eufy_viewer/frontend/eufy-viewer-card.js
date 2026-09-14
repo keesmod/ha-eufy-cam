@@ -1,15 +1,105 @@
 "use strict";
+const recordingModeKey = 'eufy-viewer.recording-mode';
+let recordingMemoryMode = 'auto';
+let recordingStorageWritable = true;
+function recordingMode() {
+    if (!recordingStorageWritable)
+        return recordingMemoryMode;
+    try {
+        const stored = localStorage.getItem(recordingModeKey);
+        if (stored === 'auto' || stored === 'native' || stored === 'h264')
+            recordingMemoryMode = stored;
+    }
+    catch { /* Storage is optional. */ }
+    return recordingMemoryMode;
+}
+function recordingMedia(value) {
+    if (!value || typeof value !== 'object')
+        return;
+    const m = value;
+    if (!['h264', 'hevc'].includes(m.source) || !['h264', 'hevc'].includes(m.output) || typeof m.fallback !== 'boolean')
+        return;
+    if (m.processing === 'remux' ? m.source !== m.output || m.fallback
+        : !['software', 'nvidia'].includes(m.processing) || m.source !== 'hevc' || m.output !== 'h264' || (m.processing === 'nvidia' && m.fallback))
+        return;
+    return { source: m.source, output: m.output, processing: m.processing, fallback: m.fallback };
+}
+const RECORDING_TEXT = {
+    en: { mode: 'Playback format', unknown: 'Processing unknown', remux: 'Native remux', software: 'Software transcode', nvidia: 'NVIDIA transcode', fallback: 'Software transcode after NVIDIA failure', codec: 'This browser cannot play the original codec. Select H.264.', prepared: 'How this recording was prepared' },
+    nl: { mode: 'Afspeelformaat', unknown: 'Verwerking onbekend', remux: 'Native remux', software: 'Softwareconversie', nvidia: 'NVIDIA-conversie', fallback: 'Softwareconversie na NVIDIA-fout', codec: 'Deze browser kan de oorspronkelijke codec niet afspelen. Kies H.264.', prepared: 'Zo is deze opname voorbereid' },
+};
+/** Shared, local-only preference and request-specific media status for both cards. */
+class EufyRecordingControls {
+    language;
+    select = document.createElement('select');
+    status = document.createElement('span');
+    label = document.createElement('span');
+    media;
+    prepared = false;
+    refresh = () => this.update();
+    constructor(host, language, changed) {
+        this.language = language;
+        const root = document.createElement('div'), label = document.createElement('label');
+        root.className = 'recording-controls';
+        root.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 16px;font-size:13px';
+        label.style.cssText = 'display:flex;align-items:center;gap:8px';
+        this.select.className = 'recording-mode';
+        this.select.style.cssText = 'font:inherit;color:inherit;min-height:42px;padding:8px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#ccc);border-radius:8px';
+        for (const [value, text] of [['auto', 'Auto'], ['native', 'Native'], ['h264', 'H.264']]) {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = text;
+            this.select.append(option);
+        }
+        this.status.className = 'recording-media';
+        this.status.setAttribute('role', 'status');
+        this.status.setAttribute('aria-live', 'polite');
+        label.append(this.label, this.select);
+        root.append(label, this.status);
+        host.insertBefore(root, host.querySelector('video'));
+        this.select.onchange = () => {
+            recordingMemoryMode = this.select.value;
+            try {
+                localStorage.setItem(recordingModeKey, recordingMemoryMode);
+            }
+            catch {
+                recordingStorageWritable = false;
+            }
+            window.dispatchEvent(new Event('eufy-recording-mode'));
+            changed();
+        };
+        this.update();
+    }
+    connect() { window.addEventListener('eufy-recording-mode', this.refresh); window.addEventListener('storage', this.refresh); this.update(); }
+    disconnect() { window.removeEventListener('eufy-recording-mode', this.refresh); window.removeEventListener('storage', this.refresh); }
+    update(media, prepared) {
+        if (prepared !== undefined) {
+            this.media = media;
+            this.prepared = prepared;
+        }
+        const text = RECORDING_TEXT[this.language()?.startsWith('nl') ? 'nl' : 'en'];
+        this.select.value = recordingMode();
+        this.label.textContent = text.mode;
+        this.status.title = text.prepared;
+        this.status.textContent = !this.prepared ? '' : !this.media ? text.unknown : this.media.fallback ? text.fallback : text[this.media.processing];
+    }
+    codecError() { return RECORDING_TEXT[this.language()?.startsWith('nl') ? 'nl' : 'en'].codec; }
+}
 /** Native players need an HTTP source on macOS; blobs can stall indefinitely. */
 class EufyRecordingPlayback {
     release;
     cancel;
-    releaseMedia() { const release = this.release; this.release = undefined; return release?.() ?? Promise.resolve(); }
-    clear() { this.cancel?.(); this.cancel = undefined; return this.releaseMedia(); }
-    async play(ha, entity, id, video, externalSignal, changed = () => { }) {
+    cleanup = Promise.resolve();
+    media;
+    releaseMedia() { const release = this.release; this.release = undefined; this.cleanup = this.cleanup.then(() => release?.()); return this.cleanup; }
+    clear() { this.media = undefined; this.cancel?.(); this.cancel = undefined; return this.releaseMedia(); }
+    async play(ha, entity, id, video, externalSignal, changed = () => { }, restore) {
         await this.clear();
         externalSignal.throwIfAborted();
         const controller = new AbortController(), signal = controller.signal;
-        let native = Boolean(video.canPlayType('video/mp4; codecs="hvc1.1.6.L153.B0"'));
+        const mode = recordingMode();
+        const hevcSupported = Boolean(video.canPlayType('video/mp4; codecs="hvc1.1.6.L153.B0"'));
+        let native = mode === 'auto' && hevcSupported;
         let recovering = false;
         const detach = () => video.removeEventListener('error', failed);
         const cancel = () => { controller.abort(); detach(); externalSignal.removeEventListener('abort', cancel); };
@@ -25,11 +115,11 @@ class EufyRecordingPlayback {
             video.load();
             await this.releaseMedia();
             signal.throwIfAborted();
-            const url = await this.prepare(ha, entity, id, signal);
+            const url = await this.prepare(ha, entity, id, signal, 'h264');
             await this.load(video, url, signal, !paused);
             signal.throwIfAborted();
             if (Number.isFinite(position) && position > 0)
-                video.currentTime = Math.min(position, Number.isFinite(video.duration) ? video.duration : position);
+                video.currentTime = position;
         };
         const failed = () => {
             if (signal.aborted || recovering)
@@ -55,12 +145,22 @@ class EufyRecordingPlayback {
             });
         };
         try {
-            const url = await this.prepare(ha, entity, id, signal, native);
+            const url = await this.prepare(ha, entity, id, signal, mode, hevcSupported);
+            if (this.media?.output === 'h264')
+                native = false;
             try {
-                await this.load(video, url, signal);
+                await this.load(video, url, signal, !restore?.paused);
             }
             catch (error) {
                 await recover(error);
+            }
+            // Fragmented MP4 duration can still describe only its first fragment here.
+            // The saved position belongs to this same clip, so do not clamp to it.
+            if (restore) {
+                if (Number.isFinite(restore.time) && restore.time > 0)
+                    video.currentTime = restore.time;
+                if (restore.paused)
+                    video.pause();
             }
             signal.throwIfAborted();
             video.addEventListener('error', failed);
@@ -71,8 +171,10 @@ class EufyRecordingPlayback {
             throw error;
         }
     }
-    async prepare(ha, entity, id, signal, native = false) {
-        const response = await ha.fetchWithAuth(`/api/eufy_viewer/recordings/${entity}/${id}/playback${native ? "?format=native" : ""}`, { method: 'POST', signal });
+    async prepare(ha, entity, id, signal, format = 'h264', hevcSupported = false) {
+        this.media = undefined;
+        const query = format === 'auto' ? `?format=auto&hevc_supported=${hevcSupported}` : format === 'native' ? '?format=native' : '';
+        const response = await ha.fetchWithAuth(`/api/eufy_viewer/recordings/${entity}/${id}/playback${query}`, { method: 'POST', signal });
         const data = await response.json();
         if (!response.ok)
             throw new Error(data.error);
@@ -88,8 +190,13 @@ class EufyRecordingPlayback {
             await release();
             signal.throwIfAborted();
         }
-        void this.releaseMedia();
+        await this.releaseMedia();
+        if (signal.aborted) {
+            await release();
+            signal.throwIfAborted();
+        }
         this.release = release;
+        this.media = recordingMedia(data.media);
         return data.url;
     }
     async load(video, url, signal, autoplay = true) {
@@ -164,11 +271,14 @@ export class EufyViewerCard extends HTMLElement {
     _recordAbort;
     _recordPlayback = new EufyRecordingPlayback();
     _recordGeneration = 0;
+    _recordId;
+    _recordControls;
     _rtc;
     _rtcCandidates = [];
     _tick;
     _videoCallback;
     _diagnosticTimer;
+    _audioDiagnosticTimer;
     _soundDiagnosticTimer;
     _playback;
     _dialog;
@@ -221,6 +331,10 @@ export class EufyViewerCard extends HTMLElement {
         this._recordDialog = this.shadowRoot.querySelector(".record-dialog");
         this._recordVideo = this.shadowRoot.querySelector(".record-video");
         this._recordDate = this.shadowRoot.querySelector(".record-date");
+        this._recordControls = new EufyRecordingControls(this._recordDialog, () => this._hass?.language, () => {
+            if (this._recordDialog.open && this._recordId)
+                void this._playRecording(this._recordId, { time: this._recordVideo.currentTime, paused: !this._recordVideo.hidden && this._recordVideo.paused });
+        });
         const today = new Date();
         this._recordDate.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
         this.shadowRoot.querySelector(".record-open").addEventListener("click", () => { this._stop(); this._recordDialog.showModal(); void this._loadRecordings(); });
@@ -272,11 +386,13 @@ export class EufyViewerCard extends HTMLElement {
                 hass.connection?.addEventListener("disconnected", this._disconnected);
         }
         this._hass = hass;
+        this._recordControls.update();
         this._render();
     }
     getCardSize() { return 4; }
     getGridOptions() { return { columns: 12, rows: "auto", min_columns: 6 }; }
     connectedCallback() {
+        this._recordControls.connect();
         document.addEventListener("visibilitychange", this._visibility);
         window.addEventListener("pagehide", this._pagehide);
         this._hass?.connection?.addEventListener("disconnected", this._disconnected);
@@ -291,6 +407,7 @@ export class EufyViewerCard extends HTMLElement {
         this._render();
     }
     disconnectedCallback() {
+        this._recordControls.disconnect();
         this._stop();
         this._closeRecordings();
         this._observer?.disconnect();
@@ -373,8 +490,9 @@ export class EufyViewerCard extends HTMLElement {
         this._recordVideo.load();
         this._recordVideo.hidden = true;
         this._recordPlayback.clear();
+        this._recordControls.update(undefined, false);
     }
-    _closeRecordings() { this._clearRecording(); if (this._recordDialog?.open)
+    _closeRecordings() { this._recordId = undefined; this._clearRecording(); if (this._recordDialog?.open)
         this._recordDialog.close(); }
     async _recordingResponse(response) {
         if (response.ok)
@@ -384,11 +502,15 @@ export class EufyViewerCard extends HTMLElement {
         throw new Error(allowed.includes(data.error) ? data.error : "recordingError");
     }
     _recordingFailure(error) {
+        if (error instanceof RecordingCodecError && recordingMode() === "native")
+            return this._recordControls.codecError();
         const code = error instanceof Error ? error.message : "recordingError";
         const text = this._text();
         return ["live_busy", "live_stopping", "recording_busy", "recording_expired", "recording_unavailable", "capability_unavailable"].includes(code) ? text[code] : text.recordingError;
     }
     async _loadRecordings() {
+        this._recordId = undefined;
+        this._recordControls.update();
         if (!this._permits("recordings"))
             return;
         this._clearRecording();
@@ -424,13 +546,14 @@ export class EufyViewerCard extends HTMLElement {
                 this._recordStatus(this._recordingFailure(error));
         }
     }
-    async _playRecording(id) {
+    async _playRecording(id, restore) {
         if (!this._permits("recordings"))
             return;
         this._clearRecording();
         const generation = this._recordGeneration;
         if (!this._hass || !this._config || !this._recordDialog.open)
             return;
+        this._recordId = id;
         const controller = this._recordAbort = new AbortController();
         this._recordStatus(this._text().preparing);
         try {
@@ -441,10 +564,15 @@ export class EufyViewerCard extends HTMLElement {
                     this._clearRecording();
                     this._recordStatus(this._recordingFailure(error));
                 }
-                else
+                else {
                     this._recordStatus(state === 'preparing' ? this._text().preparing : '');
-            });
+                    this._recordControls.update(this._recordPlayback.media, state === 'playing');
+                }
+            }, restore);
+            if (generation !== this._recordGeneration || controller.signal.aborted)
+                return;
             this._recordStatus("");
+            this._recordControls.update(this._recordPlayback.media, true);
         }
         catch (error) {
             if (generation === this._recordGeneration && this._recordDialog.open) {
@@ -561,6 +689,7 @@ export class EufyViewerCard extends HTMLElement {
     }
     _closeRTC() {
         clearTimeout(this._diagnosticTimer);
+        clearTimeout(this._audioDiagnosticTimer);
         clearTimeout(this._soundDiagnosticTimer);
         this._soundDiagnosticTimer = undefined;
         if (this._videoCallback !== undefined)
@@ -605,6 +734,7 @@ export class EufyViewerCard extends HTMLElement {
             this._rtcSubscription = event.subscription;
             this._playback.enabled = event.diagnostics === true;
             this._diagnosticTimer = window.setTimeout(() => { void this._reportLive("startup"); }, 5000);
+            this._audioDiagnosticTimer = window.setTimeout(() => { void this._reportLive("audio_check"); }, 15000);
             if (this._rtc || !this._video.requestVideoFrameCallback)
                 throw new Error("WebRTC unavailable");
             const pc = this._rtc = new RTCPeerConnection({ iceServers: [] });
@@ -725,8 +855,13 @@ export class EufyViewerCard extends HTMLElement {
             offer: Boolean(pc.localDescription), answer: Boolean(pc.remoteDescription),
             ready_state: this._video.readyState, paused: this._video.paused, muted: this._video.muted,
             ticks: playback.ticks, acks_sent: playback.sent, acks_accepted: playback.accepted, painted: playback.painted,
-            stats_available: false,
+            stats_available: false, audio_volume_percent: Math.round(this._video.volume * 100),
         };
+        const audioTracks = this._video.srcObject?.getAudioTracks?.() ?? [];
+        report.audio_tracks = audioTracks.length;
+        report.audio_tracks_muted = audioTracks.filter(track => track.muted).length;
+        report.audio_tracks_enabled = audioTracks.filter(track => track.enabled).length;
+        report.audio_tracks_ended = audioTracks.filter(track => track.readyState === "ended").length;
         if (playback.lastFrame !== undefined)
             report.last_frame_ms = Math.round(performance.now() - playback.lastFrame);
         let timer;
@@ -761,6 +896,14 @@ export class EufyViewerCard extends HTMLElement {
                             count("video_fir", stat.firCount);
                         }
                         else {
+                            const codec = stats.get(stat.codecId);
+                            const mime = typeof codec?.mimeType === "string" ? codec.mimeType.toLowerCase() : "";
+                            if (["audio/opus", "audio/pcma", "audio/pcmu", "audio/g722", "audio/mp4a-latm"].includes(mime))
+                                report.audio_codec = mime;
+                            if (Number.isInteger(codec?.clockRate) && codec.clockRate > 0 && codec.clockRate <= 192000)
+                                report.audio_clock_rate = codec.clockRate;
+                            if (Number.isInteger(codec?.channels) && codec.channels > 0 && codec.channels <= 8)
+                                report.audio_channels = codec.channels;
                             count("audio_samples", stat.totalSamplesReceived);
                             count("concealed_samples", stat.concealedSamples);
                             if (typeof stat.totalAudioEnergy === "number")
@@ -859,6 +1002,7 @@ export class EufyEventsCard extends HTMLElement {
     active = false;
     urls = new Map();
     playback = new EufyRecordingPlayback();
+    controls;
     observer;
     cameraKey = '';
     loadedDate = '';
@@ -884,6 +1028,12 @@ export class EufyEventsCard extends HTMLElement {
       dialog{width:min(1000px,95vw);max-width:95vw;padding:0;border:0;border-radius:16px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#152028)}dialog::backdrop{background:#000b}.player-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;flex-wrap:wrap}.player-title{font-weight:600}.player-status{padding:0 16px 12px}video{display:block;width:100%;max-height:65vh;background:#10161e}.player-nav{display:flex;gap:10px;justify-content:center;padding:14px}
       @media(max-width:450px){ha-card{padding:14px}.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.filters label:first-child{flex:1;min-width:130px}.event-time{font-size:11px}}
     </style><ha-card><h2></h2><div class="filters"><label><span data-text="camera"></span><select class="camera"></select></label><label><span data-text="date"></span><input class="date" type="date"></label><button class="show" data-text="show"></button></div><details><summary data-text="calendar"></summary><div class="calendar"><input class="month" type="month"><div class="days"></div><p class="legend"></p></div></details><div class="status" role="status" aria-live="polite"></div><div class="tiles"></div><div class="pagination" hidden><button class="page-prev" data-text="pagePrev"></button><span class="page-info"></span><button class="page-next" data-text="pageNext"></button></div></ha-card><dialog aria-labelledby="events-player-title"><div class="player-bar"><span class="player-title" id="events-player-title"></span><button class="close" data-text="close"></button></div><div class="player-status" role="status" aria-live="polite"></div><video playsinline controls hidden></video><div class="player-nav"><button class="previous" data-text="prev"></button><button class="next" data-text="next"></button></div></dialog>`;
+        this.controls = new EufyRecordingControls(this.q('dialog'), () => this.ha?.language, () => {
+            if (this.q('dialog').open) {
+                const v = this.q('video');
+                this.play(this.selected, { time: v.currentTime, paused: !v.hidden && v.paused });
+            }
+        });
         const today = new Date();
         const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         this.q('.date').value = date;
@@ -925,6 +1075,7 @@ export class EufyEventsCard extends HTMLElement {
         this.labels();
     }
     connectedCallback() {
+        this.controls.connect();
         document.addEventListener('visibilitychange', this.visibilityChanged);
         window.addEventListener('pagehide', this.leave);
         this.ha?.connection.addEventListener('disconnected', this.leave);
@@ -932,8 +1083,9 @@ export class EufyEventsCard extends HTMLElement {
             this.stop(); });
         this.observer.observe(this);
     }
-    disconnectedCallback() { this.stop(); this.observer?.disconnect(); document.removeEventListener('visibilitychange', this.visibilityChanged); window.removeEventListener('pagehide', this.leave); this.ha?.connection.removeEventListener('disconnected', this.leave); }
+    disconnectedCallback() { this.controls.disconnect(); this.stop(); this.observer?.disconnect(); document.removeEventListener('visibilitychange', this.visibilityChanged); window.removeEventListener('pagehide', this.leave); this.ha?.connection.removeEventListener('disconnected', this.leave); }
     labels() {
+        this.controls.update();
         for (const element of Array.from(this.shadowRoot.querySelectorAll('[data-text]')))
             element.textContent = this.text[element.dataset.text];
         this.q('h2').textContent = this.config.title || this.text.title;
@@ -957,7 +1109,7 @@ export class EufyEventsCard extends HTMLElement {
             this.q('.status').textContent = this.ha?.language?.startsWith('nl') ? 'Geen camera met beschikbare opnames. Bekijk de camerakaart voor de reden.' : 'No camera with available recordings. See the camera card for the reason.';
         }
     }
-    clearVideo() { const v = this.q('video'); v.pause(); v.removeAttribute('src'); v.load(); v.hidden = true; this.playback.clear(); }
+    clearVideo() { const v = this.q('video'); v.pause(); v.removeAttribute('src'); v.load(); v.hidden = true; this.playback.clear(); this.controls.update(undefined, false); }
     closePlayer() { this.controller?.abort(); this.clearVideo(); const dialog = this.q('dialog'); if (dialog.open)
         dialog.close(); }
     stop() { this.closePlayer(); for (const url of this.urls.values())
@@ -991,7 +1143,8 @@ export class EufyEventsCard extends HTMLElement {
             }
         });
     }
-    failure(error) { const code = error instanceof Error ? error.message : ''; return code === 'live_busy' ? this.text.live : code === 'live_stopping' ? this.text.stopping : code === 'recording_busy' ? this.text.busy : code === 'recording_expired' ? this.text.expired : code === 'history_incomplete' ? this.text.incomplete : this.text.error; }
+    failure(error) { if (error instanceof RecordingCodecError && recordingMode() === "native")
+        return this.controls.codecError(); const code = error instanceof Error ? error.message : ''; return code === 'live_busy' ? this.text.live : code === 'live_stopping' ? this.text.stopping : code === 'recording_busy' ? this.text.busy : code === 'recording_expired' ? this.text.expired : code === 'history_incomplete' ? this.text.incomplete : this.text.error; }
     async fetch(path, signal) { signal.throwIfAborted(); const response = await this.ha.fetchWithAuth(path, { signal }); if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.error);
@@ -1129,7 +1282,7 @@ export class EufyEventsCard extends HTMLElement {
             }
         }
     }
-    play(index) {
+    play(index, restore) {
         const records = this.filtered(), record = records[index];
         if (!record || !this.cameras().includes(record.entity_id))
             return;
@@ -1151,10 +1304,15 @@ export class EufyEventsCard extends HTMLElement {
                         this.clearVideo();
                         this.q('.player-status').textContent = this.failure(error);
                     }
-                    else
+                    else {
                         this.q('.player-status').textContent = state === 'preparing' ? this.text.preparing : '';
-                });
+                        this.controls.update(this.playback.media, state === 'playing');
+                    }
+                }, restore);
+                if (signal.aborted)
+                    return;
                 this.q('.player-status').textContent = '';
+                this.controls.update(this.playback.media, true);
             }
             catch (error) {
                 if (!signal.aborted)

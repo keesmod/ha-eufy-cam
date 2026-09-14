@@ -5,6 +5,14 @@ export interface RecordingMetadata {
   videoCodec: 'h264' | 'hevc' | null;
   fps: number;
 }
+export type RecordingFormat = 'auto' | 'native' | 'h264';
+export interface RecordingMedia {
+  source: 'h264' | 'hevc';
+  output: 'h264' | 'hevc';
+  processing: 'remux' | 'software' | 'nvidia';
+  fallback: boolean;
+}
+export interface RecordingResult { body: Buffer; media: RecordingMedia }
 export type RecordingAcceleration = 'software' | 'nvidia';
 export function recordingAcceleration(value?: string): RecordingAcceleration {
   if (value === undefined || value === 'software') return 'software';
@@ -55,7 +63,14 @@ export class RecordingTranscoder {
     private readonly limits = { conversionMs: 45_000, remuxMs: 20_000, hardwareMs: 10_000, cleanupMs: 1000, bytes: LIMIT },
   ) {}
   async mux(metadata: RecordingMetadata, video: Buffer, audio: Buffer, signal: AbortSignal, format: 'h264' | 'native' = 'h264'): Promise<Buffer> {
+    return (await this.muxResult(metadata, video, audio, signal, format)).body;
+  }
+  async muxResult(metadata: RecordingMetadata, video: Buffer, audio: Buffer, signal: AbortSignal, requested: RecordingFormat = 'h264', hevcSupported = false): Promise<RecordingResult> {
     signal.throwIfAborted();
+    const format = requested === 'auto' ? (this.acceleration === 'nvidia' || !hevcSupported ? 'h264' : 'native') : requested;
+    const source = metadata.videoCodec;
+    if (source !== 'h264' && source !== 'hevc') throw new Error('Unsupported recording codec');
+    const result = (body: Buffer, processing: RecordingMedia['processing']): RecordingResult => ({ body, media: { source, output: transcode ? 'h264' : source, processing, fallback: transcode && this.acceleration === 'nvidia' && this.hardwareFailed } });
     if (this.unavailable) throw new Error('Recording converter requires restart');
     const transcode = metadata.videoCodec === 'hevc' && format === 'h264';
     const started = performance.now(), attempt = ++this.sequence;
@@ -74,7 +89,7 @@ export class RecordingTranscoder {
         const output = await run('nvidia');
         signal.throwIfAborted();
         mark('recording_active_nvidia');
-        return output;
+        return result(output, 'nvidia');
       } catch (error) {
         signal.throwIfAborted();
         this.hardwareFailed = true;
@@ -86,7 +101,7 @@ export class RecordingTranscoder {
     const output = await run('software');
     signal.throwIfAborted();
     mark(transcode ? 'recording_active_software' : 'recording_remuxed');
-    return output;
+    return result(output, transcode ? 'software' : 'remux');
   }
   private convert(args: string[], video: Buffer, audio: Buffer, signal: AbortSignal, timeout: number): Promise<Buffer> {
     signal.throwIfAborted();

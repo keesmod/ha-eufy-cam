@@ -16,6 +16,50 @@ class BridgeError(Exception):
     """Bridge unavailable or returned an invalid response."""
 
 
+def recording_media_header(value: str | None) -> dict[str, str | bool] | None:
+    """Accept only bounded, coherent public media facts, never driver messages."""
+    if not value or len(value) > 256:
+        return None
+    try:
+        data = json.loads(value)
+        if not isinstance(data, dict) or set(data) != {
+            "source",
+            "output",
+            "processing",
+            "fallback",
+        }:
+            return None
+        source, output, processing, fallback = (
+            data[k] for k in ("source", "output", "processing", "fallback")
+        )
+        if (
+            source not in ("h264", "hevc")
+            or output not in ("h264", "hevc")
+            or type(fallback) is not bool
+        ):
+            return None
+        if processing == "remux":
+            if source != output or fallback:
+                return None
+        elif processing in ("software", "nvidia"):
+            if (
+                source != "hevc"
+                or output != "h264"
+                or (processing == "nvidia" and fallback)
+            ):
+                return None
+        else:
+            return None
+        return {
+            "source": source,
+            "output": output,
+            "processing": processing,
+            "fallback": fallback,
+        }
+    except ValueError, TypeError:
+        return None
+
+
 class BridgeRecordingError(BridgeError):
     """An allowlisted recording failure safe to display to the viewer."""
 
@@ -121,6 +165,7 @@ class BridgeState:
     backend: str | None = None
     migration: bool = False
     migration_error: str | None = None
+    recording_playback: bool = False
 
     @classmethod
     def parse(cls, data: Any) -> BridgeState:
@@ -268,6 +313,8 @@ class BridgeState:
                     "expected_devices_missing",
                 }
                 else None,
+                type(data.get("recording_playback")) is int
+                and data["recording_playback"] == 1,
             )
         except (KeyError, TypeError, ValueError) as err:
             raise BridgeError("Invalid bridge protocol") from err
@@ -388,14 +435,43 @@ class BridgeClient:
         thumbnail: bool = False,
         native: bool = False,
     ) -> bytes:
-        """Fetch one finite existing clip; cancellation closes the upstream socket."""
+        """Fetch bytes for existing playback and thumbnail consumers."""
+        body, _ = await self.recording_media(
+            serial,
+            recording_id,
+            thumbnail=thumbnail,
+            output_format="native" if native else "h264",
+        )
+        return body
+
+    async def recording_media(
+        self,
+        serial: str,
+        recording_id: str,
+        *,
+        thumbnail: bool = False,
+        output_format: str = "h264",
+        hevc_supported: bool = False,
+    ) -> tuple[bytes, dict[str, str | bool] | None]:
+        """Fetch bounded bytes and per-request conversion metadata."""
+        if (
+            output_format not in {"auto", "native", "h264"}
+            or type(hevc_supported) is not bool
+        ):
+            raise BridgeError("Invalid recording format")
         try:
             async with asyncio.timeout(62):
                 async with self._session.get(
                     self.url
                     + f"/v1/recordings/{serial}/{recording_id}/"
                     + ("thumbnail" if thumbnail else "video")
-                    + ("?format=native" if native and not thumbnail else ""),
+                    + (
+                        f"?format={output_format}&hevc_supported={str(hevc_supported).lower()}"
+                        if not thumbnail and output_format == "auto"
+                        else "?format=native"
+                        if not thumbnail and output_format == "native"
+                        else ""
+                    ),
                     headers=self._headers,
                     allow_redirects=False,
                 ) as response:
@@ -404,8 +480,11 @@ class BridgeClient:
                         "image/jpeg" if thumbnail else "video/mp4"
                     ):
                         raise BridgeError("Recording unavailable")
-                    return await read_bounded(
+                    body = await read_bounded(
                         response.content, (2 if thumbnail else 32) * 1024 * 1024
+                    )
+                    return body, recording_media_header(
+                        response.headers.get("X-Eufy-Recording-Media")
                     )
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             raise BridgeError("Recording unavailable") from err

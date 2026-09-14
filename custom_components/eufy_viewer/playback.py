@@ -6,6 +6,7 @@ import asyncio
 import re
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import Any
 from uuid import uuid4
 
 from aiohttp import web
@@ -164,17 +165,36 @@ class PreparePlaybackView(HomeAssistantView):
             raise web.HTTPForbidden
 
         output_format = request.query.get("format", "h264")
-        if output_format not in {"h264", "native"}:
+        if output_format not in {"auto", "h264", "native"}:
             raise web.HTTPBadRequest
 
-        async def prepare() -> dict[str, str]:
-            body = await coordinator.api.recording_video(
-                serial,
-                recording_id,
-                **({"native": True} if output_format == "native" else {}),
-            )
+        hevc = request.query.get("hevc_supported", "false")
+        if hevc not in {"true", "false"}:
+            raise web.HTTPBadRequest
+
+        async def prepare() -> dict[str, Any]:
+            media = None
+            if coordinator.data and coordinator.data.recording_playback:
+                body, media = await coordinator.api.recording_media(
+                    serial,
+                    recording_id,
+                    output_format=output_format,
+                    hevc_supported=hevc == "true",
+                )
+            else:
+                native = output_format == "native" or (
+                    output_format == "auto" and hevc == "true"
+                )
+                body = await coordinator.api.recording_video(
+                    serial,
+                    recording_id,
+                    **({"native": True} if native else {}),
+                )
             # Recheck access after the potentially long download.
             camera_access(request, entity_id)
-            return self.playback.add(request, entity_id, body)
+            result: dict[str, Any] = self.playback.add(request, entity_id, body)
+            if media is not None:
+                result["media"] = media
+            return result
 
         return await serve(request, prepare())

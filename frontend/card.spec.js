@@ -282,3 +282,55 @@ test('playback report distinguishes frame loss, decode progress and negotiated a
   expect(JSON.stringify(report)).not.toContain('PRIVATE');
   expect(await page.evaluate(()=>acks.some(m=>m.type==='eufy_viewer/ack'))).toBe(false);
 });
+
+test('audio diagnostics retain negotiated format and track state without codec IDs or SDP', async ({ page }) => {
+  const report = await page.evaluate(async () => {
+    card._open = true; card._rtcSubscription = 9;
+    card._playback = {enabled:true,reports:new Set(),start:performance.now(),ticks:0,sent:0,accepted:0,painted:0};
+    const context = new AudioContext(), destination = context.createMediaStreamDestination();
+    card._video.srcObject = destination.stream; card._video.volume = 0.5;
+    card._rtc = {
+      connectionState:'connected', iceConnectionState:'connected', localDescription:{sdp:'PRIVATE'},remoteDescription:{sdp:'PRIVATE'},
+      getTransceivers:()=>[{receiver:{track:{kind:'audio',id:'PRIVATE'}},currentDirection:'recvonly'}],
+      getStats:async()=>new Map([
+        ['audio',{type:'inbound-rtp',kind:'audio',codecId:'PRIVATE',packetsReceived:50,totalSamplesReceived:4800,totalAudioEnergy:0.02}],
+        ['PRIVATE',{type:'codec',mimeType:'audio/opus',clockRate:48000,channels:2,sdpFmtpLine:'PRIVATE'}],
+      ]), close(){},
+    };
+    await card._reportLive('audio_check'); await card._reportLive('audio_check');
+    await context.close();
+    return acks.filter(m=>m.type==='eufy_viewer/live_diagnostics').map(m=>m.report);
+  });
+  expect(report).toHaveLength(1);
+  expect(report[0]).toMatchObject({trigger:'audio_check',audio_codec:'audio/opus',audio_clock_rate:48000,audio_channels:2,audio_volume_percent:50,audio_tracks:1,audio_tracks_enabled:1,audio_tracks_ended:0,audio_negotiated:true,audio_packets:50,audio_samples:4800,audio_energy:true});
+  expect(JSON.stringify(report)).not.toContain('PRIVATE');
+  expect(await page.evaluate(()=>acks.some(m=>m.type==='eufy_viewer/ack'))).toBe(false);
+});
+
+test('late audio check runs once at fifteen seconds and is cancelled on close', async ({ page }) => {
+  await page.clock.install();
+  await page.evaluate(() => {
+    card._hass.states['camera.front'].attributes.viewer_webrtc = true;
+    window.RTCPeerConnection = class extends EventTarget {
+      iceGatheringState='complete'; connectionState='new'; iceConnectionState='new'; localDescription=null;
+      addTransceiver() {} async createOffer() { return {type:'offer',sdp:'PRIVATE'}; }
+      async setLocalDescription(offer) { this.localDescription=offer; }
+      async getStats() { return new Map(); } close() {}
+    };
+  });
+  await page.getByRole('button',{name:'Watch live',exact:true}).click();
+  await page.evaluate(()=>receive({type:'ready',subscription:9,fallback:true,diagnostics:true}));
+  await expect.poll(()=>page.evaluate(()=>acks.some(m=>m.offer))).toBe(true);
+  // Keep the test session alive without fabricating frame acknowledgements.
+  await page.evaluate(()=>clearTimeout(card._startup));
+  await page.clock.runFor(14900);
+  expect(await page.evaluate(()=>acks.filter(m=>m.report?.trigger==='audio_check').length)).toBe(0);
+  await page.clock.runFor(200);
+  await expect.poll(()=>page.evaluate(()=>acks.filter(m=>m.report?.trigger==='audio_check').length)).toBe(1);
+  await page.getByRole('button',{name:'Close live view',exact:true}).click();
+  await page.getByRole('button',{name:'Watch live',exact:true}).click();
+  await page.evaluate(()=>receive({type:'ready',subscription:10,fallback:true,diagnostics:true}));
+  await page.getByRole('button',{name:'Close live view',exact:true}).click();
+  await page.clock.runFor(16000);
+  expect(await page.evaluate(()=>acks.filter(m=>m.report?.trigger==='audio_check').length)).toBe(1);
+});

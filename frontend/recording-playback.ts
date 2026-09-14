@@ -1,18 +1,82 @@
 interface RecordingHA { fetchWithAuth(path: string, init?: RequestInit): Promise<Response> }
 
+type RecordingMode = 'auto' | 'native' | 'h264';
+interface RecordingMedia { source: 'h264' | 'hevc'; output: 'h264' | 'hevc'; processing: 'remux' | 'software' | 'nvidia'; fallback: boolean }
+interface RecordingPosition { time: number; paused: boolean }
+const recordingModeKey = 'eufy-viewer.recording-mode';
+let recordingMemoryMode: RecordingMode = 'auto';
+let recordingStorageWritable = true;
+function recordingMode(): RecordingMode {
+  if (!recordingStorageWritable) return recordingMemoryMode;
+  try { const stored = localStorage.getItem(recordingModeKey); if (stored === 'auto' || stored === 'native' || stored === 'h264') recordingMemoryMode = stored; } catch { /* Storage is optional. */ }
+  return recordingMemoryMode;
+}
+function recordingMedia(value: unknown): RecordingMedia | undefined {
+  if (!value || typeof value !== 'object') return;
+  const m = value as RecordingMedia;
+  if (!['h264', 'hevc'].includes(m.source) || !['h264', 'hevc'].includes(m.output) || typeof m.fallback !== 'boolean') return;
+  if (m.processing === 'remux' ? m.source !== m.output || m.fallback
+    : !['software', 'nvidia'].includes(m.processing) || m.source !== 'hevc' || m.output !== 'h264' || (m.processing === 'nvidia' && m.fallback)) return;
+  return { source: m.source, output: m.output, processing: m.processing, fallback: m.fallback };
+}
+const RECORDING_TEXT = {
+  en: { mode: 'Playback format', unknown: 'Processing unknown', remux: 'Native remux', software: 'Software transcode', nvidia: 'NVIDIA transcode', fallback: 'Software transcode after NVIDIA failure', codec: 'This browser cannot play the original codec. Select H.264.', prepared: 'How this recording was prepared' },
+  nl: { mode: 'Afspeelformaat', unknown: 'Verwerking onbekend', remux: 'Native remux', software: 'Softwareconversie', nvidia: 'NVIDIA-conversie', fallback: 'Softwareconversie na NVIDIA-fout', codec: 'Deze browser kan de oorspronkelijke codec niet afspelen. Kies H.264.', prepared: 'Zo is deze opname voorbereid' },
+};
+
+/** Shared, local-only preference and request-specific media status for both cards. */
+class EufyRecordingControls {
+  private select = document.createElement('select');
+  private status = document.createElement('span');
+  private label = document.createElement('span');
+  private media?: RecordingMedia;
+  private prepared = false;
+  private refresh = () => this.update();
+  constructor(host: HTMLElement, private language: () => string | undefined, changed: () => void) {
+    const root = document.createElement('div'), label = document.createElement('label');
+    root.className = 'recording-controls'; root.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 16px;font-size:13px';
+    label.style.cssText = 'display:flex;align-items:center;gap:8px';
+    this.select.className = 'recording-mode'; this.select.style.cssText = 'font:inherit;color:inherit;min-height:42px;padding:8px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#ccc);border-radius:8px';
+    for (const [value, text] of [['auto','Auto'],['native','Native'],['h264','H.264']]) { const option = document.createElement('option'); option.value = value; option.textContent = text; this.select.append(option); }
+    this.status.className = 'recording-media'; this.status.setAttribute('role', 'status'); this.status.setAttribute('aria-live', 'polite');
+    label.append(this.label, this.select); root.append(label, this.status); host.insertBefore(root, host.querySelector('video'));
+    this.select.onchange = () => {
+      recordingMemoryMode = this.select.value as RecordingMode;
+      try { localStorage.setItem(recordingModeKey, recordingMemoryMode); } catch { recordingStorageWritable = false; }
+      window.dispatchEvent(new Event('eufy-recording-mode')); changed();
+    };
+    this.update();
+  }
+  connect() { window.addEventListener('eufy-recording-mode', this.refresh); window.addEventListener('storage', this.refresh); this.update(); }
+  disconnect() { window.removeEventListener('eufy-recording-mode', this.refresh); window.removeEventListener('storage', this.refresh); }
+  update(media?: RecordingMedia, prepared?: boolean) {
+    if (prepared !== undefined) { this.media = media; this.prepared = prepared; }
+    const text = RECORDING_TEXT[this.language()?.startsWith('nl') ? 'nl' : 'en'];
+    this.select.value = recordingMode(); this.label.textContent = text.mode;
+    this.status.title = text.prepared;
+    this.status.textContent = !this.prepared ? '' : !this.media ? text.unknown : this.media.fallback ? text.fallback : text[this.media.processing];
+  }
+  codecError() { return RECORDING_TEXT[this.language()?.startsWith('nl') ? 'nl' : 'en'].codec; }
+}
+
 /** Native players need an HTTP source on macOS; blobs can stall indefinitely. */
 class EufyRecordingPlayback {
   private release?: () => Promise<void>;
   private cancel?: () => void;
+  private cleanup: Promise<void> = Promise.resolve();
+  media?: RecordingMedia;
 
-  private releaseMedia(): Promise<void> { const release = this.release; this.release = undefined; return release?.() ?? Promise.resolve(); }
-  clear(): Promise<void> { this.cancel?.(); this.cancel = undefined; return this.releaseMedia(); }
+  private releaseMedia(): Promise<void> { const release = this.release; this.release = undefined; this.cleanup = this.cleanup.then(() => release?.()); return this.cleanup; }
+  clear(): Promise<void> { this.media = undefined; this.cancel?.(); this.cancel = undefined; return this.releaseMedia(); }
 
   async play(ha: RecordingHA, entity: string, id: string, video: HTMLVideoElement, externalSignal: AbortSignal,
-    changed: (state: 'preparing' | 'playing' | 'failed', error?: unknown) => void = () => {}): Promise<void> {
+    changed: (state: 'preparing' | 'playing' | 'failed', error?: unknown) => void = () => {},
+    restore?: RecordingPosition): Promise<void> {
     await this.clear(); externalSignal.throwIfAborted();
     const controller = new AbortController(), signal = controller.signal;
-    let native = Boolean(video.canPlayType('video/mp4; codecs="hvc1.1.6.L153.B0"'));
+    const mode = recordingMode();
+    const hevcSupported = Boolean(video.canPlayType('video/mp4; codecs="hvc1.1.6.L153.B0"'));
+    let native = mode === 'auto' && hevcSupported;
     let recovering = false;
     const detach = () => video.removeEventListener('error', failed);
     const cancel = () => { controller.abort(); detach(); externalSignal.removeEventListener('abort', cancel); };
@@ -23,10 +87,10 @@ class EufyRecordingPlayback {
       const position = video.currentTime, paused = preservePosition && video.paused;
       video.pause(); video.removeAttribute('src'); video.load();
       await this.releaseMedia(); signal.throwIfAborted();
-      const url = await this.prepare(ha, entity, id, signal);
+      const url = await this.prepare(ha, entity, id, signal, 'h264');
       await this.load(video, url, signal, !paused);
       signal.throwIfAborted();
-      if (Number.isFinite(position) && position > 0) video.currentTime = Math.min(position, Number.isFinite(video.duration) ? video.duration : position);
+      if (Number.isFinite(position) && position > 0) video.currentTime = position;
     };
     const failed = () => {
       if (signal.aborted || recovering) return;
@@ -43,14 +107,23 @@ class EufyRecordingPlayback {
       });
     };
     try {
-      const url = await this.prepare(ha, entity, id, signal, native);
-      try { await this.load(video, url, signal); } catch (error) { await recover(error); }
+      const url = await this.prepare(ha, entity, id, signal, mode, hevcSupported);
+      if (this.media?.output === 'h264') native = false;
+      try { await this.load(video, url, signal, !restore?.paused); } catch (error) { await recover(error); }
+      // Fragmented MP4 duration can still describe only its first fragment here.
+      // The saved position belongs to this same clip, so do not clamp to it.
+      if (restore) {
+        if (Number.isFinite(restore.time) && restore.time > 0) video.currentTime = restore.time;
+        if (restore.paused) video.pause();
+      }
       signal.throwIfAborted(); video.addEventListener('error', failed);
     } catch (error) { if (!signal.aborted) await this.clear(); throw error; }
   }
 
-  async prepare(ha: RecordingHA, entity: string, id: string, signal: AbortSignal, native = false): Promise<string> {
-    const response = await ha.fetchWithAuth(`/api/eufy_viewer/recordings/${entity}/${id}/playback${native ? "?format=native" : ""}`, { method: 'POST', signal });
+  async prepare(ha: RecordingHA, entity: string, id: string, signal: AbortSignal, format: RecordingMode = 'h264', hevcSupported = false): Promise<string> {
+    this.media = undefined;
+    const query = format === 'auto' ? `?format=auto&hevc_supported=${hevcSupported}` : format === 'native' ? '?format=native' : '';
+    const response = await ha.fetchWithAuth(`/api/eufy_viewer/recordings/${entity}/${id}/playback${query}`, { method: 'POST', signal });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
     if (typeof data.path !== 'string' || !/^\/api\/eufy_viewer\/playback\/[a-f0-9]{32}$/.test(data.path)
@@ -60,7 +133,9 @@ class EufyRecordingPlayback {
       || [...url.searchParams.keys()].some(key => key !== 'authSig')) throw new Error('Invalid playback');
     const release = async () => { await ha.fetchWithAuth(data.path, { method: 'DELETE', keepalive: true, signal: AbortSignal.timeout(5000) }).catch(() => {}); };
     if (signal.aborted) { await release(); signal.throwIfAborted(); }
-    void this.releaseMedia(); this.release = release;
+    await this.releaseMedia();
+    if (signal.aborted) { await release(); signal.throwIfAborted(); }
+    this.release = release; this.media = recordingMedia(data.media);
     return data.url;
   }
 
