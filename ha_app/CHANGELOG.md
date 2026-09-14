@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.12 - Unreleased
+
+- Fix premature NVIDIA recording fallback. Track encoded-frame progress instead
+  of requiring the complete MP4 within ten seconds. Keep the 45-second total
+  conversion deadline, ten-second stall timeout, single software fallback and
+  confirmed process cleanup.
+- Always log a bounded hardware failure warning with timeout scope, frame count,
+  exit status and fixed FFmpeg error categories. Successful processing and
+  circuit-breaker observations remain opt-in. Never emit raw FFmpeg output.
+- Issue #57 remains in Validation for the reporter's intermittent T600 failure.
+  A paced CPU FFmpeg regression reproduces the cutoff and verifies this fix.
+  It does not establish the cause of every T600 failure.
+
+Accompanies integration/repository 0.8.13. Back up the existing bridge before
+updating. Restore its previous files to roll back while keeping its data and token.
+
 ## 0.8.11 - 2026-09-14
 
 - Add bounded live audio format, continuity and processing observations, linked
@@ -12,8 +28,8 @@
 - Return bounded per-request processing metadata to integration/card 0.8.12.
   Retain existing timeouts, cancellation, software fallback and process cleanup.
 - After release, the reporter confirmed the Auto/UI NVIDIA route, playback
-  and GPU cleanup on T600/T8030/T8425, plus a Live regression check. Additional
-  reporter checks of Native, H.264-source remux, audio and seeking are optional.
+  and GPU cleanup on T600/T8030/T8425, plus a Live regression check. The reporter later confirmed Native, audio and seeking, but also reported
+  intermittent NVIDIA fallback. An H.264 source remains untested by the reporter.
   See the [hardware validation record](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/NVIDIA.md#auto-playback-validation-on-2026-09-14).
   Back up the bridge and integration files before updating. Restore the previous
   files to roll back without changing data, token, credentials or entity identities.

@@ -1,4 +1,4 @@
-import { RecordingTranscoder, recordingAcceleration } from './recording-media.js';
+import { RecordingTranscoder, recordingAcceleration, logRecordingDiagnostic } from './recording-media.js';
 import { MegaBackend } from './mega-backend.js';
 import { liveAcceleration } from './live-transcoder.js';
 import { randomUUID } from "node:crypto";
@@ -13,7 +13,7 @@ if (!token || token.length < 32) throw new Error("EUFY_BRIDGE_TOKEN must contain
 const acceleration = liveAcceleration(process.env.EUFY_LIVE_ACCELERATION);
 const recordingMode = recordingAcceleration(process.env.EUFY_RECORDING_ACCELERATION);
 const recordingMedia = new RecordingTranscoder(recordingMode, event => {
-  if (process.env.EUFY_DIAGNOSTICS === "true") console.info(JSON.stringify(event));
+  logRecordingDiagnostic(event, process.env.EUFY_DIAGNOSTICS === "true");
 });
 const selectedBackend = backendName(process.env.EUFY_BACKEND);
 const storage = new Storage(process.env.EUFY_DATA_DIR ?? "/data");
