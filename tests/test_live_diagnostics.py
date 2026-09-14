@@ -145,6 +145,19 @@ async def test_only_owner_can_report_and_reports_never_ack(
     assert await viewer.record_browser_report(
         {"trigger": "fallback", "video_packets": 0}
     )
+    late = {
+        "trigger": "audio_check",
+        "audio_codec": "audio/opus",
+        "audio_clock_rate": 48000,
+        "audio_channels": 2,
+        "audio_tracks": 1,
+        "audio_tracks_enabled": 1,
+        "audio_tracks_muted": 0,
+        "audio_tracks_ended": 0,
+        "audio_volume_percent": 100,
+    }
+    assert await viewer.record_browser_report(late)
+    assert not await viewer.record_browser_report(late)
     assert session.get.call_count == 1  # No request after the media grant is revoked.
     with patch.object(
         viewer.coordinator.api,
@@ -161,6 +174,7 @@ async def test_only_owner_can_report_and_reports_never_ack(
         msg["report"],
         unmuted,
         {"trigger": "fallback", "video_packets": 0},
+        late,
     ]
     assert download["live_playback"][0]["relay"][0]["source_h264_packets"] == 9
     assert "CAM123" not in json.dumps(download)

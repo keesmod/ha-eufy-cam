@@ -1,3 +1,5 @@
+import type { RecordingFormat, RecordingResult } from './recording-media.js';
+import type { DiagnosticEvent } from './diagnostics.js';
 import type { EventEmitter } from 'node:events';
 import type { Readable } from 'node:stream';
 
@@ -87,6 +89,7 @@ export interface BackendRecordings {
     signal: AbortSignal,
     format?: 'h264' | 'native',
   ): Promise<Buffer>;
+  videoResult(serial: string, id: string, signal: AbortSignal, format?: RecordingFormat, hevcSupported?: boolean): Promise<RecordingResult>;
   close(): void;
 }
 export interface BackendStations {
@@ -110,6 +113,8 @@ export interface LiveMedia {
   audio: Readable;
 }
 export interface Backend extends EventEmitter {
+  recordAudioEvent?(serial: string, event: DiagnosticEvent): void;
+  audioAttempt?(serial: string): number | undefined;
   supportReport?(): import('./discovery-diagnostics.js').SupportReport;
   readonly connected: boolean;
   readonly auth: AuthState;

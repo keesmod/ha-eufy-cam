@@ -12,12 +12,59 @@ from custom_components.eufy_viewer.diagnostics import (
     _fields,
     _version,
     async_get_config_entry_diagnostics,
+    audio_report,
     support_report,
 )
 
 from .test_config_flow import DATA
 
 STAMP = "2026-09-11T12:00:00.000Z"
+
+
+def test_audio_evidence_is_bounded_and_contains_no_payload_or_identifiers():
+    row = {
+        "attempt": 123,
+        "model": "T8134",
+        "state": "ended",
+        "initial_codec": "none",
+        "first_data_codec": "aac-lc",
+        "admission": "excluded",
+        "header": "adts",
+        "metadata_ms": 3000,
+        "first_data_ms": 5000,
+        "first_data_after_metadata_ms": 2000,
+        "duration_ms": 10000,
+        "chunks": 12,
+        "bytes": 1200,
+    }
+    result = support_report(
+        {
+            "schema": 2,
+            "last_discovery": [],
+            "recent_events": [],
+            "live_audio": [{**row, "payload": "PRIVATE", "serial": "PRIVATE"}] * 10,
+        }
+    )
+    assert result["live_audio"] == [row] * 8
+    invalid = audio_report(
+        {
+            "attempt": True,
+            "model": "T8134\nPRIVATE",
+            "state": "PRIVATE",
+            "initial_codec": [],
+            "first_data_codec": "PRIVATE",
+            "header": "PRIVATE",
+            "admission": "PRIVATE",
+            "bytes": -1,
+            "chunks": 2**31,
+            "first_data_ms": 120001,
+            "duration_ms": 2.5,
+            "payload": "PRIVATE",
+        }
+    )
+    assert "PRIVATE" not in json.dumps(invalid)
+    assert set(invalid) == {"model"}
+    assert audio_report(None) == {}
 
 
 def test_report_projects_values_and_never_passes_unknown_fields():
@@ -152,3 +199,82 @@ async def test_download_without_successful_setup(hass, failure):
             result["support"]["last_discovery"][0]["outcome"]
             == "camera_inventory_empty"
         )
+
+
+def test_extended_audio_report_projects_header_timing_and_pipeline_only():
+    from custom_components.eufy_viewer.diagnostics import audio_format_report
+
+    header = {
+        "mpeg_version": 4,
+        "object_type": 2,
+        "sample_rate_hz": 16000,
+        "channel_config": 1,
+        "crc_present": False,
+        "frame_bytes": 123,
+        "raw_data_blocks": 1,
+    }
+    fmt = {
+        "inspected_bytes": 123,
+        "inspection_limited": False,
+        "format_hint": "adts",
+        "first_adts": header,
+        "adts": header,
+        "adts_frames": 1,
+        "adts_header_changes": 0,
+        "adts_multiblock_frames": 0,
+        "skipped_bytes": 0,
+        "pending_frame_bytes": 0,
+        "trailing_header_bytes": 0,
+        "adts_min_frame_bytes": 123,
+        "adts_max_frame_bytes": 123,
+    }
+    row = {
+        "firmware": "3.3.6.0",
+        "owner_model": "T8030",
+        "owner_firmware": "3.8.5.2",
+        "stop_confirmed": True,
+        "stream_ended": True,
+        "stream_destroyed": True,
+        "initial_buffered_bytes": 123,
+        "buffered_bytes": 0,
+        "last_data_ms": 6000,
+        "last_data_age_ms": 1000,
+        "max_gap_ms": 30,
+        "min_chunk_bytes": 12,
+        "max_chunk_bytes": 123,
+        "latest_codec": "none",
+        "format": fmt,
+        "pipeline": [{"event": "media_audio_error", "elapsed_ms": 6001}],
+    }
+    assert audio_report(row) == row
+    bad = audio_format_report(
+        {
+            "format_hint": "PRIVATE",
+            "inspected_bytes": 262145,
+            "adts_frames": True,
+            "adts": {
+                "payload": "PRIVATE",
+                "object_type": 5,
+                "sample_rate_hz": 13,
+                "mpeg_version": 3,
+                "crc_present": "PRIVATE",
+            },
+        }
+    )
+    assert bad == {"adts": {}}
+    assert audio_format_report(None) == {}
+    bad_row = audio_report(
+        {
+            "firmware": "PRIVATE",
+            "owner_model": "PRIVATE",
+            "owner_firmware": "PRIVATE",
+            "format": {"payload": "PRIVATE"},
+            "pipeline": [
+                {"event": "media_audio_error", "elapsed_ms": True},
+                {"event": "PRIVATE", "elapsed_ms": 1},
+                None,
+            ],
+        }
+    )
+    assert "PRIVATE" not in json.dumps(bad_row)
+    assert bad_row["pipeline"] == []

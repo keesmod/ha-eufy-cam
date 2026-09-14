@@ -8,9 +8,9 @@ No bridge restart, session reset or repeated login is needed to collect this
 report. The card must have loaded the updated integration resource.
 
 The report keeps the last eight WebRTC attempts per integration in memory.
-Each attempt accepts at most one browser sample at each of four stages: five
+Each attempt accepts at most one browser sample at each of five stages: five
 seconds after readiness, the first acknowledged presented frame, one second
-after unmuted playback is available, and fallback.
+after unmuted playback is available, fifteen seconds after readiness, and fallback.
 Samples are independent of frame acknowledgements and never renew a viewer.
 Closing the view cancels its timer. HA restart clears the history.
 
@@ -139,3 +139,73 @@ Corrected library discovery alone cannot add audio to that existing connection.
 A late-track implementation must explicitly coordinate mux admission and peer
 negotiation while preserving video progress, one camera owner and bounded stop.
 Increasing the initial wait merely moves the cutoff and is not a solution.
+
+## Audio admission observations
+
+Bridges with audio observation support include up to eight recent attempts in
+`support.live_audio`. The matching `live_playback.audio_attempt` identifies the
+same stream without exposing a camera identifier. Older bridges omit these fields.
+
+Each attempt reports the camera and owner model/firmware, initial codec metadata
+and audio admission. Data observations include first and last data times, largest
+inter-chunk gap, chunk-size range and total bytes. Buffered bytes at admission and
+at the latest observation distinguish pending data from an empty library stream.
+Stream end/destruction and device stop confirmation are separate fields. Missing
+first-data fields mean no data was consumed by this observation.
+
+`format` inspects at most 128 ADTS frames or 256 KiB per attempt. It uses a rolling
+seven-byte window and skips frame payloads without retaining them. The first and
+latest recognized ADTS headers report MPEG version, audio object type, sample rate,
+channel configuration, CRC presence, frame length and raw-data-block count. Object
+type 2 denotes AAC-LC. Channel configuration is not always a channel count, notably
+0 requires a program configuration element. Frame counts, configuration changes,
+multi-block frames, skipped bytes, pending frame bytes and the inspection-limit
+flag show incomplete framing or changes within the inspected prefix. Trailing
+header bytes count an unfinished header search, not decoded samples.
+
+`format_hint` recognizes initial ADTS, LOAS, ADIF, Ogg and RIFF signatures. These
+are transport/container hints. Unknown data is not assigned an invented codec.
+`first_adts` and `adts` may identify headers after an unrecognized initial prefix.
+Structural frame completion does not validate payload decoding, CRC or an AAC
+extension such as SBR. This observation is not a universal codec detector.
+
+`pipeline` records each named media/input/output/reader/error/cleanup event at
+most once, with at most 48 events. Encoder stderr is classified into fixed
+categories, including `media_audio_error`, without copying its contents into the
+report. This cached evidence does not require debug logging to be enabled. The
+JSON contains no audio payload, raw header bytes or raw encoder messages.
+Observations expire from the bounded history or disappear on bridge restart.
+
+Times are milliseconds since the bridge requested the stream, capped at 120000.
+`first_data_after_metadata_ms` starts when the library returns its stream metadata.
+These are library stream consumption times, not raw network arrival times. The
+observer does not start or consume the stream independently of the existing player.
+The format inspection limit does not stop continuity counters or playback.
+
+`initial_codec=none` with `admission=excluded` and later ADTS data exposes a mismatch
+between audio admission and the bytes observed. It does not prove those bytes were
+absent before admission, because the library may already have buffered them. In
+library 0.12.2, metadata can remain `none` after the audio deadline, including
+`first_data_codec` and `latest_codec`. Header parsing is independent of that value.
+The library may already have normalized the data. No raw protocol audioType,
+sequence number or camera timestamp is available from this bridge observation.
+
+The browser's `audio_check` sample runs fifteen seconds after readiness. It adds
+actual received-track state, volume, negotiated audio codec/clock rate/channels,
+and the existing packet, sample, concealment and energy counters. HA also samples
+the matching go2rtc stream. Compare these with bridge admission and output events
+using `audio_attempt`. An existing relay packet count does not prove the browser
+played it, and decoded energy does not prove a physical speaker emitted sound.
+
+For one collection attempt, install the matching integration and bridge, restart
+both, refresh the viewer, enable sound and leave the view open for about 25 seconds
+after readiness when possible. Close it, then use Settings > Devices & services >
+Integrations > Eufy Security Viewer > integration entry menu > Download diagnostics.
+Download before restarting HA or the bridge. If playback fails earlier, download
+that attempt as it is instead of requiring it to reach the late sample.
+
+Local tests compare parsed 16 kHz mono and 48 kHz stereo AAC-LC generated by FFmpeg
+against FFprobe. Fragmentation, unknown prefixes, CRC/header fields, configuration
+changes, incomplete frames, inspection limits, privacy, stream preservation and
+browser timer cleanup have regression coverage. Exact T8134 hardware validation
+remains open. These observations diagnose audio without changing playback.

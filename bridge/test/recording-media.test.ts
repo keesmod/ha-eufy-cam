@@ -138,3 +138,26 @@ test('bridge fallback converts one completed transfer while retaining recording 
   assert.equal(downloads, 1); assert.equal(cancellations, 1); assert.equal(recordings.busy, false);
   assert.equal(recordings.metrics.transcoded, 1); assert.equal(recordings.metrics.completed, 1);
 });
+
+
+test('Auto resolves each codec with configured acceleration and browser support', async () => {
+  for (const codec of ['h264', 'hevc'] as const) for (const mode of ['software', 'nvidia'] as const)
+    for (const supports of [false, true]) for (const format of ['auto', 'native', 'h264'] as const) {
+      const f = fixture({}, mode);
+      const transcode = codec === 'hevc' && (format === 'h264' || (format === 'auto' && (mode === 'nvidia' || !supports)));
+      const result = f.media.muxResult({ videoCodec: codec, fps: 15 }, Buffer.from('v'), Buffer.from('a'), f.abort.signal, format, supports);
+      assert.equal(f.commands[0]![f.commands[0]!.indexOf('-c:v') + 1], transcode ? mode === 'nvidia' ? 'h264_nvenc' : 'libx264' : 'copy');
+      complete(f.children[0]!);
+      assert.deepEqual((await result).media, { source: codec, output: transcode ? 'h264' : codec, processing: transcode ? mode : 'remux', fallback: false });
+    }
+});
+test('result describes actual software fallback and circuit breaker per request', async () => {
+  const f = fixture();
+  const result = f.media.muxResult(metadata, Buffer.from('v'), Buffer.from('a'), f.abort.signal, 'auto', true);
+  f.children[0]!.emit('error', new Error('GPU failed')); await tick(); complete(f.children[1]!);
+  assert.deepEqual((await result).media, { source: 'hevc', output: 'h264', processing: 'software', fallback: true });
+  const next = f.media.muxResult(metadata, Buffer.from('v'), Buffer.alloc(0), f.abort.signal, 'auto', true);
+  complete(f.children[2]!); assert.equal((await next).media.fallback, true);
+  const native = f.media.muxResult(metadata, Buffer.from('v'), Buffer.alloc(0), f.abort.signal, 'native', true);
+  complete(f.children[3]!); assert.deepEqual((await native).media, { source: 'hevc', output: 'hevc', processing: 'remux', fallback: false });
+});

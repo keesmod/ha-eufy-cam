@@ -12,7 +12,14 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN
 
 ENUMS = {
-    "trigger": {"startup", "playing", "unmuted", "fallback"},
+    "trigger": {"startup", "playing", "unmuted", "fallback", "audio_check"},
+    "audio_codec": {
+        "audio/opus",
+        "audio/pcma",
+        "audio/pcmu",
+        "audio/g722",
+        "audio/mp4a-latm",
+    },
     "connection": {
         "new",
         "connecting",
@@ -45,6 +52,14 @@ NUMBERS = {
         "video_buffer_min_delay_ms audio_buffer_min_delay_ms "
         "video_buffer_emitted audio_buffer_emitted".split(),
         (0, 2**53 - 1),
+    ),
+    "audio_volume_percent": (0, 100),
+    "audio_clock_rate": (1, 192000),
+    "audio_channels": (1, 8),
+    **dict.fromkeys(
+        "audio_tracks audio_tracks_muted "
+        "audio_tracks_enabled audio_tracks_ended".split(),
+        (0, 8),
     ),
     "ready_state": (0, 4),
     "video_lost": (-(2**53 - 1), 2**53 - 1),
