@@ -136,6 +136,11 @@ Update the bridge, then the integration, restart Home Assistant and refresh the
 dashboard. Back up both components first and retain their previous files for
 rollback. No credential or entity migration is required.
 
+A community reporter confirmed the Auto selection, NVIDIA indicator, playback
+and GPU cleanup on a T600/T8030/T8425 setup with these versions. See the
+[hardware validation record](NVIDIA.md#auto-playback-validation-on-2026-09-14)
+for the exact environment, measurements and scope of the confirmation.
+
 The bridge advertises `recording_playback: 1` in its authenticated state.
 Recording requests accept `format=auto` and `hevc_supported=true|false` in
 addition to the existing formats. Successful MP4 responses include

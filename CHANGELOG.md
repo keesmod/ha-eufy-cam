@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.12 - Unreleased
+## 0.8.12 - 2026-09-14
 
 - Add bounded live audio format, continuity and processing observations, linked
   to a later browser measurement in Home Assistant diagnostics. Include ADTS
@@ -13,10 +13,12 @@
 - Display the actual per-recording remux, software or NVIDIA processing result,
   including software fallback. Older bridges retain browser-based selection
   and show processing as unknown. Explicit Native never silently transcodes.
-- Includes bridge 0.8.11. Issue #57 awaits validation of this new playback flow
-  on the reporter's T600. The previous 0.8.8 hardware test covers conversion
-  only. Back up both components before installation and restore their previous
-  files to roll back, preserving credentials and entity identities.
+- Includes bridge 0.8.11. After release, the reporter confirmed the Auto/UI
+  NVIDIA route, playback and GPU cleanup on T600/T8030/T8425, plus a Live
+  regression check. Additional reporter checks of Native, H.264-source remux,
+  audio and seeking are optional. See the [hardware validation record](docs/NVIDIA.md#auto-playback-validation-on-2026-09-14).
+  Back up both components before installation and restore their previous files
+  to roll back, preserving credentials and entity identities.
 
 ## 0.8.11 - Unreleased
 
