@@ -2,6 +2,9 @@
 
 ## 0.8.12 - Unreleased
 
+- Add bounded live audio admission observations and matching Home Assistant
+  diagnostics. Reports identify late or missing audio without storing audio
+  payloads. Issue #10 still requires T8134 audio hardware validation.
 - Add Auto / Native / H.264 to recording playback in both camera and events
   cards. Remember the choice in this browser and retain position and pause
   when changing it. Auto requests HEVC conversion when NVIDIA recording
