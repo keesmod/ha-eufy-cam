@@ -145,7 +145,7 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         eufy.off('media-ready', mediaReady);
         // Metadata is available at encoder start. JPEG decoding must not gate
         // reader attachment and discard the first encoded video/keyframe.
-        ws.send(JSON.stringify({ type: "ready", path: `/v1/media/${grant}`, audio, fallback: true, fallback_after_ms: Math.max(1, Math.ceil(eufy.hub.remaining(serial, peer) - 5000)) }));
+        ws.send(JSON.stringify({ type: "ready", path: `/v1/media/${grant}`, audio, audio_attempt: eufy.audioAttempt?.(serial), fallback: true, fallback_after_ms: Math.max(1, Math.ceil(eufy.hub.remaining(serial, peer) - 5000)) }));
       };
       const fallback = (reason: 'startup_timeout' | 'playback_timeout' | 'connection_failed' | 'signaling_error' | 'playback_error') => {
         if (!webrtc || ws.readyState !== WebSocket.OPEN) return;

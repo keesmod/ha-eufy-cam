@@ -371,6 +371,7 @@ export class Eufy extends EventEmitter {
       throw new Error('Station still owned');
     return this.backend.recoverStation(serial);
   }
+  audioAttempt(serial: string): number | undefined { return this.backend?.audioAttempt?.(serial); }
   supportReport(): SupportReport {
     const setup = this.setupDiagnostics.report();
     const report = this.backend?.supportReport?.() ?? this.failedSupportReport ?? setup;

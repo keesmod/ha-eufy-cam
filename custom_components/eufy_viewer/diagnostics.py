@@ -171,6 +171,48 @@ def _fields(raw: Any) -> dict[str, Any]:
     return result
 
 
+_AUDIO_CODECS = {"aac", "aac-lc", "aac-eld", "none", "unknown", "unavailable"}
+
+
+def audio_report(raw: Any) -> dict[str, Any]:
+    """Preserve bounded audio observations, never codec text or payloads."""
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, Any] = {}
+    enums = {
+        "state": {"starting", "streaming", "ended", "failed", "closed"},
+        "initial_codec": _AUDIO_CODECS,
+        "first_data_codec": _AUDIO_CODECS,
+        "admission": {"forwarded", "excluded"},
+        "header": {"adts", "other", "incomplete"},
+    }
+    numbers = {
+        "attempt": (1, 2**48 - 1),
+        **dict.fromkeys(
+            (
+                "metadata_ms",
+                "first_data_ms",
+                "first_data_after_metadata_ms",
+                "duration_ms",
+            ),
+            (0, 120000),
+        ),
+        "chunks": (0, 2147483647),
+        "bytes": (0, 2147483647),
+    }
+    for key, allowed in enums.items():
+        value = raw.get(key)
+        if isinstance(value, str) and value in allowed:
+            result[key] = value
+    for key, (low, high) in numbers.items():
+        value = raw.get(key)
+        if type(value) is int and low <= value <= high:
+            result[key] = value
+    if "model" in raw:
+        result["model"] = _fields({"model": raw["model"]})["model"]
+    return result
+
+
 def support_report(raw: Any) -> dict[str, Any]:
     """Project known schema fields even if a bridge returns arbitrary input."""
     if (
@@ -194,6 +236,8 @@ def support_report(raw: Any) -> dict[str, Any]:
             and isinstance(row.get("event"), str)
             and row["event"] in _ENUMS["event"]
         ]
+    if isinstance(raw.get("live_audio"), list):
+        result["live_audio"] = [audio_report(row) for row in raw["live_audio"][-8:]]
     return result
 
 
@@ -225,6 +269,12 @@ async def async_get_config_entry_diagnostics(
                 **(
                     {"audio_expected": report["audio_expected"]}
                     if type(report.get("audio_expected")) is bool
+                    else {}
+                ),
+                **(
+                    {"audio_attempt": report["audio_attempt"]}
+                    if type(report.get("audio_attempt")) is int
+                    and 1 <= report["audio_attempt"] < 2**48
                     else {}
                 ),
                 "offered": report.get("offered") is True,

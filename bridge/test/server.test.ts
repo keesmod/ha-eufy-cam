@@ -74,7 +74,7 @@ for (const hasAudio of [false, true]) test(`WebRTC grants report audio=${hasAudi
   let metadata: boolean | undefined;
   t.mock.method(media, 'audioSupported', () => metadata);
   const hub = new StreamHub({ start: async s => { calls.push(`start:${s}`); }, stop: async s => { calls.push(`stop:${s}`); }, disposeMedia: s => media.stop(s) });
-  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {} });
+  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {}, audioAttempt: () => 123 });
   const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
@@ -102,6 +102,7 @@ for (const hasAudio of [false, true]) test(`WebRTC grants report audio=${hasAudi
     assert.equal(message.type, 'ready'); assert.match(message.path, /^\/v1\/media\/[a-f0-9]{64}$/);
     assert.deepEqual(calls, ['start:CAM123']);
     assert.equal(message.audio, hasAudio);
+    assert.equal(message.audio_attempt, 123);
     assert.equal(messages.length, 1, 'Ready does not fabricate a delivered frame');
     assert.equal(fake.listenerCount('media-ready'), 0);
     fake.emit('media-ready', 'CAM123');
