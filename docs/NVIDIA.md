@@ -11,8 +11,9 @@ Use a Linux Docker host with a compatible NVIDIA GPU, an already working host
 driver and NVIDIA Container Toolkit configured for Docker. Check the GPU's
 H.264/HEVC decode profiles and H.264 encode support in NVIDIA's
 [codec support matrix](https://developer.nvidia.com/video-encode-and-decode-gpu-support-matrix-new).
-A community reporter confirmed live NVENC/NVDEC on a T600 with bridge 0.8.7.
-Recording conversion has separate hardware validation requirements below.
+A community reporter confirmed live NVENC/NVDEC on a T600 with bridge 0.8.7
+and HEVC-to-H.264 recording conversion with bridge 0.8.8. See the scoped
+community validation below.
 
 The bridge image uses Debian Bookworm's FFmpeg from `node:24-bookworm-slim`.
 The Docker host can run a different distribution, including Debian 13. The
@@ -194,17 +195,35 @@ NVIDIA, checking duration, audio sync, picture quality, elapsed time and GPU loa
 Disable recording acceleration by removing `EUFY_RECORDING_ACCELERATION` or
 setting it to `software`, then recreate the container with the same data and token.
 
-## Community live validation
+## Community hardware validation
 
 On 2026-09-13, a reporter using a T600 4 GB, driver 610.57.04, Debian 13/Docker,
 HomeBase 3 T8030 and cameras T8416/T8417/T8425 confirmed live video/audio and actual
 NVENC/NVDEC activity with bridge 0.8.7 and client 0.12.2. Activity stopped when
 live view closed and resumed on reopening. See the
 [reported hardware test](https://github.com/keesmod/ha-eufy-cam/issues/49#issuecomment-5653261791).
-This validates that reported installation's live path, not NVIDIA recording
-conversion, every camera individually or other GPU/driver combinations.
+This establishes live-path evidence for that reported installation.
 
 Recording command, fallback, deadline, cancellation and byte-limit checks use
 synthetic tests. Real CPU FFmpeg tests verify complete H.264/AAC output, native
-remuxing and missing-GPU fallback. Actual NVIDIA recording conversion remains
-pending a compatible GPU test in issue #54.
+remuxing and missing-GPU fallback. On the same date, the reporter
+[confirmed successful recording conversion](https://github.com/keesmod/ha-eufy-cam/issues/49#issuecomment-5655533108)
+on bridge 0.8.8 with `EUFY_RECORDING_ACCELERATION=nvidia` and the same T600,
+driver and Docker host. `recording_active_nvidia` reported about 2983 ms for
+attempt 1. GPU monitoring showed peaks of 69% NVENC, 23% NVDEC, 17% SM and 8%
+memory-engine activity. Activity returned to zero afterwards, with no hardware
+failure, timeout or software fallback. Live NVIDIA operation continued to work,
+and discovery retained all three cameras and one station.
+
+Normal viewer playback selected `format=native`, correctly remuxing HEVC without
+GPU work. To exercise conversion, the reporter temporarily forced the request
+to `format=h264`, then restored the unmodified 0.8.8 source. This validates the
+NVIDIA conversion route. It does not imply that native playback should transcode
+or that users need to modify the source for normal operation.
+
+The reported successful live and recording tests are accepted as hardware
+confirmation for this installation. The recording's individual camera model and
+device firmware were not specified, so this is not a separate recording-support
+claim for every listed camera or for other GPU/driver combinations. Conversion
+time excludes downloading the recording and is not a software-versus-GPU speed
+comparison. Issues #49 and #54 retain the implementation and test history.
