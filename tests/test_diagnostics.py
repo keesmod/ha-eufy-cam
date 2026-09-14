@@ -12,12 +12,59 @@ from custom_components.eufy_viewer.diagnostics import (
     _fields,
     _version,
     async_get_config_entry_diagnostics,
+    audio_report,
     support_report,
 )
 
 from .test_config_flow import DATA
 
 STAMP = "2026-09-11T12:00:00.000Z"
+
+
+def test_audio_evidence_is_bounded_and_contains_no_payload_or_identifiers():
+    row = {
+        "attempt": 123,
+        "model": "T8134",
+        "state": "ended",
+        "initial_codec": "none",
+        "first_data_codec": "aac-lc",
+        "admission": "excluded",
+        "header": "adts",
+        "metadata_ms": 3000,
+        "first_data_ms": 5000,
+        "first_data_after_metadata_ms": 2000,
+        "duration_ms": 10000,
+        "chunks": 12,
+        "bytes": 1200,
+    }
+    result = support_report(
+        {
+            "schema": 2,
+            "last_discovery": [],
+            "recent_events": [],
+            "live_audio": [{**row, "payload": "PRIVATE", "serial": "PRIVATE"}] * 10,
+        }
+    )
+    assert result["live_audio"] == [row] * 8
+    invalid = audio_report(
+        {
+            "attempt": True,
+            "model": "T8134\nPRIVATE",
+            "state": "PRIVATE",
+            "initial_codec": [],
+            "first_data_codec": "PRIVATE",
+            "header": "PRIVATE",
+            "admission": "PRIVATE",
+            "bytes": -1,
+            "chunks": 2**31,
+            "first_data_ms": 120001,
+            "duration_ms": 2.5,
+            "payload": "PRIVATE",
+        }
+    )
+    assert "PRIVATE" not in json.dumps(invalid)
+    assert set(invalid) == {"model"}
+    assert audio_report(None) == {}
 
 
 def test_report_projects_values_and_never_passes_unknown_fields():

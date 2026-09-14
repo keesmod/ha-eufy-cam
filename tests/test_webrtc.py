@@ -12,6 +12,7 @@ from go2rtc_client.exceptions import Go2RtcClientError
 from go2rtc_client.ws import WebRTCAnswer, WebRTCCandidate, WsError
 
 from custom_components.eufy_viewer.const import DOMAIN
+from custom_components.eufy_viewer.diagnostics import async_get_config_entry_diagnostics
 
 from .test_viewers import MediaSocket
 from .test_viewers import viewer_setup as base_viewer_setup
@@ -217,12 +218,14 @@ async def test_missing_go2rtc_or_old_bridge_never_wakes_camera(
 
 
 @pytest.mark.parametrize("audio", [False, True, None])
+@pytest.mark.parametrize("attempt", [123, None, True, -1, 2**48, "PRIVATE"])
 async def test_audio_conversion_matches_stream_capability(
-    hass, hass_ws_client, rtc_setup, audio
+    hass, hass_ws_client, rtc_setup, audio, attempt
 ):
     socket, rest, _, _ = rtc_setup
     client, viewer = await open_viewer(hass, hass_ws_client)
     payload = {"type": "ready", "path": "/v1/media/" + "a" * 64}
+    payload["audio_attempt"] = attempt
     if audio is not None:
         payload["audio"] = audio
     await socket.queue.put(
@@ -238,6 +241,29 @@ async def test_audio_conversion_matches_stream_capability(
     assert sources[0].endswith(payload["path"])
     if audio is not False:
         assert sources[1] == f"ffmpeg:{viewer.name}#audio=opus"
+    with patch.object(
+        viewer.coordinator.api,
+        "request",
+        AsyncMock(
+            return_value={
+                "schema": 2,
+                "last_discovery": [],
+                "recent_events": [],
+                "live_audio": [{"attempt": attempt, "model": "T8134"}],
+            }
+        ),
+    ):
+        downloaded = await async_get_config_entry_diagnostics(
+            hass, viewer.coordinator.entry
+        )
+    evidence = downloaded["live_playback"][-1]
+    if attempt == 123:
+        assert viewer.playback_evidence["audio_attempt"] == attempt
+        assert evidence["audio_attempt"] == attempt
+        assert downloaded["support"]["live_audio"][0]["attempt"] == attempt
+    else:
+        assert "audio_attempt" not in evidence
+        assert "audio_attempt" not in viewer.playback_evidence
     await client.close()
     await hass.async_block_till_done()
 

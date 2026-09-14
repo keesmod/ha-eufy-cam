@@ -139,3 +139,29 @@ Corrected library discovery alone cannot add audio to that existing connection.
 A late-track implementation must explicitly coordinate mux admission and peer
 negotiation while preserving video progress, one camera owner and bounded stop.
 Increasing the initial wait merely moves the cutoff and is not a solution.
+
+## Audio admission observations
+
+Bridges with audio observation support include up to eight recent attempts in
+`support.live_audio`. The matching `live_playback.audio_attempt` identifies the
+same stream without exposing a camera identifier. Older bridges omit these fields.
+
+Each attempt reports the camera model, initial codec metadata and whether audio
+was admitted to the media pipeline. When data is consumed, it records the first
+data time, current library codec metadata, chunk and byte counts, and a structural
+check of the first seven bytes: `adts`, `other` or `incomplete`. No data means the
+first-data fields are absent. The report contains no audio payload or raw headers.
+Observations expire from the bounded history or disappear on bridge restart.
+
+Times are milliseconds since the bridge requested the stream, capped at 120000.
+`first_data_after_metadata_ms` starts when the library returns its stream metadata.
+These are library stream consumption times, not raw network arrival times. The
+observer does not start or consume the stream independently of the existing player.
+
+`initial_codec=none` with `admission=excluded` and later `header=adts` identifies
+audio data after audio was excluded. It does not establish that a complete frame
+decodes or that the browser received audio. In library 0.12.2, codec metadata can
+remain `none` after the audio deadline, including `first_data_codec`. The header
+check remains independent of that metadata. Data may already have been normalized
+by the library before this observation. An ADTS header is not a model-wide codec
+guarantee. These observations diagnose audio admission without changing playback.

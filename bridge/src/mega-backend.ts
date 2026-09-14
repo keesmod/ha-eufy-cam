@@ -1,3 +1,4 @@
+import { LiveAudioDiagnostics, type LiveAudioObservation } from './live-audio-diagnostics.js';
 import { EventEmitter } from 'node:events';
 import {
   EufyMegaClient,
@@ -130,10 +131,11 @@ export class MegaBackend extends EventEmitter implements Backend {
   private stationStates = new Map<string, StationState>();
   private streams = new Map<
     string,
-    { abort: AbortController; handle?: LiveStream; starting: Promise<void> }
+    { abort: AbortController; handle?: LiveStream; starting: Promise<void>; audio: LiveAudioObservation }
   >();
   private closed = false;
   private ready = false;
+  private readonly liveAudio = new LiveAudioDiagnostics();
   private readonly discoveryDiagnostics = new DiscoveryDiagnostics((line) =>
     this.emit('discovery_diagnostic', line),
   );
@@ -170,7 +172,8 @@ export class MegaBackend extends EventEmitter implements Backend {
       () => this.emit('change'),
     );
   }
-  supportReport() { return this.discoveryDiagnostics.report(); }
+  supportReport() { return { ...this.discoveryDiagnostics.report(), live_audio: this.liveAudio.report() }; }
+  audioAttempt(serial: string): number | undefined { return this.streams.get(serial)?.audio.report.attempt; }
   get connected(): boolean {
     return this.ready && (this.client?.connected ?? false);
   }
@@ -476,9 +479,11 @@ export class MegaBackend extends EventEmitter implements Backend {
       abort: AbortController;
       handle?: LiveStream;
       starting: Promise<void>;
+      audio: LiveAudioObservation;
     } = {
       abort,
       starting: Promise.resolve(),
+      audio: this.liveAudio.begin(this.devices.get(serial)?.model ?? ""),
     };
     this.streams.set(serial, owned);
     owned.starting = (async () => {
@@ -486,6 +491,7 @@ export class MegaBackend extends EventEmitter implements Backend {
         const handle = await this.client!.startLive(serial, abort.signal);
         owned.handle = handle;
         void handle.ended.then((result) => {
+          owned.audio.finish('ended');
           if (this.streams.get(serial) === owned) this.streams.delete(serial);
           this.emit('live-stop', { serial, confirmed: result.confirmed });
         });
@@ -503,8 +509,10 @@ export class MegaBackend extends EventEmitter implements Backend {
           video: handle.video,
           audio: handle.audio,
         };
+        owned.audio.attach(handle.audio, metadata.audioCodec, media.audioSupported, () => handle.metadata.audioCodec);
         this.emit('live-start', media);
       } catch (error) {
+        owned.audio.finish('failed');
         if (this.streams.get(serial) === owned) this.streams.delete(serial);
         throw error;
       }
@@ -555,6 +563,7 @@ export class MegaBackend extends EventEmitter implements Backend {
     try {
       await this.client?.shutdown();
     } finally {
+      this.liveAudio.close();
       this.stations.close();
       this.devices.clear();
       this.pictures.clear();
