@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.11 - Unreleased
+
+- Resolve recording Auto mode after reading the source codec. With configured
+  NVIDIA acceleration, HEVC converts to H.264. Otherwise browser compatibility
+  determines the format. Existing H.264 recordings and explicit Native remux.
+- Return bounded per-request processing metadata to integration/card 0.8.12.
+  Retain existing timeouts, cancellation, software fallback and process cleanup.
+- Issue #57 still requires reporter T600 acceptance. Back up the bridge and
+  integration files before updating. Restore the previous files to roll back
+  without changing data, token, credentials or entity identities.
+
 ## 0.8.10 - Unreleased
 
 - Remove the software live bitrate and VBV limit from the previous candidate.

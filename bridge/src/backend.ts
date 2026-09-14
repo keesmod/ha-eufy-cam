@@ -1,3 +1,4 @@
+import type { RecordingFormat, RecordingResult } from './recording-media.js';
 import type { EventEmitter } from 'node:events';
 import type { Readable } from 'node:stream';
 
@@ -87,6 +88,7 @@ export interface BackendRecordings {
     signal: AbortSignal,
     format?: 'h264' | 'native',
   ): Promise<Buffer>;
+  videoResult(serial: string, id: string, signal: AbortSignal, format?: RecordingFormat, hevcSupported?: boolean): Promise<RecordingResult>;
   close(): void;
 }
 export interface BackendStations {

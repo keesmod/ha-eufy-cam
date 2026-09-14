@@ -24,7 +24,7 @@ function json(response: ServerResponse, status: number, value: unknown): void {
 }
 export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 1024, perMessageDeflate: false });
-  const state = () => ({ protocol: 1, migration: { version: 1, error: eufy.migrationError }, backend: eufy.backendName, transports: ["jpeg", "webrtc"], bridge_id: bridgeId, auth: eufy.auth.state, notification_metrics: eufy.notifications?.metrics, cameras: eufy.inventory(), stations: eufy.stations?.inventory() ?? [], alarm_metrics: eufy.stations?.metrics, recording_metrics: eufy.recordings ? { ...eufy.recordings.metrics, active: eufy.recordings.busy } : undefined, stream_metrics: { ...eufy.metrics, ...eufy.hub.recoveryMetrics, active_cameras: eufy.hub.active, quarantined: eufy.hub.quarantined } });
+  const state = () => ({ protocol: 1, recording_playback: 1, migration: { version: 1, error: eufy.migrationError }, backend: eufy.backendName, transports: ["jpeg", "webrtc"], bridge_id: bridgeId, auth: eufy.auth.state, notification_metrics: eufy.notifications?.metrics, cameras: eufy.inventory(), stations: eufy.stations?.inventory() ?? [], alarm_metrics: eufy.stations?.metrics, recording_metrics: eufy.recordings ? { ...eufy.recordings.metrics, active: eufy.recordings.busy } : undefined, stream_metrics: { ...eufy.metrics, ...eufy.hub.recoveryMetrics, active_cameras: eufy.hub.active, quarantined: eufy.hub.quarantined } });
   const server = createServer((request, response) => {
     const media = /^\/v1\/media\/([a-f0-9]{64})$/.exec(new URL(request.url ?? "/", "http://bridge").pathname);
     if (request.method === "GET" && media) {
@@ -78,10 +78,15 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         try {
           if (recording[2]) {
             const format = url.searchParams.get("format") ?? "h264";
-            if (format !== "h264" && format !== "native") throw new Error("Invalid recording format");
+            if (format !== "h264" && format !== "native" && format !== "auto") throw new Error("Invalid recording format");
+            const hevc = url.searchParams.get('hevc_supported');
+            if (hevc !== null && hevc !== 'true' && hevc !== 'false') throw new Error('Invalid HEVC support');
+            const result = recording[3] === 'video'
+              ? await eufy.recordings.videoResult(recording[1]!, recording[2], cancel.signal, format, hevc === 'true') : undefined;
             const data = recording[3] === "thumbnail"
               ? await eufy.recordings.thumbnail(recording[1]!, recording[2], cancel.signal)
-              : await eufy.recordings.video(recording[1]!, recording[2], cancel.signal, format);
+              : result!.body;
+            if (result && !response.destroyed) response.setHeader('X-Eufy-Recording-Media', JSON.stringify(result.media));
             if (!response.destroyed) { response.writeHead(200, { "Content-Type": recording[3] === "thumbnail" ? "image/jpeg" : "video/mp4", "Content-Length": data.length, "Cache-Control": "no-store" }); response.end(data); }
           } else {
             const data = await eufy.recordings.list(recording[1]!, url.searchParams.get("date") ?? "", cancel.signal);

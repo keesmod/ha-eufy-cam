@@ -20,6 +20,7 @@ export class EufyEventsCard extends HTMLElement {
   private active = false;
   private urls = new Map<string,string>();
   private playback = new EufyRecordingPlayback();
+  private controls: EufyRecordingControls;
   private observer?: IntersectionObserver;
   private cameraKey = '';
   private loadedDate = '';
@@ -43,6 +44,9 @@ export class EufyEventsCard extends HTMLElement {
       dialog{width:min(1000px,95vw);max-width:95vw;padding:0;border:0;border-radius:16px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#152028)}dialog::backdrop{background:#000b}.player-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;flex-wrap:wrap}.player-title{font-weight:600}.player-status{padding:0 16px 12px}video{display:block;width:100%;max-height:65vh;background:#10161e}.player-nav{display:flex;gap:10px;justify-content:center;padding:14px}
       @media(max-width:450px){ha-card{padding:14px}.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.filters label:first-child{flex:1;min-width:130px}.event-time{font-size:11px}}
     </style><ha-card><h2></h2><div class="filters"><label><span data-text="camera"></span><select class="camera"></select></label><label><span data-text="date"></span><input class="date" type="date"></label><button class="show" data-text="show"></button></div><details><summary data-text="calendar"></summary><div class="calendar"><input class="month" type="month"><div class="days"></div><p class="legend"></p></div></details><div class="status" role="status" aria-live="polite"></div><div class="tiles"></div><div class="pagination" hidden><button class="page-prev" data-text="pagePrev"></button><span class="page-info"></span><button class="page-next" data-text="pageNext"></button></div></ha-card><dialog aria-labelledby="events-player-title"><div class="player-bar"><span class="player-title" id="events-player-title"></span><button class="close" data-text="close"></button></div><div class="player-status" role="status" aria-live="polite"></div><video playsinline controls hidden></video><div class="player-nav"><button class="previous" data-text="prev"></button><button class="next" data-text="next"></button></div></dialog>`;
+    this.controls = new EufyRecordingControls(this.q('dialog'), () => this.ha?.language, () => {
+      if (this.q<HTMLDialogElement>('dialog').open) { const v = this.q<HTMLVideoElement>('video'); this.play(this.selected, { time: v.currentTime, paused: !v.hidden && v.paused }); }
+    });
     const today = new Date(); const date = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
     this.q<HTMLInputElement>('.date').value = date; this.q<HTMLInputElement>('.month').value = date.slice(0,7);
     this.q('.show').onclick = () => this.load();
@@ -70,11 +74,13 @@ export class EufyEventsCard extends HTMLElement {
     this.labels();
   }
   connectedCallback() {
+    this.controls.connect();
     document.addEventListener('visibilitychange',this.visibilityChanged);window.addEventListener('pagehide',this.leave);this.ha?.connection.addEventListener('disconnected',this.leave);
     this.observer=new IntersectionObserver(entries=>{if(!entries[0]?.isIntersecting)this.stop();});this.observer.observe(this);
   }
-  disconnectedCallback() {this.stop();this.observer?.disconnect();document.removeEventListener('visibilitychange',this.visibilityChanged);window.removeEventListener('pagehide',this.leave);this.ha?.connection.removeEventListener('disconnected',this.leave);}
+  disconnectedCallback() {this.controls.disconnect();this.stop();this.observer?.disconnect();document.removeEventListener('visibilitychange',this.visibilityChanged);window.removeEventListener('pagehide',this.leave);this.ha?.connection.removeEventListener('disconnected',this.leave);}
   private labels() {
+    this.controls.update();
     for(const element of Array.from(this.shadowRoot!.querySelectorAll<HTMLElement>('[data-text]')))element.textContent=this.text[element.dataset.text as keyof typeof this.text];
     this.q('h2').textContent=this.config.title||this.text.title;this.q('.month').setAttribute('aria-label',this.text.month);
     const cameras=this.cameras(), key=JSON.stringify(cameras.map(id=>[id,this.name(id)]))+this.text.all;
@@ -82,7 +88,7 @@ export class EufyEventsCard extends HTMLElement {
     this.q<HTMLButtonElement>('.show').disabled=!cameras.length;
     if (!cameras.length) { this.stop(); this.q('.status').textContent=this.ha?.language?.startsWith('nl')?'Geen camera met beschikbare opnames. Bekijk de camerakaart voor de reden.':'No camera with available recordings. See the camera card for the reason.'; }
   }
-  private clearVideo() {const v=this.q<HTMLVideoElement>('video');v.pause();v.removeAttribute('src');v.load();v.hidden=true;this.playback.clear();}
+  private clearVideo() {const v=this.q<HTMLVideoElement>('video');v.pause();v.removeAttribute('src');v.load();v.hidden=true;this.playback.clear();this.controls.update(undefined,false);}
   private closePlayer() {this.controller?.abort();this.clearVideo();const dialog=this.q<HTMLDialogElement>('dialog');if(dialog.open)dialog.close();}
   private stop() {this.closePlayer();for(const url of this.urls.values())URL.revokeObjectURL(url);this.urls.clear();if(this.active)this.q('.status').textContent=this.text.stopped;}
   private run(action: (signal:AbortSignal)=>Promise<void>) {
@@ -96,7 +102,7 @@ export class EufyEventsCard extends HTMLElement {
       finally{if(this.controller===controller)this.active=false;}
     });
   }
-  private failure(error: unknown) {const code=error instanceof Error?error.message:'';return code==='live_busy'?this.text.live:code==='live_stopping'?this.text.stopping:code==='recording_busy'?this.text.busy:code==='recording_expired'?this.text.expired:code==='history_incomplete'?this.text.incomplete:this.text.error;}
+  private failure(error: unknown) {if(error instanceof RecordingCodecError && recordingMode() === "native")return this.controls.codecError();const code=error instanceof Error?error.message:'';return code==='live_busy'?this.text.live:code==='live_stopping'?this.text.stopping:code==='recording_busy'?this.text.busy:code==='recording_expired'?this.text.expired:code==='history_incomplete'?this.text.incomplete:this.text.error;}
   private async fetch(path: string, signal:AbortSignal) {signal.throwIfAborted();const response=await this.ha!.fetchWithAuth(path,{signal});if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error);}return response;}
   private query() {return `/api/eufy_viewer/events?entities=${encodeURIComponent(this.cameras().join(','))}`;}
   private load() {
@@ -144,7 +150,7 @@ export class EufyEventsCard extends HTMLElement {
       }catch(error){if(signal.aborted)throw error;}
     }
   }
-  private play(index:number) {
+  private play(index:number, restore?:RecordingPosition) {
     const records=this.filtered(),record=records[index];if(!record || !this.cameras().includes(record.entity_id))return;this.selected=index;
     const dialog=this.q<HTMLDialogElement>('dialog');if(!dialog.open)dialog.showModal();
     this.q('.player-title').textContent=`${this.name(record.entity_id)} · ${record.start.replace('T',' ')}`;
@@ -156,9 +162,10 @@ export class EufyEventsCard extends HTMLElement {
           if(signal.aborted)return;
           this.active=state==='preparing';
           if(state==='failed'){this.clearVideo();this.q('.player-status').textContent=this.failure(error);}
-          else this.q('.player-status').textContent=state==='preparing'?this.text.preparing:'';
-        });
-        this.q('.player-status').textContent='';
+          else {this.q('.player-status').textContent=state==='preparing'?this.text.preparing:'';this.controls.update(this.playback.media,state==='playing');}
+        },restore);
+        if(signal.aborted)return;
+        this.q('.player-status').textContent='';this.controls.update(this.playback.media,true);
       } catch(error) { if(!signal.aborted)this.clearVideo(); throw error; }
     });
   }

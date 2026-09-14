@@ -122,7 +122,7 @@ test('timeline, calendar and stored thumbnails require auth and known camera IDs
   const calls:string[]=[];const hub=new StreamHub({start:async()=>{},stop:async()=>{},disposeMedia:()=>{}});
   const fake=Object.assign(new EventEmitter(),{auth:{state:'connected'},inventory:()=>[],hasCamera:(s:string)=>s==='CAM123',hub,recordings:{
     timeline:async(serials:string[],date:string)=>{calls.push('timeline');assert.deepEqual(serials,['CAM123']);assert.equal(date,'2026-09-05');return {recordings:[],complete:true};},
-    video:async(_serial:string,_id:string,_signal:AbortSignal,format:string)=>{calls.push('video:'+format);return Buffer.from('mp4');},
+    videoResult:async(_serial:string,_id:string,_signal:AbortSignal,format:string,hevc:boolean)=>{calls.push('video:'+format);assert.equal(typeof hevc,'boolean');return {body:Buffer.from('mp4'),media:{source:'h264',output:'h264',processing:'remux',fallback:false}};},
     calendar:async()=>{calls.push('calendar');return {days:['2026-09-05']};},thumbnail:async()=>{calls.push('thumbnail');return Buffer.from([255,216,255]);}
   }});
   const server=createBridge(fake as unknown as Eufy,token,'fixture');server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert.ok(address&&typeof address!=='string');const base=`http://127.0.0.1:${address.port}`,headers={Authorization:`Bearer ${token}`};
@@ -136,6 +136,13 @@ test('timeline, calendar and stored thumbnails require auth and known camera IDs
     assert.equal((await fetch(clip+'?format=native',{headers})).status,200);
     assert.equal((await fetch(clip,{headers})).status,200);
     assert.deepEqual(calls.slice(3),['video:native','video:h264']);
+    const auto = await fetch(clip+'?format=auto&hevc_supported=true',{headers});
+    assert.equal(auto.status,200); assert.equal(await auto.text(),'mp4');
+    assert.deepEqual(JSON.parse(auto.headers.get('x-eufy-recording-media')!),{source:'h264',output:'h264',processing:'remux',fallback:false});
+    assert.equal(calls.at(-1),'video:auto');
+    const count=calls.length;
+    assert.equal((await fetch(clip+'?format=auto&hevc_supported=maybe',{headers})).status,400);
+    assert.equal(calls.length,count);
   }finally{server.emit('shutdown');server.close();await once(server,'close');}
 });
 
