@@ -12,8 +12,10 @@ driver and NVIDIA Container Toolkit configured for Docker. Check the GPU's
 H.264/HEVC decode profiles and H.264 encode support in NVIDIA's
 [codec support matrix](https://developer.nvidia.com/video-encode-and-decode-gpu-support-matrix-new).
 A community reporter confirmed live NVENC/NVDEC on a T600 with bridge 0.8.7
-and HEVC-to-H.264 recording conversion with bridge 0.8.8. See the scoped
-community validation below.
+and HEVC-to-H.264 recording conversion with bridge 0.8.8. The complete Auto
+recording playback flow was subsequently confirmed with integration/card 0.8.12
+and bridge 0.8.11 on a T600/T8030/T8425 setup. See the scoped
+[community validation](#auto-playback-validation-on-2026-09-14) below.
 
 The bridge image uses Debian Bookworm's FFmpeg from `node:24-bookworm-slim`.
 The Docker host can run a different distribution, including Debian 13. The
@@ -154,6 +156,12 @@ into MP4 without decoding or encoding. Zero GPU activity is expected for these
 remuxes, which preserve the original picture and avoid unnecessary conversion.
 The browser still owns decoding and displaying the resulting recording.
 
+With integration/card 0.8.12 and bridge 0.8.11, both recording players offer
+Auto / Native / H.264. Auto converts HEVC when NVIDIA recording acceleration is
+configured, even if the browser supports HEVC. The per-recording status shows
+the completed processing route, including software fallback. See the
+[playback mode guide](INSTALLATION.md#recording-playback-format) for all modes.
+
 Conversion requests CUDA decoding and `h264_nvenc` encoding at the original
 resolution and frame rate. NVENC uses preset p4, the high-quality tune, VBR with
 CQ 23 and no B frames. These settings do not imply identical quality to software.
@@ -197,6 +205,8 @@ setting it to `software`, then recreate the container with the same data and tok
 
 ## Community hardware validation
 
+### Earlier live and recording conversion tests
+
 On 2026-09-13, a reporter using a T600 4 GB, driver 610.57.04, Debian 13/Docker,
 HomeBase 3 T8030 and cameras T8416/T8417/T8425 confirmed live video/audio and actual
 NVENC/NVDEC activity with bridge 0.8.7 and client 0.12.2. Activity stopped when
@@ -221,9 +231,52 @@ to `format=h264`, then restored the unmodified 0.8.8 source. This validates the
 NVIDIA conversion route. It does not imply that native playback should transcode
 or that users need to modify the source for normal operation.
 
-The reported successful live and recording tests are accepted as hardware
-confirmation for this installation. The recording's individual camera model and
+These earlier successful live and recording tests are accepted as hardware
+confirmation for this installation. The earlier recording's individual camera model and
 device firmware were not specified, so this is not a separate recording-support
 claim for every listed camera or for other GPU/driver combinations. Conversion
 time excludes downloading the recording and is not a software-versus-GPU speed
 comparison. Issues #49 and #54 retain the implementation and test history.
+
+
+### Auto playback validation on 2026-09-14
+
+The reporter [confirmed the complete v0.8.12 Auto playback flow](https://github.com/keesmod/ha-eufy-cam/issues/57#issuecomment-5666931668)
+with the following environment. These are community-reported observations,
+not an independent maintainer GPU test.
+
+| Component | Reported value |
+| --- | --- |
+| Home Assistant | 2026.9.2 |
+| Integration/card | 0.8.12 |
+| Bridge | 0.8.11 |
+| GPU and driver | NVIDIA T600 4 GB, 610.57.04 |
+| HomeBase | HomeBase 3 T8030 |
+| Recording source | T8425, HEVC |
+| Acceleration settings | `EUFY_LIVE_ACCELERATION=nvidia`, `EUFY_RECORDING_ACCELERATION=nvidia` |
+
+The earlier report identifies the host as Debian 13/Docker. The new report does
+not restate the host OS or specify camera/HomeBase firmware or browser version.
+
+With Playback format set to Auto, the UI showed **NVIDIA transcode** and the
+recording played successfully. At the same time, `nvidia-smi dmon -s u` showed
+peaks of 74% NVENC, 25% NVDEC, 19% SM and 9% memory activity. GPU activity returned
+to 0% after preparation. This confirms Auto selection, the bridge conversion
+route, the processing indicator and playback for this reported recording/setup.
+It extends the earlier v0.8.8 test, which manually forced the H.264 request.
+
+The reporter also retested Live with bridge 0.8.11. NVENC reached 6% and NVDEC 3%,
+with GPU activity returning to 0% after closing Live. This is a live-path
+regression check on the reported installation. The new comment does not name
+the individual camera used for Live.
+
+The main Auto/NVIDIA flow is hardware-confirmed. The reporter did not separately
+report explicit Native remux, an H.264 source, audio or seeking in this comment.
+The [follow-up](https://github.com/keesmod/ha-eufy-cam/issues/57#issuecomment-5666960841)
+asks for these additional regression checks. They are optional confirmation on
+this installation, not a blocker for accepting the Auto/NVIDIA feature.
+Automated tests and maintainer HA checks cover these regressions, as documented
+in [PR #61](https://github.com/keesmod/ha-eufy-cam/pull/61).
+
+This evidence does not extend to every listed camera, other GPU/driver
+combinations or the T8134 investigation in #10.
