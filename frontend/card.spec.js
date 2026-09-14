@@ -230,3 +230,36 @@ test('experimental software does not claim missing hardware verification or star
   await expect(page.getByRole('button', { name: 'Watch live' })).toBeEnabled();
   expect(await page.evaluate(() => calls.length)).toBe(0);
 });
+
+for (const outcome of ['rejected', 'stalled', 'closed']) test(`live diagnostics survive ${outcome} statistics without acknowledging a frame`, async ({ page }) => {
+  await page.evaluate(outcome => {
+    card._hass.states['camera.front'].attributes.viewer_webrtc = true;
+    window.RTCPeerConnection = class extends EventTarget {
+      iceGatheringState='complete'; connectionState='new'; iceConnectionState='new'; localDescription=null;
+      addTransceiver() {}
+      async createOffer() { return {type:'offer',sdp:'PRIVATE'}; }
+      async setLocalDescription(offer) { this.localDescription=offer; }
+      getStats() { return outcome==='rejected'?Promise.reject(new Error('PRIVATE')):new Promise(()=>{}); }
+      close() { this.connectionState='closed'; }
+    };
+  }, outcome);
+  await page.getByRole('button',{name:'Watch live',exact:true}).click();
+  await page.evaluate(()=>receive({type:'ready',subscription:9,fallback:true,diagnostics:true}));
+  await expect.poll(()=>page.evaluate(()=>acks.some(m=>m.offer))).toBe(true);
+  await page.evaluate(()=>{void card._reportLive('startup');});
+  if(outcome==='closed')await page.getByRole('button',{name:'Close live view',exact:true}).click();
+  if(outcome!=='closed') {
+    await expect.poll(()=>page.evaluate(()=>acks.filter(m=>m.type==='eufy_viewer/live_diagnostics').length)).toBe(1);
+    const report=await page.evaluate(()=>acks.find(m=>m.type==='eufy_viewer/live_diagnostics').report);
+    expect(report.stats_available).toBe(false);expect(report.painted).toBe(0);expect(report.acks_sent).toBe(0);
+    expect(JSON.stringify(report)).not.toContain('PRIVATE');
+    await page.evaluate(()=>card._reportLive('startup'));
+    expect(await page.evaluate(()=>acks.filter(m=>m.type==='eufy_viewer/live_diagnostics').length)).toBe(1);
+    await page.getByRole('button',{name:'Close live view',exact:true}).click();
+  } else {
+    await page.waitForTimeout(1100);
+    expect(await page.evaluate(()=>acks.filter(m=>m.type==='eufy_viewer/live_diagnostics').length)).toBe(0);
+  }
+  expect(await page.evaluate(()=>acks.some(m=>m.type==='eufy_viewer/ack'))).toBe(false);
+  await expect.poll(()=>page.evaluate(()=>closeCount)).toBe(1);
+});

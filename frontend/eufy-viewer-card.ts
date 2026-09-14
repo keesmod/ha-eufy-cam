@@ -5,7 +5,7 @@ interface FrameEvent { type: "frame"; subscription: number; sequence: number; jp
 interface EndEvent { type: "ended" }
 interface FallbackEvent { type: "fallback" }
 type Unsubscribe = () => Promise<void>;
-type RTCEvent = { type: "ready"; subscription: number; fallback?: boolean } | { type: "answer"; sdp: string } | { type: "candidate"; candidate: string } | { type: "tick"; subscription: number; sequence: number };
+type RTCEvent = { type: "ready"; subscription: number; fallback?: boolean; diagnostics?: boolean } | { type: "answer"; sdp: string } | { type: "candidate"; candidate: string } | { type: "tick"; subscription: number; sequence: number };
 type ViewerEvent = FrameEvent | EndEvent | FallbackEvent | RTCEvent;
 interface HAConnection extends EventTarget {
   subscribeMessage(callback: (event: ViewerEvent) => void, message: Record<string, unknown>, options: { resubscribe: boolean }): Promise<Unsubscribe>;
@@ -52,6 +52,9 @@ export class EufyViewerCard extends HTMLElement {
   private _rtcCandidates: RTCIceCandidateInit[] = [];
   private _tick?: { subscription: number; sequence: number };
   private _videoCallback?: number;
+  private _diagnosticTimer?: number;
+  private _soundDiagnosticTimer?: number;
+  private _playback?: { start: number; lastFrame?: number; ticks: number; sent: number; accepted: number; painted: number; enabled: boolean; reports: Set<string> };
   private _dialog: HTMLDialogElement;
   private _visibility: () => void;
   private _pagehide: () => void;
@@ -112,6 +115,7 @@ export class EufyViewerCard extends HTMLElement {
     this._sound = this.shadowRoot!.querySelector<HTMLButtonElement>(".sound")!;
     this._sound.addEventListener("click", () => {
       this._video.muted = !this._video.muted;
+      this._scheduleSoundReport();
       this._sound.textContent = this._video.muted ? this._text().sound : this._text().mute;
       if (this._open) void this._video.play().catch(() => this._stop("error"));
     });
@@ -266,6 +270,7 @@ export class EufyViewerCard extends HTMLElement {
   async _start() {
     if (this._open || this._preview.disabled || !this._hass || !this._config || !this._visible || document.visibilityState !== "visible") return;
     const generation = ++this._generation;
+    this._playback = { start: performance.now(), ticks: 0, sent: 0, accepted: 0, painted: 0, enabled: false, reports: new Set() };
     // Some embedded clients, including the macOS app, lack WebRTC support.
     const webrtc = Boolean(this._hass.states[this._config.entity]?.attributes.viewer_webrtc)
       && typeof RTCPeerConnection === "function"
@@ -291,6 +296,7 @@ export class EufyViewerCard extends HTMLElement {
     if (!this._watching(generation)) return;
     if (event.type === "ended") { this._stop("ended"); return; }
     if (event.type === "fallback") {
+      void this._reportLive("fallback");
       this._fallbackPending = false;
       this._jpegFallback = true;
       this._closeRTC();
@@ -325,6 +331,8 @@ export class EufyViewerCard extends HTMLElement {
     } catch { if (url && url !== this._frameUrl) URL.revokeObjectURL(url); if (generation === this._generation) this._stop("error"); }
   }
   private _closeRTC() {
+    clearTimeout(this._diagnosticTimer);
+    clearTimeout(this._soundDiagnosticTimer); this._soundDiagnosticTimer = undefined;
     if (this._videoCallback !== undefined) this._video.cancelVideoFrameCallback(this._videoCallback);
     this._videoCallback = undefined;
     this._tick = undefined;
@@ -337,6 +345,7 @@ export class EufyViewerCard extends HTMLElement {
   private async _fallback(reason: "connection_failed" | "signaling_error" | "playback_error", generation: number) {
     if (!this._watching(generation) || this._jpegFallback || this._fallbackPending) return;
     if (!this._fallbackSupported || this._rtcSubscription === undefined) { this._stop("error"); return; }
+    void this._reportLive("fallback");
     this._fallbackPending = true;
     this._closeRTC();
     this._status(this._text().switching);
@@ -349,6 +358,8 @@ export class EufyViewerCard extends HTMLElement {
     if (event.type === "ready") {
       this._fallbackSupported = event.fallback === true;
       this._rtcSubscription = event.subscription;
+      this._playback!.enabled = event.diagnostics === true;
+      this._diagnosticTimer = window.setTimeout(() => { void this._reportLive("startup"); }, 5000);
       if (this._rtc || !this._video.requestVideoFrameCallback) throw new Error("WebRTC unavailable");
       const pc = this._rtc = new RTCPeerConnection({ iceServers: [] });
       pc.addTransceiver("video", { direction: "recvonly" });
@@ -389,19 +400,76 @@ export class EufyViewerCard extends HTMLElement {
       else this._rtcCandidates.push(candidate);
     } else {
       if (this._tick) throw new Error("Unacknowledged tick");
+      if (this._playback) this._playback.ticks++;
       this._tick = { subscription: event.subscription, sequence: event.sequence };
     }
   }
   _painted(generation: number) {
     this._videoCallback = this._video.requestVideoFrameCallback(() => {
       if (!this._watching(generation) || !this._rtc || this._fallbackPending || this._jpegFallback) return;
+      const playback = this._playback!;
+      playback.painted++; playback.lastFrame = performance.now();
+      this._scheduleSoundReport();
       clearTimeout(this._startup); this._status("");
       const tick = this._tick; this._tick = undefined;
+      if (tick) playback.sent++;
       if (tick) void this._hass!.callWS({ type: "eufy_viewer/ack", ...tick }).then(result => {
+        if (result.accepted && this._watching(generation) && this._playback === playback) {
+          playback.accepted++; void this._reportLive("playing");
+        }
         if (!result.accepted && this._watching(generation) && !this._jpegFallback && !this._fallbackPending) this._stop("ended");
       }).catch(() => { if (this._watching(generation) && !this._jpegFallback && !this._fallbackPending) this._stop("error"); });
       this._painted(generation);
     });
+  }
+  private _scheduleSoundReport() {
+    if (this._video.muted) { clearTimeout(this._soundDiagnosticTimer); this._soundDiagnosticTimer = undefined; return; }
+    if (!this._rtc || !this._playback?.enabled || this._playback.reports.has("unmuted") || this._soundDiagnosticTimer !== undefined) return;
+    this._soundDiagnosticTimer = window.setTimeout(() => { this._soundDiagnosticTimer = undefined; void this._reportLive("unmuted"); }, 1000);
+  }
+  async _reportLive(trigger: "startup" | "playing" | "unmuted" | "fallback") {
+    const playback = this._playback, pc = this._rtc, hass = this._hass;
+    const subscription = this._rtcSubscription, generation = this._generation;
+    if (!playback?.enabled || !pc || !hass || subscription === undefined || playback.reports.has(trigger)) return;
+    playback.reports.add(trigger);
+    const report: Record<string, string | number | boolean> = {
+      trigger, elapsed_ms: Math.round(performance.now() - playback.start),
+      connection: pc.connectionState, ice: pc.iceConnectionState,
+      offer: Boolean(pc.localDescription), answer: Boolean(pc.remoteDescription),
+      ready_state: this._video.readyState, paused: this._video.paused, muted: this._video.muted,
+      ticks: playback.ticks, acks_sent: playback.sent, acks_accepted: playback.accepted, painted: playback.painted,
+      stats_available: false,
+    };
+    if (playback.lastFrame !== undefined) report.last_frame_ms = Math.round(performance.now() - playback.lastFrame);
+    let timer: number | undefined;
+    try {
+      const stats = await Promise.race([pc.getStats().catch(() => undefined), new Promise<undefined>(resolve => { timer = window.setTimeout(resolve, 1000); })]);
+      if (stats) {
+        report.stats_available = true;
+        const count = (key: string, value: unknown) => {
+          if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) report[key] = Number(report[key] ?? 0) + value;
+        };
+        stats.forEach(stat => {
+          if (stat.type === "inbound-rtp" && ["video", "audio"].includes(stat.kind)) {
+            count(`${stat.kind}_packets`, stat.packetsReceived); count(`${stat.kind}_bytes`, stat.bytesReceived);
+            if (stat.kind === "video") { count("video_decoded", stat.framesDecoded); count("video_dropped", stat.framesDropped); }
+            else {
+              count("audio_samples", stat.totalSamplesReceived); count("concealed_samples", stat.concealedSamples);
+              if (typeof stat.totalAudioEnergy === "number") report.audio_energy = Boolean(report.audio_energy) || stat.totalAudioEnergy > 0;
+            }
+          }
+          // Selected transport type only. Never copy candidate addresses or IDs.
+          if (stat.type === "transport" && stat.selectedCandidatePairId) {
+            const pair = stats.get(stat.selectedCandidatePairId);
+            const local = pair && stats.get(pair.localCandidateId), remote = pair && stats.get(pair.remoteCandidateId);
+            if (local) { report.local_candidate = local.candidateType; report.protocol = local.protocol; }
+            if (remote) report.remote_candidate = remote.candidateType;
+          }
+        });
+      }
+      if (generation === this._generation && this._open) await hass.callWS({ type: "eufy_viewer/live_diagnostics", subscription, report });
+    } catch { /* Diagnostics cannot interrupt playback or renew a lease. */ }
+    finally { clearTimeout(timer); }
   }
   _stop(reason?: "ended" | "error") {
     this._generation++; this._open = false;

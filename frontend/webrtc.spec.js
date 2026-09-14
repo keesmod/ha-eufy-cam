@@ -5,6 +5,7 @@ import { execFile, spawn } from 'node:child_process';
 import { once, EventEmitter } from 'node:events';
 import { tmpdir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 import { WebSocket } from '../bridge/node_modules/ws/wrapper.mjs';
 import { MediaRelay } from '../bridge/src/media.ts';
 import { StreamHub } from '../bridge/src/streams.ts';
@@ -12,7 +13,11 @@ import { createBridge } from '../bridge/src/server.ts';
 
 // Real FFmpeg, go2rtc, encrypted WebRTC and decoded audio/video in Chromium.
 // Only Eufy hardware and Home Assistant dispatch are simulated.
-for (const ending of ['close', 'navigation', 'frozen', 'blocked', 'media-loss']) test(`real WebRTC audio/video stops after ${ending}`, async ({ page }, testInfo) => {
+const cases = [
+  ...['close', 'navigation', 'frozen', 'blocked', 'media-loss', 'answer-loss', 'paint-loss', 'tick-loss'].map(ending=>({ending,profile:'normal'})),
+  ...['silent', 'low-rate', 'delayed-audio', 'batched-audio', 'video-only'].map(profile=>({ending:'close',profile})),
+];
+for (const {ending,profile} of cases) test(`real WebRTC ${profile} stops after ${ending}`, async ({ page }, testInfo) => {
   test.setTimeout(60000);
   const binary = process.env.GO2RTC_BINARY;
   test.skip(!binary, 'Set GO2RTC_BINARY for the media acceptance test');
@@ -24,16 +29,21 @@ for (const ending of ['close', 'navigation', 'frozen', 'blocked', 'media-loss'])
   await writeFile(config, 'api:\n  listen: "127.0.0.1:21984"\nrtsp:\n  listen: "127.0.0.1:21554"\nwebrtc:\n  listen: "'+address+':21555"\n  candidates: ["'+address+':21555"]\n  ice_servers: []\n');
   const rtc = spawn(binary, ['-c', config], { stdio: ['ignore','pipe','pipe'] });
   let logs=''; rtc.stdout.on('data', c=>logs+=c); rtc.stderr.on('data', c=>logs+=c);
-  let timeOffset=0;
+  const timers=[], reports=[]; let timeOffset=0;
   let starts=0, stops=0, acks=0, video, audio, ticks, cameraWs, signaling;
   const media = new MediaRelay(()=>hub.end('CAM123','Media failed'));
   const hub = new StreamHub({
     start: async () => {
       starts++;
-      video=spawn('ffmpeg',['-hide_banner','-loglevel','error','-re','-f','lavfi','-i','testsrc=size=1280x720:rate=15','-pix_fmt','yuv420p','-c:v','libx264','-preset','ultrafast','-tune','zerolatency','-g','15','-f','h264','pipe:1']);
-      audio=spawn('ffmpeg',['-hide_banner','-loglevel','error','-re','-f','lavfi','-i','sine=frequency=440:sample_rate=16000','-c:a','aac','-f','adts','pipe:1']);
+      video=spawn('ffmpeg',['-hide_banner','-loglevel','error','-re','-f','lavfi','-i',profile==='low-rate'?'color=c=blue:size=1280x720:rate=10':'testsrc=size=1280x720:rate=15','-pix_fmt','yuv420p','-c:v','libx264','-preset','ultrafast','-tune','zerolatency','-g','15','-f','h264','pipe:1']);
+      audio=spawn('ffmpeg',['-hide_banner','-loglevel','error','-re','-f','lavfi','-i',profile==='silent'?'anullsrc=r=16000:cl=mono':'sine=frequency=440:sample_rate=16000','-c:a','aac','-f','adts','pipe:1']);
       video.stderr.resume(); audio.stderr.resume();
-      media.start('CAM123','h264',video.stdout,audio.stdout,true,15); hub.started('CAM123');
+      const sound = new PassThrough();
+      audio.stdout.on('data',chunk=> {
+        const delay=profile==='delayed-audio'?3000:profile==='batched-audio'?Math.ceil(performance.now()/3000)*3000-performance.now():0;
+        if(delay) timers.push(setTimeout(()=>sound.write(chunk),delay)); else sound.write(chunk);
+      });
+      media.start('CAM123','h264',video.stdout,sound,profile!=='video-only',profile==='low-rate'?10:15); hub.started('CAM123');
 
       ticks=setInterval(()=>hub.frame('CAM123',jpeg),125);
     },
@@ -59,16 +69,16 @@ for (const ending of ['close', 'navigation', 'frozen', 'blocked', 'media-loss'])
         const message=JSON.parse(raw.toString());
         if(message.type==='ready') {
           const query=new URLSearchParams({name:'acceptance'});
-          query.append('src',bridgeUrl+message.path);query.append('src','ffmpeg:acceptance#audio=opus');
+          query.append('src',bridgeUrl+message.path);if(profile!=='video-only')query.append('src','ffmpeg:acceptance#audio=opus');
           await fetch(goUrl+'/api/streams?'+query,{method:'PUT'});
           signaling=new WebSocket(goUrl+'/api/ws?src=acceptance');
           signaling.on('message',raw=>{
             const message=JSON.parse(raw.toString());
-            if(message.type==='webrtc'&&message.value.type==='answer')void deliver({type:'answer',sdp:ending==='blocked'?message.value.sdp.replaceAll(address,'192.0.2.1'):message.value.sdp});
+            if(message.type==='webrtc'&&message.value.type==='answer'&&ending!=='answer-loss')void deliver({type:'answer',sdp:ending==='blocked'?message.value.sdp.replaceAll(address,'192.0.2.1'):message.value.sdp});
             else if(message.type==='webrtc/candidate')void deliver({type:'candidate',candidate:ending==='blocked'?message.value.replaceAll(address,'192.0.2.1'):message.value});
             else if(message.type==='error'){console.error('go2rtc fixture:',message.value);void deliver({type:'ended'});}
           });
-          await once(signaling,'open');await deliver({type:'ready',subscription:1,fallback:message.fallback});
+          await once(signaling,'open');await deliver({type:'ready',subscription:1,fallback:message.fallback,diagnostics:true});
         } else if(message.type==='fallback') {
           jpegMode=true;
           signaling?.close();
@@ -79,7 +89,8 @@ for (const ending of ['close', 'navigation', 'frozen', 'blocked', 'media-loss'])
       await once(cameraWs,'open');
     });
     await page.exposeFunction('backendCall',async message=>{
-      if(message.type==='eufy_viewer/ack'){acks++;cameraWs.send(jpegMode?'ack:jpeg':'ack');}
+      if(message.type==='eufy_viewer/live_diagnostics'){reports.push(message.report);}
+      else if(message.type==='eufy_viewer/ack'){acks++;cameraWs.send(jpegMode?'ack:jpeg':'ack');}
       else if(message.type==='eufy_viewer/fallback')cameraWs.send('fallback:'+message.reason);
       else if(message.offer){
         // Model a remote browser whose advertised media address is unreachable.
@@ -99,17 +110,32 @@ for (const ending of ['close', 'navigation', 'frozen', 'blocked', 'media-loss'])
     });
     expect(starts).toBe(0);
     await page.getByRole('button',{name:'Watch live',exact:true}).click();
-    if(ending!=='blocked') {
+    if(!['blocked','answer-loss'].includes(ending)) {
     await expect.poll(()=>page.locator('video.video').evaluate(v=>v.videoWidth),{timeout:20000}).toBe(1280);
     await page.getByRole('button',{name:'Enable sound',exact:true}).click();
     expect(await page.locator('video.video').evaluate(v=>v.muted)).toBe(false);
-    await expect.poll(()=>page.evaluate(async()=>[...(await card._rtc?.getStats())?.values()??[]].some(s=>s.type==='inbound-rtp'&&s.kind==='audio'&&s.packetsReceived>0&&s.totalAudioEnergy>0)),{timeout:10000}).toBe(true);
+    if(profile!=='video-only') await expect.poll(()=>page.evaluate(async silent=>[...(await card._rtc?.getStats())?.values()??[]].some(s=>s.type==='inbound-rtp'&&s.kind==='audio'&&s.packetsReceived>0&&(silent||s.totalAudioEnergy>0)),profile==='silent'),{timeout:10000}).toBe(true);
     await expect.poll(()=>acks).toBeGreaterThan(2);
+    await expect.poll(()=>reports.some(r=>r.trigger==='playing'&&r.painted>0&&r.acks_accepted>0&&r.video_decoded>0)).toBe(true);
+    if(profile!=='normal') {
+      const before=acks; await new Promise(resolve=>setTimeout(resolve,8000));
+      expect(jpegMode).toBe(false);expect(acks).toBeGreaterThan(before+2);
+      expect(reports.some(r=>r.trigger==='unmuted'&&r.muted===false)).toBe(true);
+      if(!['silent','video-only'].includes(profile))expect(reports.find(r=>r.trigger==='unmuted').audio_energy).toBe(true);
     }
-    if(ending==='blocked'||ending==='media-loss') {
+    }
+    if(['blocked','answer-loss','media-loss','paint-loss','tick-loss'].includes(ending)) {
       const beforeFallbackAcks=acks;
       if(ending==='media-loss')rtc.kill();
+      if(ending==='paint-loss')await page.evaluate(()=>card._video.cancelVideoFrameCallback(card._videoCallback));
+      if(ending==='tick-loss')clearInterval(ticks);
       await expect(page.locator('dialog .live-status')).toHaveText('Live video without sound',{timeout:20000});
+      await expect.poll(()=>reports.some(r=>r.trigger==='fallback')).toBe(true);
+      const report=reports.find(r=>r.trigger==='fallback');
+      if(ending==='blocked') {expect(report.answer).toBe(true);expect(report.painted).toBe(0);expect(report.acks_accepted).toBe(0);}
+      if(ending==='answer-loss') {expect(report.offer).toBe(true);expect(report.answer).toBe(false);expect(report.painted).toBe(0);}
+      if(ending==='paint-loss') {expect(report.last_frame_ms).toBeGreaterThan(5000);expect(report.video_decoded).toBeGreaterThan(report.painted);}
+      if(ending==='tick-loss') {expect(report.last_frame_ms).toBeLessThan(1000);expect(report.painted).toBeGreaterThan(report.acks_accepted+20);ticks=setInterval(()=>hub.frame('CAM123',jpeg),125);}
       await expect(page.locator('img.live')).toBeVisible();
       await expect.poll(()=>page.locator('img.live').evaluate(v=>v.naturalWidth)).toBe(16);
       await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeHidden();
@@ -127,8 +153,10 @@ for (const ending of ['close', 'navigation', 'frozen', 'blocked', 'media-loss'])
       timeOffset += 11000; hub.tick();
     }
     await expect.poll(()=>stops,{timeout:12000}).toBe(1);
+    expect(reports.length).toBeLessThanOrEqual(4);expect(new Set(reports.map(r=>r.trigger)).size).toBe(reports.length);
+    expect(JSON.stringify(reports)).not.toMatch(/candidate:|CAM123|192\.168|v1\/media|sdp/);
     expect(starts).toBe(1);expect(hub.active).toBe(0);expect(hub.quarantined).toBe(0);
     if (ending === 'close') expect(await page.locator('video.video').evaluate(v=>v.srcObject)).toBeNull();
   }catch(error){console.error(logs.replace(/https?:\/\/[^\s"]+/g,'[fixture-url]'));throw error;}
-  finally{cameraWs?.terminate();signaling?.terminate();hub.close();media.stop('CAM123');server.emit('shutdown');server.closeAllConnections();server.close();rtc.kill();video?.kill();audio?.kill();clearInterval(ticks);await rm(directory,{recursive:true,force:true});}
+  finally{timers.forEach(clearTimeout);cameraWs?.terminate();signaling?.terminate();hub.close();media.stop('CAM123');server.emit('shutdown');server.closeAllConnections();server.close();rtc.kill();video?.kill();audio?.kill();clearInterval(ticks);await rm(directory,{recursive:true,force:true});}
 });
