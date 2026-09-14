@@ -14,8 +14,9 @@ H.264/HEVC decode profiles and H.264 encode support in NVIDIA's
 A community reporter confirmed live NVENC/NVDEC on a T600 with bridge 0.8.7
 and HEVC-to-H.264 recording conversion with bridge 0.8.8. The complete Auto
 recording playback flow was subsequently confirmed with integration/card 0.8.12
-and bridge 0.8.11 on a T600/T8030/T8425 setup. See the scoped
-[community validation](#auto-playback-validation-on-2026-09-14) below.
+and bridge 0.8.11 on a T600/T8030/T8425 setup. The reporter also confirmed the
+recording fixes in integration/card 0.8.15 and bridge 0.8.14. See the scoped
+[community validation](#recording-fix-acceptance-on-2026-09-14) below.
 
 The bridge image uses Debian Bookworm's FFmpeg from `node:24-bookworm-slim`.
 The Docker host can run a different distribution, including Debian 13. The
@@ -310,8 +311,8 @@ The main Auto/NVIDIA flow has a successful hardware test, but the reporter's
 [later finding](https://github.com/keesmod/ha-eufy-cam/issues/57#issuecomment-5667209426)
 adds intermittent NVIDIA failures followed by successful software playback.
 Native remux, audio and forward/backward seeking passed. The reporter has not yet
-found an H.264 source for the remux check. Issue #57 remains in Validation while
-the intermittent failure is investigated.
+found an H.264 source for the remux check at that point. The subsequent failure
+investigation and accepted retest are recorded below.
 
 Code review found that bridge 0.8.11 killed the entire hardware conversion at
 10 seconds, even while it was encoding frames. A real, paced CPU FFmpeg test
@@ -320,7 +321,27 @@ reproduced this policy error without a GPU: 139 frames were encoded before the
 input completed in about 11.5 seconds using one process. Bridge 0.8.12 fixes this
 cutoff and reports bounded failure details for any remaining error. This proves
 the watchdog correction, not that the reporter's T600 had no other failure.
-A repeat test on that installation is still needed.
+The subsequent v0.8.14 report identified a separate 32 MiB output-limit failure.
+Integration/card 0.8.15 and bridge 0.8.14 address that limit and remove the
+persistent NVIDIA failure latch. The reporter then completed the retest below.
 
 This evidence does not extend to every listed camera, other GPU/driver
 combinations or the T8134 investigation in #10.
+
+### Recording fix acceptance on 2026-09-14
+
+The reporter [confirmed integration/card 0.8.15 and bridge 0.8.14 on the NVIDIA T600](https://github.com/keesmod/ha-eufy-cam/issues/57#issuecomment-5669792989).
+Five different recordings passed, including those that previously triggered
+`NVIDIA failure`. All five showed `NVIDIA transcode`. Auto, Native, H.264, audio,
+seeking and repeated playback also passed.
+
+Using `nvidia-smi dmon -s u`, the reporter observed approximately 70% NVENC and
+24% NVDEC activity during conversion. Activity returned to 0% after playback
+completed or the player closed. These are reported GPU utilization observations,
+not memory-capacity measurements.
+
+This completes reporter acceptance for issue #57 on the reported setup. The
+retest does not identify each recording's camera model, firmware, browser or
+source codec, and it does not restate the driver or host OS. Preserve the earlier
+environment details as historical context. Do not generalize the result to all
+cameras, other NVIDIA configurations or Apple clients.
