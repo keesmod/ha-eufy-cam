@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.15 - Internal candidate
+## 0.8.15 - 2026-09-14
 
 - Replace whole-recording RAM buffers with private temporary files and bounded
   file transfer. Valid H.264 output above 32 MiB can reach both recording cards.
@@ -17,7 +17,7 @@
 
 Includes bridge 0.8.14, with unchanged client 0.12.2. Back up both components
 before installing. Restore the previous integration and bridge together to roll
-back, preserving credentials and identities. No public release has been made.
+back, preserving credentials and identities.
 
 ## 0.8.14 - 2026-09-14
 
