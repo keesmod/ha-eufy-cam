@@ -2,12 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
-import { spawnSync, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { RecordingTranscoder, recordingAcceleration, recordingArgs } from '../src/recording-media.js';
 
 class Process extends EventEmitter {
-  stdin = new PassThrough(); stdout = new PassThrough(); stderr = new PassThrough(); audio = new PassThrough();
-  stdio = [this.stdin, this.stdout, this.stderr, this.audio];
+  stdin = new PassThrough(); stdout = new PassThrough(); stderr = new PassThrough(); audio = new PassThrough(); progress = new PassThrough();
+  stdio = [this.stdin, this.stdout, this.stderr, this.audio, this.progress];
   killed = false;
   kill() { this.killed = true; queueMicrotask(() => this.emit('close', null)); return true; }
 }
@@ -160,4 +160,148 @@ test('result describes actual software fallback and circuit breaker per request'
   complete(f.children[2]!); assert.equal((await next).media.fallback, true);
   const native = f.media.muxResult(metadata, Buffer.from('v'), Buffer.alloc(0), f.abort.signal, 'native', true);
   complete(f.children[3]!); assert.deepEqual((await native).media, { source: 'hevc', output: 'hevc', processing: 'remux', fallback: false });
+});
+
+test('hardware failure reports bounded categories and exit details without private stderr', async () => {
+  const f = fixture(); const result = f.run();
+  const child = f.children[0]!;
+  child.stdout.write('partial');
+  child.stderr.write('private-path private-token CUDA_ERROR_OUT_OF_');
+  child.stderr.write('MEMORY\nOpenEncodeSessionEx failed: out of memory (10)');
+  // An input pipe can fail before stderr and close arrive.
+  child.stdin.emit('error', new Error('private-input-error'));
+  child.stderr.write('\nNo decoder surfaces left');
+  child.emit('close', 1, null);
+  await tick(); complete(f.children[1]!); await result;
+  const failed = f.events.find(e => e.event === 'recording_hardware_failed');
+  assert.deepEqual(failed.failure, { reason: 'video_input', timeout_ms: 500, output_bytes: 7, encoded_frames: 0,
+    exit_code: 1, signal: null, ffmpeg: ['memory', 'nvenc_open_session', 'decode'] });
+  assert.ok(!JSON.stringify(f.events).includes('private'));
+  const next = f.run(); complete(f.children[2]!); await next;
+  assert.equal(f.events.filter(e => e.event === 'recording_hardware_failed').length, 1);
+  assert.ok(f.events.some(e => e.event === 'recording_hardware_disabled' && e.attempt === 2));
+});
+
+test('FFmpeg classification handles large writes and isolates attempts', async () => {
+  const f = fixture(); const result = f.run();
+  f.children[0]!.stderr.write('x'.repeat(2040) + 'Cannot load libcuda.so.1' + 'private'.repeat(10000));
+  f.children[0]!.emit('close', 1, 'SIGSEGV');
+  await tick();
+  // Software stderr cannot change the completed NVIDIA failure record.
+  f.children[1]!.stderr.write('Error while decoding'); complete(f.children[1]!); await result;
+  const failure = f.events.find(e => e.failure).failure;
+  assert.deepEqual(failure.ffmpeg, ['cuda_device']); assert.equal(failure.signal, 'SIGSEGV');
+  assert.ok(JSON.stringify(failure).length < 250);
+});
+
+test('unclassified errors remain explicit and unsafe exit values are never logged', async () => {
+  const f = fixture(); const result = f.run();
+  f.children[0]!.stderr.write('https://private.example/recording?token=secret');
+  f.children[0]!.emit('close', 'secret', 'secret');
+  await tick(); complete(f.children[1]!); await result;
+  const failure = f.events.find(e => e.failure).failure;
+  assert.deepEqual(failure.ffmpeg, ['unclassified']);
+  assert.equal(failure.exit_code, null); assert.equal(failure.signal, 'other');
+  assert.ok(!JSON.stringify(f.events).includes('secret'));
+});
+
+test('deadline and cleanup failure have distinct diagnostic reasons', async () => {
+  const f = fixture({ hardwareMs: 10 }); const result = f.run();
+  await new Promise(resolve => setTimeout(resolve, 25)); complete(f.children[1]!); await result;
+  const failure = f.events.find(e => e.event === 'recording_hardware_timeout').failure;
+  assert.equal(failure.reason, 'timeout'); assert.equal(failure.timeout_ms, 10);
+  assert.equal(failure.output_bytes, 0); assert.deepEqual(failure.ffmpeg, []);
+  const stuck = fixture({ hardwareMs: 5, cleanupMs: 5 });
+  const rejected = assert.rejects(stuck.run()); stuck.children[0]!.kill = () => false; await rejected;
+  assert.equal(stuck.events.find(e => e.failure).failure.reason, 'cleanup_unconfirmed');
+});
+
+test('cancelled hardware attempts do not log a GPU failure or disable the next attempt', async () => {
+  const f = fixture(); const rejected = assert.rejects(f.run()); f.abort.abort(); await rejected;
+  assert.equal(f.events.length, 0);
+  const next = f.media.muxResult(metadata, Buffer.from('v'), Buffer.alloc(0), new AbortController().signal);
+  assert.ok(f.commands[1]!.includes('h264_nvenc')); complete(f.children[1]!); await next;
+});
+
+test('recording hardware warnings are always logged while successful playback remains quiet', async () => {
+  const { logRecordingDiagnostic } = await import('../src/recording-media.js');
+  const warnings: string[] = [], infos: string[] = [];
+  const f = fixture(); const result = f.run(); f.children[0]!.emit('close', 1, null);
+  await tick(); complete(f.children[1]!); await result;
+  for (const event of f.events) logRecordingDiagnostic(event, false, line => warnings.push(line), line => infos.push(line));
+  assert.equal(warnings.length, 1); assert.equal(infos.length, 0);
+  assert.equal(JSON.parse(warnings[0]!).event, 'recording_hardware_failed');
+  for (const event of f.events) logRecordingDiagnostic(event, true, line => warnings.push(line), line => infos.push(line));
+  assert.equal(warnings.length, 2); assert.equal(infos.length, 2);
+});
+
+test('healthy frame progress outlives the hardware watchdog without software fallback', async () => {
+  const f = fixture({ hardwareMs: 60, conversionMs: 1000 }); const result = f.run();
+  for (let frame = 1; frame <= 8; frame++) {
+    await new Promise(resolve => setTimeout(resolve, 20));
+    f.children[0]!.progress.write('fra'); f.children[0]!.progress.write(`me=${frame}\nprogress=continue\n`);
+  }
+  assert.equal(f.children.length, 1); assert.equal(f.children[0]!.killed, false);
+  complete(f.children[0]!); await result;
+  assert.deepEqual(f.events.map(e => e.event), ['recording_active_nvidia']);
+  const next = f.run(); assert.ok(f.commands[1]!.includes('h264_nvenc')); complete(f.children[1]!); await next;
+});
+
+test('repeated frame counts and stderr cannot keep a stalled GPU alive', async () => {
+  const f = fixture({ hardwareMs: 40 }); const result = f.run();
+  f.children[0]!.progress.write('frame=1\n');
+  const noisy = setInterval(() => {
+    f.children[0]!.progress.write('frame=1\nprogress=continue\n');
+    f.children[0]!.stderr.write('frame=9999\n');
+  }, 5);
+  try {
+    await new Promise(resolve => setTimeout(resolve, 70));
+    assert.equal(f.children.length, 2); complete(f.children[1]!); await result;
+    const failure = f.events.find(e => e.failure).failure;
+    assert.equal(failure.timeout_scope, 'hardware_progress'); assert.equal(failure.encoded_frames, 1);
+  } finally { clearInterval(noisy); }
+});
+
+test('continuous frame progress never extends the total conversion deadline', async () => {
+  const f = fixture({ hardwareMs: 100, conversionMs: 60 }); const result = f.run();
+  let frame = 0;
+  const active = setInterval(() => f.children[0]!.progress.write(`frame=${++frame}\n`), 5);
+  try {
+    await assert.rejects(result); assert.ok(f.children[0]!.killed);
+    assert.equal(f.events.find(e => e.failure).failure.timeout_scope, 'conversion');
+    assert.ok(!f.events.some(e => e.event === 'recording_active_software'));
+  } finally { clearInterval(active); }
+});
+
+test('real paced FFmpeg conversion survives the former ten-second cutoff and preserves AAC', async () => {
+  const generate = (args: string[]) => {
+    const result = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args], { timeout: 15000, maxBuffer: 8 * 1024 * 1024 });
+    assert.equal(result.status, 0); return result.stdout;
+  };
+  const video = generate(['-f','lavfi','-i','testsrc=size=320x180:rate=15','-t','12','-pix_fmt','yuv420p','-c:v','libx265','-preset','ultrafast','-threads','1','-x265-params','pools=none:frame-threads=1:bframes=0','-f','hevc','pipe:1']);
+  const audio = generate(['-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','12','-c:a','aac','-f','adts','pipe:1']);
+  let launches = 0;
+  const events: string[] = [];
+  const media = new RecordingTranscoder('nvidia', event => events.push(event.event), requested => {
+    launches++;
+    // Exercise the actual process/watchdog with a paced CPU encoder. This is
+    // deliberately not evidence of NVENC/NVDEC execution on physical hardware.
+    assert.ok(requested.includes('pipe:4'));
+    const args = recordingArgs(metadata, true, 'h264', 'software');
+    args.unshift('-progress', 'pipe:4', '-stats_period', '0.25');
+    args.splice(args.indexOf('-i'), 0, '-readrate', '1');
+    return spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'] });
+  });
+  const started = performance.now();
+  const result = await media.muxResult(metadata, video, audio, AbortSignal.timeout(25000), 'auto', true);
+  assert.ok(performance.now() - started > 10000);
+  assert.equal(launches, 1); assert.deepEqual(events, ['recording_active_nvidia']);
+  assert.equal(result.media.fallback, false);
+  const probe = spawnSync('ffprobe', ['-v','error','-show_entries','stream=codec_name,duration','-of','json','-i','pipe:0'], { input: result.body, timeout: 5000 });
+  assert.equal(probe.status, 0);
+  const streams = JSON.parse(probe.stdout.toString()).streams;
+  assert.deepEqual(streams.map((s: any) => s.codec_name).sort(), ['aac','h264']);
+  assert.ok(streams.every((s: any) => Number(s.duration) >= 12 && Number(s.duration) < 12.2));
+  const decode = spawnSync('ffmpeg', ['-v','error','-i','pipe:0','-f','null','-'], { input: result.body, timeout: 5000 });
+  assert.equal(decode.status, 0); assert.equal(decode.stderr.length, 0);
 });
