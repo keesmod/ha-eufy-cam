@@ -13,11 +13,11 @@ class Process extends EventEmitter {
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const metadata = { videoCodec: 'hevc' as const, fps: 15 };
-function fixture(overrides = {}, mode: 'nvidia' | 'software' = 'nvidia') {
+function fixture(overrides = {}, mode: 'nvidia' | 'software' = 'nvidia', detail = false) {
   const children: Process[] = [], commands: string[][] = [], events: any[] = [];
   const media = new RecordingTranscoder(mode, event => events.push(event), args => {
     commands.push(args); const child = new Process(); children.push(child); return child as unknown as ChildProcess;
-  }, { conversionMs: 1000, remuxMs: 1000, hardwareMs: 500, cleanupMs: 30, bytes: 1024, ...overrides });
+  }, { conversionMs: 1000, remuxMs: 1000, hardwareMs: 500, cleanupMs: 30, bytes: 1024, ...overrides }, detail);
   const abort = new AbortController();
   const run = () => media.mux(metadata, Buffer.from('original-video'), Buffer.from('original-audio'), abort.signal);
   return { media, children, commands, events, abort, run };
@@ -304,4 +304,50 @@ test('real paced FFmpeg conversion survives the former ten-second cutoff and pre
   assert.ok(streams.every((s: any) => Number(s.duration) >= 12 && Number(s.duration) < 12.2));
   const decode = spawnSync('ffmpeg', ['-v','error','-i','pipe:0','-f','null','-'], { input: result.body, timeout: 5000 });
   assert.equal(decode.status, 0); assert.equal(decode.stderr.length, 0);
+});
+
+test('unknown FFmpeg failures expose a scrubbed excerpt only with explicit diagnostics', async () => {
+  for (const enabled of [false, true]) {
+    const f = fixture({}, 'nvidia', enabled); const result = f.run();
+    f.children[0]!.stderr.write('Unexpected driver response 731\npassword="do-not-share" token=');
+    f.children[0]!.stderr.write('secret-value https://camera.example/private\n/home/user/recording.hevc 192.168.1.99 user@example.com T8425123456789012\n');
+    f.children[0]!.emit('close', 1, null); await tick(); complete(f.children[1]!); await result;
+    const failure = f.events.find(e => e.failure).failure;
+    assert.deepEqual(failure.ffmpeg, ['unclassified']);
+    if (enabled) {
+      assert.ok(failure.ffmpeg_detail.includes('Unexpected driver response 731'));
+      for (const secret of ['do-not-share', 'secret-value', 'camera.example', '/home/user', '192.168.1.99', 'user@example.com', 'T8425123456789012']) assert.ok(!failure.ffmpeg_detail.includes(secret), secret);
+    } else assert.equal(failure.ffmpeg_detail, undefined);
+  }
+});
+
+test('error excerpts omit truncated partial lines and stay bounded', async () => {
+  const f = fixture({}, 'nvidia', true); const result = f.run();
+  f.children[0]!.stderr.write('token=' + 'secret'.repeat(10000) + '\nUseful unknown failure 731\n' + 'x '.repeat(1500));
+  f.children[0]!.emit('close', 1, null); await tick(); complete(f.children[1]!); await result;
+  const detail = f.events.find(e => e.failure).failure.ffmpeg_detail;
+  assert.ok(detail.includes('Useful unknown failure 731')); assert.ok(!detail.includes('secret'));
+  assert.ok(detail.length <= 2025);
+});
+
+test('known errors, success and cancellation never emit an error excerpt', async () => {
+  const f = fixture({}, 'nvidia', true); const result = f.run();
+  f.children[0]!.stderr.write('CUDA_ERROR_OUT_OF_MEMORY private text');
+  f.children[0]!.emit('close', 1, null); await tick(); complete(f.children[1]!); await result;
+  assert.ok(f.events.every(e => !e.failure?.ffmpeg_detail));
+  const good = fixture({}, 'nvidia', true); const completed = good.run();
+  good.children[0]!.stderr.write('unexpected private text'); complete(good.children[0]!); await completed;
+  assert.ok(!JSON.stringify(good.events).includes('private'));
+  const cancelled = fixture({}, 'nvidia', true); const rejected = assert.rejects(cancelled.run());
+  cancelled.children[0]!.stderr.write('unexpected private text'); cancelled.abort.abort(); await rejected;
+  assert.equal(cancelled.events.length, 0);
+});
+
+test('support excerpts scrub terminal escapes, bearer values and Windows paths', async () => {
+  const f = fixture({}, 'nvidia', true); const result = f.run();
+  f.children[0]!.stderr.write('Unexpected response 731\n\u001b[31mAuthorization: Bearer confidential\u001b[0m\nC:\\Users\\private\\clip.hevc fe80::1234:abcd serial=T8425123456789012\n');
+  f.children[0]!.emit('close', 1, null); await tick(); complete(f.children[1]!); await result;
+  const detail = f.events.find(e => e.failure).failure.ffmpeg_detail;
+  for (const secret of ['confidential', '\u001b', 'private', 'fe80::', 'T8425123456789012']) assert.ok(!detail.includes(secret), secret);
+  assert.ok(detail.includes('Unexpected response 731'));
 });
