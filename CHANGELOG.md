@@ -1,6 +1,23 @@
 # Changelog
 
-## 0.8.13 - Unreleased
+## 0.8.14 - 2026-09-14
+
+- Fix premature NVIDIA recording fallback by tracking encoded-frame progress.
+  Healthy conversion can pass ten seconds while staying within the existing
+  45-second total deadline. A ten-second stall still triggers bounded cleanup
+  and one software attempt on the already downloaded recording.
+- Always report bounded hardware failure categories, frame count, timeout scope
+  and exit status. With `EUFY_DIAGNOSTICS=true`, an unclassified failure also
+  includes a short scrubbed excerpt of the original FFmpeg error. Common secret,
+  address and path patterns are removed. Review excerpts before sharing them.
+- Preserve Auto / Native / H.264, media status, AAC audio, cancellation and
+  the circuit breaker. Native remux, audio and seeking have reporter confirmation.
+  The intermittent T600 failure still needs a repeat test with this correction.
+
+Includes bridge 0.8.13. Back up both components before updating. Restore their
+previous files to roll back, preserving data, credentials and entity identities.
+
+## 0.8.13 - Internal candidate
 
 - Fix premature NVIDIA recording fallback. Track encoded-frame progress instead
   of requiring the complete MP4 within ten seconds. Keep the 45-second total

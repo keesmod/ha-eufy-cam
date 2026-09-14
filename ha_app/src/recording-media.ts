@@ -37,8 +37,9 @@ interface ConversionFailure {
   exit_code?: number | null;
   signal?: string | null;
   ffmpeg: string[];
+  ffmpeg_detail?: string;
 }
-// Only these fixed labels leave the process. Never log raw FFmpeg/driver text.
+// Fixed labels are always safe to log. Unknown text requires explicit diagnostics.
 const ffmpegFailures = [
   ['memory', /CUDA_ERROR_OUT_OF_MEMORY|out of memory/i],
   ['cuda_device', /CUDA_ERROR_(?:NO_DEVICE|INVALID_DEVICE|DEVICE_UNAVAILABLE)|no CUDA.capable device|Cannot load libcuda/i],
@@ -50,6 +51,26 @@ const ffmpegFailures = [
   ['decode', /error while decoding|decode_slice_header error|No decoder surfaces left|Failed setup for format cuda/i],
   ['invalid_input', /invalid data|invalid NAL|invalid argument|could not find codec parameters/i],
 ] as const;
+/** Optional support excerpt, bounded and scrubbed before it enters any log. */
+function recordingErrorText(tail: string, truncated: boolean): string {
+  // A truncated first line could have lost the label identifying a secret.
+  // Omit that partial line instead of attempting to redact an orphaned value.
+  if (truncated) tail = tail.includes('\n') ? tail.slice(tail.indexOf('\n') + 1) : '';
+  const text = tail
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '')
+    .replace(/\b(?:https?|rtsp|rtmp|file):\/\/[^\s"'<>]+/gi, '[url]')
+    .replace(/\b(?:Bearer\s+)[^\s"',;]+/gi, 'Bearer [redacted]')
+    .replace(/\b(token|password|passwd|secret|api[_-]?key|device[_-]?key|serial|authorization)\b["']?\s*[:=]\s*(?:"[^"\n]*"|'[^'\n]*'|[^\s,;]+)/gi, '$1=[redacted]')
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[email]')
+    .replace(/(?:[A-Z]:\\|\/)[^\s"'<>]+/gi, '[path]')
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, '[address]')
+    .replace(/\b(?:[a-f\d]{0,4}:){2,}[a-f\d]{0,4}\b/gi, '[address]')
+    .replace(/\bT[A-Z0-9]{15,}\b/g, '[serial]')
+    .replace(/\b[A-Za-z0-9_=-]{32,}\b/g, '[identifier]')
+    .trim();
+  return (truncated ? '[earlier output omitted] ' : '') + text.slice(0, 2000);
+}
 class ConversionError extends Error {
   constructor(readonly retryable: boolean, readonly details: ConversionFailure) { super('Recording conversion failed'); }
   get timedOut(): boolean { return this.details.reason === 'timeout'; }
@@ -96,6 +117,7 @@ export class RecordingTranscoder {
     private readonly diagnostic: (event: RecordingDiagnostic) => void = () => {},
     private readonly launch: (args: string[]) => ChildProcess = args => spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe', 'pipe', 'pipe'] }),
     private readonly limits = { conversionMs: 45_000, remuxMs: 20_000, hardwareMs: 10_000, cleanupMs: 1000, bytes: LIMIT },
+    private readonly includeErrorText = false,
   ) {}
   async mux(metadata: RecordingMetadata, video: Buffer, audio: Buffer, signal: AbortSignal, format: 'h264' | 'native' = 'h264'): Promise<Buffer> {
     return (await this.muxResult(metadata, video, audio, signal, format)).body;
@@ -148,7 +170,7 @@ export class RecordingTranscoder {
       const parts: Buffer[] = [];
       let size = 0, settled = false, failure: ConversionError | undefined;
       let cleanupTimer: NodeJS.Timeout | undefined;
-      let tail = '', stderrSeen = false, progressTail = '', encodedFrames = 0;
+      let tail = '', stderrSeen = false, stderrTruncated = false, progressTail = '', encodedFrames = 0;
       let progressTimer: NodeJS.Timeout | undefined;
       const progress = child.stdio[4] as Readable | undefined;
       const categories = new Set<string>();
@@ -160,10 +182,13 @@ export class RecordingTranscoder {
         settled = true;
         clearTimeout(timer); clearTimeout(progressTimer); clearTimeout(cleanupTimer);
         signal.removeEventListener('abort', abort);
-        tail = ''; progressTail = '';
         progress?.off('data', observeProgress);
-        if (error) { error.details.ffmpeg = categories.size ? [...categories] : stderrSeen ? ['unclassified'] : []; parts.length = 0; reject(error); }
-        else resolve(Buffer.concat(parts));
+        if (error) {
+          error.details.ffmpeg = categories.size ? [...categories] : stderrSeen ? ['unclassified'] : [];
+          if (this.includeErrorText && stderrSeen && !categories.size) error.details.ffmpeg_detail = recordingErrorText(tail, stderrTruncated);
+          parts.length = 0; reject(error);
+        } else resolve(Buffer.concat(parts));
+        tail = ''; progressTail = '';
       };
       const fail = (cause: ConversionError) => {
         if (settled || failure) return;
@@ -216,7 +241,9 @@ export class RecordingTranscoder {
         stderrSeen ||= chunk.length > 0;
         // Examine bounded windows with overlap, including very large/split writes.
         for (let offset = 0; offset < chunk.length; offset += 2048) {
-          tail = (tail + chunk.subarray(offset, offset + 2048).toString('utf8')).slice(-4096);
+          const next = tail + chunk.subarray(offset, offset + 2048).toString('utf8');
+          stderrTruncated ||= next.length > 4096;
+          tail = next.slice(-4096);
           for (const [category, pattern] of ffmpegFailures) if (pattern.test(tail)) categories.add(category);
         }
       });
