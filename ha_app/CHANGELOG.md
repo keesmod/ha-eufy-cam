@@ -2,9 +2,10 @@
 
 ## 0.8.11 - Unreleased
 
-- Add bounded live audio admission observations and matching Home Assistant
-  diagnostics. Reports identify late or missing audio without storing audio
-  payloads. Issue #10 still requires T8134 audio hardware validation.
+- Add bounded live audio format, continuity and processing observations, linked
+  to a later browser measurement in Home Assistant diagnostics. Include ADTS
+  header facts, buffered audio, stream cleanup and negotiated audio details
+  without storing audio payloads. Issue #10 awaits T8134 hardware validation.
 - Resolve recording Auto mode after reading the source codec. With configured
   NVIDIA acceleration, HEVC converts to H.264. Otherwise browser compatibility
   determines the format. Existing H.264 recordings and explicit Native remux.
