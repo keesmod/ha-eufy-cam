@@ -83,13 +83,9 @@ export interface BackendRecordings {
   ): Promise<{ recordings: Recording[]; returned: number; complete: true }>;
   calendar(serials: string[], month: string, signal: AbortSignal): Promise<{ days: string[] }>;
   thumbnail(serial: string, id: string, signal: AbortSignal): Promise<Buffer>;
-  video(
-    serial: string,
-    id: string,
-    signal: AbortSignal,
-    format?: 'h264' | 'native',
-  ): Promise<Buffer>;
-  videoResult(serial: string, id: string, signal: AbortSignal, format?: RecordingFormat, hevcSupported?: boolean): Promise<RecordingResult>;
+  video(serial: string, id: string, signal: AbortSignal,
+    consume: (result: RecordingResult, signal: AbortSignal) => Promise<void>,
+    format?: RecordingFormat, hevcSupported?: boolean): Promise<void>;
   close(): void;
 }
 export interface BackendStations {
