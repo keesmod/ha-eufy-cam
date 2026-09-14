@@ -39,7 +39,7 @@ export class Eufy extends EventEmitter {
   private encoders = new Map<string, ChildProcessWithoutNullStreams>();
   private livePictures = new Map<string, Picture>();
   readonly pictures = new Map<string, Picture>();
-  readonly diagnostics = new StreamDiagnostics();
+  readonly diagnostics = new StreamDiagnostics(undefined, undefined, (serial, event) => this.backend?.recordAudioEvent?.(serial, event));
   readonly media = new MediaRelay((serial) => this.hub.end(serial, 'Audio/video encoder failed'), this.diagnostics);
   private readonly unavailableRecordings: BackendRecordings = {
     busy: false,
@@ -282,7 +282,7 @@ export class Eufy extends EventEmitter {
       ({ serial, videoCodec, audioSupported, fps, video, audio }: LiveMedia) => {
         this.metrics.started_events++;
         this.metrics.last_started_event = new Date().toISOString();
-        audio.on('error', () => this.hub.end(serial, 'Audio transport error'));
+        audio.on('error', () => { this.diagnostics.mark(serial, 'audio_transport_error'); this.hub.end(serial, 'Audio transport error'); });
         if (!this.hub.started(serial)) {
           video.resume();
           audio.resume();

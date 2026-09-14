@@ -1,3 +1,4 @@
+import type { DiagnosticEvent } from './diagnostics.js';
 import { LiveAudioDiagnostics, type LiveAudioObservation } from './live-audio-diagnostics.js';
 import { EventEmitter } from 'node:events';
 import {
@@ -173,6 +174,7 @@ export class MegaBackend extends EventEmitter implements Backend {
     );
   }
   supportReport() { return { ...this.discoveryDiagnostics.report(), live_audio: this.liveAudio.report() }; }
+  recordAudioEvent(serial: string, event: DiagnosticEvent): void { this.streams.get(serial)?.audio.mark(event); }
   audioAttempt(serial: string): number | undefined { return this.streams.get(serial)?.audio.report.attempt; }
   get connected(): boolean {
     return this.ready && (this.client?.connected ?? false);
@@ -474,6 +476,8 @@ export class MegaBackend extends EventEmitter implements Backend {
     if (this.closed || this.client !== client || this.streams.has(serial))
       throw new Error('Camera unavailable');
     if (!capability.available) throw new Error(capability.reason ?? 'capability_unavailable');
+    const device = this.devices.get(serial);
+    const owner = device?.stationId ? this.devices.get(device.stationId) : undefined;
     const abort = new AbortController();
     const owned: {
       abort: AbortController;
@@ -483,7 +487,7 @@ export class MegaBackend extends EventEmitter implements Backend {
     } = {
       abort,
       starting: Promise.resolve(),
-      audio: this.liveAudio.begin(this.devices.get(serial)?.model ?? ""),
+      audio: this.liveAudio.begin(device?.model ?? '', { firmware: device?.firmware ?? undefined, owner_model: owner?.model, owner_firmware: owner?.firmware ?? undefined }),
     };
     this.streams.set(serial, owned);
     owned.starting = (async () => {
@@ -491,7 +495,7 @@ export class MegaBackend extends EventEmitter implements Backend {
         const handle = await this.client!.startLive(serial, abort.signal);
         owned.handle = handle;
         void handle.ended.then((result) => {
-          owned.audio.finish('ended');
+          owned.audio.finish('ended', result.confirmed);
           if (this.streams.get(serial) === owned) this.streams.delete(serial);
           this.emit('live-stop', { serial, confirmed: result.confirmed });
         });

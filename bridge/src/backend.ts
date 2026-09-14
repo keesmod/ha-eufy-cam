@@ -1,4 +1,5 @@
 import type { RecordingFormat, RecordingResult } from './recording-media.js';
+import type { DiagnosticEvent } from './diagnostics.js';
 import type { EventEmitter } from 'node:events';
 import type { Readable } from 'node:stream';
 
@@ -112,6 +113,7 @@ export interface LiveMedia {
   audio: Readable;
 }
 export interface Backend extends EventEmitter {
+  recordAudioEvent?(serial: string, event: DiagnosticEvent): void;
   audioAttempt?(serial: string): number | undefined;
   supportReport?(): import('./discovery-diagnostics.js').SupportReport;
   readonly connected: boolean;

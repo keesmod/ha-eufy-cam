@@ -34,6 +34,8 @@ test('shared bridge converts real media and retains last frame on close', { time
   const storage = new Storage(directory);
   const calls: string[] = [];
   const backend = fixtureBackend();
+  const diagnosticEvents: string[] = [];
+  backend.recordAudioEvent = (_serial, event) => { diagnosticEvents.push(event); };
   backend.startLive = async serial => { calls.push(`start:${serial}`); };
   backend.stopLive = async serial => { calls.push(`stop:${serial}`); };
   const bridge = new Eufy(storage, 'mega', false, () => backend);
@@ -66,6 +68,8 @@ test('shared bridge converts real media and retains last frame on close', { time
     assert.equal(bridge.metrics.frames, 0, 'Actual metadata is ready before JPEG decoding');
     assert.equal(bridge.media.audioSupported('CAM123'), false);
     const [jpeg] = await frame;
+    assert.ok(diagnosticEvents.includes('audio_absent'));
+    assert.ok(diagnosticEvents.includes('video_input'));
     clearTimeout(deadline);
     assert.equal(jpeg[0], 255); assert.equal(jpeg[1], 216);
     bridge.hub.close();

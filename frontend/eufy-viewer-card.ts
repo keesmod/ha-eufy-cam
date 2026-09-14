@@ -55,6 +55,7 @@ export class EufyViewerCard extends HTMLElement {
   private _tick?: { subscription: number; sequence: number };
   private _videoCallback?: number;
   private _diagnosticTimer?: number;
+  private _audioDiagnosticTimer?: number;
   private _soundDiagnosticTimer?: number;
   private _playback?: { start: number; lastFrame?: number; ticks: number; sent: number; accepted: number; painted: number; enabled: boolean; reports: Set<string> };
   private _dialog: HTMLDialogElement;
@@ -344,6 +345,7 @@ export class EufyViewerCard extends HTMLElement {
   }
   private _closeRTC() {
     clearTimeout(this._diagnosticTimer);
+    clearTimeout(this._audioDiagnosticTimer);
     clearTimeout(this._soundDiagnosticTimer); this._soundDiagnosticTimer = undefined;
     if (this._videoCallback !== undefined) this._video.cancelVideoFrameCallback(this._videoCallback);
     this._videoCallback = undefined;
@@ -372,6 +374,7 @@ export class EufyViewerCard extends HTMLElement {
       this._rtcSubscription = event.subscription;
       this._playback!.enabled = event.diagnostics === true;
       this._diagnosticTimer = window.setTimeout(() => { void this._reportLive("startup"); }, 5000);
+      this._audioDiagnosticTimer = window.setTimeout(() => { void this._reportLive("audio_check"); }, 15000);
       if (this._rtc || !this._video.requestVideoFrameCallback) throw new Error("WebRTC unavailable");
       const pc = this._rtc = new RTCPeerConnection({ iceServers: [] });
       pc.addTransceiver("video", { direction: "recvonly" });
@@ -439,7 +442,7 @@ export class EufyViewerCard extends HTMLElement {
     if (!this._rtc || !this._playback?.enabled || this._playback.reports.has("unmuted") || this._soundDiagnosticTimer !== undefined) return;
     this._soundDiagnosticTimer = window.setTimeout(() => { this._soundDiagnosticTimer = undefined; void this._reportLive("unmuted"); }, 1000);
   }
-  async _reportLive(trigger: "startup" | "playing" | "unmuted" | "fallback") {
+  async _reportLive(trigger: "startup" | "playing" | "unmuted" | "fallback" | "audio_check") {
     const playback = this._playback, pc = this._rtc, hass = this._hass;
     const subscription = this._rtcSubscription, generation = this._generation;
     if (!playback?.enabled || !pc || !hass || subscription === undefined || playback.reports.has(trigger)) return;
@@ -450,8 +453,13 @@ export class EufyViewerCard extends HTMLElement {
       offer: Boolean(pc.localDescription), answer: Boolean(pc.remoteDescription),
       ready_state: this._video.readyState, paused: this._video.paused, muted: this._video.muted,
       ticks: playback.ticks, acks_sent: playback.sent, acks_accepted: playback.accepted, painted: playback.painted,
-      stats_available: false,
+      stats_available: false, audio_volume_percent: Math.round(this._video.volume * 100),
     };
+    const audioTracks = (this._video.srcObject as MediaStream | null)?.getAudioTracks?.() ?? [];
+    report.audio_tracks = audioTracks.length;
+    report.audio_tracks_muted = audioTracks.filter(track => track.muted).length;
+    report.audio_tracks_enabled = audioTracks.filter(track => track.enabled).length;
+    report.audio_tracks_ended = audioTracks.filter(track => track.readyState === "ended").length;
     if (playback.lastFrame !== undefined) report.last_frame_ms = Math.round(performance.now() - playback.lastFrame);
     let timer: number | undefined;
     try {
@@ -476,6 +484,11 @@ export class EufyViewerCard extends HTMLElement {
               count("video_nack", stat.nackCount); count("video_pli", stat.pliCount); count("video_fir", stat.firCount);
             }
             else {
+              const codec = stats.get(stat.codecId);
+              const mime = typeof codec?.mimeType === "string" ? codec.mimeType.toLowerCase() : "";
+              if (["audio/opus", "audio/pcma", "audio/pcmu", "audio/g722", "audio/mp4a-latm"].includes(mime)) report.audio_codec = mime;
+              if (Number.isInteger(codec?.clockRate) && codec.clockRate > 0 && codec.clockRate <= 192000) report.audio_clock_rate = codec.clockRate;
+              if (Number.isInteger(codec?.channels) && codec.channels > 0 && codec.channels <= 8) report.audio_channels = codec.channels;
               count("audio_samples", stat.totalSamplesReceived); count("concealed_samples", stat.concealedSamples);
               if (typeof stat.totalAudioEnergy === "number") report.audio_energy = Boolean(report.audio_energy) || stat.totalAudioEnergy > 0;
             }

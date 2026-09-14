@@ -278,6 +278,7 @@ export class EufyViewerCard extends HTMLElement {
     _tick;
     _videoCallback;
     _diagnosticTimer;
+    _audioDiagnosticTimer;
     _soundDiagnosticTimer;
     _playback;
     _dialog;
@@ -688,6 +689,7 @@ export class EufyViewerCard extends HTMLElement {
     }
     _closeRTC() {
         clearTimeout(this._diagnosticTimer);
+        clearTimeout(this._audioDiagnosticTimer);
         clearTimeout(this._soundDiagnosticTimer);
         this._soundDiagnosticTimer = undefined;
         if (this._videoCallback !== undefined)
@@ -732,6 +734,7 @@ export class EufyViewerCard extends HTMLElement {
             this._rtcSubscription = event.subscription;
             this._playback.enabled = event.diagnostics === true;
             this._diagnosticTimer = window.setTimeout(() => { void this._reportLive("startup"); }, 5000);
+            this._audioDiagnosticTimer = window.setTimeout(() => { void this._reportLive("audio_check"); }, 15000);
             if (this._rtc || !this._video.requestVideoFrameCallback)
                 throw new Error("WebRTC unavailable");
             const pc = this._rtc = new RTCPeerConnection({ iceServers: [] });
@@ -852,8 +855,13 @@ export class EufyViewerCard extends HTMLElement {
             offer: Boolean(pc.localDescription), answer: Boolean(pc.remoteDescription),
             ready_state: this._video.readyState, paused: this._video.paused, muted: this._video.muted,
             ticks: playback.ticks, acks_sent: playback.sent, acks_accepted: playback.accepted, painted: playback.painted,
-            stats_available: false,
+            stats_available: false, audio_volume_percent: Math.round(this._video.volume * 100),
         };
+        const audioTracks = this._video.srcObject?.getAudioTracks?.() ?? [];
+        report.audio_tracks = audioTracks.length;
+        report.audio_tracks_muted = audioTracks.filter(track => track.muted).length;
+        report.audio_tracks_enabled = audioTracks.filter(track => track.enabled).length;
+        report.audio_tracks_ended = audioTracks.filter(track => track.readyState === "ended").length;
         if (playback.lastFrame !== undefined)
             report.last_frame_ms = Math.round(performance.now() - playback.lastFrame);
         let timer;
@@ -888,6 +896,14 @@ export class EufyViewerCard extends HTMLElement {
                             count("video_fir", stat.firCount);
                         }
                         else {
+                            const codec = stats.get(stat.codecId);
+                            const mime = typeof codec?.mimeType === "string" ? codec.mimeType.toLowerCase() : "";
+                            if (["audio/opus", "audio/pcma", "audio/pcmu", "audio/g722", "audio/mp4a-latm"].includes(mime))
+                                report.audio_codec = mime;
+                            if (Number.isInteger(codec?.clockRate) && codec.clockRate > 0 && codec.clockRate <= 192000)
+                                report.audio_clock_rate = codec.clockRate;
+                            if (Number.isInteger(codec?.channels) && codec.channels > 0 && codec.channels <= 8)
+                                report.audio_channels = codec.channels;
                             count("audio_samples", stat.totalSamplesReceived);
                             count("concealed_samples", stat.concealedSamples);
                             if (typeof stat.totalAudioEnergy === "number")
