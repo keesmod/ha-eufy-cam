@@ -34,7 +34,7 @@ test('configuration is opt-in and rejects arbitrary FFmpeg input', () => {
   assert.throws(() => liveAcceleration('-gpu all')); assert.throws(() => liveAcceleration(''));
 });
 test('software command preserves defaults, audio, scale and MPEG-TS', () => {
-  assert.deepEqual(liveArgs('h264', false, 15, 'software'), ['-hide_banner', '-loglevel', 'error', '-threads', '1', '-fflags', '+genpts', '-probesize', '32768', '-analyzeduration', '100000', '-r', '15', '-f', 'h264', '-i', 'pipe:0', '-map', '0:v:0', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-b:v', '4M', '-maxrate', '4M', '-bufsize', '1M', '-pix_fmt', 'yuv420p', '-vf', "scale='min(1920,iw)':-2", '-threads', '1', '-g', '30', '-mpegts_flags', '+resend_headers', '-muxdelay', '0', '-muxpreload', '0', '-f', 'mpegts', 'pipe:1']);
+  assert.deepEqual(liveArgs('h264', false, 15, 'software'), ['-hide_banner', '-loglevel', 'error', '-threads', '1', '-fflags', '+genpts', '-probesize', '32768', '-analyzeduration', '100000', '-r', '15', '-f', 'h264', '-i', 'pipe:0', '-map', '0:v:0', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-pix_fmt', 'yuv420p', '-vf', "scale='min(1920,iw)':-2", '-threads', '1', '-g', '30', '-mpegts_flags', '+resend_headers', '-muxdelay', '0', '-muxpreload', '0', '-f', 'mpegts', 'pipe:1']);
   assert.ok(liveArgs('hevc', true, 99, 'software').includes('pipe:3'));
 });
 test('NVIDIA uses input CUDA decode with host scaling and low latency H264 encode', () => {
@@ -120,7 +120,7 @@ test('real FFmpeg fallback decodes a replayed synthetic H264 prefix on a CPU-onl
   } finally { session.stop(); }
 });
 
-test('complex synthetic video stays within the software output budget and remains decodable', { timeout: 15000 }, async () => {
+test('complex synthetic video remains decodable with the restored software defaults', { timeout: 15000 }, async () => {
   const producer = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=15,noise=alls=20:allf=t:all_seed=42', '-t', '3', '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-threads', '1', '-preset', 'ultrafast', '-tune', 'zerolatency', '-f', 'h264', 'pipe:1']);
   const encoder = spawn('ffmpeg', liveArgs('h264', false, 15, 'software'));
   const chunks: Buffer[] = [];
@@ -131,8 +131,7 @@ test('complex synthetic video stays within the software output budget and remain
     const results = await Promise.all([once(producer, 'close'), once(encoder, 'close')]);
     assert.equal(results[0][0], 0); assert.equal(results[1][0], 0);
     const output = Buffer.concat(chunks);
-    // Includes transport overhead and the one-megabit VBV startup allowance.
-    assert.ok(output.length > 100_000 && output.length < 2_000_000, `Unexpected three-second output size: ${output.length}`);
+    assert.ok(output.length > 188);
     const { spawnSync } = await import('node:child_process');
     const decoded = spawnSync('ffprobe', ['-v', 'error', '-count_frames', '-show_entries', 'stream=codec_name,nb_read_frames', '-of', 'json', 'pipe:0'], { input: output });
     assert.equal(decoded.status, 0);

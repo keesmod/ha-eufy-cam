@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.8.9 - Unreleased
+## 0.8.10 - Unreleased
+
+- Remove the software live bitrate and VBV limit from the previous candidate.
+  Restore the original software encoder defaults while retaining diagnostics
+  and existing NVIDIA settings. The cap was not supported by evidence of the
+  reporter's root cause and its image-quality cost was not measured.
+- Issue #10 remains open. Integration/card 0.8.11 retains playback diagnostics.
+  Back up the bridge files and restore them to roll back, keeping its data/token.
+
+## 0.8.9 - Withdrawn candidate
 
 - Bound software live video to a 4 Mbit/s target/maxrate and 1 Mbit VBV buffer,
   matching the existing NVIDIA output budget. Preserve H.264/H.265 input,

@@ -85,9 +85,13 @@ an average delay for that sample. Compare changes between samples when examining
 a stall. Packet receipt without decoding can also mean incomplete frames or
 loss, including frame damage that does not leave sequence gaps.
 
-The software encoder now uses the same 4 Mbit/s target/maxrate and 1 Mbit VBV
-budget as the NVIDIA route. High-complexity input can sacrifice detail. This
-limits generated traffic and does not repair damaged incoming frames.
+The software encoder uses its original libx264 ultrafast/zerolatency defaults,
+without an explicit video bitrate or VBV limit. The 4 Mbit/s software cap added
+in PR #59 was withdrawn because the reporter's failure was not attributed to
+bitrate and its image-quality cost was not measured. The existing NVIDIA
+settings and the added playback diagnostics are unchanged.
+
+The following comparison records the experiment, not a deployed fix.
 
 Twenty-four comparisons used identical prerecorded synthetic H.264 sources and
 identical AAC input through FFmpeg 5.1.9, go2rtc 1.9.14 and Chromium 152 on Linux.
@@ -113,9 +117,11 @@ bounded and copy, respectively. Moderate input measured 72/132/66 ms. Initial
 transients reached 547 ms across the tests. These are clock estimates from
 independently paced inputs, not physical lip-sync or speaker measurements.
 
-This comparison favors bounded transcoding as a robustness change. It does not
-prove that bitrate caused the reporter's failure. The reporter's approximately
-8.6 Mbit/s traffic was healthy in the loss-free synthetic controls.
+The cap prevented overload in the extreme synthetic case. This does not
+establish a suitable default or prove that bitrate caused the reporter's
+failure. Approximately 8.6 Mbit/s traffic was healthy in the loss-free synthetic
+controls. No objective before/after image-quality measurement was performed.
+Issue #10 remains open for diagnosis and reporter validation.
 
 ## Separate late-audio boundary
 
