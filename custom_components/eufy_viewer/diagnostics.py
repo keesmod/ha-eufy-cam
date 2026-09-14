@@ -227,9 +227,9 @@ async def async_get_config_entry_diagnostics(
                 "ticks": report.get("ticks", 0),
                 "acks": report.get("acks", 0),
                 "fallback": report.get("fallback"),
-                "relay": report.get("relay", [])[:3],
+                "relay": report.get("relay", [])[:4],
                 "browser": [
-                    browser_report(row) for row in report.get("browser", [])[:3]
+                    browser_report(row) for row in report.get("browser", [])[:4]
                 ],
             }
             for report in getattr(coordinator, "live_diagnostics", [])[-8:]

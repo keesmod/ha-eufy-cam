@@ -53,6 +53,7 @@ export class EufyViewerCard extends HTMLElement {
   private _tick?: { subscription: number; sequence: number };
   private _videoCallback?: number;
   private _diagnosticTimer?: number;
+  private _soundDiagnosticTimer?: number;
   private _playback?: { start: number; lastFrame?: number; ticks: number; sent: number; accepted: number; painted: number; enabled: boolean; reports: Set<string> };
   private _dialog: HTMLDialogElement;
   private _visibility: () => void;
@@ -114,6 +115,7 @@ export class EufyViewerCard extends HTMLElement {
     this._sound = this.shadowRoot!.querySelector<HTMLButtonElement>(".sound")!;
     this._sound.addEventListener("click", () => {
       this._video.muted = !this._video.muted;
+      this._scheduleSoundReport();
       this._sound.textContent = this._video.muted ? this._text().sound : this._text().mute;
       if (this._open) void this._video.play().catch(() => this._stop("error"));
     });
@@ -330,6 +332,7 @@ export class EufyViewerCard extends HTMLElement {
   }
   private _closeRTC() {
     clearTimeout(this._diagnosticTimer);
+    clearTimeout(this._soundDiagnosticTimer); this._soundDiagnosticTimer = undefined;
     if (this._videoCallback !== undefined) this._video.cancelVideoFrameCallback(this._videoCallback);
     this._videoCallback = undefined;
     this._tick = undefined;
@@ -406,6 +409,7 @@ export class EufyViewerCard extends HTMLElement {
       if (!this._watching(generation) || !this._rtc || this._fallbackPending || this._jpegFallback) return;
       const playback = this._playback!;
       playback.painted++; playback.lastFrame = performance.now();
+      this._scheduleSoundReport();
       clearTimeout(this._startup); this._status("");
       const tick = this._tick; this._tick = undefined;
       if (tick) playback.sent++;
@@ -418,7 +422,12 @@ export class EufyViewerCard extends HTMLElement {
       this._painted(generation);
     });
   }
-  async _reportLive(trigger: "startup" | "playing" | "fallback") {
+  private _scheduleSoundReport() {
+    if (this._video.muted) { clearTimeout(this._soundDiagnosticTimer); this._soundDiagnosticTimer = undefined; return; }
+    if (!this._rtc || !this._playback?.enabled || this._playback.reports.has("unmuted") || this._soundDiagnosticTimer !== undefined) return;
+    this._soundDiagnosticTimer = window.setTimeout(() => { this._soundDiagnosticTimer = undefined; void this._reportLive("unmuted"); }, 1000);
+  }
+  async _reportLive(trigger: "startup" | "playing" | "unmuted" | "fallback") {
     const playback = this._playback, pc = this._rtc, hass = this._hass;
     const subscription = this._rtcSubscription, generation = this._generation;
     if (!playback?.enabled || !pc || !hass || subscription === undefined || playback.reports.has(trigger)) return;
