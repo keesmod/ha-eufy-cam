@@ -12,6 +12,7 @@ from homeassistant.loader import async_get_integration
 from .api import BridgeClient, BridgeError
 from .const import CONF_TOKEN, CONF_URL, DOMAIN
 from .coordinator import EufyConfigEntry
+from .live_diagnostics import browser_report
 
 _CODES = set(
     """
@@ -218,6 +219,21 @@ async def async_get_config_entry_diagnostics(
         "account_connected": coordinator.data.auth == "connected"
         if coordinator
         else None,
+        "live_playback": [
+            {
+                "schema": 1,
+                "offered": report.get("offered") is True,
+                "answered": report.get("answered") is True,
+                "ticks": report.get("ticks", 0),
+                "acks": report.get("acks", 0),
+                "fallback": report.get("fallback"),
+                "relay": report.get("relay", [])[:4],
+                "browser": [
+                    browser_report(row) for row in report.get("browser", [])[:4]
+                ],
+            }
+            for report in getattr(coordinator, "live_diagnostics", [])[-8:]
+        ],
         "active_viewers": len(coordinator.viewers) if coordinator else 0,
         "cameras": [
             {

@@ -6,7 +6,7 @@ import asyncio
 import logging
 import random
 from collections import OrderedDict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
@@ -36,6 +36,7 @@ class EufyCoordinator(DataUpdateCoordinator[BridgeState]):
         super().__init__(hass, _LOGGER, name=DOMAIN, config_entry=entry)
         self.api = api
         self.entry = entry
+        self.live_diagnostics: list[dict[str, Any]] = []
         self.viewers: set[Viewer] = set()
         self._listener: asyncio.Task[None] | None = None
         self._closed = False

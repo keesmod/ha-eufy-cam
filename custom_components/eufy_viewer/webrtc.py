@@ -27,6 +27,7 @@ from homeassistant.core import callback
 
 from .api import BridgeError
 from .const import DOMAIN, MAX_FRAME_BYTES
+from .live_diagnostics import browser_report, relay_report
 from .viewers import Viewer
 
 _LOGGER = logging.getLogger(__name__)
@@ -65,12 +66,65 @@ class WebRTCViewer(Viewer):
         self.fallback_supported = False
         self.fallback_requested = False
         self.cleanup_task: asyncio.Task[None] | None = None
+        self.browser_triggers: set[str] = set()
+        self.playback_evidence: dict[str, Any] = {
+            "schema": 1,
+            "offered": False,
+            "answered": False,
+            "ticks": 0,
+            "acks": 0,
+            "browser": [],
+            "relay": [],
+        }
+        # Keep only the last eight attempts per integration in memory.
+        reports = self.coordinator.live_diagnostics
+        reports.append(self.playback_evidence)
+        del reports[:-8]
+
+    async def record_browser_report(self, report: dict[str, Any]) -> bool:
+        """One sample per fixed stage, without extending camera ownership."""
+        trigger = report.get("trigger")
+        if (
+            trigger not in {"startup", "playing", "unmuted", "fallback"}
+            or trigger in self.browser_triggers
+        ):
+            return False
+        self.browser_triggers.add(trigger)
+        self.playback_evidence["browser"].append(browser_report(report))
+        if self.registered and not self.jpeg and not self.fallback_requested:
+            # This request runs independently of frame acknowledgements. Do not
+            # hold cleanup for a slow or unavailable diagnostic endpoint.
+            try:
+                async with asyncio.timeout(1):
+                    async with self.config.session.get(
+                        self.config.url.rstrip("/") + "/api/streams",
+                        params={"src": self.name},
+                    ) as response:
+                        response.raise_for_status()
+                        try:
+                            raw = await response.content.readexactly(65537)
+                        except asyncio.IncompleteReadError as err:
+                            raw = err.partial
+                        if len(raw) <= 65536:
+                            self.playback_evidence["relay"].append(
+                                {"trigger": trigger, **relay_report(json.loads(raw))}
+                            )
+            except aiohttp.ClientError, TimeoutError, ValueError:
+                pass
+        return True
+
+    async def ack(self, sequence: int) -> bool:
+        accepted = await super().ack(sequence)
+        if accepted and not self.jpeg:
+            self.playback_evidence["acks"] += 1
+        return accepted
 
     @callback
     def _message(self, message: ReceiveMessages) -> None:
         if self.closed or self.jpeg or self.fallback_requested:
             return
         if isinstance(message, WebRTCAnswer):
+            self.playback_evidence["answered"] = True
             self.connection.send_event(
                 self.subscription, {"type": "answer", "sdp": message.sdp}
             )
@@ -125,6 +179,7 @@ class WebRTCViewer(Viewer):
                     self.offered = True
                     # No external STUN/TURN service is silently introduced.
                     await self.signaling.send(WebRTCOffer(offer, []))
+                    self.playback_evidence["offered"] = True
                 elif candidate is not None and self.offered:
                     await self.signaling.send(WebRTCCandidate(candidate))
                 else:
@@ -164,6 +219,7 @@ class WebRTCViewer(Viewer):
                 "type": "ready",
                 "subscription": self.subscription,
                 "fallback": self.fallback_supported,
+                "diagnostics": True,
             },
         )
 
@@ -244,6 +300,7 @@ class WebRTCViewer(Viewer):
                             reason = data.get("reason")
                             if self.jpeg or reason not in FALLBACK_REASONS:
                                 raise BridgeError("Invalid fallback control")
+                            self.playback_evidence["fallback"] = reason
                             self.jpeg = True
                             self.ack_command = "ack:jpeg"
                             self.pending = False
@@ -265,6 +322,7 @@ class WebRTCViewer(Viewer):
                                 raise BridgeError("Invalid media backpressure")
                             self.pending = True
                             self.sequence += 1
+                            self.playback_evidence["ticks"] += 1
                             self.connection.send_event(
                                 self.subscription,
                                 {
