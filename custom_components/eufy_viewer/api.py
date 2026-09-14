@@ -11,6 +11,13 @@ from typing import Any
 import aiohttp
 from yarl import URL
 
+from .recording_file import (
+    CHUNK_BYTES,
+    RECORDING_BYTES,
+    RecordingFile,
+    RecordingStorageError,
+)
+
 
 class BridgeError(Exception):
     """Bridge unavailable or returned an invalid response."""
@@ -80,6 +87,7 @@ async def check_recording_error(response: aiohttp.ClientResponse) -> None:
         "live_stopping": 409,
         "recording_busy": 409,
         "recording_unavailable": 503,
+        "recording_storage_unavailable": 503,
         "recording_expired": 410,
         "history_incomplete": 503,
         "thumbnail_unavailable": 503,
@@ -385,7 +393,7 @@ class BridgeClient:
                     )
 
                     return json.loads(raw)
-        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+        except (aiohttp.ClientError, TimeoutError, ValueError, OSError) as err:
             raise BridgeError("Cannot communicate with bridge") from err
 
     async def state(self) -> BridgeState:
@@ -427,22 +435,11 @@ class BridgeClient:
         except (aiohttp.ClientError, TimeoutError) as err:
             raise BridgeError("Snapshot unavailable") from err
 
-    async def recording_video(
-        self,
-        serial: str,
-        recording_id: str,
-        *,
-        thumbnail: bool = False,
-        native: bool = False,
-    ) -> bytes:
-        """Fetch bytes for existing playback and thumbnail consumers."""
-        body, _ = await self.recording_media(
-            serial,
-            recording_id,
-            thumbnail=thumbnail,
-            output_format="native" if native else "h264",
-        )
-        return body
+    async def recording_thumbnail(self, serial: str, recording_id: str) -> bytes:
+        """Thumbnails retain their small independent response budget."""
+        result = await self.recording_media(serial, recording_id, thumbnail=True)
+        assert isinstance(result, bytes)
+        return result
 
     async def recording_media(
         self,
@@ -450,10 +447,11 @@ class BridgeClient:
         recording_id: str,
         *,
         thumbnail: bool = False,
+        target: RecordingFile | None = None,
         output_format: str = "h264",
         hevc_supported: bool = False,
-    ) -> tuple[bytes, dict[str, str | bool] | None]:
-        """Fetch bounded bytes and per-request conversion metadata."""
+    ) -> bytes | dict[str, str | bool] | None:
+        """Stream one MP4 into its reserved file and return actual media facts."""
         if (
             output_format not in {"auto", "native", "h264"}
             or type(hevc_supported) is not bool
@@ -480,13 +478,28 @@ class BridgeClient:
                         "image/jpeg" if thumbnail else "video/mp4"
                     ):
                         raise BridgeError("Recording unavailable")
-                    body = await read_bounded(
-                        response.content, (2 if thumbnail else 32) * 1024 * 1024
-                    )
-                    return body, recording_media_header(
+                    if thumbnail:
+                        return await read_bounded(response.content, 2 * 1024 * 1024)
+                    if target is None:
+                        raise BridgeError("Recording storage required")
+                    if (
+                        response.content_length is not None
+                        and response.content_length > RECORDING_BYTES
+                    ):
+                        raise BridgeRecordingError("recording_storage_unavailable", 503)
+                    async for chunk in response.content.iter_chunked(CHUNK_BYTES):
+                        try:
+                            await target.write(chunk)
+                        except (RecordingStorageError, OSError) as err:
+                            raise BridgeRecordingError(
+                                "recording_storage_unavailable", 503
+                            ) from err
+                    if not target.size:
+                        raise BridgeError("Empty recording")
+                    return recording_media_header(
                         response.headers.get("X-Eufy-Recording-Media")
                     )
-        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
+        except (aiohttp.ClientError, TimeoutError, ValueError, OSError) as err:
             raise BridgeError("Recording unavailable") from err
 
     async def websocket(self, path: str) -> aiohttp.ClientWebSocketResponse:
