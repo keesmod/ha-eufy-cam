@@ -219,6 +219,7 @@ test('Mega adapter preserves camera identity, notifications, and device-confirme
     f.backend.on('live-stop', (event) => stopped.push(event.confirmed));
     await f.backend.startLive('CAM');
     assert.equal((media[0] as { videoCodec: string }).videoCodec, 'h264');
+    f.backend.recordAudioEvent('CAM', 'audio_supported');
     const attempt = f.backend.audioAttempt('CAM');
     assert.equal(typeof attempt, 'number');
     assert.equal(f.backend.supportReport().live_audio[0]?.attempt, attempt);
@@ -228,6 +229,8 @@ test('Mega adapter preserves camera identity, notifications, and device-confirme
     assert.deepEqual(stopped, [true]);
     assert.equal(f.backend.audioAttempt('CAM'), undefined);
     assert.equal(f.backend.supportReport().live_audio[0]?.state, 'ended');
+    assert.equal(f.backend.supportReport().live_audio[0]?.stop_confirmed, true);
+    assert.equal(f.backend.supportReport().live_audio[0]?.pipeline?.[0]?.event, 'audio_supported');
     assert.deepEqual(f.calls, ['start', 'stop']);
     await f.backend.stations.setMode('BASE', 0);
     assert.equal(f.backend.stations.inventory()[0]?.guard_mode, 0);

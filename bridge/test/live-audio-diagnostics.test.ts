@@ -18,6 +18,8 @@ test('observation does not consume buffered audio before the media consumer atta
   await setImmediate();
   assert.equal(stream.readableFlowing, null);
   assert.equal(stream.readableLength, frame.length);
+  assert.equal(row.snapshot().initial_buffered_bytes, frame.length);
+  assert.equal(row.snapshot().buffered_bytes, frame.length);
   assert.equal(row.snapshot().chunks, 0);
   const received: Buffer[] = [];
   stream.on('data', chunk => received.push(chunk));
@@ -46,8 +48,14 @@ test('late excluded audio retains admission and records codec at first data, wit
   assert.equal(row.snapshot().header, 'incomplete');
   stream.write(frame.subarray(2));
   assert.deepEqual(Buffer.concat(received), frame);
-  assert.deepEqual({ ...row.snapshot(), attempt: 1 }, {
+  const { format, last_data_ms, last_data_age_ms, max_gap_ms, min_chunk_bytes, max_chunk_bytes, latest_codec, ...baseline } = row.snapshot();
+  assert.equal(format?.adts_frames, 1);
+  assert.equal(last_data_ms, 5200); assert.equal(last_data_age_ms, 0);
+  assert.equal(max_gap_ms, 0); assert.equal(min_chunk_bytes, 2); assert.equal(max_chunk_bytes, 8);
+  assert.equal(latest_codec, 'aac-lc');
+  assert.deepEqual({ ...baseline, attempt: 1 }, {
     attempt: 1, model: 'T8134', state: 'streaming', chunks: 2, bytes: 10,
+    initial_buffered_bytes: 0, buffered_bytes: 0, stream_ended: false, stream_destroyed: false,
     duration_ms: 5200, metadata_ms: 3000, initial_codec: 'none',
     first_data_codec: 'aac-lc', admission: 'excluded', first_data_ms: 5200,
     first_data_after_metadata_ms: 2200, header: 'adts',
@@ -108,4 +116,24 @@ test('reports are bounded, copied, sanitized and detach evicted observations', a
     assert.equal(stream.listenerCount('data'), 0);
     stream.destroy();
   }
+});
+
+
+test('continuity and pipeline evidence survive close with bounded privacy and no payload', () => {
+  let now = 0;
+  const d = new LiveAudioDiagnostics(() => now);
+  const row = d.begin('T8134', { firmware: '3.3.6.0', owner_model: 'T8030', owner_firmware: '3.8.5.2' });
+  const stream = new PassThrough(); row.attach(stream, 'none', false, () => 'none');
+  stream.on('data', () => {}); row.mark('audio_absent');
+  now = 5000; stream.write(frame); now = 5700; stream.write(frame);
+  for (let i = 0; i < 100; i++) row.mark('media_audio_error');
+  row.mark('PRIVATE' as never); now = 10000; row.finish('ended');
+  const r = row.snapshot();
+  assert.equal(r.firmware, '3.3.6.0'); assert.equal(r.owner_model, 'T8030');
+  assert.equal(r.latest_codec, 'none'); assert.equal(r.format?.adts_frames, 2);
+  assert.equal(r.max_gap_ms, 700); assert.equal(r.last_data_age_ms, 4300);
+  assert.deepEqual(r.pipeline, [{event:'audio_absent',elapsed_ms:0},{event:'media_audio_error',elapsed_ms:5700}]);
+  assert.ok(!JSON.stringify(r).includes('PRIVATE'));
+  const bad = d.begin('PRIVATE', { firmware: 'PRIVATE', owner_model:'PRIVATE', owner_firmware:'PRIVATE' });
+  assert.ok(!JSON.stringify(bad.snapshot()).includes('PRIVATE')); stream.destroy();
 });

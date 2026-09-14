@@ -55,3 +55,17 @@ test('acknowledgement distinguishes successful playback from initial timeout', (
   hub.attach('a', peer); hub.frame('a', Buffer.from('frame')); hub.ack('a', peer);
   now = 10000; hub.tick(); assert.deepEqual(events, ['frame_ack', 'viewer_timeout', 'no_viewers']);
 });
+
+
+test('support observations receive encoder events with log output disabled and ignore stale processes', () => {
+  const rows: string[] = [];
+  const d = new StreamDiagnostics(() => { throw Error('must not log'); }, () => 0, (_serial, event) => rows.push(event));
+  d.begin('PRIVATE'); const p = Object.assign(new EventEmitter(), {stderr: new PassThrough()});
+  d.encoder('PRIVATE', 'media', p as unknown as ChildProcess);
+  p.stderr.write('[aac @ PRIVATE] Input buffer exhausted');
+  assert.ok(rows.includes('media_audio_error')); assert.ok(!rows.join().includes('PRIVATE'));
+  d.finish('PRIVATE'); d.begin('PRIVATE'); const before = rows.length; p.emit('exit', 1);
+  assert.equal(rows.length, before);
+  const throwing = new StreamDiagnostics(undefined, undefined, () => { throw Error('PRIVATE'); });
+  assert.doesNotThrow(() => { throwing.begin('a'); throwing.mark('a', 'audio_input'); });
+});

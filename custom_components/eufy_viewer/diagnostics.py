@@ -174,6 +174,96 @@ def _fields(raw: Any) -> dict[str, Any]:
 _AUDIO_CODECS = {"aac", "aac-lc", "aac-eld", "none", "unknown", "unavailable"}
 
 
+_AUDIO_PIPELINE_EVENTS = set(
+    "media_active_nvidia media_active_software media_hardware_failed "
+    "media_hardware_timeout media_hardware_buffer_limit media_software_fallback "
+    "fallback_startup_timeout fallback_playback_timeout fallback_connection_failed "
+    "fallback_signaling_error fallback_playback_error start video_input audio_input "
+    "jpeg_frame media_output media_reader frame_ack viewer_timeout camera_timeout "
+    "session_end stream_failure no_viewers h264 hevc audio_supported audio_absent "
+    "jpeg_encoder_exit media_encoder_exit jpeg_encoder_error media_encoder_error "
+    "jpeg_invalid_data media_invalid_data jpeg_decode_error media_decode_error "
+    "jpeg_encoder_stderr media_encoder_stderr "
+    "media_audio_error audio_transport_error".split()
+)
+
+
+def audio_format_report(raw: Any) -> dict[str, Any]:
+    """Project structural fields without retaining any source bytes."""
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, Any] = {}
+    bounds = {
+        "inspected_bytes": 262144,
+        "adts_frames": 128,
+        "adts_header_changes": 128,
+        "adts_multiblock_frames": 128,
+        "skipped_bytes": 262144,
+        "pending_frame_bytes": 8191,
+        "trailing_header_bytes": 6,
+        "adts_min_frame_bytes": 8191,
+        "adts_max_frame_bytes": 8191,
+    }
+    for key, high in bounds.items():
+        value = raw.get(key)
+        if type(value) is int and 0 <= value <= high:
+            result[key] = value
+    if type(raw.get("inspection_limited")) is bool:
+        result["inspection_limited"] = raw["inspection_limited"]
+    hint = raw.get("format_hint")
+    if isinstance(hint, str) and hint in {
+        "adts",
+        "loas",
+        "adif",
+        "ogg",
+        "riff",
+        "unknown",
+    }:
+        result["format_hint"] = hint
+    for field in ("adts", "first_adts"):
+        header = raw.get(field)
+        if not isinstance(header, dict):
+            continue
+        safe: dict[str, Any] = {}
+        for key, low, high in (
+            ("object_type", 1, 4),
+            ("channel_config", 0, 7),
+            ("frame_bytes", 7, 8191),
+            ("raw_data_blocks", 1, 4),
+        ):
+            value = header.get(key)
+            if type(value) is int and low <= value <= high:
+                safe[key] = value
+        for key, allowed in (
+            ("mpeg_version", {2, 4}),
+            (
+                "sample_rate_hz",
+                {
+                    96000,
+                    88200,
+                    64000,
+                    48000,
+                    44100,
+                    32000,
+                    24000,
+                    22050,
+                    16000,
+                    12000,
+                    11025,
+                    8000,
+                    7350,
+                },
+            ),
+        ):
+            value = header.get(key)
+            if type(value) is int and value in allowed:
+                safe[key] = value
+        if type(header.get("crc_present")) is bool:
+            safe["crc_present"] = header["crc_present"]
+        result[field] = safe
+    return result
+
+
 def audio_report(raw: Any) -> dict[str, Any]:
     """Preserve bounded audio observations, never codec text or payloads."""
     if not isinstance(raw, dict):
@@ -183,6 +273,7 @@ def audio_report(raw: Any) -> dict[str, Any]:
         "state": {"starting", "streaming", "ended", "failed", "closed"},
         "initial_codec": _AUDIO_CODECS,
         "first_data_codec": _AUDIO_CODECS,
+        "latest_codec": _AUDIO_CODECS,
         "admission": {"forwarded", "excluded"},
         "header": {"adts", "other", "incomplete"},
     }
@@ -194,12 +285,22 @@ def audio_report(raw: Any) -> dict[str, Any]:
                 "first_data_ms",
                 "first_data_after_metadata_ms",
                 "duration_ms",
+                "last_data_ms",
+                "last_data_age_ms",
+                "max_gap_ms",
             ),
             (0, 120000),
         ),
         "chunks": (0, 2147483647),
+        "initial_buffered_bytes": (0, 2147483647),
+        "buffered_bytes": (0, 2147483647),
+        "min_chunk_bytes": (0, 2147483647),
+        "max_chunk_bytes": (0, 2147483647),
         "bytes": (0, 2147483647),
     }
+    for key in ("stream_ended", "stream_destroyed", "stop_confirmed"):
+        if type(raw.get(key)) is bool:
+            result[key] = raw[key]
     for key, allowed in enums.items():
         value = raw.get(key)
         if isinstance(value, str) and value in allowed:
@@ -210,6 +311,23 @@ def audio_report(raw: Any) -> dict[str, Any]:
             result[key] = value
     if "model" in raw:
         result["model"] = _fields({"model": raw["model"]})["model"]
+    if "owner_model" in raw:
+        result["owner_model"] = _fields({"model": raw["owner_model"]})["model"]
+    for key in ("firmware", "owner_firmware"):
+        if key in raw:
+            result[key] = _version(raw[key])
+    if isinstance(raw.get("format"), dict):
+        result["format"] = audio_format_report(raw["format"])
+    if isinstance(raw.get("pipeline"), list):
+        result["pipeline"] = [
+            {"event": row["event"], "elapsed_ms": row["elapsed_ms"]}
+            for row in raw["pipeline"][:48]
+            if isinstance(row, dict)
+            and isinstance(row.get("event"), str)
+            and row["event"] in _AUDIO_PIPELINE_EVENTS
+            and type(row.get("elapsed_ms")) is int
+            and 0 <= row["elapsed_ms"] <= 120000
+        ]
     return result
 
 
@@ -282,9 +400,9 @@ async def async_get_config_entry_diagnostics(
                 "ticks": report.get("ticks", 0),
                 "acks": report.get("acks", 0),
                 "fallback": report.get("fallback"),
-                "relay": report.get("relay", [])[:4],
+                "relay": report.get("relay", [])[:5],
                 "browser": [
-                    browser_report(row) for row in report.get("browser", [])[:4]
+                    browser_report(row) for row in report.get("browser", [])[:5]
                 ],
             }
             for report in getattr(coordinator, "live_diagnostics", [])[-8:]

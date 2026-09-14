@@ -85,7 +85,7 @@ class WebRTCViewer(Viewer):
         """One sample per fixed stage, without extending camera ownership."""
         trigger = report.get("trigger")
         if (
-            trigger not in {"startup", "playing", "unmuted", "fallback"}
+            trigger not in {"startup", "playing", "unmuted", "fallback", "audio_check"}
             or trigger in self.browser_triggers
         ):
             return False
