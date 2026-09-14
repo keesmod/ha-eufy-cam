@@ -38,12 +38,21 @@ NUMBERS = {
     **dict.fromkeys(
         "elapsed_ms last_frame_ms ticks acks_sent acks_accepted painted "
         "video_packets video_bytes video_decoded video_dropped audio_packets "
-        "audio_bytes audio_samples concealed_samples".split(),
+        "audio_bytes audio_samples concealed_samples video_received video_keyframes "
+        "video_nack video_pli video_fir video_jitter_ms audio_jitter_ms "
+        "video_buffer_delay_ms audio_buffer_delay_ms "
+        "video_buffer_target_delay_ms audio_buffer_target_delay_ms "
+        "video_buffer_min_delay_ms audio_buffer_min_delay_ms "
+        "video_buffer_emitted audio_buffer_emitted".split(),
         (0, 2**53 - 1),
     ),
     "ready_state": (0, 4),
+    "video_lost": (-(2**53 - 1), 2**53 - 1),
+    "audio_lost": (-(2**53 - 1), 2**53 - 1),
 }
-BOOLEANS = set("offer answer muted paused audio_energy stats_available".split())
+BOOLEANS = set(
+    "offer answer muted paused audio_energy stats_available audio_negotiated".split()
+)
 
 
 def browser_report(raw: Any) -> dict[str, Any]:

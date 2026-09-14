@@ -194,6 +194,8 @@ class WebRTCViewer(Viewer):
             raise BridgeError("Invalid media grant")
         if audio is not None and not isinstance(audio, bool):
             raise BridgeError("Invalid media audio capability")
+        if audio is not None:
+            self.playback_evidence["audio_expected"] = audio
         sources = [self.coordinator.api.url + path]
         # Older bridges omit this field. Preserve their A/V behavior, but never
         # ask go2rtc to convert audio when this stream is explicitly video-only.
