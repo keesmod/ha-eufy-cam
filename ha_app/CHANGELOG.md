@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.11 - Unreleased
+## 0.8.11 - 2026-09-14
 
 - Add bounded live audio format, continuity and processing observations, linked
   to a later browser measurement in Home Assistant diagnostics. Include ADTS
@@ -11,9 +11,12 @@
   determines the format. Existing H.264 recordings and explicit Native remux.
 - Return bounded per-request processing metadata to integration/card 0.8.12.
   Retain existing timeouts, cancellation, software fallback and process cleanup.
-- Issue #57 still requires reporter T600 acceptance. Back up the bridge and
-  integration files before updating. Restore the previous files to roll back
-  without changing data, token, credentials or entity identities.
+- After release, the reporter confirmed the Auto/UI NVIDIA route, playback
+  and GPU cleanup on T600/T8030/T8425, plus a Live regression check. Additional
+  reporter checks of Native, H.264-source remux, audio and seeking are optional.
+  See the [hardware validation record](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/NVIDIA.md#auto-playback-validation-on-2026-09-14).
+  Back up the bridge and integration files before updating. Restore the previous
+  files to roll back without changing data, token, credentials or entity identities.
 
 ## 0.8.10 - Unreleased
 
