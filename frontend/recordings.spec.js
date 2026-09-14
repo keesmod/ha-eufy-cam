@@ -201,7 +201,7 @@ test('a new recording survives an old recovery response arriving late',async({pa
 });
 
 
-test('playback mode persists and shows actual processing while retaining position', async ({page}) => {
+test('playback mode persists and shows actual processing while retaining position', async ({page}, testInfo) => {
   await page.route('**/api/eufy_viewer/playback/*?authSig=*', route => {
     const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? '');
     const start = range ? Number(range[1]) : 0, end = range?.[2] ? Math.min(Number(range[2])+1,mp4.length) : mp4.length;
@@ -215,7 +215,7 @@ test('playback mode persists and shows actual processing while retaining positio
   });
   await page.getByRole('button',{name:'Recordings',exact:true}).click(); await page.locator('.record-row').click();
   await expect(page.locator('.recording-media')).toHaveText('NVIDIA transcode');
-  await page.screenshot({path:'/private/tmp/issue57-camera.png'});
+  await page.screenshot({path:testInfo.outputPath('recording-player.png')});
   await page.locator('.record-video').evaluate(v=>{v.pause();v.currentTime=0.5;});
   await expect.poll(()=>page.locator('.record-video').evaluate(v=>v.currentTime)).toBeCloseTo(0.5,1);
   await page.locator('.recording-mode').selectOption('native');
