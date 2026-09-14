@@ -137,6 +137,7 @@ async def test_only_owner_can_report_and_reports_never_ack(
             {**msg, "id": 3, "report": {"trigger": "playing", "sdp": "PRIVATE"}}
         )
         assert not (await client.receive_json())["success"]
+    viewer.playback_evidence["audio_expected"] = False
     viewer.jpeg = True
     unmuted = {"trigger": "unmuted", "muted": False, "audio_energy": True}
     await client.send_json({**msg, "id": 4, "report": unmuted})
@@ -155,6 +156,7 @@ async def test_only_owner_can_report_and_reports_never_ack(
         download = await async_get_config_entry_diagnostics(
             hass, viewer.coordinator.entry
         )
+    assert download["live_playback"][0]["audio_expected"] is False
     assert download["live_playback"][0]["browser"] == [
         msg["report"],
         unmuted,
