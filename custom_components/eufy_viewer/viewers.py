@@ -271,6 +271,9 @@ async def websocket_fallback(
 @callback
 def async_register_commands(hass: HomeAssistant) -> None:
     """Register authenticated commands once per HA process."""
+    from .live_diagnostics import websocket_live_diagnostics
+
+    websocket_api.async_register_command(hass, websocket_live_diagnostics)
     websocket_api.async_register_command(hass, websocket_watch)
     websocket_api.async_register_command(hass, websocket_ack)
     websocket_api.async_register_command(hass, websocket_signal)
