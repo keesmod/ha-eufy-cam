@@ -1,6 +1,18 @@
 # Changelog
 
-## 0.8.10 - Unreleased
+## 0.8.11 - Unreleased
+
+- Restore the software live encoder defaults by removing the 4 Mbit/s target,
+  maximum rate and 1 Mbit VBV limit introduced in the previous candidate.
+  Bitrate was not established as the cause of issue #10 and the image-quality
+  cost was not measured. Retain the added playback and audio diagnostics.
+- Keep the existing NVIDIA settings, video dimensions, frame rate and audio
+  conversion unchanged. Integration/card 0.8.11 accompanies bridge 0.8.10.
+
+Issue #10 remains open. No T8134 fix or hardware acceptance is claimed. Back up
+both components before updating and restore their previous files to roll back.
+
+## 0.8.10 - Withdrawn candidate
 
 - Bound software live H.264 output to a 4 Mbit/s target and maximum rate with
   a 1 Mbit VBV buffer. Retain H.265 decoding, the existing scale limit, AAC audio,
@@ -11,9 +23,8 @@
   values as unavailable, including absent audio counters.
 
 Integration/card 0.8.10 and bridge 0.8.9 are unpublished candidates for issue #10.
-Synthetic comparison favors bounded transcoding over unbounded transcoding and
-H.264 passthrough. It does not establish the reporter's root cause or T8134
-hardware acceptance. Late audio discovery and consumer track admission remain
+The software cap was withdrawn in 0.8.11. Synthetic overload results did not
+establish the reporter's root cause or justify the unmeasured quality cost. Late audio discovery and consumer track admission remain
 separate from this video change. Back up both components before an update and
 restore their previous files to roll back, preserving the existing data/token.
 
