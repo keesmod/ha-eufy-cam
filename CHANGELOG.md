@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.9 - 2026-09-14
+
+- Add bounded live playback evidence to the integration diagnostic download.
+  Record signaling, go2rtc codec packet counters, browser reception and decoding,
+  presented frames and acknowledgements. Retain only fixed statuses and numbers,
+  with no SDP, addresses, device identifiers or media.
+- Compare successful playback with blocked ICE, a missing answer and stalled
+  painting or ticks using real FFmpeg, go2rtc and Chromium. Cover video-only,
+  silent, delayed and batched AAC input.
+
+This is a diagnostic update for the unresolved T8134 live playback report #10.
+It does not claim to fix or validate that camera's audio. The integration and
+card change, while bridge 0.8.8 remains unchanged. When published, update the HACS
+integration and restart HA, preserving the existing account and bridge data.
+Back up the integration first and restore it to roll back.
+
 ## 0.8.8 - 2026-09-13
 
 - Add separate Docker opt-in `EUFY_RECORDING_ACCELERATION=nvidia` for required
