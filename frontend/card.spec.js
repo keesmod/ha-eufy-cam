@@ -263,3 +263,22 @@ for (const outcome of ['rejected', 'stalled', 'closed']) test(`live diagnostics 
   expect(await page.evaluate(()=>acks.some(m=>m.type==='eufy_viewer/ack'))).toBe(false);
   await expect.poll(()=>page.evaluate(()=>closeCount)).toBe(1);
 });
+
+test('playback report distinguishes frame loss, decode progress and negotiated audio using bounded scalars', async ({ page }) => {
+  const report = await page.evaluate(async () => {
+    card._open = true; card._rtcSubscription = 9;
+    card._playback = {enabled:true,reports:new Set(),start:performance.now(),ticks:0,sent:0,accepted:0,painted:0};
+    card._rtc = {
+      connectionState:'connected', iceConnectionState:'connected', localDescription:{sdp:'PRIVATE'},remoteDescription:{sdp:'PRIVATE'},
+      getTransceivers:()=>[{receiver:{track:{kind:'audio',id:'PRIVATE'}},currentDirection:'inactive'}],
+      getStats:async()=>new Map([['video',{type:'inbound-rtp',kind:'video',packetsReceived:500,packetsLost:-2,framesReceived:8,framesDecoded:2,nackCount:7,pliCount:4,jitter:0.012,jitterBufferDelay:0.125,jitterBufferTargetDelay:0.075,jitterBufferMinimumDelay:0.025,jitterBufferEmittedCount:2,address:'PRIVATE'}]]),
+      close(){},
+    };
+    await card._reportLive('startup');
+    return acks.find(m=>m.type==='eufy_viewer/live_diagnostics').report;
+  });
+  expect(report).toMatchObject({video_packets:500,video_lost:-2,video_received:8,video_decoded:2,video_nack:7,video_pli:4,video_jitter_ms:12,video_buffer_delay_ms:125,video_buffer_target_delay_ms:75,video_buffer_min_delay_ms:25,video_buffer_emitted:2,audio_negotiated:false});
+  expect(report.audio_packets).toBeUndefined();
+  expect(JSON.stringify(report)).not.toContain('PRIVATE');
+  expect(await page.evaluate(()=>acks.some(m=>m.type==='eufy_viewer/ack'))).toBe(false);
+});

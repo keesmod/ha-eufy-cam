@@ -19,7 +19,8 @@ export function liveArgs(codec: 'h264' | 'hevc', hasAudio: boolean, fps: number,
   args.push('-map', '0:v:0');
   if (hasAudio) args.push('-map', '1:a:0', '-c:a', 'aac', '-b:a', '64k', '-ar', '48000', '-ac', '1');
   if (mode === 'nvidia') args.push('-c:v', 'h264_nvenc', '-preset', 'p1', '-tune', 'ull', '-zerolatency', '1', '-bf', '0', '-rc', 'cbr', '-b:v', '4M', '-maxrate', '4M', '-bufsize', '1M');
-  else args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency');
+  // Bound software output too. Complex input must not saturate the RTP path.
+  else args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-b:v', '4M', '-maxrate', '4M', '-bufsize', '1M');
   args.push('-pix_fmt', 'yuv420p', '-vf', "scale='min(1920,iw)':-2", '-threads', '1', '-g', '30');
   args.push('-mpegts_flags', '+resend_headers', '-muxdelay', '0', '-muxpreload', '0', '-f', 'mpegts', 'pipe:1');
   return args;

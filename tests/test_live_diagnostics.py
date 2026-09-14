@@ -209,3 +209,28 @@ async def test_attempt_history_is_bounded(hass, hass_ws_client, rtc_setup):
     assert coordinator.live_diagnostics[0]["browser"][0]["ticks"] == 4
     await client.close()
     await hass.async_block_till_done()
+
+
+def test_extended_media_counters_keep_absence_and_signed_rtp_loss():
+    """Missing audio counters are unknown and duplicate RTP can mean negative loss."""
+    assert browser_report(
+        {
+            "video_lost": -2,
+            "video_received": 8,
+            "video_nack": 7,
+            "video_pli": 4,
+            "video_buffer_delay_ms": 125,
+            "audio_negotiated": False,
+            "audio_lost": float("nan"),
+            "audio_packets": None,
+            "video_jitter_ms": 2**53,
+            "video_fir": True,
+        }
+    ) == {
+        "video_lost": -2,
+        "video_received": 8,
+        "video_nack": 7,
+        "video_pli": 4,
+        "video_buffer_delay_ms": 125,
+        "audio_negotiated": False,
+    }
