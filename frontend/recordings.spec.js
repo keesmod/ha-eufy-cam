@@ -99,7 +99,7 @@ test('a capable native player requests the original codec and releases it on clo
   await page.getByRole('button',{name:'Recordings',exact:true}).click();
   await page.locator('.record-row').click();
   await expect.poll(()=>page.locator('.record-video').evaluate(v=>v.currentTime)).toBeGreaterThan(0);
-  expect(await page.evaluate(()=>urls.filter(p=>p.includes('/playback?format=native')).length)).toBe(1);
+  expect(await page.evaluate(()=>urls.filter(p=>p.includes('/playback?format=auto&hevc_supported=true')).length)).toBe(1);
   await page.getByRole('button',{name:'Close recordings',exact:true}).click();
   await expect.poll(()=>page.evaluate(()=>released.length)).toBe(1);
 });
@@ -124,7 +124,7 @@ for(const code of [2,3,4]) test(`native media error ${code}: retry only decoding
   else await expect.poll(()=>page.locator('.record-video').evaluate(v=>v.currentTime)).toBeGreaterThan(0);
   const requests=await page.evaluate(()=>urls.filter(p=>p.includes('/playback')&&!p.includes('/api/eufy_viewer/playback/')));
   expect(requests.length).toBe(code===2?1:2);
-  expect(requests[0]).toContain('?format=native');
+  expect(requests[0]).toContain('?format=auto&hevc_supported=true');
   if(code!==2)expect(requests[1]).not.toContain('?format=');
   expect(await page.evaluate(()=>released.length)).toBe(1);
   expect(await page.evaluate(()=>starts)).toBe(0);
@@ -198,4 +198,83 @@ test('a new recording survives an old recovery response arriving late',async({pa
   expect(await page.locator('.record-video').getAttribute('src')).toContain('a'.repeat(32));
   await page.getByRole('button',{name:'Close recordings',exact:true}).click();
   await expect.poll(()=>page.evaluate(()=>released.length)).toBe(3);
+});
+
+
+test('playback mode persists and shows actual processing while retaining position', async ({page}) => {
+  await page.route('**/api/eufy_viewer/playback/*?authSig=*', route => {
+    const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range ?? '');
+    const start = range ? Number(range[1]) : 0, end = range?.[2] ? Math.min(Number(range[2])+1,mp4.length) : mp4.length;
+    return route.fulfill({status:range?206:200,contentType:'video/mp4',headers:{'Accept-Ranges':'bytes',...(range?{'Content-Range':`bytes ${start}-${end-1}/${mp4.length}`}:{})},body:mp4.subarray(start,end)});
+  });
+  await page.route('**/recordings/**/playback?**', route => {
+    const native = new URL(route.request().url()).searchParams.get('format') === 'native';
+    const media = native ? {source:'hevc',output:'hevc',processing:'remux',fallback:false} : {source:'hevc',output:'h264',processing:'nvidia',fallback:false};
+    const path='/api/eufy_viewer/playback/'+'a'.repeat(32);
+    return route.fulfill({json:{path,url:path+'?authSig=test',media}});
+  });
+  await page.getByRole('button',{name:'Recordings',exact:true}).click(); await page.locator('.record-row').click();
+  await expect(page.locator('.recording-media')).toHaveText('NVIDIA transcode');
+  await page.screenshot({path:'/private/tmp/issue57-camera.png'});
+  await page.locator('.record-video').evaluate(v=>{v.pause();v.currentTime=0.5;});
+  await expect.poll(()=>page.locator('.record-video').evaluate(v=>v.currentTime)).toBeCloseTo(0.5,1);
+  await page.locator('.recording-mode').selectOption('native');
+  await expect(page.locator('.recording-media')).toHaveText('Native remux');
+  await expect.poll(()=>page.locator('.record-video').evaluate(v=>v.currentTime)).toBeCloseTo(0.5,1);
+  expect(await page.locator('.record-video').evaluate(v=>v.paused)).toBe(true);
+  expect(await page.evaluate(()=>localStorage.getItem('eufy-viewer.recording-mode'))).toBe('native');
+  await page.evaluate(()=>{const other=document.createElement('eufy-events-card');document.body.append(other);window.other=other;});
+  await expect(page.locator('eufy-events-card').last().locator('.recording-mode')).toHaveValue('native');
+  await page.evaluate(()=>other.remove());
+  await page.reload();
+  expect(await page.evaluate(()=>localStorage.getItem('eufy-viewer.recording-mode'))).toBe('native');
+});
+
+test('explicit Native never retries codec errors and offers H264', async ({page}) => {
+  await page.evaluate(()=>localStorage.setItem('eufy-viewer.recording-mode','native'));
+  await page.getByRole('button',{name:'Recordings',exact:true}).click(); await page.locator('.record-row').click();
+  await expect.poll(()=>page.locator('.record-video').evaluate(v=>v.currentTime)).toBeGreaterThan(0);
+  const before=await page.evaluate(()=>urls.filter(p=>p.includes('/recordings/')&&p.includes('/playback')).length);
+  await page.locator('.record-video').evaluate(v=>{Object.defineProperty(v,'error',{configurable:true,value:{code:3}});v.dispatchEvent(new Event('error'));delete v.error;});
+  await expect(page.locator('.record-dialog')).toContainText('Select H.264');
+  expect(await page.evaluate(()=>urls.filter(p=>p.includes('/recordings/')&&p.includes('/playback')).length)).toBe(before);
+  await expect(page.locator('.recording-media')).toHaveText('');
+  await page.locator('.recording-mode').selectOption('h264');
+  await expect.poll(()=>page.locator('.record-video').evaluate(v=>v.currentTime)).toBeGreaterThan(0);
+  await expect(page.locator('.recording-media')).toHaveText('Processing unknown');
+});
+
+test('switching during preparation discards late metadata and retains the latest mode', async ({page}) => {
+  await page.evaluate(()=>{
+    const ha=card._hass,original=ha.fetchWithAuth;let first=true;
+    ha.fetchWithAuth=(path,init)=>{
+      if(init?.method==='POST'&&first){first=false;return new Promise(resolve=>{window.finishOld=()=>{const p='/api/eufy_viewer/playback/'+'b'.repeat(32);resolve(new Response(JSON.stringify({path:p,url:p+'?authSig=test',media:{source:'hevc',output:'h264',processing:'nvidia',fallback:false}})));};});}
+      return original(path,init);
+    };
+  });
+  await page.getByRole('button',{name:'Recordings',exact:true}).click(); await page.locator('.record-row').click();
+  await expect.poll(()=>page.evaluate(()=>typeof window.finishOld)).toBe('function');
+  await expect(page.locator('.recording-media')).toHaveText('');
+  await page.locator('.recording-mode').selectOption('h264');
+  // Complete the cancelled response so its signed session can be released.
+  await page.evaluate(()=>finishOld());
+  await expect.poll(()=>page.locator('.record-video').evaluate(v=>v.currentTime)).toBeGreaterThan(0);
+  await expect(page.locator('.recording-mode')).toHaveValue('h264');
+  await expect(page.locator('.recording-media')).toHaveText('Processing unknown');
+  await expect.poll(()=>page.evaluate(()=>released.some(p=>p.endsWith('b'.repeat(32))))).toBe(true);
+});
+
+test('GPU fallback metadata is truthful and storage denial leaves playback usable', async ({page}) => {
+  await page.evaluate(()=>{Storage.prototype.setItem=()=>{throw new Error('Storage denied');};Storage.prototype.getItem=()=>{throw new Error('Storage denied');};});
+  await page.route('**/recordings/**/playback**', route => {
+    const path='/api/eufy_viewer/playback/'+'a'.repeat(32);
+    return route.fulfill({json:{path,url:path+'?authSig=test',media:{source:'hevc',output:'h264',processing:'software',fallback:true}}});
+  });
+  await page.getByRole('button',{name:'Recordings',exact:true}).click(); await page.locator('.record-row').click();
+  await expect(page.locator('.recording-media')).toHaveText('Software transcode after NVIDIA failure');
+  await page.locator('.recording-mode').selectOption('h264');
+  await expect(page.locator('.recording-mode')).toHaveValue('h264');
+  await expect(page.locator('.recording-media')).toHaveText('Software transcode after NVIDIA failure');
+  await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')));
+  await expect(page.locator('.recording-media')).toHaveText('');
 });

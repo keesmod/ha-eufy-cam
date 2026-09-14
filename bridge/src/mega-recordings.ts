@@ -7,7 +7,7 @@ import {
   type RecordingDownload,
 } from '@keesmod/eufy-mega-client';
 import { RecordingError } from './errors.js';
-import { RecordingTranscoder } from './recording-media.js';
+import { RecordingTranscoder, type RecordingFormat, type RecordingResult } from './recording-media.js';
 import type { BackendRecordings, Recording } from './backend.js';
 
 /** Keeps bridge handles, conversion and limits stable across both backends. */
@@ -168,6 +168,9 @@ export class MegaRecordings implements BackendRecordings {
     signal: AbortSignal,
     format: 'h264' | 'native' = 'h264',
   ): Promise<Buffer> {
+    return (await this.videoResult(serial, id, signal, format)).body;
+  }
+  async videoResult(serial: string, id: string, signal: AbortSignal, format: RecordingFormat = 'h264', hevcSupported = false): Promise<RecordingResult> {
     await this.checkCapability(serial);
     const record = this.reference(serial, id);
     return this.run(signal, async (client, abort) => {
@@ -184,14 +187,15 @@ export class MegaRecordings implements BackendRecordings {
         const metadata = transfer.metadata;
         const codec =
           metadata.videoCodec === 'h264' ? 'h264' : metadata.videoCodec === 'h265' ? 'hevc' : null;
-        const output = await this.media.mux(
+        const output = await this.media.muxResult(
           { videoCodec: codec, fps: metadata.fps },
           Buffer.concat(video),
           Buffer.concat(audio),
           abort,
           format,
+          hevcSupported,
         );
-        if (codec === 'hevc' && format === 'h264') this.metrics.transcoded++;
+        if (output.media.processing !== 'remux') this.metrics.transcoded++;
         else this.metrics.remuxed++;
         this.metrics.completed++;
         return output;

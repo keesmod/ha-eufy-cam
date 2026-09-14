@@ -158,3 +158,56 @@ async def test_native_preparation_is_explicit_and_validated(
         data = await response.json()
         assert await (await client.get(data["path"])).read() == b"mp4"
         assert (await client.delete(data["path"])).status == 204
+
+
+@pytest.mark.parametrize("supported", [False, True])
+async def test_auto_older_bridge_uses_browser_capability(
+    hass, hass_client, viewer_setup, supported
+):
+    client = await hass_client()
+    with patch.object(
+        viewer_setup.runtime_data.api, "recording_video", return_value=b"mp4"
+    ) as download:
+        response = await client.post(
+            PREPARE + f"?format=auto&hevc_supported={str(supported).lower()}"
+        )
+        assert response.status == 200
+        data = await response.json()
+        assert "media" not in data
+        download.assert_awaited_once_with(
+            "CAM123", CLIP, **({"native": True} if supported else {})
+        )
+        await client.delete(data["path"])
+
+
+async def test_new_bridge_preparation_returns_own_media(
+    hass, hass_client, viewer_setup
+):
+    from dataclasses import replace
+
+    coordinator = viewer_setup.runtime_data
+    coordinator.async_set_updated_data(
+        replace(coordinator.data, recording_playback=True)
+    )
+    client = await hass_client()
+    media = {
+        "source": "hevc",
+        "output": "h264",
+        "processing": "software",
+        "fallback": True,
+    }
+    with patch.object(
+        coordinator.api, "recording_media", return_value=(b"mp4", media)
+    ) as download:
+        for query in ("?format=auto&hevc_supported=1", "?format=bad"):
+            assert (await client.post(PREPARE + query)).status == 400
+        download.assert_not_awaited()
+        response = await client.post(PREPARE + "?format=auto&hevc_supported=true")
+        assert response.status == 200
+        data = await response.json()
+        assert data["media"] == media
+        download.assert_awaited_once_with(
+            "CAM123", CLIP, output_format="auto", hevc_supported=True
+        )
+        assert await (await client.get(data["path"])).read() == b"mp4"
+        await client.delete(data["path"])

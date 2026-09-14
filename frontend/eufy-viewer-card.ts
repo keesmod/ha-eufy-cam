@@ -48,6 +48,8 @@ export class EufyViewerCard extends HTMLElement {
   private _recordAbort?: AbortController;
   private _recordPlayback = new EufyRecordingPlayback();
   private _recordGeneration = 0;
+  private _recordId?: string;
+  private _recordControls: EufyRecordingControls;
   private _rtc?: RTCPeerConnection;
   private _rtcCandidates: RTCIceCandidateInit[] = [];
   private _tick?: { subscription: number; sequence: number };
@@ -102,6 +104,9 @@ export class EufyViewerCard extends HTMLElement {
     this._recordDialog = this.shadowRoot!.querySelector<HTMLDialogElement>(".record-dialog")!;
     this._recordVideo = this.shadowRoot!.querySelector<HTMLVideoElement>(".record-video")!;
     this._recordDate = this.shadowRoot!.querySelector<HTMLInputElement>(".record-date")!;
+    this._recordControls = new EufyRecordingControls(this._recordDialog, () => this._hass?.language, () => {
+      if (this._recordDialog.open && this._recordId) void this._playRecording(this._recordId, { time: this._recordVideo.currentTime, paused: !this._recordVideo.hidden && this._recordVideo.paused });
+    });
     const today = new Date(); this._recordDate.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
     this.shadowRoot!.querySelector(".record-open")!.addEventListener("click", () => { this._stop(); this._recordDialog.showModal(); void this._loadRecordings(); });
     this.shadowRoot!.querySelector(".record-close")!.addEventListener("click", () => this._closeRecordings());
@@ -141,11 +146,13 @@ export class EufyViewerCard extends HTMLElement {
       if (this.isConnected) hass.connection?.addEventListener("disconnected", this._disconnected);
     }
     this._hass = hass;
+    this._recordControls.update();
     this._render();
   }
   getCardSize() { return 4; }
   getGridOptions() { return { columns: 12, rows: "auto", min_columns: 6 }; }
   connectedCallback() {
+    this._recordControls.connect();
     document.addEventListener("visibilitychange", this._visibility);
     window.addEventListener("pagehide", this._pagehide);
     this._hass?.connection?.addEventListener("disconnected", this._disconnected);
@@ -157,6 +164,7 @@ export class EufyViewerCard extends HTMLElement {
     this._render();
   }
   disconnectedCallback() {
+    this._recordControls.disconnect();
     this._stop(); this._closeRecordings(); this._observer?.disconnect();
     document.removeEventListener("visibilitychange", this._visibility);
     window.removeEventListener("pagehide", this._pagehide);
@@ -213,9 +221,9 @@ export class EufyViewerCard extends HTMLElement {
   _clearRecording() {
     this._recordGeneration++; this._recordAbort?.abort(); this._recordAbort = undefined;
     this._recordVideo.pause(); this._recordVideo.removeAttribute("src"); this._recordVideo.load(); this._recordVideo.hidden = true;
-    this._recordPlayback.clear();
+    this._recordPlayback.clear(); this._recordControls.update(undefined, false);
   }
-  _closeRecordings() { this._clearRecording(); if (this._recordDialog?.open) this._recordDialog.close(); }
+  _closeRecordings() { this._recordId = undefined; this._clearRecording(); if (this._recordDialog?.open) this._recordDialog.close(); }
   async _recordingResponse(response: Response) {
     if (response.ok) return;
     const data = await response.json().catch(() => ({}));
@@ -223,11 +231,13 @@ export class EufyViewerCard extends HTMLElement {
     throw new Error(allowed.includes(data.error) ? data.error : "recordingError");
   }
   _recordingFailure(error: unknown) {
+    if (error instanceof RecordingCodecError && recordingMode() === "native") return this._recordControls.codecError();
     const code = error instanceof Error ? error.message : "recordingError";
     const text = this._text();
     return ["live_busy", "live_stopping", "recording_busy", "recording_expired", "recording_unavailable", "capability_unavailable"].includes(code) ? text[code as keyof typeof text] : text.recordingError;
   }
   async _loadRecordings() {
+    this._recordId = undefined; this._recordControls.update();
     if (!this._permits("recordings")) return;
     this._clearRecording(); const generation = this._recordGeneration;
     const list = this.shadowRoot!.querySelector<HTMLElement>(".record-list")!; list.replaceChildren();
@@ -248,18 +258,20 @@ export class EufyViewerCard extends HTMLElement {
       }
     } catch (error) { if (generation === this._recordGeneration && this._recordDialog.open) this._recordStatus(this._recordingFailure(error)); }
   }
-  async _playRecording(id: string) {
+  async _playRecording(id: string, restore?: RecordingPosition) {
     if (!this._permits("recordings")) return;
     this._clearRecording(); const generation = this._recordGeneration;
     if (!this._hass || !this._config || !this._recordDialog.open) return;
+    this._recordId = id;
     const controller = this._recordAbort = new AbortController(); this._recordStatus(this._text().preparing);
     try {
       await this._recordPlayback.play(this._hass, this._config.entity, id, this._recordVideo, controller.signal, (state, error) => {
         if (generation !== this._recordGeneration || !this._recordDialog.open || controller.signal.aborted) return;
         if (state === 'failed') { this._clearRecording(); this._recordStatus(this._recordingFailure(error)); }
-        else this._recordStatus(state === 'preparing' ? this._text().preparing : '');
-      });
-      this._recordStatus("");
+        else { this._recordStatus(state === 'preparing' ? this._text().preparing : ''); this._recordControls.update(this._recordPlayback.media, state === 'playing'); }
+      }, restore);
+      if (generation !== this._recordGeneration || controller.signal.aborted) return;
+      this._recordStatus(""); this._recordControls.update(this._recordPlayback.media, true);
     } catch (error) { if (generation === this._recordGeneration && this._recordDialog.open) { this._clearRecording(); this._recordStatus(this._recordingFailure(error)); } }
   }
   _status(message: string) {

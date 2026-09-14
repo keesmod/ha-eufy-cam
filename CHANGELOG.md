@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.12 - Unreleased
+
+- Add Auto / Native / H.264 to recording playback in both camera and events
+  cards. Remember the choice in this browser and retain position and pause
+  when changing it. Auto requests HEVC conversion when NVIDIA recording
+  acceleration is configured or the browser lacks HEVC support.
+- Display the actual per-recording remux, software or NVIDIA processing result,
+  including software fallback. Older bridges retain browser-based selection
+  and show processing as unknown. Explicit Native never silently transcodes.
+- Includes bridge 0.8.11. Issue #57 awaits validation of this new playback flow
+  on the reporter's T600. The previous 0.8.8 hardware test covers conversion
+  only. Back up both components before installation and restore their previous
+  files to roll back, preserving credentials and entity identities.
+
 ## 0.8.11 - Unreleased
 
 - Restore the software live encoder defaults by removing the 4 Mbit/s target,
