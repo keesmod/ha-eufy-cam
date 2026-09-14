@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -19,22 +21,25 @@ from homeassistant.components.http.const import (
 )
 
 from .api import BridgeError, BridgeRecordingError
+from .recording_file import (
+    CHUNK_BYTES,
+    MAX_RECORDING_FILES,
+    RecordingBudget,
+    RecordingFile,
+)
 from .recordings import camera_access, serve
 
 PLAYBACK_SECONDS = 300
-MAX_CLIP_BYTES = 32 * 1024 * 1024
-MAX_PLAYBACK_BYTES = 64 * 1024 * 1024
-MAX_PLAYBACKS = 8
 
 
 @dataclass
 class Playback:
-    """Memory-only media owned by the requesting user and camera entity."""
+    """File media owned by the requesting user and camera entity."""
 
     user_id: str
     entity_id: str
     entry_id: str
-    body: bytes
+    body: RecordingFile
     expiry: asyncio.TimerHandle
 
 
@@ -45,13 +50,34 @@ class PlaybackView(HomeAssistantView):
     name = "api:eufy_viewer:playback"
     requires_auth = True
 
-    def __init__(self) -> None:
+    def __init__(self, directory: str) -> None:
+        self.directory = directory
         self.sessions: dict[str, Playback] = {}
+        self.files: list[RecordingFile] = []
+        self.budget = RecordingBudget()
+        self.readers = 0
+
+    @asynccontextmanager
+    async def reserve(self) -> AsyncIterator[RecordingFile]:
+        """Admit before downloading, including files still held by readers."""
+        self.files = [file for file in self.files if file.owners]
+        if len(self.files) >= MAX_RECORDING_FILES:
+            raise BridgeRecordingError("recording_busy", 409)
+        file = RecordingFile(self.directory, self.budget)
+        self.files.append(file)
+        try:
+            await file.open()
+            yield file
+        except OSError as err:
+            raise BridgeRecordingError("recording_storage_unavailable", 503) from err
+        finally:
+            file.close()
 
     def remove(self, playback_id: str) -> None:
         """Release media even if the browser disappeared without a DELETE."""
         if session := self.sessions.pop(playback_id, None):
             session.expiry.cancel()
+            session.body.close()
 
     def close_entry(self, entry_id: str) -> None:
         """Release this integration entry's media on unload or shutdown."""
@@ -59,19 +85,15 @@ class PlaybackView(HomeAssistantView):
             if session.entry_id == entry_id:
                 self.remove(playback_id)
 
-    def add(self, request: web.Request, entity_id: str, body: bytes) -> dict[str, str]:
+    def add(
+        self, request: web.Request, entity_id: str, body: RecordingFile
+    ) -> dict[str, str]:
         """Sign only for the authenticated caller, never HA's content user."""
         refresh_token_id = request.get(KEY_HASS_REFRESH_TOKEN_ID)
         if not refresh_token_id:
             raise web.HTTPForbidden
-        if not body or len(body) > MAX_CLIP_BYTES:
+        if not body.size:
             raise BridgeError("Invalid recording size")
-        if (
-            len(self.sessions) >= MAX_PLAYBACKS
-            or sum(len(s.body) for s in self.sessions.values()) + len(body)
-            > MAX_PLAYBACK_BYTES
-        ):
-            raise BridgeRecordingError("recording_busy", 409)
         playback_id = uuid4().hex
         path = f"/api/eufy_viewer/playback/{playback_id}"
         url = async_sign_path(
@@ -80,10 +102,12 @@ class PlaybackView(HomeAssistantView):
             timedelta(seconds=PLAYBACK_SECONDS),
             refresh_token_id=refresh_token_id,
         )
+        entry_id = camera_access(request, entity_id)[0].entry.entry_id
+        body.retain()
         self.sessions[playback_id] = Playback(
             request[KEY_HASS_USER].id,
             entity_id,
-            camera_access(request, entity_id)[0].entry.entry_id,
+            entry_id,
             body,
             asyncio.get_running_loop().call_later(
                 PLAYBACK_SECONDS, self.remove, playback_id
@@ -100,11 +124,17 @@ class PlaybackView(HomeAssistantView):
             raise web.HTTPForbidden
         return session
 
-    async def get(self, request: web.Request, playback_id: str) -> web.Response:
+    async def get(self, request: web.Request, playback_id: str) -> web.StreamResponse:
         """Serve a full MP4 or one byte range without touching the HomeBase."""
         session = self.owned(request, playback_id)
         camera_access(request, session.entity_id)
-        size = len(session.body)
+        return await self.send(request, session.body)
+
+    async def send(
+        self, request: web.Request, body: RecordingFile
+    ) -> web.StreamResponse:
+        """Bound readers and stream ranges without retaining full response bytes."""
+        size = body.size
         headers = {
             "Cache-Control": "no-store",
             "Accept-Ranges": "bytes",
@@ -126,18 +156,36 @@ class PlaybackView(HomeAssistantView):
                 ) from err
             status = 206
             headers["Content-Range"] = f"bytes {start}-{stop - 1}/{size}"
-        return web.Response(
-            body=session.body[start:stop],
-            status=status,
-            content_type="video/mp4",
-            headers=headers,
-        )
+        if self.readers >= MAX_RECORDING_FILES:
+            raise web.HTTPServiceUnavailable
+        response = web.StreamResponse(status=status, headers=headers)
+        response.content_type = "video/mp4"
+        response.content_length = stop - start
+        self.readers += 1
+        body.retain()
+        try:
+            async with asyncio.timeout(65):
+                await response.prepare(request)
+                if request.method != "HEAD":
+                    while start < stop:
+                        chunk = await body.read(start, min(CHUNK_BYTES, stop - start))
+                        if not chunk:
+                            raise OSError("Incomplete recording read")
+                        await response.write(chunk)
+                        start += len(chunk)
+                await response.write_eof()
+            return response
+        finally:
+            self.readers -= 1
+            body.close()
 
-    async def head(self, request: web.Request, playback_id: str) -> web.Response:
+    async def head(self, request: web.Request, playback_id: str) -> web.StreamResponse:
         """Let native players inspect the same authorized resource."""
         return await self.get(request, playback_id)
 
-    async def delete(self, request: web.Request, playback_id: str) -> web.Response:
+    async def delete(
+        self, request: web.Request, playback_id: str
+    ) -> web.StreamResponse:
         """Authenticated close works even if the camera just became unavailable."""
         self.owned(request, playback_id)
         self.remove(playback_id)
@@ -156,7 +204,7 @@ class PreparePlaybackView(HomeAssistantView):
 
     async def post(
         self, request: web.Request, entity_id: str, recording_id: str
-    ) -> web.Response:
+    ) -> web.StreamResponse:
         """Abort the download when preparation is cancelled by the browser."""
         coordinator, serial = camera_access(request, entity_id)
         if not re.fullmatch(r"[a-f0-9]{32}", recording_id):
@@ -173,28 +221,25 @@ class PreparePlaybackView(HomeAssistantView):
             raise web.HTTPBadRequest
 
         async def prepare() -> dict[str, Any]:
-            media = None
-            if coordinator.data and coordinator.data.recording_playback:
-                body, media = await coordinator.api.recording_media(
+            async with self.playback.reserve() as body:
+                modern = bool(coordinator.data and coordinator.data.recording_playback)
+                requested = output_format
+                if not modern and output_format == "auto":
+                    requested = "native" if hevc == "true" else "h264"
+                media = await coordinator.api.recording_media(
                     serial,
                     recording_id,
-                    output_format=output_format,
-                    hevc_supported=hevc == "true",
+                    target=body,
+                    output_format=requested,
+                    hevc_supported=hevc == "true" if modern else False,
                 )
-            else:
-                native = output_format == "native" or (
-                    output_format == "auto" and hevc == "true"
-                )
-                body = await coordinator.api.recording_video(
-                    serial,
-                    recording_id,
-                    **({"native": True} if native else {}),
-                )
-            # Recheck access after the potentially long download.
-            camera_access(request, entity_id)
-            result: dict[str, Any] = self.playback.add(request, entity_id, body)
-            if media is not None:
-                result["media"] = media
-            return result
+                # Recheck access and disconnect before transferring file ownership.
+                camera_access(request, entity_id)
+                if request.transport is None or request.transport.is_closing():
+                    raise asyncio.CancelledError
+                result: dict[str, Any] = self.playback.add(request, entity_id, body)
+                if modern and media is not None:
+                    result["media"] = media
+                return result
 
         return await serve(request, prepare())

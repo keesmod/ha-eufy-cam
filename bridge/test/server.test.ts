@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once, EventEmitter } from 'node:events';
@@ -123,7 +126,7 @@ test('timeline, calendar and stored thumbnails require auth and known camera IDs
   const calls:string[]=[];const hub=new StreamHub({start:async()=>{},stop:async()=>{},disposeMedia:()=>{}});
   const fake=Object.assign(new EventEmitter(),{auth:{state:'connected'},inventory:()=>[],hasCamera:(s:string)=>s==='CAM123',hub,recordings:{
     timeline:async(serials:string[],date:string)=>{calls.push('timeline');assert.deepEqual(serials,['CAM123']);assert.equal(date,'2026-09-05');return {recordings:[],complete:true};},
-    videoResult:async(_serial:string,_id:string,_signal:AbortSignal,format:string,hevc:boolean)=>{calls.push('video:'+format);assert.equal(typeof hevc,'boolean');return {body:Buffer.from('mp4'),media:{source:'h264',output:'h264',processing:'remux',fallback:false}};},
+    video:async(_serial:string,_id:string,signal:AbortSignal,consume:any,format:string,hevc:boolean)=>{calls.push('video:'+format);assert.equal(typeof hevc,'boolean');const dir=mkdtempSync(join(tmpdir(),'recording-test-'));const path=join(dir,'mp4');writeFileSync(path,'mp4');try {await consume({path,size:3,media:{source:'h264',output:'h264',processing:'remux',fallback:false}},signal);}finally{rmSync(dir,{recursive:true});}},
     calendar:async()=>{calls.push('calendar');return {days:['2026-09-05']};},thumbnail:async()=>{calls.push('thumbnail');return Buffer.from([255,216,255]);}
   }});
   const server=createBridge(fake as unknown as Eufy,token,'fixture');server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert.ok(address&&typeof address!=='string');const base=`http://127.0.0.1:${address.port}`,headers={Authorization:`Bearer ${token}`};

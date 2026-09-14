@@ -48,7 +48,7 @@ export class Eufy extends EventEmitter {
     timeline: unavailable,
     calendar: unavailable,
     thumbnail: unavailable,
-    video: unavailable, videoResult: unavailable,
+    video: unavailable,
     close() {},
   };
   get recordings() {

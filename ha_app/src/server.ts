@@ -1,3 +1,5 @@
+import { createReadStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
@@ -62,7 +64,7 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
       if (request.method === "GET" && ["/v1/recordings", "/v1/recording-days"].includes(url.pathname)) {
         const serials = [...new Set((url.searchParams.get("cameras") ?? "").split(","))];
         if (!serials.length || serials.length > 100 || serials.some(s => !/^[A-Za-z0-9_-]{1,64}$/.test(s) || !eufy.hasCamera(s))) throw new Error("Invalid cameras");
-        const cancel = new AbortController(); const abort = () => cancel.abort(); response.once("close", abort);
+        const cancel = new AbortController(); const abort = () => { if (!response.writableFinished) cancel.abort(); }; response.once("close", abort);
         try {
           const data = url.pathname === "/v1/recording-days"
             ? await eufy.recordings.calendar(serials, url.searchParams.get("month") ?? "", cancel.signal)
@@ -74,20 +76,24 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
       const recording = /^\/v1\/recordings\/([A-Za-z0-9_-]{1,64})(?:\/([a-f0-9]{32})\/(video|thumbnail))?$/.exec(url.pathname);
       if (request.method === "GET" && recording && eufy.hasCamera(recording[1]!)) {
         const cancel = new AbortController();
-        const abort = () => cancel.abort(); response.once("close", abort);
+        const abort = () => { if (!response.writableFinished) cancel.abort(); }; response.once("close", abort);
         try {
           if (recording[2]) {
             const format = url.searchParams.get("format") ?? "h264";
             if (format !== "h264" && format !== "native" && format !== "auto") throw new Error("Invalid recording format");
             const hevc = url.searchParams.get('hevc_supported');
             if (hevc !== null && hevc !== 'true' && hevc !== 'false') throw new Error('Invalid HEVC support');
-            const result = recording[3] === 'video'
-              ? await eufy.recordings.videoResult(recording[1]!, recording[2], cancel.signal, format, hevc === 'true') : undefined;
-            const data = recording[3] === "thumbnail"
-              ? await eufy.recordings.thumbnail(recording[1]!, recording[2], cancel.signal)
-              : result!.body;
-            if (result && !response.destroyed) response.setHeader('X-Eufy-Recording-Media', JSON.stringify(result.media));
-            if (!response.destroyed) { response.writeHead(200, { "Content-Type": recording[3] === "thumbnail" ? "image/jpeg" : "video/mp4", "Content-Length": data.length, "Cache-Control": "no-store" }); response.end(data); }
+            if (recording[3] === 'video') {
+              await eufy.recordings.video(recording[1]!, recording[2], cancel.signal, async (result, signal) => {
+                signal.throwIfAborted();
+                response.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': result.size,
+                  'Cache-Control': 'no-store', 'X-Eufy-Recording-Media': JSON.stringify(result.media) });
+                await pipeline(createReadStream(result.path), response, { signal });
+              }, format, hevc === 'true');
+            } else {
+              const data = await eufy.recordings.thumbnail(recording[1]!, recording[2], cancel.signal);
+              if (!response.destroyed) { response.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': data.length, 'Cache-Control': 'no-store' }); response.end(data); }
+            }
           } else {
             const data = await eufy.recordings.list(recording[1]!, url.searchParams.get("date") ?? "", cancel.signal);
             if (!response.destroyed) json(response, 200, data);

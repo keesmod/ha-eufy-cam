@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.15 - Internal candidate
+
+- Replace whole-recording RAM buffers with private temporary files and bounded
+  file transfer. Valid H.264 output above 32 MiB can reach both recording cards.
+  Native H.264 and HEVC remuxing preserves AAC, duration and byte-range seeking.
+- Remove the recording-wide NVIDIA failure latch. One failed conversion may use
+  software once, after confirmed process cleanup. The next request tries its
+  configured encoder again. Storage limits and storage errors are not GPU faults.
+- Apply an aggregate HA recording storage allowance, including unfinished
+  preparation and readers closing after session expiry. Interrupted preparation,
+  transfer and playback release their owned resources. Both cards explain when
+  recording storage is unavailable.
+- Keep issue #57 open in Validation. Synthetic FFmpeg and browser checks do not
+  replace repeat testing of the failing recording on the reporter's T600.
+
+Includes bridge 0.8.14, with unchanged client 0.12.2. Back up both components
+before installing. Restore the previous integration and bridge together to roll
+back, preserving credentials and identities. No public release has been made.
+
 ## 0.8.14 - 2026-09-14
 
 - Fix premature NVIDIA recording fallback by tracking encoded-frame progress.
