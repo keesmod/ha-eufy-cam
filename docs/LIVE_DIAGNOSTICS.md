@@ -8,8 +8,9 @@ No bridge restart, session reset or repeated login is needed to collect this
 report. The card must have loaded the updated integration resource.
 
 The report keeps the last eight WebRTC attempts per integration in memory.
-Each attempt accepts at most one browser sample at each of three stages: five
-seconds after readiness, the first acknowledged presented frame, and fallback.
+Each attempt accepts at most one browser sample at each of four stages: five
+seconds after readiness, the first acknowledged presented frame, one second
+after unmuted playback is available, and fallback.
 Samples are independent of frame acknowledgements and never renew a viewer.
 Closing the view cancels its timer. HA restart clears the history.
 

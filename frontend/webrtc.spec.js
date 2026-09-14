@@ -120,6 +120,8 @@ for (const {ending,profile} of cases) test(`real WebRTC ${profile} stops after $
     if(profile!=='normal') {
       const before=acks; await new Promise(resolve=>setTimeout(resolve,8000));
       expect(jpegMode).toBe(false);expect(acks).toBeGreaterThan(before+2);
+      expect(reports.some(r=>r.trigger==='unmuted'&&r.muted===false)).toBe(true);
+      if(!['silent','video-only'].includes(profile))expect(reports.find(r=>r.trigger==='unmuted').audio_energy).toBe(true);
     }
     }
     if(['blocked','answer-loss','media-loss','paint-loss','tick-loss'].includes(ending)) {
@@ -151,7 +153,7 @@ for (const {ending,profile} of cases) test(`real WebRTC ${profile} stops after $
       timeOffset += 11000; hub.tick();
     }
     await expect.poll(()=>stops,{timeout:12000}).toBe(1);
-    expect(reports.length).toBeLessThanOrEqual(3);expect(new Set(reports.map(r=>r.trigger)).size).toBe(reports.length);
+    expect(reports.length).toBeLessThanOrEqual(4);expect(new Set(reports.map(r=>r.trigger)).size).toBe(reports.length);
     expect(JSON.stringify(reports)).not.toMatch(/candidate:|CAM123|192\.168|v1\/media|sdp/);
     expect(starts).toBe(1);expect(hub.active).toBe(0);expect(hub.quarantined).toBe(0);
     if (ending === 'close') expect(await page.locator('video.video').evaluate(v=>v.srcObject)).toBeNull();

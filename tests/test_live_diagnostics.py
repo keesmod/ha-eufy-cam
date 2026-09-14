@@ -138,6 +138,9 @@ async def test_only_owner_can_report_and_reports_never_ack(
         )
         assert not (await client.receive_json())["success"]
     viewer.jpeg = True
+    unmuted = {"trigger": "unmuted", "muted": False, "audio_energy": True}
+    await client.send_json({**msg, "id": 4, "report": unmuted})
+    assert (await client.receive_json())["result"]["accepted"]
     assert await viewer.record_browser_report(
         {"trigger": "fallback", "video_packets": 0}
     )
@@ -154,6 +157,7 @@ async def test_only_owner_can_report_and_reports_never_ack(
         )
     assert download["live_playback"][0]["browser"] == [
         msg["report"],
+        unmuted,
         {"trigger": "fallback", "video_packets": 0},
     ]
     assert download["live_playback"][0]["relay"][0]["source_h264_packets"] == 9

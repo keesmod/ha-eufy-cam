@@ -85,7 +85,7 @@ class WebRTCViewer(Viewer):
         """One sample per fixed stage, without extending camera ownership."""
         trigger = report.get("trigger")
         if (
-            trigger not in {"startup", "playing", "fallback"}
+            trigger not in {"startup", "playing", "unmuted", "fallback"}
             or trigger in self.browser_triggers
         ):
             return False
@@ -177,9 +177,9 @@ class WebRTCViewer(Viewer):
                     if self.offered:
                         return False
                     self.offered = True
-                    self.playback_evidence["offered"] = True
                     # No external STUN/TURN service is silently introduced.
                     await self.signaling.send(WebRTCOffer(offer, []))
+                    self.playback_evidence["offered"] = True
                 elif candidate is not None and self.offered:
                     await self.signaling.send(WebRTCCandidate(candidate))
                 else:

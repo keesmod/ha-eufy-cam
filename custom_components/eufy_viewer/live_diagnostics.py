@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN
 
 ENUMS = {
-    "trigger": {"startup", "playing", "fallback"},
+    "trigger": {"startup", "playing", "unmuted", "fallback"},
     "connection": {
         "new",
         "connecting",

@@ -169,6 +169,7 @@ export class EufyViewerCard extends HTMLElement {
     _tick;
     _videoCallback;
     _diagnosticTimer;
+    _soundDiagnosticTimer;
     _playback;
     _dialog;
     _visibility;
@@ -234,6 +235,7 @@ export class EufyViewerCard extends HTMLElement {
         this._sound = this.shadowRoot.querySelector(".sound");
         this._sound.addEventListener("click", () => {
             this._video.muted = !this._video.muted;
+            this._scheduleSoundReport();
             this._sound.textContent = this._video.muted ? this._text().sound : this._text().mute;
             if (this._open)
                 void this._video.play().catch(() => this._stop("error"));
@@ -559,6 +561,8 @@ export class EufyViewerCard extends HTMLElement {
     }
     _closeRTC() {
         clearTimeout(this._diagnosticTimer);
+        clearTimeout(this._soundDiagnosticTimer);
+        this._soundDiagnosticTimer = undefined;
         if (this._videoCallback !== undefined)
             this._video.cancelVideoFrameCallback(this._videoCallback);
         this._videoCallback = undefined;
@@ -679,6 +683,7 @@ export class EufyViewerCard extends HTMLElement {
             const playback = this._playback;
             playback.painted++;
             playback.lastFrame = performance.now();
+            this._scheduleSoundReport();
             clearTimeout(this._startup);
             this._status("");
             const tick = this._tick;
@@ -697,6 +702,16 @@ export class EufyViewerCard extends HTMLElement {
                     this._stop("error"); });
             this._painted(generation);
         });
+    }
+    _scheduleSoundReport() {
+        if (this._video.muted) {
+            clearTimeout(this._soundDiagnosticTimer);
+            this._soundDiagnosticTimer = undefined;
+            return;
+        }
+        if (!this._rtc || !this._playback?.enabled || this._playback.reports.has("unmuted") || this._soundDiagnosticTimer !== undefined)
+            return;
+        this._soundDiagnosticTimer = window.setTimeout(() => { this._soundDiagnosticTimer = undefined; void this._reportLive("unmuted"); }, 1000);
     }
     async _reportLive(trigger) {
         const playback = this._playback, pc = this._rtc, hass = this._hass;
