@@ -207,7 +207,16 @@ driver, NVENC session/open-session, missing encoder, format, decode and input
 errors. `unclassified` means FFmpeg emitted text outside these categories. An
 empty category list means no stderr was observed. Categories are clues, not a
 claim that every message in that category has the same underlying cause.
-Raw stderr, paths, credentials, camera identifiers and media are never logged.
+Default warnings contain no stderr text. From bridge 0.8.13, enable
+`EUFY_DIAGNOSTICS=true` to add `failure.ffmpeg_detail` for an `unclassified`
+hardware error. The excerpt retains up to 2,000 characters from a bounded
+4,096-character stderr tail. A partial first line is omitted when that tail was
+truncated. Common credentials, URLs, paths, addresses, email addresses and
+identifier patterns are redacted, and terminal control sequences are removed.
+Review an excerpt before sharing it, since arbitrary driver text cannot be
+fully identified by pattern matching. Known categories, successful processing
+and cancellation never include an error excerpt. Disable diagnostics after the
+reproduction. In the HA app, the equivalent setting is `diagnostics: true`.
 
 To investigate a repeat failure, close playback and restart the bridge once to
 reset the recording circuit breaker. Open one HEVC recording in Auto and collect

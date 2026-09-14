@@ -14,7 +14,7 @@ const acceleration = liveAcceleration(process.env.EUFY_LIVE_ACCELERATION);
 const recordingMode = recordingAcceleration(process.env.EUFY_RECORDING_ACCELERATION);
 const recordingMedia = new RecordingTranscoder(recordingMode, event => {
   logRecordingDiagnostic(event, process.env.EUFY_DIAGNOSTICS === "true");
-});
+}, undefined, undefined, process.env.EUFY_DIAGNOSTICS === "true");
 const selectedBackend = backendName(process.env.EUFY_BACKEND);
 const storage = new Storage(process.env.EUFY_DATA_DIR ?? "/data");
 let id = await storage.read("bridge-id");
