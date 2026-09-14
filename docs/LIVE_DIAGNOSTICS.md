@@ -34,7 +34,7 @@ closed connection before the report arrived. Do not infer one of these without
 other evidence.
 
 For example, an installed answer with no packets and unconnected ICE points to
-the media route. Packets without decoded video point to decoding. Decoded video
+the media route. Packets without decoded video require checking loss, complete frames and decoding. Decoded video
 with no advancing frame callbacks points to presentation. Advancing callbacks
 without ticks or accepted acknowledgements points to the confirmation chain.
 Compare the early sample with fallback to distinguish startup from a later
@@ -64,3 +64,72 @@ Local camera observations use T8160/T8213 with T8030. They do not establish T813
 hardware acceptance. Issue #10 remains open pending an instrumented attempt from
 the affected installation. No new camera compatibility or audio-fix claim is
 made by this diagnostic change.
+
+## Bounded video candidate for issue 10
+
+The unpublished integration/card 0.8.10 and bridge 0.8.9 candidate adds the
+following scalar evidence. Missing fields still mean unavailable.
+
+| Evidence | Meaning |
+| --- | --- |
+| Attempt `audio_expected` | The bridge admitted AAC at initial stream setup |
+| Browser `audio_negotiated` | The current peer connection has a receiving audio transceiver |
+| `video_lost`, `audio_lost` | RTP packet loss counters, which can be negative after duplicates |
+| `video_received`, `video_decoded`, `painted` | Complete received frames, decoded frames and presented callbacks |
+| `video_nack`, `video_pli`, `video_fir` | Retransmission and keyframe requests |
+| `video_jitter_ms`, `audio_jitter_ms` | RTP jitter in milliseconds |
+| Per-kind `buffer_delay_ms`, `buffer_target_delay_ms`, `buffer_min_delay_ms`, `buffer_emitted` | Cumulative jitter-buffer delays and emitted counts |
+
+Dividing a cumulative buffer delay by its corresponding emitted count gives
+an average delay for that sample. Compare changes between samples when examining
+a stall. Packet receipt without decoding can also mean incomplete frames or
+loss, including frame damage that does not leave sequence gaps.
+
+The software encoder now uses the same 4 Mbit/s target/maxrate and 1 Mbit VBV
+budget as the NVIDIA route. High-complexity input can sacrifice detail. This
+limits generated traffic and does not repair damaged incoming frames.
+
+Twenty-four comparisons used identical prerecorded synthetic H.264 sources and
+identical AAC input through FFmpeg 5.1.9, go2rtc 1.9.14 and Chromium 152 on Linux.
+They compared current transcoding, bounded transcoding and H.264 stream copy.
+H.265 retained its H.264 conversion in all three configurations.
+
+| Synthetic input | Current transcode | Bounded transcode | H.264 stream copy |
+| --- | --- | --- | --- |
+| Moderate, approximately 8.6 Mbit/s | 320 decoded, no loss | 320 decoded, 3.96 Mbit/s, no loss | 320 decoded, no loss |
+| Extreme complexity | 16 decoded, 5141 lost, fallback | 315 decoded, 4.00 Mbit/s, no loss | 205 decoded, 939 lost, final frame 4.1 s old |
+| Two-second moderate bursts, video-only | 298 decoded, no loss | 297 decoded, no loss | 159 decoded, 253 lost |
+| Deliberate RTP gaps | Fallback | Fallback | Fallback |
+
+Ordinary A/V, actual video-only and H.265 conversion remained operational. With
+AAC deliberately delayed five seconds but declared present, all routes waited
+roughly 5.5 seconds for their first presented frame. All 24 attempts passed the
+single-owner, stop and cleanup assertions. Fault-injection binaries were used
+only for the deliberate-gap cases and never for normal tests or deployment.
+
+Browser RTP estimated playout clocks were also sampled. For ordinary A/V, the
+median absolute audio/video clock difference was 51/75/79 ms for current,
+bounded and copy, respectively. Moderate input measured 72/132/66 ms. Initial
+transients reached 547 ms across the tests. These are clock estimates from
+independently paced inputs, not physical lip-sync or speaker measurements.
+
+This comparison favors bounded transcoding as a robustness change. It does not
+prove that bitrate caused the reporter's failure. The reporter's approximately
+8.6 Mbit/s traffic was healthy in the loss-free synthetic controls.
+
+## Separate late-audio boundary
+
+Library PR [138](https://github.com/keesmod/eufy-mega-client/pull/138) keeps actual
+codec discovery open after the three-second video startup deadline. AAC at
+900, 2999, 3001 and 5000 ms is classified with one start event, and current live
+metadata reflects its codec. The no-audio deadline is unchanged. This library
+candidate is not part of the bridge's still-pinned 0.12.2 dependency.
+
+A separate real browser test started a video-only mux, then supplied AAC after
+five seconds. Video continued for 322 decoded/presented frames without fallback,
+but the connection had no audio track. This proves the remaining consumer
+boundary: initial metadata chooses the mux streams, go2rtc sources and SDP once.
+Corrected library discovery alone cannot add audio to that existing connection.
+A late-track implementation must explicitly coordinate mux admission and peer
+negotiation while preserving video progress, one camera owner and bounded stop.
+Increasing the initial wait merely moves the cutoff and is not a solution.

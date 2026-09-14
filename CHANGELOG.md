@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.10 - Unreleased
+
+- Bound software live H.264 output to a 4 Mbit/s target and maximum rate with
+  a 1 Mbit VBV buffer. Retain H.265 decoding, the existing scale limit, AAC audio,
+  encoder ownership and playback deadlines. High-complexity scenes may lose
+  detail to keep the output within this budget.
+- Include RTP loss, complete frames, NACK/PLI/FIR, jitter-buffer counters and
+  negotiated audio presence in bounded playback diagnostics. Preserve absent
+  values as unavailable, including absent audio counters.
+
+Integration/card 0.8.10 and bridge 0.8.9 are unpublished candidates for issue #10.
+Synthetic comparison favors bounded transcoding over unbounded transcoding and
+H.264 passthrough. It does not establish the reporter's root cause or T8134
+hardware acceptance. Late audio discovery and consumer track admission remain
+separate from this video change. Back up both components before an update and
+restore their previous files to roll back, preserving the existing data/token.
+
 ## 0.8.9 - 2026-09-14
 
 - Add bounded live playback evidence to the integration diagnostic download.

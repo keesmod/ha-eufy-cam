@@ -230,6 +230,10 @@ async def test_audio_conversion_matches_stream_capability(
     )
     assert (await client.receive_json())["event"]["type"] == "ready"
     sources = rest.streams.add.call_args.args[1]
+    if audio is not None:
+        assert viewer.playback_evidence["audio_expected"] is audio
+    else:
+        assert "audio_expected" not in viewer.playback_evidence
     assert len(sources) == (1 if audio is False else 2)
     assert sources[0].endswith(payload["path"])
     if audio is not False:

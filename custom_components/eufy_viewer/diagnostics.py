@@ -222,6 +222,11 @@ async def async_get_config_entry_diagnostics(
         "live_playback": [
             {
                 "schema": 1,
+                **(
+                    {"audio_expected": report["audio_expected"]}
+                    if type(report.get("audio_expected")) is bool
+                    else {}
+                ),
                 "offered": report.get("offered") is True,
                 "answered": report.get("answered") is True,
                 "ticks": report.get("ticks", 0),
