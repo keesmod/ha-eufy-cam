@@ -115,8 +115,14 @@ cancellation and response ownership. Chromium tests play a valid MP4 above the
 reported cutoff in both cards and preserve seeking, pause and close behavior.
 Storage errors do not trigger a codec-recovery retry.
 
-These are software and synthetic-media checks. They do not establish T600
-execution, performance on another host, audible output on physical speakers or
-Apple-device acceptance of this new file path. Issue #57 remains open in
-Validation for the reporter's failing recording, NVIDIA idle cleanup, Native,
-H.264-source remux, audio, seeking and mode-switch behavior on the actual setup.
+These automated results are software and synthetic-media evidence. Separate
+[reporter acceptance on 2026-09-14](https://github.com/keesmod/ha-eufy-cam/issues/57#issuecomment-5669792989)
+confirms integration/card 0.8.15 and bridge 0.8.14 on the reporter's NVIDIA T600.
+Five recordings passed, including the previously failing clips. Auto, Native,
+H.264, audio, seeking and repeated playback passed, with GPU activity returning
+to 0% after completion or closing the player.
+
+This completes the reported issue #57 acceptance. It does not establish behavior
+on other hardware or Apple clients. The retest does not specify the source codec
+and camera model for each clip, so it does not add a separate H.264-source claim.
+See [the scoped hardware record](NVIDIA.md#recording-fix-acceptance-on-2026-09-14).
