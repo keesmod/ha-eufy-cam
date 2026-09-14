@@ -731,6 +731,8 @@ export class EufyViewerCard extends HTMLElement {
             report.last_frame_ms = Math.round(performance.now() - playback.lastFrame);
         let timer;
         try {
+            if (typeof pc.getTransceivers === "function")
+                report.audio_negotiated = pc.getTransceivers().some(t => t.receiver.track.kind === "audio" && ["recvonly", "sendrecv"].includes(t.currentDirection ?? ""));
             const stats = await Promise.race([pc.getStats().catch(() => undefined), new Promise(resolve => { timer = window.setTimeout(resolve, 1000); })]);
             if (stats) {
                 report.stats_available = true;
@@ -742,9 +744,21 @@ export class EufyViewerCard extends HTMLElement {
                     if (stat.type === "inbound-rtp" && ["video", "audio"].includes(stat.kind)) {
                         count(`${stat.kind}_packets`, stat.packetsReceived);
                         count(`${stat.kind}_bytes`, stat.bytesReceived);
+                        if (typeof stat.packetsLost === "number" && Number.isSafeInteger(stat.packetsLost))
+                            report[`${stat.kind}_lost`] = Number(report[`${stat.kind}_lost`] ?? 0) + stat.packetsLost;
+                        for (const [key, value] of Object.entries({ jitter: stat.jitter, buffer_delay: stat.jitterBufferDelay, buffer_target_delay: stat.jitterBufferTargetDelay, buffer_min_delay: stat.jitterBufferMinimumDelay })) {
+                            if (typeof value === "number" && Number.isFinite(value) && value >= 0)
+                                count(`${stat.kind}_${key}_ms`, Math.round(value * 1000));
+                        }
+                        count(`${stat.kind}_buffer_emitted`, stat.jitterBufferEmittedCount);
                         if (stat.kind === "video") {
                             count("video_decoded", stat.framesDecoded);
                             count("video_dropped", stat.framesDropped);
+                            count("video_received", stat.framesReceived);
+                            count("video_keyframes", stat.keyFramesDecoded);
+                            count("video_nack", stat.nackCount);
+                            count("video_pli", stat.pliCount);
+                            count("video_fir", stat.firCount);
                         }
                         else {
                             count("audio_samples", stat.totalSamplesReceived);

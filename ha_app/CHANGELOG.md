@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.9 - Unreleased
+
+- Bound software live video to a 4 Mbit/s target/maxrate and 1 Mbit VBV buffer,
+  matching the existing NVIDIA output budget. Preserve H.264/H.265 input,
+  AAC conversion, ownership and cleanup. Complex scenes may lose detail.
+- This is a robustness candidate for issue #10, not confirmed T8134 acceptance.
+  Integration/card 0.8.10 carries the additional playback counters. Restore the
+  previous bridge package to roll back while keeping the existing data/token.
+
 ## 0.8.8 - 2026-09-13
 
 - Add separate Docker opt-in `EUFY_RECORDING_ACCELERATION=nvidia` for required
