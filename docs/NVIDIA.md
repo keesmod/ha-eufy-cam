@@ -167,8 +167,13 @@ resolution and frame rate. NVENC uses preset p4, the high-quality tune, VBR with
 CQ 23 and no B frames. These settings do not imply identical quality to software.
 Pixel-format conversion can transfer frames through system memory. AAC is copied.
 
-The complete recording is downloaded once. Hardware gets at most 10 seconds,
-within the existing 45-second total conversion deadline. After a failure, the
+The complete recording is downloaded once. From bridge 0.8.12, hardware gets
+10 seconds to begin advancing encoded frames and is stopped after 10 seconds
+without further frame progress. Healthy conversion may take longer than 10
+seconds, within the unchanged 45-second total conversion deadline. Repeated
+frame counts and stderr messages cannot reset that deadline or the stall timer.
+The private FFmpeg progress pipe is drained separately from MP4 and error output.
+After a failure, the
 bridge waits up to one second for confirmed process termination, discards all
 partial output and makes one software attempt on the same downloaded bytes with
 the remaining time. It does not repeat a camera download. Failed hardware is
@@ -180,8 +185,9 @@ Cancellation or oversized output does not trigger fallback. If process cleanup
 cannot be confirmed, further recording conversion is blocked until restart to
 prevent overlapping processes. A failed software attempt ends the operation.
 
-With `EUFY_DIAGNOSTICS=true`, recording logs contain only an anonymous attempt
-number, elapsed conversion time and one of these events:
+From bridge 0.8.12, hardware failures always produce a warning in the bridge
+logs. `EUFY_DIAGNOSTICS=true` additionally enables successful processing and
+fallback events. Each line has an anonymous attempt number and elapsed time:
 
 | Event | Meaning |
 | --- | --- |
@@ -191,6 +197,25 @@ number, elapsed conversion time and one of these events:
 | `recording_hardware_failed` | The hardware attempt failed |
 | `recording_hardware_timeout` | The hardware attempt reached its deadline |
 | `recording_software_fallback` | One software replacement was selected |
+| `recording_hardware_disabled` | This request used software because an earlier hardware failure opened the circuit breaker |
+
+Failure details identify process/input errors, empty output, output limits,
+unconfirmed cleanup or timeout. A timeout names `hardware_progress` or
+`conversion`, its budget in milliseconds and the last encoded-frame count.
+Exit status and a fixed FFmpeg category can distinguish memory, CUDA device or
+driver, NVENC session/open-session, missing encoder, format, decode and input
+errors. `unclassified` means FFmpeg emitted text outside these categories. An
+empty category list means no stderr was observed. Categories are clues, not a
+claim that every message in that category has the same underlying cause.
+Raw stderr, paths, credentials, camera identifiers and media are never logged.
+
+To investigate a repeat failure, close playback and restart the bridge once to
+reset the recording circuit breaker. Open one HEVC recording in Auto and collect
+the first `recording_hardware_failed` or `recording_hardware_timeout` warning.
+Record the clip duration and whether playback succeeds through software. Further
+software playbacks after that first failure do not attempt NVIDIA again until
+restart. This explains why Live can still work while recordings stay on software.
+Verbose diagnostics are optional and can be disabled again after testing.
 
 Elapsed time starts after the recording download, so it is not total playback
 startup time. Completion identifies the encoder route. Confirm NVDEC/NVENC engine
@@ -270,13 +295,21 @@ with GPU activity returning to 0% after closing Live. This is a live-path
 regression check on the reported installation. The new comment does not name
 the individual camera used for Live.
 
-The main Auto/NVIDIA flow is hardware-confirmed. The reporter did not separately
-report explicit Native remux, an H.264 source, audio or seeking in this comment.
-The [follow-up](https://github.com/keesmod/ha-eufy-cam/issues/57#issuecomment-5666960841)
-asks for these additional regression checks. They are optional confirmation on
-this installation, not a blocker for accepting the Auto/NVIDIA feature.
-Automated tests and maintainer HA checks cover these regressions, as documented
-in [PR #61](https://github.com/keesmod/ha-eufy-cam/pull/61).
+The main Auto/NVIDIA flow has a successful hardware test, but the reporter's
+[later finding](https://github.com/keesmod/ha-eufy-cam/issues/57#issuecomment-5667209426)
+adds intermittent NVIDIA failures followed by successful software playback.
+Native remux, audio and forward/backward seeking passed. The reporter has not yet
+found an H.264 source for the remux check. Issue #57 remains in Validation while
+the intermittent failure is investigated.
+
+Code review found that bridge 0.8.11 killed the entire hardware conversion at
+10 seconds, even while it was encoding frames. A real, paced CPU FFmpeg test
+reproduced this policy error without a GPU: 139 frames were encoded before the
+10-second cutoff caused fallback. With progress-aware timing, the same 180-frame
+input completed in about 11.5 seconds using one process. Bridge 0.8.12 fixes this
+cutoff and reports bounded failure details for any remaining error. This proves
+the watchdog correction, not that the reporter's T600 had no other failure.
+A repeat test on that installation is still needed.
 
 This evidence does not extend to every listed camera, other GPU/driver
 combinations or the T8134 investigation in #10.
