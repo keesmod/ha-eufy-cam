@@ -22,6 +22,8 @@ from homeassistant.core import HomeAssistant, callback
 from webrtc_models import RTCIceServer
 
 from .ice import ice_configuration
+from .live_diagnostics import LATE_AUDIO_END_REASONS as END_REASONS
+from .live_diagnostics import LATE_AUDIO_STAGES as STAGES
 
 
 class LateAudioTrack:
@@ -34,17 +36,31 @@ class LateAudioTrack:
         url: str,
         name: str,
         emit: Callable[[dict[str, Any]], None],
+        evidence: dict[str, Any] | None = None,
     ) -> None:
         self.hass = hass
         self.session = session
         self.url = url
         self.name = name
         self.emit = emit
+        self.evidence = evidence
         self.signaling: Go2RtcWsClient | None = None
         self.registered = False
         self.closed = False
         self.offered = False
         self.ice_servers: list[RTCIceServer] = []
+
+    def stage(self, value: str) -> None:
+        """Record the furthest fixed stage; never any URL, SDP or error text."""
+        if self.evidence is not None and value in STAGES:
+            current = self.evidence.get("audio_late")
+            if current not in STAGES or STAGES.index(current) < STAGES.index(value):
+                self.evidence["audio_late"] = value
+
+    def ended(self, reason: str) -> None:
+        """Keep the first fixed reason for ending audio ahead of its video."""
+        if self.evidence is not None and reason in END_REASONS:
+            self.evidence.setdefault("audio_late_end", reason)
 
     async def prepare(self, source: str) -> None:
         """Reuse managed go2rtc's AAC-to-Opus path for actual incoming audio."""
@@ -58,6 +74,7 @@ class LateAudioTrack:
         self.signaling = Go2RtcWsClient(self.session, self.url, source=self.name)
         self.signaling.subscribe(self._message)
         self.ice_servers, ice_status = ice_configuration(self.hass)
+        self.stage("ready")
         self.emit(
             {
                 "type": "audio_ready",
@@ -71,10 +88,12 @@ class LateAudioTrack:
         if self.closed:
             return
         if isinstance(message, WebRTCAnswer):
+            self.stage("answered")
             self.emit({"type": "audio_answer", "sdp": message.sdp})
         elif isinstance(message, WebRTCCandidate):
             self.emit({"type": "audio_candidate", "candidate": message.candidate})
         elif isinstance(message, WsError):
+            self.ended("upstream_error")
             self.emit({"type": "audio_ended"})
             self.hass.async_create_background_task(self.close(), "Eufy audio cleanup")
 
@@ -86,11 +105,13 @@ class LateAudioTrack:
                 if offer is not None and not self.offered:
                     self.offered = True
                     await self.signaling.send(WebRTCOffer(offer, self.ice_servers))
+                    self.stage("offered")
                 elif candidate is not None and self.offered:
                     await self.signaling.send(WebRTCCandidate(candidate))
                 else:
                     return False
         except Go2RtcClientError, aiohttp.ClientError, TimeoutError:
+            self.ended("signaling_failed")
             self.emit({"type": "audio_ended"})
             await self.close()
             return False

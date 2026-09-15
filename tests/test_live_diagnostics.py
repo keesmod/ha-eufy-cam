@@ -184,6 +184,87 @@ async def test_only_owner_can_report_and_reports_never_ack(
     await hass.async_block_till_done()
 
 
+@pytest.mark.parametrize("audio_failure", [None, "http", "oversized"])
+async def test_relay_counters_include_the_late_audio_stream(
+    hass, hass_ws_client, rtc_setup, audio_failure
+):
+    """AAC never rides in the video stream, so its own stream is sampled too."""
+    from .test_webrtc import audio_ready
+
+    socket, _, session, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    await audio_ready(client, socket)
+    streams = {
+        viewer.name: {
+            "producers": [
+                {"receivers": [{"codec": {"codec_name": "H264"}, "packets": 9}]}
+            ],
+            "consumers": [
+                {"senders": [{"codec": {"codec_name": "H264"}, "packets": 8}]}
+            ],
+        },
+        viewer.name + "_audio": {
+            "producers": [
+                {
+                    "url": "PRIVATE",
+                    "receivers": [{"codec": {"codec_name": "AAC"}, "packets": 30}],
+                }
+            ],
+            "consumers": [
+                {"senders": [{"codec": {"codec_name": "OPUS"}, "packets": 25}]}
+            ],
+        },
+    }
+
+    def get(_url, params):
+        if params["src"].endswith("_audio"):
+            if audio_failure == "http":
+                raise aiohttp.ClientError()
+            if audio_failure == "oversized":
+                response = ReportResponse(b"{}")
+                response.content.readexactly = AsyncMock(return_value=b"x" * 65537)
+                return response
+        return ReportResponse(json.dumps(streams[params["src"]]).encode())
+
+    session.get = Mock(side_effect=get)
+    assert await viewer.record_browser_report({"trigger": "audio_check"})
+    assert session.get.call_count == 2
+    row = viewer.playback_evidence["relay"][0]
+    expected = {
+        "trigger": "audio_check",
+        "source_h264_packets": 9,
+        "output_h264_packets": 8,
+    }
+    if audio_failure is None:
+        expected |= {
+            "audio_late": True,
+            "source_aac_packets": 30,
+            "output_opus_packets": 25,
+        }
+    assert row == expected
+    # After the browser stops audio, only the video stream is sampled.
+    assert await viewer.signal(None, None, True, True)
+    assert await viewer.record_browser_report({"trigger": "playing"})
+    assert session.get.call_count == 3
+    assert "audio_late" not in viewer.playback_evidence["relay"][1]
+    with patch.object(
+        viewer.coordinator.api,
+        "request",
+        AsyncMock(
+            return_value={"schema": 2, "last_discovery": [], "recent_events": []}
+        ),
+    ):
+        download = await async_get_config_entry_diagnostics(
+            hass, viewer.coordinator.entry
+        )
+    live = download["live_playback"][0]
+    assert live["relay"][0] == expected
+    assert live["audio_late"] == "ready" and live["audio_late_end"] == "stopped"
+    assert "PRIVATE" not in json.dumps(download)
+    await client.close()
+    await hass.async_block_till_done()
+
+
 @pytest.mark.parametrize("failure", ["http", "invalid_json", "oversized", "timeout"])
 async def test_unavailable_relay_diagnostics_do_not_interrupt_viewer(
     hass, hass_ws_client, rtc_setup, failure

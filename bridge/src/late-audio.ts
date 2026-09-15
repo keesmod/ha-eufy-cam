@@ -1,4 +1,4 @@
-/** AAC arriving after video-only startup. Readers join at complete ADTS frames. */
+/** AAC on its own reader. Readers join at complete ADTS frames whenever audio starts. */
 import type { Readable } from 'node:stream';
 import { adtsHeader } from './audio-header-diagnostics.js';
 
@@ -10,10 +10,12 @@ export class LateAudio {
   private frame?: Buffer;
   constructor(private readonly source: Readable, private readonly available: () => void,
     private readonly output: (frame: Buffer) => void, private readonly unavailable: () => void = () => {}) {
-    // This owns the existing drain of initially excluded audio. No timer or
-    // camera command is needed, and a silent source cannot delay video.
+    // This owns the only drain of the audio track. No timer or camera command
+    // is needed, and a silent or failing source cannot delay or end video.
+    // The session owner keeps its own error listener for the source lifetime.
     source.on('data', this.consume);
     source.on('end', this.ended);
+    source.on('error', this.ended);
   }
   private readonly consume = (chunk: Buffer) => {
     if (this.stopped || !Buffer.isBuffer(chunk)) return;
@@ -42,12 +44,13 @@ export class LateAudio {
       }
     }
   };
-  private readonly ended = () => { this.stop(); this.unavailable(); };
+  private readonly ended = () => { if (this.stopped) return; this.stop(); this.unavailable(); };
   stop(): void {
     this.stopped = true;
     this.ready = false;
     this.source.off('data', this.consume);
     this.source.off('end', this.ended);
+    this.source.off('error', this.ended);
     this.header.fill(0); this.frame?.fill(0); this.frame = undefined; this.used = 0;
   }
 }

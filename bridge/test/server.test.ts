@@ -70,12 +70,15 @@ test('authenticated bridge snapshots never start; websocket close stops last vie
   } finally { server.emit('shutdown'); server.close(); await once(server, 'close'); }
 });
 
-for (const hasAudio of [false, true]) test(`WebRTC grants report audio=${hasAudio} before the first JPEG frame and expire with their owner`, { timeout: 5000 }, async t => {
+// Whatever the library classified at startup, the main stream is video-only,
+// so ready always reports audio=false and the integration never adds an audio
+// source to it. AAC is announced separately through audio_ready.
+test('WebRTC grants report audio=false before the first JPEG frame and expire with their owner', { timeout: 5000 }, async t => {
   const { MediaRelay } = await import('../src/media.js');
   const calls: string[] = [];
   const media = new MediaRelay(() => {});
-  let metadata: boolean | undefined;
-  t.mock.method(media, 'audioSupported', () => metadata);
+  let active = false;
+  t.mock.method(media, 'active', () => active);
   const hub = new StreamHub({ start: async s => { calls.push(`start:${s}`); }, stop: async s => { calls.push(`stop:${s}`); }, disposeMedia: s => media.stop(s) });
   const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {}, audioAttempt: () => 123 });
   const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
@@ -95,16 +98,17 @@ for (const hasAudio of [false, true]) test(`WebRTC grants report audio=${hasAudi
       if (messages.length === 2) receivedBoth();
     });
     await once(ws, 'open');
-    assert.deepEqual(messages, [], 'No fabricated audio capability before media arrives');
+    assert.deepEqual(messages, [], 'No fabricated readiness before the encoder exists');
+    fake.emit('media-ready', 'CAM123'); // Not active yet: nothing is sent.
     const first = once(ws, 'message');
-    metadata = hasAudio;
+    active = true;
     fake.emit('media-ready', 'OTHER');
     fake.emit('media-ready', 'CAM123');
     const [ready] = await first;
     const message = JSON.parse(ready.toString());
     assert.equal(message.type, 'ready'); assert.match(message.path, /^\/v1\/media\/[a-f0-9]{64}$/);
     assert.deepEqual(calls, ['start:CAM123']);
-    assert.equal(message.audio, hasAudio);
+    assert.equal(message.audio, false, 'The main stream never carries audio');
     assert.equal(message.audio_attempt, 123);
     assert.equal(messages.length, 1, 'Ready does not fabricate a delivered frame');
     assert.equal(fake.listenerCount('media-ready'), 0);
@@ -180,7 +184,7 @@ for (const acknowledge of [false, true]) test(`JPEG downgrade preserves one came
   const calls: string[] = [];
   let now = 0, acknowledgements = 0;
   const media = new MediaRelay(() => {});
-  t.mock.method(media, 'audioSupported', () => true);
+  t.mock.method(media, 'active', () => true);
   const hub = new StreamHub({ start: async () => { calls.push('start'); }, stop: async () => { calls.push('stop'); hub.stopped('CAM123'); }, disposeMedia: s => media.stop(s) }, () => now);
   const originalAck = hub.ack.bind(hub);
   t.mock.method(hub, 'ack', (s, peer) => { const accepted = originalAck(s, peer); if (accepted) acknowledgements++; return accepted; });
@@ -227,7 +231,7 @@ test('one viewer downgrades while another keeps WebRTC on the same camera', { ti
   let stopObserved!: () => void;
   const stopComplete = new Promise<void>(resolve => { stopObserved = resolve; });
   const media = new MediaRelay(() => {});
-  t.mock.method(media, 'audioSupported', () => true);
+  t.mock.method(media, 'active', () => true);
   const hub = new StreamHub({ start: async () => { starts++; }, stop: async () => { stops++; hub.stopped('CAM123'); stopObserved(); }, disposeMedia: s => media.stop(s) });
   const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {} });
   const server = createBridge(fake as unknown as Eufy, token, 'test');
@@ -332,11 +336,11 @@ test('closing before live metadata removes readiness listeners and never renews 
 });
 
 
-for (const optIn of [false, true]) test(`late audio control requires viewer opt-in=${optIn} and never restarts ownership`, async t => {
+for (const optIn of [false, true]) for (const audioFirst of [false, true]) test(`late audio control requires viewer opt-in=${optIn}, audio before ready=${audioFirst}, and never restarts ownership`, async t => {
   const { MediaRelay } = await import('../src/media.js');
   const media = new MediaRelay(() => {});
-  let metadata: boolean | undefined, available = false, starts = 0, stops = 0;
-  t.mock.method(media, 'audioSupported', () => metadata);
+  let active = false, available = false, starts = 0, stops = 0;
+  t.mock.method(media, 'active', () => active);
   t.mock.method(media, 'lateAudioSupported', () => available);
   let stopped!: () => void;
   const stopComplete = new Promise<void>(resolve => { stopped = resolve; });
@@ -350,11 +354,17 @@ for (const optIn of [false, true]) test(`late audio control requires viewer opt-
   const messages: any[]=[];ws.on('message',raw=>messages.push(JSON.parse(raw.toString())));
   try {
     await once(ws,'open');
-    const ready=once(ws,'message');metadata=false;fake.emit('media-ready','CAM123');await ready;
-    assert.equal(messages.length,1);
-    const next=once(ws,'message');available=true;fake.emit('audio-ready','CAM123');
+    if (audioFirst) {
+      // A warm start has AAC 40 ms after video: it is ready before the viewer is.
+      available=true;fake.emit('audio-ready','CAM123');
+      const pong=once(ws,'pong');ws.ping();await pong;
+      assert.deepEqual(messages,[],'Audio never precedes readiness');
+    }
+    const ready=once(ws,'message');active=true;fake.emit('media-ready','CAM123');await ready;
+    assert.equal(messages[0].audio,false);
+    if (!audioFirst) { assert.equal(messages.length,1); available=true;fake.emit('audio-ready','CAM123'); }
     if(optIn) {
-      await next;
+      while (messages.length<2) await once(ws,'message');
       assert.deepEqual(messages[1],{type:'audio_ready',path:messages[0].path+'/audio'});
       assert.equal(fake.listenerCount('audio-ready'),0);
     }

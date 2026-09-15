@@ -69,16 +69,17 @@ when finished. Idle images are the latest received snapshots and may be old.
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
 
-The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.19`.
+The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.20`.
 See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 </details>
 
 ## Upgrading
 
-The **0.8.19** update combines playback diagnostics, media lifecycle checks and
-shared device profiles. Update both the integration and bridge to **0.8.19**,
-then refresh the dashboard. The bridge includes client **0.12.3**.
+The **0.8.20** update delivers live audio on its own route whenever the camera
+starts sending it, bounds the live video encoder and stamps frames by arrival
+time. Update both the integration and bridge to **0.8.20**, then refresh the
+dashboard. The bridge includes client **0.12.3**.
 See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
 for changes and any version-specific instructions.
 
@@ -92,7 +93,7 @@ For installations already on 0.8.0 or newer:
 1. Close live viewers and recordings. Back up Home Assistant and the bridge's
    private data.
 2. Update **Eufy Security Viewer** in HACS and restart Home Assistant.
-3. If your bridge is older than 0.8.19, update **Eufy Security Viewer Bridge**
+3. If your bridge is older than 0.8.20, update **Eufy Security Viewer Bridge**
    through the HA app store, or follow the
    [Docker update steps](docs/DOCKER.md#update-the-docker-bridge).
 4. Reload your dashboard and check snapshots, live video, recordings and events.

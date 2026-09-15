@@ -1,16 +1,22 @@
 /** Encoded A/V fan-out. Readers cannot start or renew camera ownership. */
 import { StreamDiagnostics } from './diagnostics.js';
-import { LiveTranscoder, type LiveAcceleration } from './live-transcoder.js';
+import { LiveTranscoder, defaultLiveRateControl, type LiveAcceleration, type LiveRateControl } from './live-transcoder.js';
 import { LateAudio } from './late-audio.js';
 import type { Readable } from 'node:stream';
 import type { ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
 export class MediaRelay {
-  private audioTracks = new Map<string, boolean>();
-  audioSupported(serial: string): boolean | undefined { return this.audioTracks.get(serial); }
   private encoders = new Map<string, LiveTranscoder>();
+  /**
+   * Whether the video encoder behind /v1/media/<grant> exists. That MPEG-TS
+   * never carries audio: a joint encoder emits nothing until the first AAC
+   * frame and stalls video on every audio gap, so AAC only travels through
+   * the late audio reader at /v1/media/<grant>/audio.
+   */
+  active(serial: string): boolean { return this.encoders.has(serial); }
   acceleration: LiveAcceleration = 'software';
+  rateControl: LiveRateControl = defaultLiveRateControl;
   private hardwareFailed = false;
   private readers = new Map<string, Set<ServerResponse>>();
   private audioReaders = new Map<string, Set<ServerResponse>>();
@@ -58,12 +64,16 @@ export class MediaRelay {
     // Every delivery is a complete frame. New readers need no replay cache.
     return true;
   }
-  start(serial: string, codec: 'h264' | 'hevc', video: Readable, audio: Readable, hasAudio: boolean, fps = 15): void {
+  /**
+   * Video goes to its own encoder at once. Audio, whether the library admitted
+   * it within its startup deadline or not, is framed and forwarded whenever
+   * its first complete ADTS frame arrives, 40 ms or 5 s after video.
+   */
+  start(serial: string, codec: 'h264' | 'hevc', video: Readable, audio: Readable, fps = 15): void {
     if (this.encoders.has(serial)) throw new Error('Duplicate media encoder');
     const startup = { chunks: [] as Buffer[], bytes: 0, timer: undefined as ReturnType<typeof setTimeout> | undefined };
     this.startup.set(serial, startup);
-    this.audioTracks.set(serial, hasAudio);
-    if (!hasAudio) this.lateAudio.set(serial, new LateAudio(audio, () => {
+    this.lateAudio.set(serial, new LateAudio(audio, () => {
       this.diagnostics.mark(serial, 'audio_late');
       this.audioAvailable(serial);
     }, frame => {
@@ -74,7 +84,7 @@ export class MediaRelay {
     }, () => {
       for (const reader of this.audioReaders.get(serial) ?? []) reader.destroy();
     }));
-    const encoder = new LiveTranscoder(serial, codec, video, audio, hasAudio, fps,
+    const encoder = new LiveTranscoder(serial, codec, video, fps,
       this.hardwareFailed ? 'software' : this.acceleration, this.diagnostics, (chunk) => {
       if (this.encoders.get(serial) !== encoder) return;
       this.diagnostics.mark(serial, 'media_output');
@@ -92,9 +102,17 @@ export class MediaRelay {
         else reader.write(chunk);
       }
     }, () => { if (this.encoders.get(serial) === encoder) this.failed(serial); },
-      () => { this.hardwareFailed = true; });
+      () => { this.hardwareFailed = true; }, undefined, undefined, undefined, this.rateControl);
     this.encoders.set(serial, encoder);
     encoder.start();
+  }
+  /** Audio transport failure ends only its late delivery; video keeps its owner. */
+  stopAudio(serial: string): void {
+    const audio = this.lateAudio.get(serial);
+    if (!audio) return;
+    audio.stop(); this.lateAudio.delete(serial);
+    for (const reader of this.audioReaders.get(serial) ?? []) reader.destroy();
+    this.audioReaders.delete(serial);
   }
   private clearStartup(serial: string): void {
     const startup = this.startup.get(serial);
@@ -104,14 +122,11 @@ export class MediaRelay {
   }
   stop(serial: string): void {
     const process = this.encoders.get(serial); this.encoders.delete(serial);
-    this.audioTracks.delete(serial);
-    this.lateAudio.get(serial)?.stop(); this.lateAudio.delete(serial);
+    this.stopAudio(serial);
     this.clearStartup(serial);
     process?.stop();
     for (const reader of this.readers.get(serial) ?? []) reader.destroy();
     this.readers.delete(serial);
-    for (const reader of this.audioReaders.get(serial) ?? []) reader.destroy();
-    this.audioReaders.delete(serial);
     for (const [key, camera] of this.grants) if (camera === serial) this.revoke(key);
   }
 }
