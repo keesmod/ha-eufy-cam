@@ -76,7 +76,7 @@ See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 ## Upgrading
 
-The current release is **0.8.16**. Update both the HACS integration and the bridge.
+The current release is **0.8.17**. Update both the HACS integration and the bridge.
 See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
 for changes and any version-specific instructions.
 
