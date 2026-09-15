@@ -24,6 +24,7 @@ from .api import BridgeError, BridgeRecordingError
 from .recording_file import (
     CHUNK_BYTES,
     MAX_RECORDING_FILES,
+    RECORDING_BYTES,
     RecordingBudget,
     RecordingFile,
 )
@@ -73,9 +74,11 @@ class PlaybackView(HomeAssistantView):
         finally:
             file.close()
 
-    def remove(self, playback_id: str) -> None:
+    def remove(self, playback_id: str, reason: str = "expired") -> None:
         """Release media even if the browser disappeared without a DELETE."""
         if session := self.sessions.pop(playback_id, None):
+            if session.body.observation is not None:
+                session.body.observation.mark(reason)
             session.expiry.cancel()
             session.body.close()
 
@@ -83,7 +86,7 @@ class PlaybackView(HomeAssistantView):
         """Release this integration entry's media on unload or shutdown."""
         for playback_id, session in list(self.sessions.items()):
             if session.entry_id == entry_id:
-                self.remove(playback_id)
+                self.remove(playback_id, "unloaded")
 
     def add(
         self, request: web.Request, entity_id: str, body: RecordingFile
@@ -161,6 +164,9 @@ class PlaybackView(HomeAssistantView):
         response = web.StreamResponse(status=status, headers=headers)
         response.content_type = "video/mp4"
         response.content_length = stop - start
+        observation = body.observation
+        if observation is not None:
+            observation.mark("serving")
         self.readers += 1
         body.retain()
         try:
@@ -174,8 +180,12 @@ class PlaybackView(HomeAssistantView):
                         await response.write(chunk)
                         start += len(chunk)
                 await response.write_eof()
+                if observation is not None:
+                    observation.mark("response_complete")
             return response
         except ConnectionResetError, BrokenPipeError:
+            if observation is not None:
+                observation.mark("client_disconnect")
             # Closing or seeking can disconnect at any response write stage.
             return response
         finally:
@@ -191,7 +201,7 @@ class PlaybackView(HomeAssistantView):
     ) -> web.StreamResponse:
         """Authenticated close works even if the camera just became unavailable."""
         self.owned(request, playback_id)
-        self.remove(playback_id)
+        self.remove(playback_id, "released")
         return web.Response(status=204)
 
 
@@ -223,8 +233,18 @@ class PreparePlaybackView(HomeAssistantView):
         if hevc not in {"true", "false"}:
             raise web.HTTPBadRequest
 
+        observation = coordinator.recording_diagnostics.begin(
+            output_format, request.query.get("card_version")
+        )
+        observation.data["limits"] = {
+            "storage_bytes": RECORDING_BYTES,
+            "files": MAX_RECORDING_FILES,
+            "playback_seconds": PLAYBACK_SECONDS,
+        }
+
         async def prepare() -> dict[str, Any]:
             async with self.playback.reserve() as body:
+                body.observation = observation
                 modern = bool(coordinator.data and coordinator.data.recording_playback)
                 requested = output_format
                 if not modern and output_format == "auto":
@@ -243,6 +263,31 @@ class PreparePlaybackView(HomeAssistantView):
                 result: dict[str, Any] = self.playback.add(request, entity_id, body)
                 if modern and media is not None:
                     result["media"] = media
+                    observation.data["media"] = media
+                observation.data.update(
+                    outcome="prepared", stage="prepared", output_bytes=body.size
+                )
+                observation.mark("prepared")
                 return result
 
-        return await serve(request, prepare())
+        async def observed_prepare() -> dict[str, Any]:
+            try:
+                return await prepare()
+            except BridgeRecordingError as error:
+                observation.data["error"] = error.code
+                raise
+
+        try:
+            response = await serve(request, observed_prepare())
+            if response.status >= 400:
+                observation.data["outcome"] = "failed"
+                observation.mark("failed")
+            return response
+        except asyncio.CancelledError:
+            observation.data["outcome"] = "cancelled"
+            observation.mark("cancelled")
+            raise
+        except Exception:
+            observation.data["outcome"] = "failed"
+            observation.mark("failed")
+            raise

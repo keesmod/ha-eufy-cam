@@ -473,6 +473,14 @@ class BridgeClient:
                     headers=self._headers,
                     allow_redirects=False,
                 ) as response:
+                    if (
+                        not thumbnail
+                        and target is not None
+                        and target.observation is not None
+                    ):
+                        target.observation.received(
+                            response.headers.get("X-Eufy-Recording-Attempt")
+                        )
                     await check_recording_error(response)
                     if response.status != 200 or response.content_type != (
                         "image/jpeg" if thumbnail else "video/mp4"

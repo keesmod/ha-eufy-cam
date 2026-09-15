@@ -55,6 +55,9 @@ const cloudRoutes = new Map([
   ['/app/sendmsg/verify_code', 'verification'],
 ]);
 export interface SupportReport {
+  cache_age_ms?: number;
+  recording?: ReturnType<import("./recording-diagnostics.js").RecordingDiagnostics["report"]>;
+  software?: ReturnType<typeof diagnosticSoftware>;
   live_audio?: import("./live-audio-diagnostics.js").LiveAudioReport[];
   schema: 2;
   generated_at: string;
