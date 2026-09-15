@@ -1,7 +1,8 @@
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import type { DiscoveryResult, Diagnostic, CameraCapabilities } from '@keesmod/eufy-mega-client';
-import { DiscoveryDiagnostics, diagnosticSoftware } from '../src/discovery-diagnostics.js';
+import { DiscoveryDiagnostics, diagnosticCode, diagnosticSoftware } from '../src/discovery-diagnostics.js';
 
 const result = (): DiscoveryResult => ({
   devices: [
@@ -146,4 +147,41 @@ test('downloads retain full unchanged inventory, isolate mutations and bound rec
   f.reporter.fault('PRIVATE_TOKEN');f.reporter.fault('PRIVATE_TOKEN');
   assert.equal(f.reporter.report().recent_events.filter(row=>row.event==='fault').length,1);
   assert.doesNotMatch(JSON.stringify(f.reporter.report()),/PRIVATE/);
+});
+
+const codeCases = JSON.parse(readFileSync(
+  new URL('../../tests/fixtures/diagnostic-codes.json', import.meta.url), 'utf8',
+)) as { accepted: string[]; rejected: unknown[] };
+
+test('machine code validation agrees with the HA download contract without enumerating codes', () => {
+  for (const code of codeCases.accepted) assert.equal(diagnosticCode(code), code);
+  for (const value of [...codeCases.rejected, undefined])
+    assert.equal(diagnosticCode(value), 'unclassified_error');
+});
+
+test('future codes survive every report code field and normal log output', () => {
+  for (const code of codeCases.accepted) {
+    const f = collect();
+    const value = result();
+    Object.assign(value.issues[0]!, { code });
+    Object.assign(value.relationships[1]!, { kind: 'standalone', reason: code });
+    const capability = { available: false, status: 'unsupported', reason: code } as const;
+    f.reporter.prepare(value);
+    f.reporter.station('PRIVATE_BASE', 'connect', 'error', code);
+    f.reporter.fault(code);
+    f.reporter.connection('authentication', code, false);
+    f.reporter.inventory(value, code, undefined, true, new Map([['PRIVATE_CAMERA',
+      { snapshot: capability, live: capability, recordings: capability }]]), new Map());
+    const report = f.reporter.report();
+    assert.equal(report.recent_events.find(row => row.event === 'station_connection')!.reason, code);
+    assert.equal(report.recent_events.find(row => row.event === 'fault')!.code, code);
+    assert.equal(report.recent_events.find(row => row.event === 'connection')!.outcome, code);
+    assert.equal(report.last_discovery[0]!.outcome, code);
+    assert.equal(report.last_discovery.find(row => row.event === 'issue')!.code, code);
+    const camera = report.last_discovery.find(row => row.event === 'device' && row.ref === 2)!;
+    assert.equal(camera.relationship_reason, code);
+    assert.equal((camera.media as any).live.reason, code);
+    assert.ok(f.rows().some(row => row.event === 'station_connection' && row.reason === code));
+    assert.doesNotMatch(JSON.stringify(report), /PRIVATE/);
+  }
 });

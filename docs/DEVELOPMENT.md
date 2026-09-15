@@ -113,12 +113,12 @@ selects the record shape:
 |---|---|
 | `summary` | Actual bridge/library/Node/platform versions, outcome, discovery counts, inventory availability, migration-baseline/missing counts, truncation and report number |
 | `device` | Anonymous reference, model/firmware/hardware, observed availability, owner relationship/status and per-feature software capabilities |
-| `issue` | Source inventory row, fixed reason, bounded model/type/firmware and parent context, anonymous links where known |
+| `issue` | Source inventory row, validated reason code, bounded model/type/firmware and parent context, anonymous links where known |
 | `end` | Report number and number of device/issue rows emitted |
 | `cloud` | Named allowlisted operation, HTTP status, numeric result and elapsed milliseconds |
 | `connection` | Authentication or push-event phase, outcome, push status and software versions |
-| `station_connection` | Report number, anonymous device reference, model, connect/refresh/observation phase, status and fixed reason |
-| `fault` | Fixed error code and report number when available |
+| `station_connection` | Report number, anonymous device reference, model, connect/refresh/observation phase, status and validated reason code |
+| `fault` | Validated error code and report number when available |
 
 `report` groups discovery rows within a backend lifetime. `ref` is one-based in
 that report, while `inventory_row` is the separate zero-based source position.
@@ -143,7 +143,18 @@ capabilities as separate evidence.
 - Models are exactly five characters matching `T[A-Z0-9]{4}`. Device types are
   integers from 0 through 65535. Numeric dotted versions contain one to four
   components of one to four digits, with a maximum length of 19. Do not coerce,
-  trim, truncate or infer rejected values. Use fixed enum/error-code allowlists.
+  trim, truncate or infer rejected values. Use fixed enum allowlists for structural values.
+- `code`, `reason`, `relationship_reason` and `outcome` accept complete machine
+  identifiers matching `[a-z][a-z0-9]*(?:_[a-z0-9]+)*`, at most 64 characters.
+  Both bridge and integration validate this format without enumerating individual
+  codes. Invalid bridge codes become `unclassified_error`. Invalid values at the
+  HA download boundary become `null`, preserving its existing rejection behavior.
+  Code producers must use static identifiers, never interpolate private data or
+  forward raw error messages. Format validation cannot identify a secret that
+  happens to look like a code. Structural enums and unknown-field filtering stay
+  unchanged. Bridge/integration 0.8.16 introduce this behavior with schema 2.
+  Older integrations can replace new codes with `null`. Updated bridge startup
+  logs remain the fallback until the integration is updated.
 - Unchanged discovery logs emit only summary/end with `unchanged=true` and zero
   emitted rows. The download still contains complete rows. Repeated identical
   connection states and consecutive identical generic faults are suppressed.

@@ -14,20 +14,7 @@ from .const import CONF_TOKEN, CONF_URL, DOMAIN
 from .coordinator import EufyConfigEntry
 from .live_diagnostics import browser_report
 
-_CODES = set(
-    """
-invalid_device_identity invalid_device_relationship unsupported_device
-unsupported_station standalone_transport_unverified camera_inventory_empty
-expected_devices_missing inventory_required inventory_invalid bridge_identity_mismatch
-invalid_inventory inventory_completeness_unconfirmed authentication_rejected
-authentication_required invalid_authentication domain_discovery_failed domain_unresolved
-request_failed request_rejected http_error invalid_response response_decryption_failed
-response_too_large key_exchange_failed invalid_key_exchange client_closed
-camera_media_unverified device_initialization_failed device_connection_failed
-unknown_device unknown_camera unknown_station invalid_connection_credentials
-station_busy connection_failed unclassified_error
-""".split()
-)
+_CODE_FIELDS = {"outcome", "code", "reason", "relationship_reason"}
 _ENUMS = {
     "event": set(
         "summary device issue end cloud connection station_connection fault".split()
@@ -53,11 +40,6 @@ _ENUMS = {
     ),
     "phase": set("authentication events connect refresh_state observation".split()),
     "operation": set("inventory login region key_exchange verification".split()),
-    "outcome": _CODES
-    | set("accepted connected disconnected connecting captcha verify error".split()),
-    "code": _CODES,
-    "reason": _CODES,
-    "relationship_reason": _CODES,
     "scope": {"public_discovery_result"},
     "baseline": {"present", "absent", "unavailable"},
     "platform": {"linux", "darwin", "win32", "other"},
@@ -118,6 +100,7 @@ def _fields(raw: Any) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key in (
         _ENUMS.keys()
+        | _CODE_FIELDS
         | _NUMBERS.keys()
         | _BOOLEANS
         | _VERSIONS
@@ -127,7 +110,15 @@ def _fields(raw: Any) -> dict[str, Any]:
         if key not in raw:
             continue
         value = raw[key]
-        if key in _ENUMS:
+        if key in _CODE_FIELDS:
+            result[key] = (
+                value
+                if isinstance(value, str)
+                and len(value) <= 64
+                and re.fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*", value)
+                else None
+            )
+        elif key in _ENUMS:
             result[key] = (
                 value if isinstance(value, str) and value in _ENUMS[key] else None
             )
