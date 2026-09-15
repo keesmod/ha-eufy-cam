@@ -172,6 +172,7 @@ _AUDIO_PIPELINE_EVENTS = set(
     "fallback_signaling_error fallback_playback_error start video_input audio_input "
     "jpeg_frame media_output media_reader frame_ack viewer_timeout camera_timeout "
     "session_end stream_failure no_viewers h264 hevc audio_supported audio_absent "
+    "audio_late "
     "jpeg_encoder_exit media_encoder_exit jpeg_encoder_error media_encoder_error "
     "jpeg_invalid_data media_invalid_data jpeg_decode_error media_decode_error "
     "jpeg_encoder_stderr media_encoder_stderr "

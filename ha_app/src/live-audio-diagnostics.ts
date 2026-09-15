@@ -101,6 +101,7 @@ export class LiveAudioObservation {
   };
   mark(event: DiagnosticEvent): void {
     if (this.closed || !diagnosticEvents.includes(event)) return;
+    if (event === 'audio_late') this.report.admission = 'forwarded';
     const rows = this.report.pipeline ??= [];
     if (rows.length < 48 && !rows.some(row => row.event === event)) rows.push({ event, elapsed_ms: elapsed(this.now() - this.started) });
   }
