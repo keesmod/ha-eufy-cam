@@ -585,7 +585,7 @@ for (const empty of [false,true])
       const rows=lines.map(line=>JSON.parse(line));
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
-      assert.equal(summary.software.library,'0.12.2');
+      assert.equal(summary.software.library,'0.12.3');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);

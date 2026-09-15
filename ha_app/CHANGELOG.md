@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.19 - Unreleased
+
+- Add bounded recording attempt evidence to the existing diagnostic report,
+  including processing, storage limits, cancellation and observed cleanup.
+  Anonymous references correlate attempts with Home Assistant. No recording
+  identifiers, paths, raw converter output or media enter the report.
+- Include client 0.12.3 with shared exact device profiles and per-feature policy.
+  Existing admission, command ownership, late audio and cleanup remain covered.
+
+Update the bridge and HACS integration together to 0.8.19, restart Home
+Assistant and refresh the dashboard. Back up both components and bridge data.
+Restore the previous versions together to roll back. This batch does not add
+hardware support or complete T8134 reporter acceptance. The existing Home
+Assistant dependency security limitation remains tracked in camera issue #30.
+
 ## 0.8.17 - 2026-09-15
 
 - Add AAC audio that arrives after a live session started without an audio track.
