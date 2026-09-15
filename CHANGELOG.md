@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.8.19 - Unreleased
+## 0.8.19 - 2026-09-15
+
+### More useful playback reports
+
+One diagnostic download now connects the stages of a failed recording, reducing
+the separate logs and repeat attempts needed to investigate an issue.
 
 - Extend the existing diagnostic download with recent recording preparation,
   processing, limits, cancellation and cleanup. Anonymous attempt references
@@ -9,13 +14,24 @@
 - Add a bounded diagnostic download action at relevant player errors, using
   Home Assistant's existing administrator permissions. Report loaded card and
   component versions, observed failure stages and missing or stale evidence.
+
+### Stronger regression checks
+
 - Cover concurrent recording readers, close/expiry/unload, interrupted reads
   and reopening after fallback or closure before late audio. The new scenarios
   preserve existing playback behavior and improve the synthetic test fixture.
+
+### Simpler device maintenance
+
 - Include client 0.12.3 with one registry for all 51 existing device profiles
   and separate snapshot, live and recording policies. Existing model/type,
   owner and firmware admission remains unchanged. Preserve the released
   late-audio and Home Assistant STUN/TURN behavior.
+- Give maintainers one place to add and review profiles within supported device
+  families, backed by automatic admission checks. A new protocol or an untested
+  model still needs its own implementation and hardware evidence.
+
+### Upgrade and rollback
 
 Update both the integration and bridge to 0.8.19, restart Home Assistant and
 refresh the dashboard. Back up the integration and bridge with its private
@@ -23,6 +39,8 @@ data first. Restore their previous files or versions together to roll back,
 preserving credentials and entity identities. Older bridges remain usable but
 cannot provide the added recording evidence. Download diagnostics before a
 restart or the fifteen-minute retention window expires.
+
+### Scope and known limits
 
 References #76, #77 and #78, with
 [client #139](https://github.com/keesmod/eufy-mega-client/issues/139).
