@@ -24,9 +24,11 @@ from go2rtc_client.ws import (
 )
 from homeassistant.auth.permissions.const import POLICY_READ
 from homeassistant.core import callback
+from webrtc_models import RTCIceServer
 
 from .api import BridgeError
 from .const import DOMAIN, MAX_FRAME_BYTES
+from .ice import ice_configuration
 from .late_audio import LateAudioTrack
 from .live_diagnostics import browser_report, relay_report
 from .viewers import Viewer
@@ -62,6 +64,7 @@ class WebRTCViewer(Viewer):
         self.signaling: Go2RtcWsClient | None = None
         self.ready = False
         self.offered = False
+        self.ice_servers: list[RTCIceServer] = []
         self.registered = False
         self.jpeg = False
         self.fallback_supported = False
@@ -197,8 +200,8 @@ class WebRTCViewer(Viewer):
                     if self.offered:
                         return False
                     self.offered = True
-                    # No external STUN/TURN service is silently introduced.
-                    await self.signaling.send(WebRTCOffer(offer, []))
+                    # Use the same per-peer configuration sent to its browser.
+                    await self.signaling.send(WebRTCOffer(offer, self.ice_servers))
                     self.playback_evidence["offered"] = True
                 elif candidate is not None and self.offered:
                     await self.signaling.send(WebRTCCandidate(candidate))
@@ -239,6 +242,7 @@ class WebRTCViewer(Viewer):
             self.config.session, self.config.url, source=self.name
         )
         self.signaling.subscribe(self._message)
+        self.ice_servers, ice_status = ice_configuration(self.hass)
         self.ready = True
         self.connection.send_event(
             self.subscription,
@@ -247,6 +251,8 @@ class WebRTCViewer(Viewer):
                 "subscription": self.subscription,
                 "fallback": self.fallback_supported,
                 "diagnostics": True,
+                "ice_servers": [server.to_dict() for server in self.ice_servers],
+                "ice_configuration": ice_status,
             },
         )
 
@@ -272,6 +278,7 @@ class WebRTCViewer(Viewer):
                 await self.audio_task
         if self.audio:
             await self.audio.close()
+        self.ice_servers = []
         signaling, self.signaling = self.signaling, None
         registered, self.registered = self.registered, False
         if signaling:

@@ -9,7 +9,9 @@ from unittest.mock import AsyncMock, patch
 import aiohttp
 import pytest
 from go2rtc_client.exceptions import Go2RtcClientError
-from go2rtc_client.ws import WebRTCAnswer, WebRTCCandidate, WsError
+from go2rtc_client.ws import WebRTCAnswer, WebRTCCandidate, WebRTCOffer, WsError
+from homeassistant.components.web_rtc import async_register_ice_servers
+from webrtc_models import RTCIceServer
 
 from custom_components.eufy_viewer.const import DOMAIN
 from custom_components.eufy_viewer.diagnostics import async_get_config_entry_diagnostics
@@ -641,3 +643,108 @@ async def test_audio_transport_exception_keeps_video_and_releases_audio(
     assert await viewer.ack(tick["sequence"])
     assert session.deleted[0][1]["params"]["src"] == viewer.name + "_audio"
     await client.close()
+
+
+async def test_ha_ice_snapshot_is_shared_by_browser_and_go2rtc_per_peer(
+    hass, hass_ws_client, rtc_setup
+):
+    socket, _, _, connect = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    current = RTCIceServer("turn:relay.invalid:3478", "PRIVATE_USER", "PRIVATE_FIRST")
+    remove = async_register_ice_servers(hass, lambda: [current])
+    await socket.queue.put(
+        SimpleNamespace(
+            type=aiohttp.WSMsgType.TEXT,
+            data=json.dumps(
+                {
+                    "type": "ready",
+                    "path": "/v1/media/" + "a" * 64,
+                    "audio": False,
+                }
+            ),
+        )
+    )
+    initial = (await client.receive_json())["event"]
+    assert initial["ice_configuration"] == "home_assistant"
+    assert initial["ice_servers"][-1] == current.to_dict()
+    assert any("stun:" in url for url in initial["ice_servers"][0]["urls"])
+    current.credential = "PRIVATE_NEXT"
+    assert await viewer.signal("sdp", None)
+    offer = viewer.signaling.send.call_args.args[0]
+    assert isinstance(offer, WebRTCOffer)
+    assert [server.to_dict() for server in offer.ice_servers] == initial["ice_servers"]
+    # go2rtc-client normalizes URL strings in-place. HA's provider owns its data.
+    offer.to_json()
+    assert current.urls == "turn:relay.invalid:3478"
+    await socket.queue.put(
+        SimpleNamespace(
+            type=aiohttp.WSMsgType.TEXT,
+            data=json.dumps(
+                {
+                    "type": "audio_ready",
+                    "path": "/v1/media/" + "a" * 64 + "/audio",
+                }
+            ),
+        )
+    )
+    late = (await client.receive_json())["event"]
+    assert late["ice_servers"][-1] == current.to_dict()
+    assert (
+        late["ice_servers"][-1]["credential"]
+        != initial["ice_servers"][-1]["credential"]
+    )
+    assert await viewer.signal("audio-sdp", None, True)
+    assert [
+        s.to_dict() for s in viewer.audio.signaling.send.call_args.args[0].ice_servers
+    ] == late["ice_servers"]
+    remove()
+    assert connect.await_count == 1 and not socket.acks
+    await client.close()
+    await hass.async_block_till_done()
+    assert viewer.ice_servers == [] and viewer.audio.ice_servers == []
+    assert "PRIVATE" not in json.dumps(viewer.playback_evidence)
+
+
+@pytest.mark.parametrize("failure", ["missing", "provider", "empty"])
+async def test_ice_configuration_failure_keeps_direct_peer_and_cleanup(
+    hass, hass_ws_client, rtc_setup, caplog, failure
+):
+    socket, _, _, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    error = (
+        KeyError("PRIVATE")
+        if failure == "missing"
+        else RuntimeError("turn:PRIVATE secret")
+    )
+    with patch(
+        "custom_components.eufy_viewer.ice.async_get_ice_servers",
+        side_effect=None if failure == "empty" else error,
+        return_value=[],
+    ):
+        await audio_ready(client, socket)
+    assert viewer.ice_servers == viewer.audio.ice_servers == []
+    assert await viewer.signal("sdp", None)
+    assert await viewer.signal("sdp", None, True)
+    assert viewer.signaling.send.call_args.args[0].ice_servers == []
+    assert viewer.audio.signaling.send.call_args.args[0].ice_servers == []
+    assert "PRIVATE" not in caplog.text
+    await client.close()
+    await hass.async_block_till_done()
+    assert socket.closed.is_set()
+
+
+async def test_custom_ha_stun_overrides_default_and_provider_removal(hass):
+    from homeassistant.components.web_rtc import DATA_ICE_SERVERS, DATA_ICE_SERVERS_USER
+
+    from custom_components.eufy_viewer.ice import ice_configuration
+
+    hass.data[DATA_ICE_SERVERS] = []
+    hass.data[DATA_ICE_SERVERS_USER] = [RTCIceServer(["stun:custom.invalid:3478"])]
+    remove = async_register_ice_servers(
+        hass, lambda: [RTCIceServer("turn:provider.invalid", "user", "secret")]
+    )
+    assert len(ice_configuration(hass)[0]) == 2
+    remove()
+    assert [s.to_dict() for s in ice_configuration(hass)[0]] == [
+        {"urls": ["stun:custom.invalid:3478"]}
+    ]
