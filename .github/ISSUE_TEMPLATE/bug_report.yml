@@ -37,7 +37,9 @@ body:
         issue rows and connection/error records. Bridge 0.8.5 includes library
         0.12.2. The HA download also requires integration 0.8.5. If that integration
         update is unavailable, use the bridge startup logs. Other failures can
-        use a relevant reviewed excerpt. Remove credentials, account details,
+        use the existing HA diagnostic download after one affected attempt.
+        Download before restarting, within fifteen minutes for recording attempts.
+        See https://github.com/keesmod/ha-eufy-cam/blob/main/docs/PLAYBACK_REPORT.md. Remove credentials, account details,
         serials, recording paths and private addresses. Never attach raw captures,
         full debug logs, bridge storage or footage.
       render: text

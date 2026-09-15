@@ -1,5 +1,5 @@
 interface EventCamera { state: string; attributes: { capabilities?: Record<string, { available: boolean }>; viewer_card?: boolean; friendly_name?: string } }
-interface EventsHA { language: string; states: Record<string, EventCamera>; connection: EventTarget; fetchWithAuth(path: string, init?: RequestInit): Promise<Response> }
+interface EventsHA { user?: { is_admin?: boolean }; callWS(message: Record<string, unknown>): Promise<unknown>; language: string; states: Record<string, EventCamera>; connection: EventTarget; fetchWithAuth(path: string, init?: RequestInit): Promise<Response> }
 interface EventsConfig { entities?: string[]; title?: string }
 interface StoredEvent { entity_id: string; id: string; start: string; end: string; thumbnail: boolean }
 const EVENTS_TEXT = {
@@ -21,6 +21,7 @@ export class EufyEventsCard extends HTMLElement {
   private urls = new Map<string,string>();
   private playback = new EufyRecordingPlayback();
   private controls: EufyRecordingControls;
+  private diagnostics: EufyDiagnosticControl;
   private observer?: IntersectionObserver;
   private cameraKey = '';
   private loadedDate = '';
@@ -44,6 +45,7 @@ export class EufyEventsCard extends HTMLElement {
       dialog{width:min(1000px,95vw);max-width:95vw;padding:0;border:0;border-radius:16px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#152028)}dialog::backdrop{background:#000b}.player-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;flex-wrap:wrap}.player-title{font-weight:600}.player-status{padding:0 16px 12px}video{display:block;width:100%;max-height:65vh;background:#10161e}.player-nav{display:flex;gap:10px;justify-content:center;padding:14px}
       @media(max-width:450px){ha-card{padding:14px}.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.filters label:first-child{flex:1;min-width:130px}.event-time{font-size:11px}}
     </style><ha-card><h2></h2><div class="filters"><label><span data-text="camera"></span><select class="camera"></select></label><label><span data-text="date"></span><input class="date" type="date"></label><button class="show" data-text="show"></button></div><details><summary data-text="calendar"></summary><div class="calendar"><input class="month" type="month"><div class="days"></div><p class="legend"></p></div></details><div class="status" role="status" aria-live="polite"></div><div class="tiles"></div><div class="pagination" hidden><button class="page-prev" data-text="pagePrev"></button><span class="page-info"></span><button class="page-next" data-text="pageNext"></button></div></ha-card><dialog aria-labelledby="events-player-title"><div class="player-bar"><span class="player-title" id="events-player-title"></span><button class="close" data-text="close"></button></div><div class="player-status" role="status" aria-live="polite"></div><video playsinline controls hidden></video><div class="player-nav"><button class="previous" data-text="prev"></button><button class="next" data-text="next"></button></div></dialog>`;
+    this.diagnostics = new EufyDiagnosticControl(this.q('dialog'), () => ({ ha: this.ha, entity: this.filtered()[this.selected]?.entity_id }));
     this.controls = new EufyRecordingControls(this.q('dialog'), () => this.ha?.language, () => {
       if (this.q<HTMLDialogElement>('dialog').open) { const v = this.q<HTMLVideoElement>('video'); this.play(this.selected, { time: v.currentTime, paused: !v.hidden && v.paused }); }
     });
@@ -102,7 +104,7 @@ export class EufyEventsCard extends HTMLElement {
       finally{if(this.controller===controller)this.active=false;}
     });
   }
-  private failure(error: unknown) {if(error instanceof RecordingCodecError && recordingMode() === "native")return this.controls.codecError();const code=error instanceof Error?error.message:'';return code==='recording_storage_unavailable'?this.text.storage:code==='live_busy'?this.text.live:code==='live_stopping'?this.text.stopping:code==='recording_busy'?this.text.busy:code==='recording_expired'?this.text.expired:code==='history_incomplete'?this.text.incomplete:this.text.error;}
+  private failure(error: unknown) {this.diagnostics.update();if(error instanceof RecordingCodecError && recordingMode() === "native")return this.controls.codecError();const code=error instanceof Error?error.message:'';return code==='recording_storage_unavailable'?this.text.storage:code==='live_busy'?this.text.live:code==='live_stopping'?this.text.stopping:code==='recording_busy'?this.text.busy:code==='recording_expired'?this.text.expired:code==='history_incomplete'?this.text.incomplete:this.text.error;}
   private async fetch(path: string, signal:AbortSignal) {signal.throwIfAborted();const response=await this.ha!.fetchWithAuth(path,{signal});if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error);}return response;}
   private query() {return `/api/eufy_viewer/events?entities=${encodeURIComponent(this.cameras().join(','))}`;}
   private load() {

@@ -10,6 +10,8 @@ from functools import partial
 from pathlib import Path
 from typing import Any, BinaryIO
 
+from .recording_diagnostics import PlaybackObservation
+
 RECORDING_BYTES = 256 * 1024 * 1024
 MAX_RECORDING_FILES = 8
 CHUNK_BYTES = 64 * 1024
@@ -60,6 +62,7 @@ class RecordingFile:
         self.file: BinaryIO | None = None
         self.size = 0
         self.owners = 1
+        self.observation: PlaybackObservation | None = None
 
     async def open(self) -> None:
         """Create without leaving a pathname behind on process termination."""
@@ -86,6 +89,10 @@ class RecordingFile:
             if self.file is not None:
                 self.file.close()
                 self.file = None
+            if self.observation is not None:
+                self.observation.data["file_closed"] = True
+                self.observation.mark("file_closed")
+                self.observation = None
 
     async def write(self, chunk: bytes) -> None:
         """Apply the disk budget before writing, without whole-clip copies."""

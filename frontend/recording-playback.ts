@@ -1,3 +1,4 @@
+declare const EUFY_VIEWER_CARD_VERSION: string;
 interface RecordingHA { fetchWithAuth(path: string, init?: RequestInit): Promise<Response> }
 
 type RecordingMode = 'auto' | 'native' | 'h264';
@@ -123,7 +124,7 @@ class EufyRecordingPlayback {
   async prepare(ha: RecordingHA, entity: string, id: string, signal: AbortSignal, format: RecordingMode = 'h264', hevcSupported = false): Promise<string> {
     this.media = undefined;
     const query = format === 'auto' ? `?format=auto&hevc_supported=${hevcSupported}` : format === 'native' ? '?format=native' : '';
-    const response = await ha.fetchWithAuth(`/api/eufy_viewer/recordings/${entity}/${id}/playback${query}`, { method: 'POST', signal });
+    const response = await ha.fetchWithAuth(`/api/eufy_viewer/recordings/${entity}/${id}/playback${query}${query ? "&" : "?"}card_version=${encodeURIComponent(EUFY_VIEWER_CARD_VERSION)}`, { method: 'POST', signal });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
     if (typeof data.path !== 'string' || !/^\/api\/eufy_viewer\/playback\/[a-f0-9]{32}$/.test(data.path)
@@ -167,3 +168,64 @@ class EufyRecordingPlayback {
 }
 
 class RecordingCodecError extends Error {}
+
+
+interface DiagnosticHA {
+  user?: { is_admin?: boolean };
+  language?: string;
+  callWS(message: Record<string, unknown>): Promise<unknown>;
+  fetchWithAuth(path: string, init?: RequestInit): Promise<Response>;
+}
+/** Use HA's existing admin-only diagnostics download. Never starts camera work. */
+class EufyDiagnosticControl {
+  readonly button = document.createElement('button');
+  private readonly status = document.createElement('span');
+  private busy = false;
+  constructor(host: HTMLElement, private readonly context: () => { ha?: DiagnosticHA; entity?: string }) {
+    this.button.type = 'button'; this.button.className = 'close diagnostic-download';
+    this.status.setAttribute('role', 'status'); this.status.className = 'diagnostic-status';
+    const root = document.createElement('div'); root.className = 'diagnostic-controls';
+    root.style.cssText = 'padding:0 16px 12px'; root.append(this.button, this.status); host.append(root);
+    this.button.onclick = () => { void this.download(); }; this.update(false);
+  }
+  update(show = true) {
+    const { ha } = this.context();
+    this.button.hidden = !show || ha?.user?.is_admin !== true;
+    this.button.textContent = ha?.language?.startsWith('nl') ? 'Diagnose downloaden' : 'Download diagnostics';
+    this.button.title = ha?.language?.startsWith('nl') ? 'Download vóór het herstarten. Recente pogingen blijven vijftien minuten bewaard.' : 'Download before restarting. Recent attempts are retained for fifteen minutes.';
+    if (!show) this.status.textContent = '';
+  }
+  private async download() {
+    const { ha, entity } = this.context();
+    if (this.busy || !ha || ha.user?.is_admin !== true || !entity) return;
+    this.busy = true; this.button.disabled = true; this.status.textContent = '';
+    const abort = new AbortController();
+    let timer: number | undefined;
+    try {
+      const timeout = new Promise<never>((_, reject) => { timer = window.setTimeout(() => { abort.abort(); reject(new Error('timeout')); }, 15000); });
+      await Promise.race([timeout, (async () => {
+        const raw = await ha.callWS({ type: 'config/entity_registry/get', entity_id: entity });
+        if (abort.signal.aborted) return;
+        const entry = (raw as { config_entry_id?: unknown })?.config_entry_id;
+        if (typeof entry !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(entry)) throw new Error('entry');
+        const response = await ha.fetchWithAuth(`/api/diagnostics/config_entry/${entry}`, { signal: abort.signal });
+        if (!response.ok || !response.body) throw new Error('download');
+        const reader = response.body.getReader(); const chunks: Uint8Array<ArrayBuffer>[] = []; let size = 0;
+        try {
+          for (;;) {
+            const { done, value } = await reader.read(); if (done) break;
+            size += value.byteLength;
+            if (size > 2 * 1024 * 1024 || abort.signal.aborted) throw new Error('limit');
+            chunks.push(new Uint8Array(value));
+          }
+        } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+        if (abort.signal.aborted) return;
+        const url = URL.createObjectURL(new Blob(chunks, { type: 'application/json' }));
+        const link = document.createElement('a'); link.href = url; link.download = 'eufy-diagnostics.json';
+        link.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      })()]);
+    } catch {
+      this.status.textContent = ha.language?.startsWith('nl') ? ' Download mislukt. Probeer via Instellingen → Apparaten en diensten → Eufy Security Viewer.' : ' Download failed. Use Settings → Devices & services → Eufy Security Viewer.';
+    } finally { abort.abort(); clearTimeout(timer); this.busy = false; this.button.disabled = false; }
+  }
+}

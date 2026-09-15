@@ -1,7 +1,9 @@
 """Bounded support download with explicit field and value allowlists."""
 
 import asyncio
+import math
 import re
+from time import monotonic
 from typing import Any
 
 from homeassistant.const import __version__ as HA_VERSION
@@ -12,7 +14,9 @@ from homeassistant.loader import async_get_integration
 from .api import BridgeClient, BridgeError
 from .const import CONF_TOKEN, CONF_URL, DOMAIN
 from .coordinator import EufyConfigEntry
+from .diagnostic_assessment import assess
 from .live_diagnostics import browser_report
+from .recording_diagnostics import recording_report
 
 _CODE_FIELDS = {"outcome", "code", "reason", "relationship_reason"}
 _ENUMS = {
@@ -75,7 +79,7 @@ _MODELS = {"model", "parent_model"}
 
 def _version(value: Any) -> str:
     return (
-        value
+        str(value)
         if isinstance(value, str)
         and len(value) <= 19
         and re.fullmatch(r"[0-9]{1,4}(?:\.[0-9]{1,4}){0,3}", value)
@@ -271,6 +275,7 @@ def audio_report(raw: Any) -> dict[str, Any]:
     }
     numbers = {
         "attempt": (1, 2**48 - 1),
+        "age_ms": (0, 2**31 - 1),
         **dict.fromkeys(
             (
                 "metadata_ms",
@@ -346,8 +351,96 @@ def support_report(raw: Any) -> dict[str, Any]:
             and isinstance(row.get("event"), str)
             and row["event"] in _ENUMS["event"]
         ]
+    cache_age = raw.get("cache_age_ms", 0)
+    cache_age = (
+        cache_age
+        if type(cache_age) is int and 0 <= cache_age <= 2**31 - 1
+        else 2**31 - 1
+    )
+    result["cache_age_ms"] = cache_age
+    recording = raw.get("recording")
+    if isinstance(recording, dict) and isinstance(recording.get("attempts"), list):
+        recording = {
+            **recording,
+            "attempts": [
+                {**row, "age_ms": min(2**31 - 1, row["age_ms"] + cache_age)}
+                if isinstance(row, dict)
+                and type(row.get("age_ms")) is int
+                and row["age_ms"] >= 0
+                else row
+                for row in recording["attempts"][-8:]
+            ],
+        }
+    result["recording"] = recording_report(recording)
+    if isinstance(raw.get("software"), dict):
+        result["software"] = _fields({"software": raw["software"]})["software"]
     if isinstance(raw.get("live_audio"), list):
-        result["live_audio"] = [audio_report(row) for row in raw["live_audio"][-8:]]
+        result["live_audio"] = [
+            audio_report(row)
+            for row in raw["live_audio"][-8:]
+            if cache_age < 900000
+            and (
+                not isinstance(row, dict)
+                or type(row.get("age_ms")) is not int
+                or row["age_ms"] + cache_age < 900000
+            )
+        ]
+    return result
+
+
+def playback_report(raw: dict[str, Any]) -> dict[str, Any]:
+    """Project stored HA observations again before downloading them."""
+    created = raw.get("_created")
+    result: dict[str, Any] = {
+        "schema": 1,
+        "age_ms": max(0, round((monotonic() - created) * 1000))
+        if isinstance(created, (int, float))
+        and not isinstance(created, bool)
+        and math.isfinite(created)
+        else None,
+    }
+    for key in ("audio_expected", "offered", "answered"):
+        if type(raw.get(key)) is bool:
+            result[key] = raw[key]
+    for key, low, high in (
+        ("audio_attempt", 1, 2**48 - 1),
+        ("ticks", 0, 2**53 - 1),
+        ("acks", 0, 2**53 - 1),
+    ):
+        value = raw.get(key)
+        if type(value) is int and low <= value <= high:
+            result[key] = value
+    fallback = raw.get("fallback")
+    if isinstance(fallback, str) and fallback in {
+        "startup_timeout",
+        "playback_timeout",
+        "connection_failed",
+        "signaling_error",
+        "playback_error",
+    }:
+        result["fallback"] = fallback
+    result["browser"] = (
+        [browser_report(row) for row in raw["browser"][:5]]
+        if isinstance(raw.get("browser"), list)
+        else []
+    )
+    result["relay"] = []
+    keys = {
+        f"{side}_{codec}_{metric}"
+        for side in ("source", "output")
+        for codec in ("h264", "h265", "aac", "opus", "pcma", "pcmu")
+        for metric in ("packets", "bytes")
+    }
+    for row in raw["relay"][:5] if isinstance(raw.get("relay"), list) else []:
+        if not isinstance(row, dict):
+            continue
+        safe = {
+            key: value
+            for key in keys
+            if type(value := row.get(key)) is int and 0 <= value <= 2**53 - 1
+        }
+        trigger = browser_report({"trigger": row.get("trigger")})
+        result["relay"].append({**safe, **trigger})
     return result
 
 
@@ -366,6 +459,10 @@ async def async_get_config_entry_diagnostics(
     integration = await async_get_integration(hass, DOMAIN)
     result: dict[str, Any] = {
         "protocol": 1,
+        "report_schema": 1,
+        "recording_playback": coordinator.recording_diagnostics.report()
+        if coordinator
+        else {"schema": 1, "attempts": [], "expired": 0},
         "home_assistant": _version(HA_VERSION),
         "integration": _version(integration.version),
         "entry_state": entry.state.value,
@@ -374,30 +471,14 @@ async def async_get_config_entry_diagnostics(
         if coordinator
         else None,
         "live_playback": [
-            {
-                "schema": 1,
-                **(
-                    {"audio_expected": report["audio_expected"]}
-                    if type(report.get("audio_expected")) is bool
-                    else {}
-                ),
-                **(
-                    {"audio_attempt": report["audio_attempt"]}
-                    if type(report.get("audio_attempt")) is int
-                    and 1 <= report["audio_attempt"] < 2**48
-                    else {}
-                ),
-                "offered": report.get("offered") is True,
-                "answered": report.get("answered") is True,
-                "ticks": report.get("ticks", 0),
-                "acks": report.get("acks", 0),
-                "fallback": report.get("fallback"),
-                "relay": report.get("relay", [])[:5],
-                "browser": [
-                    browser_report(row) for row in report.get("browser", [])[:5]
-                ],
-            }
+            playback_report(report)
             for report in getattr(coordinator, "live_diagnostics", [])[-8:]
+            if isinstance(report, dict)
+            and (
+                type(report.get("_created")) not in (int, float)
+                or not math.isfinite(report["_created"])
+                or monotonic() - report["_created"] < 900
+            )
         ],
         "active_viewers": len(coordinator.viewers) if coordinator else 0,
         "cameras": [
@@ -418,4 +499,5 @@ async def async_get_config_entry_diagnostics(
         result["support"] = support_report(raw)
     except BridgeError, TimeoutError:
         result["support"] = {"status": "unavailable"}
+    result["assessment"] = assess(result)
     return result
