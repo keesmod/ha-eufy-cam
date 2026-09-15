@@ -127,6 +127,7 @@ class Viewer:
         vol.Required("type"): "eufy_viewer/watch",
         vol.Required("entity_id"): str,
         vol.Optional("transport", default="jpeg"): vol.In(["jpeg", "webrtc"]),
+        vol.Optional("late_audio", default=False): bool,
     }
 )
 @websocket_api.async_response
@@ -184,7 +185,13 @@ async def websocket_watch(
             return
         try:
             viewer: Viewer = WebRTCViewer(
-                hass, connection, msg["id"], coordinator, serial, entity_id
+                hass,
+                connection,
+                msg["id"],
+                coordinator,
+                serial,
+                entity_id,
+                late_audio=msg["late_audio"],
             )
         except BridgeError:
             connection.send_error(
@@ -225,6 +232,8 @@ async def websocket_ack(
         vol.Required("subscription"): vol.All(int, vol.Range(min=1)),
         vol.Exclusive("offer", "signal"): vol.All(str, vol.Length(min=1, max=65536)),
         vol.Exclusive("candidate", "signal"): vol.All(str, vol.Length(max=2048)),
+        vol.Exclusive("stop", "signal"): True,
+        vol.Optional("audio", default=False): bool,
     }
 )
 @websocket_api.async_response
@@ -238,7 +247,9 @@ async def websocket_signal(
     accepted = bool(
         isinstance(viewer, WebRTCViewer)
         and connection.user.permissions.check_entity(viewer.entity_id, POLICY_READ)
-        and await viewer.signal(msg.get("offer"), msg.get("candidate"))
+        and await viewer.signal(
+            msg.get("offer"), msg.get("candidate"), msg["audio"], msg.get("stop", False)
+        )
     )
     connection.send_result(msg["id"], {"accepted": accepted})
 

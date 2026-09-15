@@ -1,12 +1,13 @@
 interface ViewerCapability { available: boolean; status?: string; reason?: string | null }
-interface CameraState { state: string; attributes: { friendly_name?: string; capabilities?: Record<string, ViewerCapability>; viewer_card?: boolean; viewer_webrtc?: boolean; snapshot_received_at?: string; entity_picture?: string } }
+interface CameraState { state: string; attributes: { friendly_name?: string; capabilities?: Record<string, ViewerCapability>; viewer_card?: boolean; viewer_webrtc?: boolean; viewer_late_audio?: boolean; snapshot_received_at?: string; entity_picture?: string } }
 interface CardConfig { entity: string; name?: string }
 interface FrameEvent { type: "frame"; subscription: number; sequence: number; jpeg: string }
 interface EndEvent { type: "ended" }
 interface FallbackEvent { type: "fallback" }
 type Unsubscribe = () => Promise<void>;
 type RTCEvent = { type: "ready"; subscription: number; fallback?: boolean; diagnostics?: boolean } | { type: "answer"; sdp: string } | { type: "candidate"; candidate: string } | { type: "tick"; subscription: number; sequence: number };
-type ViewerEvent = FrameEvent | EndEvent | FallbackEvent | RTCEvent;
+type AudioEvent = { type: "audio_ready" } | { type: "audio_answer"; sdp: string } | { type: "audio_candidate"; candidate: string } | { type: "audio_ended" };
+type ViewerEvent = FrameEvent | EndEvent | FallbackEvent | RTCEvent | AudioEvent;
 interface HAConnection extends EventTarget {
   subscribeMessage(callback: (event: ViewerEvent) => void, message: Record<string, unknown>, options: { resubscribe: boolean }): Promise<Unsubscribe>;
 }
@@ -52,6 +53,10 @@ export class EufyViewerCard extends HTMLElement {
   private _recordControls: EufyRecordingControls;
   private _rtc?: RTCPeerConnection;
   private _rtcCandidates: RTCIceCandidateInit[] = [];
+  private _audioRtc?: RTCPeerConnection;
+  private _audioCandidates: RTCIceCandidateInit[] = [];
+  private _audioTimeout?: number;
+  private _audioAttempted = false;
   private _tick?: { subscription: number; sequence: number };
   private _videoCallback?: number;
   private _diagnosticTimer?: number;
@@ -292,6 +297,7 @@ export class EufyViewerCard extends HTMLElement {
     this._fallbackPending = false;
     this._fallbackSupported = false;
     this._rtcSubscription = undefined;
+    this._audioAttempted = false;
     this._live.hidden = webrtc; this._video.hidden = !webrtc; this._sound.hidden = !webrtc;
     this._video.muted = true; this._sound.textContent = this._text().sound;
     this._open = true;
@@ -299,7 +305,7 @@ export class EufyViewerCard extends HTMLElement {
     this._status(this._text().connecting);
     this._startup = setTimeout(() => { if (this._watching(generation)) this._stop("error"); }, 25_000);
     try {
-      const unsubscribe = await this._hass.connection.subscribeMessage(event => { void this._event(event, generation); }, { type: "eufy_viewer/watch", entity_id: this._config.entity, transport: webrtc ? "webrtc" : "jpeg" }, { resubscribe: false });
+      const unsubscribe = await this._hass.connection.subscribeMessage(event => { void this._event(event, generation); }, { type: "eufy_viewer/watch", entity_id: this._config.entity, transport: webrtc ? "webrtc" : "jpeg", ...(webrtc && this._hass.states[this._config.entity]?.attributes.viewer_late_audio ? { late_audio: true } : {}) }, { resubscribe: false });
       if (!this._watching(generation)) { await unsubscribe(); return; }
       this._unsubscribe = unsubscribe;
 
@@ -315,6 +321,12 @@ export class EufyViewerCard extends HTMLElement {
       this._closeRTC();
       this._live.hidden = false; this._video.hidden = true; this._sound.hidden = true;
       this._status(this._text().videoOnly);
+      return;
+    }
+    if (event.type === "audio_ready" || event.type === "audio_answer" || event.type === "audio_candidate" || event.type === "audio_ended") {
+      if (this._jpegFallback || this._fallbackPending) return;
+      try { await this._audioEvent(event, generation); }
+      catch { if (this._watching(generation)) this._closeAudio(true); }
       return;
     }
     if (event.type !== "frame") {
@@ -343,7 +355,71 @@ export class EufyViewerCard extends HTMLElement {
       if (!result.accepted && this._watching(generation)) this._stop("ended");
     } catch { if (url && url !== this._frameUrl) URL.revokeObjectURL(url); if (generation === this._generation) this._stop("error"); }
   }
+  private _closeAudio(notify = false) {
+    clearTimeout(this._audioTimeout);
+    const pc = this._audioRtc;
+    this._audioRtc = undefined; this._audioCandidates = [];
+    if (pc) {
+      pc.onconnectionstatechange = null; pc.ontrack = null;
+      for (const { track } of pc.getReceivers()) {
+        track.onunmute = null;
+        (this._video.srcObject as MediaStream | null)?.removeTrack(track);
+        track.stop();
+      }
+      pc.close();
+      if (notify && this._rtcSubscription !== undefined) void this._hass?.callWS({
+        type: "eufy_viewer/signal", subscription: this._rtcSubscription, audio: true, stop: true,
+      }).catch(() => {});
+    }
+  }
+  private async _audioEvent(event: AudioEvent, generation: number) {
+    if (event.type === "audio_ended") { this._closeAudio(); return; }
+    if (event.type === "audio_ready") {
+      if (this._audioAttempted || !this._rtc || this._rtcSubscription === undefined) return;
+      this._audioAttempted = true;
+      const pc = this._audioRtc = new RTCPeerConnection({ iceServers: [] });
+      const active = () => this._watching(generation) && this._audioRtc === pc;
+      this._audioTimeout = window.setTimeout(() => { if (active()) this._closeAudio(true); }, 15000);
+      pc.addTransceiver("audio", { direction: "recvonly" });
+      pc.ontrack = event => {
+        if (!active() || event.track.kind !== "audio") return;
+        const stream = this._video.srcObject as MediaStream | null;
+        if (!stream || stream.getAudioTracks().length) { this._closeAudio(true); return; }
+        stream.addTrack(event.track);
+        event.track.onunmute = () => { if (active()) clearTimeout(this._audioTimeout); };
+        if (!event.track.muted) clearTimeout(this._audioTimeout);
+        void this._video.play().catch(() => { if (active()) this._closeAudio(true); });
+      };
+      pc.onconnectionstatechange = () => {
+        if (active() && ["disconnected", "failed", "closed"].includes(pc.connectionState)) this._closeAudio(true);
+      };
+      await pc.setLocalDescription(await pc.createOffer());
+      await new Promise<void>((resolve, reject) => {
+        if (pc.iceGatheringState === "complete") { resolve(); return; }
+        const timer = setTimeout(() => { pc.removeEventListener("icegatheringstatechange", changed); reject(new Error("ICE timeout")); }, 5000);
+        const changed = () => { if (pc.iceGatheringState === "complete") { clearTimeout(timer); pc.removeEventListener("icegatheringstatechange", changed); resolve(); } };
+        pc.addEventListener("icegatheringstatechange", changed);
+      });
+      if (!active()) return;
+      const result = await this._hass!.callWS({ type: "eufy_viewer/signal", subscription: this._rtcSubscription, audio: true, offer: pc.localDescription!.sdp });
+      if (!result.accepted && active()) this._closeAudio(true);
+    } else if (event.type === "audio_answer") {
+      const pc = this._audioRtc;
+      if (!pc || pc.remoteDescription) return;
+      await pc.setRemoteDescription({ type: "answer", sdp: event.sdp });
+      if (!this._watching(generation) || this._audioRtc !== pc) return;
+      for (const candidate of this._audioCandidates.splice(0)) await pc.addIceCandidate(candidate);
+    } else {
+      const pc = this._audioRtc;
+      if (!pc) return;
+      if (event.candidate.length > 2048 || this._audioCandidates.length >= 64) throw new Error("Invalid candidate");
+      const candidate = { candidate: event.candidate, sdpMid: "0", sdpMLineIndex: 0 };
+      if (pc.remoteDescription) await pc.addIceCandidate(candidate);
+      else this._audioCandidates.push(candidate);
+    }
+  }
   private _closeRTC() {
+    this._closeAudio();
     clearTimeout(this._diagnosticTimer);
     clearTimeout(this._audioDiagnosticTimer);
     clearTimeout(this._soundDiagnosticTimer); this._soundDiagnosticTimer = undefined;
@@ -463,9 +539,11 @@ export class EufyViewerCard extends HTMLElement {
     if (playback.lastFrame !== undefined) report.last_frame_ms = Math.round(performance.now() - playback.lastFrame);
     let timer: number | undefined;
     try {
-      if (typeof pc.getTransceivers === "function") report.audio_negotiated = pc.getTransceivers().some(t => t.receiver.track.kind === "audio" && ["recvonly", "sendrecv"].includes(t.currentDirection ?? ""));
-      const stats = await Promise.race([pc.getStats().catch(() => undefined), new Promise<undefined>(resolve => { timer = window.setTimeout(resolve, 1000); })]);
-      if (stats) {
+      const peers = [pc, ...(this._audioRtc ? [this._audioRtc] : [])];
+      if (typeof pc.getTransceivers === "function") report.audio_negotiated = peers.some(peer => peer.getTransceivers().some(t => t.receiver.track.kind === "audio" && ["recvonly", "sendrecv"].includes(t.currentDirection ?? "")));
+      const reports = await Promise.race([Promise.all(peers.map(peer => peer.getStats().catch(() => undefined))), new Promise<undefined>(resolve => { timer = window.setTimeout(resolve, 1000); })]);
+      for (const stats of reports ?? []) {
+        if (!stats) continue;
         report.stats_available = true;
         const count = (key: string, value: unknown) => {
           if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) report[key] = Number(report[key] ?? 0) + value;
@@ -494,7 +572,7 @@ export class EufyViewerCard extends HTMLElement {
             }
           }
           // Selected transport type only. Never copy candidate addresses or IDs.
-          if (stat.type === "transport" && stat.selectedCandidatePairId) {
+          if (stats === reports?.[0] && stat.type === "transport" && stat.selectedCandidatePairId) {
             const pair = stats.get(stat.selectedCandidatePairId);
             const local = pair && stats.get(pair.localCandidateId), remote = pair && stats.get(pair.remoteCandidateId);
             if (local) { report.local_candidate = local.candidateType; report.protocol = local.protocol; }

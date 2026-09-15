@@ -330,3 +330,41 @@ test('closing before live metadata removes readiness listeners and never renews 
     assert.deepEqual(messages, []); assert.equal(stops, 1); assert.equal(hub.active, 0);
   } finally { ws.terminate(); server.emit('shutdown'); server.close(); await once(server, 'close'); }
 });
+
+
+for (const optIn of [false, true]) test(`late audio control requires viewer opt-in=${optIn} and never restarts ownership`, async t => {
+  const { MediaRelay } = await import('../src/media.js');
+  const media = new MediaRelay(() => {});
+  let metadata: boolean | undefined, available = false, starts = 0, stops = 0;
+  t.mock.method(media, 'audioSupported', () => metadata);
+  t.mock.method(media, 'lateAudioSupported', () => available);
+  let stopped!: () => void;
+  const stopComplete = new Promise<void>(resolve => { stopped = resolve; });
+  const hub = new StreamHub({start:async()=>{starts++;},stop:async()=>{stops++;stopped();},disposeMedia:s=>media.stop(s)});
+  const fake = Object.assign(new EventEmitter(), {auth:{state:'connected'},inventory:()=>[],hasCamera:()=>true,pictures:new Map(),hub,media,metrics:{}});
+  const server = createBridge(fake as unknown as Eufy,token,'fixture');
+  server.listen(0,'127.0.0.1');await once(server,'listening');
+  const address=server.address();assert.ok(address&&typeof address!=='string');
+  const base=`http://127.0.0.1:${address.port}`;
+  const ws=new WebSocket(base+'/v1/live/CAM123?transport=webrtc'+(optIn?'&late_audio=1':''),{headers:{Authorization:`Bearer ${token}`}});
+  const messages: any[]=[];ws.on('message',raw=>messages.push(JSON.parse(raw.toString())));
+  try {
+    await once(ws,'open');
+    const ready=once(ws,'message');metadata=false;fake.emit('media-ready','CAM123');await ready;
+    assert.equal(messages.length,1);
+    const next=once(ws,'message');available=true;fake.emit('audio-ready','CAM123');
+    if(optIn) {
+      await next;
+      assert.deepEqual(messages[1],{type:'audio_ready',path:messages[0].path+'/audio'});
+      assert.equal(fake.listenerCount('audio-ready'),0);
+    }
+    fake.emit('audio-ready','CAM123');fake.emit('audio-ready','other');
+    const tick=once(ws,'message');hub.frame('CAM123',Buffer.from('jpeg'));await tick;
+    assert.equal(messages.length,optIn?3:2);
+    assert.equal(messages.at(-1).type,'tick');
+    assert.equal(starts,1);assert.equal(stops,0);
+    const closed=once(ws,'close');ws.close();await Promise.all([closed,stopComplete]);
+    assert.equal(stops,1);assert.equal(fake.listenerCount('audio-ready'),0);
+    assert.equal((await fetch(base+messages[0].path+'/audio')).status,404);
+  } finally {ws.terminate();server.emit('shutdown');server.closeAllConnections();server.close();await once(server,'close');}
+});

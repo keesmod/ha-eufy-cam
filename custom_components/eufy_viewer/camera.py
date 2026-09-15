@@ -54,6 +54,7 @@ class EufyCamera(EufyEntity, Camera):
             "capabilities": self.info.capabilities if self.info else {},
             "viewer_card": True,
             "viewer_webrtc": self.coordinator.data.webrtc,
+            "viewer_late_audio": self.coordinator.data.webrtc,
         }
 
     async def async_camera_image(
