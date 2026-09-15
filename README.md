@@ -76,13 +76,27 @@ See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 ## Upgrading
 
-**For 0.8.0, update the HACS integration before the bridge.** The old backend was
-removed, so follow the [four upgrade steps and recovery instructions](docs/MEGA_MIGRATION.md).
+The current release is **0.8.16**. Update both the HACS integration and the bridge.
+See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
+for changes and any version-specific instructions.
+
+**Upgrading from before 0.8.0?** Follow the
+[migration and recovery instructions](docs/MEGA_MIGRATION.md) before updating
+the bridge. These cover the removal of the old backend and the required
+integration-first preparation.
+
+For installations already on 0.8.0 or newer:
+
+1. Close live viewers and recordings. Back up Home Assistant and the bridge's
+   private data.
+2. Update **Eufy Security Viewer** in HACS and restart Home Assistant.
+3. Update **Eufy Security Viewer Bridge** through the HA app store, or follow the
+   [Docker update steps](docs/DOCKER.md#update-the-docker-bridge).
+4. Reload your dashboard and check snapshots, live video, recordings and events.
+   If you manage card resources in YAML, use the current resource URL above.
+
 Keep your existing integration, token, bridge data and backup. Do not run two
 bridges for the same installation at once.
-
-HACS updates the integration. The HA app store or Docker updates the bridge.
-See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases) for changes.
 
 ## Compatibility and help
 
