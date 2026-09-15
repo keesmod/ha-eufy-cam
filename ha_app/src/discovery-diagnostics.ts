@@ -8,45 +8,14 @@ import type {
 } from '@keesmod/eufy-mega-client';
 import type { MigrationInventory } from './migration.js';
 
-const codes = new Set([
-  'invalid_device_identity',
-  'invalid_device_relationship',
-  'unsupported_device',
-  'unsupported_station',
-  'standalone_transport_unverified',
-  'camera_inventory_empty',
-  'expected_devices_missing',
-  'inventory_required',
-  'inventory_invalid',
-  'bridge_identity_mismatch',
-  'invalid_inventory',
-  'inventory_completeness_unconfirmed',
-  'authentication_rejected',
-  'authentication_required',
-  'invalid_authentication',
-  'domain_discovery_failed',
-  'domain_unresolved',
-  'request_failed',
-  'request_rejected',
-  'http_error',
-  'invalid_response',
-  'response_decryption_failed',
-  'response_too_large',
-  'key_exchange_failed',
-  'invalid_key_exchange',
-  'client_closed',
-  'camera_media_unverified',
-  'device_initialization_failed',
-  'device_connection_failed',
-  'unknown_device',
-  'unknown_camera',
-  'unknown_station',
-  'invalid_connection_credentials',
-  'station_busy',
-  'connection_failed',
-]);
+// Library error codes are machine identifiers, never messages or payloads.
+// Validate the complete value so future codes survive without a duplicated list.
 export const diagnosticCode = (value: unknown): string =>
-  typeof value === 'string' && codes.has(value) ? value : 'unclassified_error';
+  typeof value === 'string' &&
+  value.length <= 64 &&
+  /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.exec(value)?.[0] === value
+    ? value
+    : 'unclassified_error';
 const model = (value: unknown): string =>
   typeof value === 'string' && value.length === 5 && /^T[A-Z0-9]{4}$/.test(value)
     ? value

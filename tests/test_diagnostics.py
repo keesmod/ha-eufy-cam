@@ -1,6 +1,7 @@
 """Support downloads stay bounded and private, including failed HA setup."""
 
 import json
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -278,3 +279,59 @@ def test_extended_audio_report_projects_header_timing_and_pipeline_only():
     )
     assert "PRIVATE" not in json.dumps(bad_row)
     assert bad_row["pipeline"] == []
+
+
+_CODE_CASES = json.loads(
+    (Path(__file__).parent / "fixtures" / "diagnostic-codes.json").read_text()
+)
+
+
+@pytest.mark.parametrize("code", _CODE_CASES["accepted"])
+def test_machine_codes_survive_download_without_enumerating_codes(code):
+    row = {
+        "event": "station_connection",
+        "phase": "connect",
+        "status": "error",
+        "reason": code,
+        "code": code,
+        "outcome": code,
+        "relationship_reason": code,
+        "media": {
+            feature: {"available": False, "status": "unsupported", "reason": code}
+            for feature in ("snapshot", "live", "recordings")
+        },
+    }
+    result = support_report(
+        {"schema": 2, "last_discovery": [row], "recent_events": [row]}
+    )
+    assert result["last_discovery"] == [row]
+    assert result["recent_events"] == [row]
+
+
+@pytest.mark.parametrize("value", _CODE_CASES["rejected"])
+def test_invalid_code_values_still_rejected_without_coercion(value):
+    assert _fields(
+        dict.fromkeys(("code", "reason", "outcome", "relationship_reason"), value)
+    ) == dict.fromkeys(("code", "reason", "outcome", "relationship_reason"))
+
+
+async def test_timeout_and_future_codes_reach_failed_setup_download(hass):
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="PRIVATE", data=DATA)
+    entry.add_to_hass(hass)
+    events = [
+        {
+            "event": "station_connection",
+            "phase": "connect",
+            "reason": "device_request_timeout",
+        },
+        {"event": "fault", "code": "future_station_handshake_failed"},
+    ]
+    with patch(
+        "custom_components.eufy_viewer.api.BridgeClient.request",
+        AsyncMock(
+            return_value={"schema": 2, "last_discovery": [], "recent_events": events}
+        ),
+    ):
+        result = await async_get_config_entry_diagnostics(hass, entry)
+    assert result["support"]["recent_events"] == events
+    assert "PRIVATE" not in json.dumps(result)
