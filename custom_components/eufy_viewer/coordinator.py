@@ -36,6 +36,9 @@ class EufyCoordinator(DataUpdateCoordinator[BridgeState]):
         super().__init__(hass, _LOGGER, name=DOMAIN, config_entry=entry)
         self.api = api
         self.entry = entry
+        from .recording_diagnostics import PlaybackDiagnostics
+
+        self.recording_diagnostics = PlaybackDiagnostics()
         self.live_diagnostics: list[dict[str, Any]] = []
         self.viewers: set[Viewer] = set()
         self._listener: asyncio.Task[None] | None = None

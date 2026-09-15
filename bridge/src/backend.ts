@@ -85,7 +85,7 @@ export interface BackendRecordings {
   thumbnail(serial: string, id: string, signal: AbortSignal): Promise<Buffer>;
   video(serial: string, id: string, signal: AbortSignal,
     consume: (result: RecordingResult, signal: AbortSignal) => Promise<void>,
-    format?: RecordingFormat, hevcSupported?: boolean): Promise<void>;
+    format?: RecordingFormat, hevcSupported?: boolean, started?: (attempt: number) => void): Promise<void>;
   close(): void;
 }
 export interface BackendStations {

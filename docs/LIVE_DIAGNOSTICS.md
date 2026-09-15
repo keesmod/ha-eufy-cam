@@ -1,5 +1,8 @@
 # Live playback diagnostics
 
+See the [combined playback report](PLAYBACK_REPORT.md) for the player collection
+action, loaded-card versions, recording evidence and missing/stale indicators.
+
 For a live view that switches to `Live video without sound`, integration 0.8.9
 adds `live_playback` to the Home Assistant integration diagnostic download.
 After one attempt, close the view and download diagnostics from the integration's

@@ -12,7 +12,7 @@ type ViewerEvent = FrameEvent | EndEvent | FallbackEvent | RTCEvent | AudioEvent
 interface HAConnection extends EventTarget {
   subscribeMessage(callback: (event: ViewerEvent) => void, message: Record<string, unknown>, options: { resubscribe: boolean }): Promise<Unsubscribe>;
 }
-interface HA { fetchWithAuth(path: string, init?: RequestInit): Promise<Response>; language: string; connection: HAConnection; states: Record<string, CameraState>; callWS(message: Record<string, unknown>): Promise<{ accepted: boolean }> }
+interface HA { user?: { is_admin?: boolean }; fetchWithAuth(path: string, init?: RequestInit): Promise<Response>; language: string; connection: HAConnection; states: Record<string, CameraState>; callWS(message: Record<string, unknown>): Promise<{ accepted: boolean }> }
 interface CardDefinition { type: string; name: string; description: string; preview: boolean }
 interface EntityPicker extends HTMLElement { label: string; includeDomains: string[]; hass: HA; value: string; entityFilter: (entity: CameraState) => boolean }
 declare global { interface Window { customCards: CardDefinition[] } }
@@ -52,6 +52,8 @@ export class EufyViewerCard extends HTMLElement {
   private _recordGeneration = 0;
   private _recordId?: string;
   private _recordControls: EufyRecordingControls;
+  private _liveDiagnostics: EufyDiagnosticControl;
+  private _recordDiagnostics: EufyDiagnosticControl;
   private _rtc?: RTCPeerConnection;
   private _rtcCandidates: RTCIceCandidateInit[] = [];
   private _iceEvidence = new WeakMap<RTCPeerConnection, Record<string, string | number | boolean>>();
@@ -133,6 +135,8 @@ export class EufyViewerCard extends HTMLElement {
       if (this._open) void this._video.play().catch(() => this._stop("error"));
     });
     this._dialog = this.shadowRoot!.querySelector<HTMLDialogElement>("dialog")!;
+    this._liveDiagnostics = new EufyDiagnosticControl(this.shadowRoot!.querySelector(".meta")!, () => ({ ha: this._hass, entity: this._config?.entity }));
+    this._recordDiagnostics = new EufyDiagnosticControl(this._recordDialog, () => ({ ha: this._hass, entity: this._config?.entity }));
     this._preview.addEventListener("click", () => { void this._start(); });
     this.shadowRoot!.querySelector<HTMLElement>(".stop")!.addEventListener("click", () => this._stop());
     this._dialog.addEventListener("cancel", event => { event.preventDefault(); this._stop(); });
@@ -239,6 +243,7 @@ export class EufyViewerCard extends HTMLElement {
     throw new Error(allowed.includes(data.error) ? data.error : "recordingError");
   }
   _recordingFailure(error: unknown) {
+    this._recordDiagnostics.update(true);
     if (error instanceof RecordingCodecError && recordingMode() === "native") return this._recordControls.codecError();
     const code = error instanceof Error ? error.message : "recordingError";
     const text = this._text();
@@ -288,6 +293,7 @@ export class EufyViewerCard extends HTMLElement {
   }
   _watching(generation: number) { return this._open && generation === this._generation && this.isConnected && this._visible && document.visibilityState === "visible" && this._dialog.open; }
   async _start() {
+    this._liveDiagnostics.update(false);
     if (this._open || this._preview.disabled || !this._hass || !this._config || !this._visible || document.visibilityState !== "visible") return;
     const generation = ++this._generation;
     this._playback = { start: performance.now(), ticks: 0, sent: 0, accepted: 0, painted: 0, enabled: false, reports: new Set() };
@@ -547,6 +553,7 @@ export class EufyViewerCard extends HTMLElement {
     if (!playback?.enabled || !pc || !hass || subscription === undefined || playback.reports.has(trigger)) return;
     playback.reports.add(trigger);
     const report: Record<string, string | number | boolean> = {
+      card_version: EUFY_VIEWER_CARD_VERSION,
       trigger, elapsed_ms: Math.round(performance.now() - playback.start),
       connection: pc.connectionState, ice: pc.iceConnectionState,
       ice_gathering: pc.iceGatheringState, ...this._iceEvidence.get(pc),
@@ -619,6 +626,7 @@ export class EufyViewerCard extends HTMLElement {
     finally { clearTimeout(timer); }
   }
   _stop(reason?: "ended" | "error") {
+    this._liveDiagnostics.update(reason === "error" || reason === "ended");
     this._generation++; this._open = false;
     clearTimeout(this._startup);
     this._closeRTC();
