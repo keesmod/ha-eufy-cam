@@ -19,9 +19,13 @@ restart Home Assistant, and refresh the dashboard. The published client remains
 0.12.2. Back up both components before installation. Restore their previous files
 or versions together to roll back, preserving app data and login state.
 
-References #10. This fixes late-audio admission in software. Exact T8134 reporter
-acceptance remains pending. An external WebRTC connection that cannot establish
-ICE still uses video-only JPEG fallback and needs reachable media connectivity.
+References #10. Tests confirm late-audio delivery and continued video, but do not
+establish audio/video synchronization. The optional audio connection has no
+explicit alignment to the video clock. Initial offset, subsequent drift and
+exact T8134 reporter acceptance remain unverified. This release makes the change
+available for testing and does not resolve every live-view problem in #10.
+An external WebRTC connection that cannot establish ICE still uses video-only
+JPEG fallback and needs reachable media connectivity.
 
 ## 0.8.16 - 2026-09-15
 
