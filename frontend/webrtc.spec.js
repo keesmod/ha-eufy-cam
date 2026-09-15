@@ -141,8 +141,10 @@ for (const {ending,profile} of cases) test(`real WebRTC ${profile} stops after $
       const before=acks; await new Promise(resolve=>setTimeout(resolve,8000));
       expect(jpegMode).toBe(false);expect(acks).toBeGreaterThan(before+2);
       expect(reports.some(r=>r.trigger==='unmuted'&&r.muted===false)).toBe(true);
-      if(!['silent','video-only','late-admission'].includes(profile))expect(reports.find(r=>r.trigger==='unmuted').audio_energy).toBe(true);
-      if(profile==='late-admission'&&ending!=='audio-answer-loss'){await expect.poll(()=>reports.some(r=>r.trigger==='audio_check'&&r.audio_energy&&r.audio_negotiated),{timeout:10000}).toBe(true);expect(starts).toBe(1);}
+      // The one-second unmute report can precede a three-second audio batch.
+      // Require decoded energy above and in the later audio report instead.
+      if(!['silent','video-only','late-admission','batched-audio'].includes(profile))expect(reports.find(r=>r.trigger==='unmuted').audio_energy).toBe(true);
+      if(['late-admission','batched-audio'].includes(profile)&&ending!=='audio-answer-loss'){await expect.poll(()=>reports.some(r=>r.trigger==='audio_check'&&r.audio_energy&&r.audio_negotiated),{timeout:10000}).toBe(true);expect(starts).toBe(1);}
     }
     }
     if(['blocked','answer-loss','media-loss','paint-loss','tick-loss'].includes(ending)) {
