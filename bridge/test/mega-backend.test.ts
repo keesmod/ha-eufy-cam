@@ -598,13 +598,14 @@ for (const empty of [false,true])
 for(const phase of ['connect','refresh_state'] as const)
   test(`station ${phase} failures and subsequent connection events are anonymous`, async () => {
     const f=fixture();
-    if(phase==='connect')f.client.connectStation=async()=>{throw new EufyError('connection_failed');};
-    else f.client.refreshStationState=async()=>{throw new EufyError('invalid_response');};
+    if(phase==='connect')f.client.connectStation=async()=>{throw new EufyError('device_request_timeout');};
+    else f.client.refreshStationState=async()=>{throw new EufyError('device_request_timeout');};
     try {
       await f.backend.login({username:'fixture',password:'fixture',country:'NL'});
       let report=f.backend.supportReport();
       const failure=report.recent_events.find(row=>row.event==='station_connection'&&row.status==='error')!;
       assert.equal(failure.phase,phase);assert.equal(failure.device_ref,1);
+      assert.equal(failure.reason,'device_request_timeout');
       assert.equal(report.last_discovery.find(row=>row.event==='device'&&row.ref===1)?.station_status,'error');
       f.client.emit('station',{id:'BASE',connected:true});
       f.client.emit('station',{id:'BASE',connected:true});

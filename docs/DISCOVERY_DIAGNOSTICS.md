@@ -9,6 +9,7 @@ No live stream or optional debug logging is needed to generate discovery evidenc
 
 | Collection method | Bridge | Bundled library | HA integration |
 |---|---|---|---|
+| Machine error codes without a fixed code list, in logs and download | 0.8.16 | 0.12.2 | 0.8.16 for the download |
 | Current startup logs, including rejected-device firmware and parent context | 0.8.5 | 0.12.2 | No integration update needed to read bridge logs |
 | One file through HA **Download diagnostics** | 0.8.5 | 0.12.2 | 0.8.5 |
 | Earlier structured startup reports, without rejected-device parent/firmware context | 0.8.4 | 0.12.1 | No integration update needed to read bridge logs |
@@ -94,6 +95,20 @@ Rejected-device firmware and parent fields are included when available and valid
 is a supported or connected HomeBase. Other values distinguish `none`, `self`,
 `missing`, `ambiguous` and `invalid`. Unknown or invalid output values remain
 `null` or `unavailable`. No model or type is inferred from a serial number.
+
+### HomeBase connection timeouts
+
+With bridge and integration 0.8.16, `station_connection.reason` preserves codes
+such as `device_request_timeout` instead of replacing them with
+`unclassified_error`. The `phase` identifies `connect` or `refresh_state`.
+The timeout alone does not establish whether networking, connection negotiation
+or a device response is responsible. Include the complete report and firmware.
+
+No optional live-video debug setting is needed for these codes. After updating
+both components, restart the bridge once, wait for the startup result, then
+use **Download diagnostics**. An older integration may replace new codes with
+`null`. In that case use the updated bridge's complete startup report until the
+integration is updated too. The HAOS app URL is `http://127.0.0.1:8063`.
 
 ## Privacy and scope
 
