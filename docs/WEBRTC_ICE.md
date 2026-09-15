@@ -67,5 +67,5 @@ media route or a functioning TURN provider may still be needed.
 
 Software and local T8160 playback evidence do not establish external T8134
 acceptance. Issue #10 stays open until the reporter's actual route, continuous
-video and audible audio are confirmed. Publishing a new release remains a
-separate approval step.
+video and audible audio are confirmed. Release 0.8.18 makes the integration
+change available through HACS for testing on that route.
