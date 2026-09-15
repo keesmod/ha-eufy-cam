@@ -28,9 +28,9 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 1024, perMessageDeflate: false });
   const state = () => ({ protocol: 1, recording_playback: 1, migration: { version: 1, error: eufy.migrationError }, backend: eufy.backendName, transports: ["jpeg", "webrtc"], bridge_id: bridgeId, auth: eufy.auth.state, notification_metrics: eufy.notifications?.metrics, cameras: eufy.inventory(), stations: eufy.stations?.inventory() ?? [], alarm_metrics: eufy.stations?.metrics, recording_metrics: eufy.recordings ? { ...eufy.recordings.metrics, active: eufy.recordings.busy } : undefined, stream_metrics: { ...eufy.metrics, ...eufy.hub.recoveryMetrics, active_cameras: eufy.hub.active, quarantined: eufy.hub.quarantined } });
   const server = createServer((request, response) => {
-    const media = /^\/v1\/media\/([a-f0-9]{64})$/.exec(new URL(request.url ?? "/", "http://bridge").pathname);
+    const media = /^\/v1\/media\/([a-f0-9]{64})(\/audio)?$/.exec(new URL(request.url ?? "/", "http://bridge").pathname);
     if (request.method === "GET" && media) {
-      if (!eufy.media.serve(media[1]!, response)) json(response, 404, { error: "not_found" });
+      if (!(media[2] ? eufy.media.serveAudio(media[1]!, response) : eufy.media.serve(media[1]!, response))) json(response, 404, { error: "not_found" });
       return;
     }
     if (!authorized(request, token)) { json(response, 401, { error: "unauthorized" }); return; }
@@ -138,8 +138,18 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
       const serial = live![1]!;
       if (eufy.inventory().find(c => c.serial === serial)?.capabilities?.live.available === false) { ws.close(1008, "capability_unavailable"); return; }
       let webrtc = new URL(request.url ?? "/", "http://bridge").searchParams.get("transport") === "webrtc";
+      const lateAudio = new URL(request.url ?? "/", "http://bridge").searchParams.get("late_audio") === "1";
+      let audioSent = false;
       const grant = webrtc ? eufy.media.grant(serial) : null;
       let ready = false;
+      const audioReady = (camera: string) => {
+        if (camera !== serial || !lateAudio || audioSent || !ready || !webrtc ||
+          ws.readyState !== WebSocket.OPEN || eufy.hub.remaining(serial, peer) <= 0 ||
+          !eufy.media.lateAudioSupported(serial)) return;
+        audioSent = true;
+        eufy.off('audio-ready', audioReady);
+        ws.send(JSON.stringify({ type: 'audio_ready', path: `/v1/media/${grant}/audio` }));
+      };
       let downgraded = false;
       let pendingFrame: Buffer | undefined;
       let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
@@ -152,6 +162,7 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         // Metadata is available at encoder start. JPEG decoding must not gate
         // reader attachment and discard the first encoded video/keyframe.
         ws.send(JSON.stringify({ type: "ready", path: `/v1/media/${grant}`, audio, audio_attempt: eufy.audioAttempt?.(serial), fallback: true, fallback_after_ms: Math.max(1, Math.ceil(eufy.hub.remaining(serial, peer) - 5000)) }));
+        audioReady(serial);
       };
       const fallback = (reason: 'startup_timeout' | 'playback_timeout' | 'connection_failed' | 'signaling_error' | 'playback_error') => {
         if (!webrtc || ws.readyState !== WebSocket.OPEN) return;
@@ -159,6 +170,7 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         downgraded = true;
         clearTimeout(fallbackTimer);
         eufy.off('media-ready', mediaReady);
+        eufy.off('audio-ready', audioReady);
         if (grant) eufy.media.revoke(grant);
         eufy.diagnostics?.mark(serial, `fallback_${reason}`);
         ws.send(JSON.stringify({ type: 'fallback', reason }));
@@ -178,10 +190,10 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
           pendingFrame = frame;
           ws.send(JSON.stringify({ type: "tick" }));
         },
-        close: (code, reason) => { clearTimeout(fallbackTimer); eufy.off('media-ready', mediaReady); pendingFrame = undefined; ws.close(code, reason); setTimeout(() => ws.terminate(), 500).unref(); },
+        close: (code, reason) => { clearTimeout(fallbackTimer); eufy.off('media-ready', mediaReady); eufy.off('audio-ready', audioReady); pendingFrame = undefined; ws.close(code, reason); setTimeout(() => ws.terminate(), 500).unref(); },
         get bufferedAmount() { return ws.bufferedAmount; },
       };
-      ws.on("close", () => { clearTimeout(fallbackTimer); eufy.off('media-ready', mediaReady); pendingFrame = undefined; if (grant) eufy.media.revoke(grant); eufy.hub.detach(serial, peer); });
+      ws.on("close", () => { clearTimeout(fallbackTimer); eufy.off('media-ready', mediaReady); eufy.off('audio-ready', audioReady); pendingFrame = undefined; if (grant) eufy.media.revoke(grant); eufy.hub.detach(serial, peer); });
       ws.on("message", (data, binary) => {
         const command = binary ? '' : data.toString();
         if (command === 'ack' && downgraded) return; // Ignore in-flight WebRTC acknowledgements.
@@ -195,6 +207,7 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         } else ws.close(1008, "Invalid acknowledgement");
       });
       if (webrtc) eufy.on('media-ready', mediaReady);
+      if (webrtc && lateAudio) eufy.on('audio-ready', audioReady);
       if (eufy.hub.attach(serial, peer) && webrtc) {
         scheduleFallback(Math.max(0, eufy.hub.remaining(serial, peer) - 5000), 'startup_timeout');
         mediaReady(serial); // A second viewer joins an encoder already running.

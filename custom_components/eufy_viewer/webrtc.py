@@ -27,6 +27,7 @@ from homeassistant.core import callback
 
 from .api import BridgeError
 from .const import DOMAIN, MAX_FRAME_BYTES
+from .late_audio import LateAudioTrack
 from .live_diagnostics import browser_report, relay_report
 from .viewers import Viewer
 
@@ -50,7 +51,7 @@ class Go2RtcConnection(Protocol):
 class WebRTCViewer(Viewer):
     """A/V goes directly to the browser; HA relays signaling and painted ticks."""
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, late_audio: bool = False, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         # HA owns the authenticated session (normally a Unix socket), not us.
         config = self.hass.data.get("go2rtc")
@@ -67,6 +68,10 @@ class WebRTCViewer(Viewer):
         self.fallback_requested = False
         self.cleanup_task: asyncio.Task[None] | None = None
         self.browser_triggers: set[str] = set()
+        self.late_audio = late_audio
+        self.audio: LateAudioTrack | None = None
+        self.audio_task: asyncio.Task[None] | None = None
+        self.media_path: str | None = None
         self.playback_evidence: dict[str, Any] = {
             "schema": 1,
             "offered": False,
@@ -161,7 +166,13 @@ class WebRTCViewer(Viewer):
             return False
         return True
 
-    async def signal(self, offer: str | None, candidate: str | None) -> bool:
+    async def signal(
+        self,
+        offer: str | None,
+        candidate: str | None,
+        audio: bool = False,
+        stop: bool = False,
+    ) -> bool:
         """Only the owning frontend connection may signal this lease."""
         if (
             self.closed
@@ -170,6 +181,15 @@ class WebRTCViewer(Viewer):
             or not self.ready
             or self.signaling is None
         ):
+            return False
+        if audio:
+            if not self.audio:
+                return False
+            if stop:
+                await self.audio.close()
+                return True
+            return await self.audio.signal(offer, candidate)
+        if stop:
             return False
         try:
             async with asyncio.timeout(10):
@@ -198,6 +218,7 @@ class WebRTCViewer(Viewer):
             raise BridgeError("Invalid media audio capability")
         if audio is not None:
             self.playback_evidence["audio_expected"] = audio
+        self.media_path = path
         if type(audio_attempt) is int and 1 <= audio_attempt < 2**48:
             self.playback_evidence["audio_attempt"] = audio_attempt
         sources = [self.coordinator.api.url + path]
@@ -229,7 +250,28 @@ class WebRTCViewer(Viewer):
             },
         )
 
+    def _audio_event(self, event: dict[str, Any]) -> None:
+        if not self.closed and not self.jpeg and not self.fallback_requested:
+            self.connection.send_event(self.subscription, event)
+
+    async def _prepare_audio(self, path: str) -> None:
+        assert self.audio is not None
+        try:
+            await self.audio.prepare(self.coordinator.api.url + path)
+        except asyncio.CancelledError:
+            await self.audio.close()
+            raise
+        except Go2RtcClientError, aiohttp.ClientError, TimeoutError:
+            self._audio_event({"type": "audio_ended"})
+            await self.audio.close()
+
     async def _cleanup(self) -> None:
+        if self.audio_task and not self.audio_task.done():
+            self.audio_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self.audio_task
+        if self.audio:
+            await self.audio.close()
         signaling, self.signaling = self.signaling, None
         registered, self.registered = self.registered, False
         if signaling:
@@ -251,6 +293,7 @@ class WebRTCViewer(Viewer):
         try:
             async with await self.coordinator.api.websocket(
                 f"/v1/live/{self.serial}?transport=webrtc"
+                + ("&late_audio=1" if self.late_audio else "")
             ) as socket:
                 self.socket = socket
                 if self.closed:
@@ -304,6 +347,29 @@ class WebRTCViewer(Viewer):
                                     )
                             except Go2RtcClientError, aiohttp.ClientError, TimeoutError:
                                 await self._failed("signaling_error")
+                        elif data.get("type") == "audio_ready":
+                            if (
+                                not self.late_audio
+                                or not self.ready
+                                or self.audio
+                                or self.jpeg
+                                or self.fallback_requested
+                                or self.playback_evidence.get("audio_expected")
+                                is not False
+                                or data.get("path") != f"{self.media_path}/audio"
+                            ):
+                                raise BridgeError("Invalid late audio control")
+                            self.audio = LateAudioTrack(
+                                self.hass,
+                                self.config.session,
+                                self.config.url,
+                                self.name + "_audio",
+                                self._audio_event,
+                            )
+                            # Setup must not block video ticks or renew ownership.
+                            self.audio_task = self.hass.async_create_background_task(
+                                self._prepare_audio(data["path"]), "Eufy late audio"
+                            )
                         elif data.get("type") == "fallback":
                             reason = data.get("reason")
                             if self.jpeg or reason not in FALLBACK_REASONS:

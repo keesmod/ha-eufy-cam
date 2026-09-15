@@ -9,6 +9,7 @@ Control routes require `Authorization: Bearer <bridge token>`. The media-only ro
 | `GET /v1/snapshot/{serial}` | Cached JPEG/PNG; 404 if absent | None |
 | `WS /v1/events` | Initial state followed by push updates | None |
 | `GET /v1/media/{grant}` | Existing MPEG-TS feed, 256-bit grant | Cannot start or renew; closes when owning viewer ends |
+| `GET /v1/media/{grant}/audio` | Complete late AAC ADTS frames under the same viewer grant | Cannot start or renew; closes when owning viewer ends |
 | `WS /v1/live/{serial}?transport=webrtc` | `ready` with grant path, then one pending `tick`; client text `ack` | Same lease and start/stop rules |
 | `WS /v1/live/{serial}` | Viewer lease, binary JPEG frames; text `ack` after each processed frame | First viewer starts; last close/expiry stops |
 
@@ -26,6 +27,34 @@ Upstream references used independently:
 
 `/v1/state` advertises `transports: ["jpeg", "webrtc"]`. WebRTC watch events contain `ready`, `answer`, `candidate`, `tick` or `ended`. The browser sends `eufy_viewer/signal` with its subscription and `offer` or `candidate`, bound to the original connection and current entity permission. Only one offer is accepted; SDP is bounded at 65,536 characters and ICE candidates at 2,048. The card gathers local ICE before offering, queues early remote candidates, and never reconnects media automatically. Each fresh painted video frame can acknowledge at most one pending tick through `eufy_viewer/ack`. Merely receiving control messages does not renew the camera lease.
 
+
+## Late live audio, 0.8.17
+
+The card requests `late_audio: true` only when the camera advertises
+`viewer_late_audio`. HA forwards this as `late_audio=1` on the existing WebRTC
+lease. Older cards retain the original control messages and playback behavior.
+
+If startup metadata excluded audio, the bridge observes its existing audio drain.
+The first complete valid ADTS frame makes the same grant's `/audio` route available
+and emits `audio_ready`. It retains at most one incomplete frame of 8191 bytes,
+with no replay cache. Readers join at complete frame boundaries. Unknown data or
+an ended source closes only the audio feed. Video and audio share the eight-reader
+limit per camera and the audio response has a 256,000-byte backpressure limit.
+
+HA validates the route against this viewer's original grant, then prepares a
+separate managed go2rtc AAC-to-Opus stream. The browser attaches its audio-only
+peer's track to the existing video element, retaining mute and volume settings.
+Normal audio present at startup keeps the existing A/V route. Video, its encoder,
+camera ownership and processed-frame acknowledgements do not change.
+
+Audio signaling uses the existing connection-owned `eufy_viewer/signal` command
+with `audio: true` and one offer, candidates or `stop: true`. Events are
+`audio_ready`, `audio_answer`, `audio_candidate` and `audio_ended`. HA bounds stream
+setup at five seconds and signaling sends at ten seconds. The browser abandons
+audio after fifteen seconds without arriving media. Audio setup or connection
+failure closes only audio. Navigation, viewer close, JPEG fallback and session
+expiry release both peers and both go2rtc streams. Audio never renews the camera
+lease. External ICE reachability and JPEG's video-only behavior remain unchanged.
 
 ## Existing recordings
 

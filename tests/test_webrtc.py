@@ -62,11 +62,16 @@ async def rtc_setup(hass, viewer_setup):
             "custom_components.eufy_viewer.webrtc.Go2RtcRestClient", return_value=rest
         ),
         patch("custom_components.eufy_viewer.webrtc.Go2RtcWsClient", Signaling),
+        patch(
+            "custom_components.eufy_viewer.late_audio.Go2RtcRestClient",
+            return_value=rest,
+        ),
+        patch("custom_components.eufy_viewer.late_audio.Go2RtcWsClient", Signaling),
     ):
         yield socket, rest, session, connect
 
 
-async def open_viewer(hass, hass_ws_client):
+async def open_viewer(hass, hass_ws_client, *, late_audio=False):
     client = await hass_ws_client(hass)
     await client.send_json(
         {
@@ -74,6 +79,7 @@ async def open_viewer(hass, hass_ws_client):
             "type": "eufy_viewer/watch",
             "entity_id": "camera.front_door",
             "transport": "webrtc",
+            "late_audio": late_audio,
         }
     )
     assert (await client.receive_json())["success"]
@@ -423,4 +429,215 @@ async def test_stalled_go2rtc_setup_cannot_consume_fallback_budget(
     assert (await client.receive_json())["event"]["type"] == "frame"
     connect.assert_awaited_once()
     assert not viewer.closed
+    await client.close()
+
+
+async def audio_ready(client, socket):
+    await socket.queue.put(
+        SimpleNamespace(
+            type=aiohttp.WSMsgType.TEXT,
+            data=json.dumps(
+                {
+                    "type": "ready",
+                    "path": "/v1/media/" + "a" * 64,
+                    "audio": False,
+                    "fallback": True,
+                }
+            ),
+        )
+    )
+    assert (await client.receive_json())["event"]["type"] == "ready"
+    await socket.queue.put(
+        SimpleNamespace(
+            type=aiohttp.WSMsgType.TEXT,
+            data=json.dumps(
+                {
+                    "type": "audio_ready",
+                    "path": "/v1/media/" + "a" * 64 + "/audio",
+                }
+            ),
+        )
+    )
+    assert (await client.receive_json())["event"]["type"] == "audio_ready"
+
+
+async def test_late_audio_preserves_video_owner_and_scopes_signaling(
+    hass, hass_ws_client, rtc_setup
+):
+    socket, rest, session, connect = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    await audio_ready(client, socket)
+    connect.assert_awaited_once_with("/v1/live/CAM123?transport=webrtc&late_audio=1")
+    assert rest.streams.add.await_count == 2
+    assert rest.streams.add.call_args.args[0] == viewer.name + "_audio"
+    assert rest.streams.add.call_args.args[1][0].endswith("a" * 64 + "/audio")
+    video_signal = viewer.signaling
+    other = await hass_ws_client(hass)
+    await other.send_json(
+        {
+            "id": 1,
+            "type": "eufy_viewer/signal",
+            "subscription": 1,
+            "audio": True,
+            "offer": "sdp",
+        }
+    )
+    assert not (await other.receive_json())["result"]["accepted"]
+    await client.send_json(
+        {
+            "id": 2,
+            "type": "eufy_viewer/signal",
+            "subscription": 1,
+            "audio": True,
+            "offer": "sdp",
+        }
+    )
+    assert (await client.receive_json())["result"]["accepted"]
+    assert not await viewer.signal("duplicate", None, True)
+    assert not await viewer.signal(None, None, True)
+    assert await viewer.signal(None, "candidate:1", True)
+    viewer.audio._message(WebRTCAnswer("audio-answer"))
+    assert (await client.receive_json())["event"] == {
+        "type": "audio_answer",
+        "sdp": "audio-answer",
+    }
+    viewer.audio._message(WebRTCCandidate("candidate:2"))
+    assert (await client.receive_json())["event"]["type"] == "audio_candidate"
+    assert not socket.acks
+    await socket.queue.put(
+        SimpleNamespace(type=aiohttp.WSMsgType.TEXT, data='{"type":"tick"}')
+    )
+    tick = (await client.receive_json())["event"]
+    assert await viewer.ack(tick["sequence"])
+    assert socket.acks == ["ack"]
+    audio_signal = viewer.audio.signaling
+    await client.send_json(
+        {
+            "id": 3,
+            "type": "eufy_viewer/signal",
+            "subscription": 1,
+            "audio": True,
+            "stop": True,
+        }
+    )
+    assert (await client.receive_json())["result"]["accepted"]
+    assert not viewer.closed and not socket.closed.is_set()
+    video_signal.close.assert_not_called()
+    audio_signal.close.assert_awaited_once()
+    assert not await viewer.signal("late", None, True)
+    assert not await viewer.signal(None, None, False, True)
+    await client.close()
+    await hass.async_block_till_done()
+    video_signal.close.assert_awaited_once()
+    assert {row[1]["params"]["src"] for row in session.deleted} == {
+        viewer.name,
+        viewer.name + "_audio",
+    }
+    assert socket.closed.is_set()
+
+
+async def test_late_audio_failure_cannot_end_video_or_leak_upstream_errors(
+    hass, hass_ws_client, rtc_setup
+):
+    socket, _, _, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    await audio_ready(client, socket)
+    viewer.audio._message(WsError("PRIVATE URL AND TOKEN"))
+    assert (await client.receive_json())["event"] == {"type": "audio_ended"}
+    await hass.async_block_till_done()
+    assert viewer.audio.closed and not viewer.closed
+    assert not socket.acks and not socket.closed.is_set()
+    await socket.queue.put(
+        SimpleNamespace(type=aiohttp.WSMsgType.TEXT, data='{"type":"tick"}')
+    )
+    tick = (await client.receive_json())["event"]
+    assert await viewer.ack(tick["sequence"])
+    await client.close()
+
+
+async def test_close_cancels_pending_audio_setup_and_releases_both_streams(
+    hass, hass_ws_client, rtc_setup
+):
+    socket, rest, session, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    await ready(client, socket)
+    viewer.playback_evidence["audio_expected"] = False
+    started = asyncio.Event()
+
+    async def stall(*_args):
+        started.set()
+        await asyncio.Future()
+
+    rest.streams.add.side_effect = stall
+    await socket.queue.put(
+        SimpleNamespace(
+            type=aiohttp.WSMsgType.TEXT,
+            data=json.dumps(
+                {
+                    "type": "audio_ready",
+                    "path": "/v1/media/" + "a" * 64 + "/audio",
+                }
+            ),
+        )
+    )
+    await started.wait()
+    await client.close()
+    await hass.async_block_till_done()
+    assert viewer.audio_task.done() and viewer.audio.closed
+    assert len(session.deleted) == 2 and socket.closed.is_set()
+
+
+@pytest.mark.parametrize(
+    "path", ["http://untrusted/audio", "/v1/media/" + "b" * 64 + "/audio"]
+)
+async def test_late_audio_cannot_open_an_unowned_media_url(
+    hass, hass_ws_client, rtc_setup, path
+):
+    socket, rest, _, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    await ready(client, socket)
+    viewer.playback_evidence["audio_expected"] = False
+    await socket.queue.put(
+        SimpleNamespace(
+            type=aiohttp.WSMsgType.TEXT,
+            data=json.dumps({"type": "audio_ready", "path": path}),
+        )
+    )
+    assert (await client.receive_json())["event"]["type"] == "ended"
+    await viewer.task
+    assert rest.streams.add.await_count == 1
+    await client.close()
+
+
+@pytest.mark.parametrize("phase", ["prepare", "signal"])
+async def test_audio_transport_exception_keeps_video_and_releases_audio(
+    hass, hass_ws_client, rtc_setup, phase
+):
+    socket, rest, session, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    if phase == "prepare":
+        await ready(client, socket)
+        viewer.playback_evidence["audio_expected"] = False
+        rest.streams.add.side_effect = Go2RtcClientError("PRIVATE DETAILS")
+        await socket.queue.put(
+            SimpleNamespace(
+                type=aiohttp.WSMsgType.TEXT,
+                data=json.dumps(
+                    {"type": "audio_ready", "path": "/v1/media/" + "a" * 64 + "/audio"}
+                ),
+            )
+        )
+    else:
+        await audio_ready(client, socket)
+        viewer.audio.signaling.send.side_effect = Go2RtcClientError("PRIVATE DETAILS")
+        assert not await viewer.signal("offer", None, True)
+    assert (await client.receive_json())["event"] == {"type": "audio_ended"}
+    await hass.async_block_till_done()
+    assert viewer.audio.closed and not viewer.closed and not socket.closed.is_set()
+    await socket.queue.put(
+        SimpleNamespace(type=aiohttp.WSMsgType.TEXT, data='{"type":"tick"}')
+    )
+    tick = (await client.receive_json())["event"]
+    assert await viewer.ack(tick["sequence"])
+    assert session.deleted[0][1]["params"]["src"] == viewer.name + "_audio"
     await client.close()
