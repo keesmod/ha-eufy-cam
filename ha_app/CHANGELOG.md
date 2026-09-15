@@ -2,6 +2,11 @@
 
 ## 0.8.16 - 2026-09-15
 
+- Handle recording playback client disconnects without logging a traceback when
+  the player closes or seeks. Header, chunk and final writes release their reader
+  ownership, preserving later range requests and the existing session lifetime.
+  Other I/O errors, timeouts and task cancellation still propagate. Addresses #69.
+
 - Preserve `device_request_timeout` and future machine error codes in normal
   startup logs and Home Assistant diagnostic downloads without maintaining a
   separate list of accepted codes in each component. Both validate the complete
@@ -17,7 +22,9 @@ and preserve app data, credentials and identities to roll back.
 
 This improves diagnosis of issue #66. It does not fix the reported HomeBase
 connection timeout or add T84A1 standalone media support. Software tests exercise
-the failure and download paths without changing device commands or media.
+the diagnostic failure/download paths and real HTTP playback disconnects, with
+reader and storage cleanup. Device commands and encoding remain unchanged.
+Reporter verification of closing playback on their installation remains pending.
 
 ## 0.8.14 - 2026-09-14
 
