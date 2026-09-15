@@ -89,7 +89,7 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
                 response.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': result.size,
                   'Cache-Control': 'no-store', 'X-Eufy-Recording-Media': JSON.stringify(result.media) });
                 await pipeline(createReadStream(result.path), response, { signal });
-              }, format, hevc === 'true');
+              }, format, hevc === 'true', attempt => response.setHeader('X-Eufy-Recording-Attempt', String(attempt)));
             } else {
               const data = await eufy.recordings.thumbnail(recording[1]!, recording[2], cancel.signal);
               if (!response.destroyed) { response.writeHead(200, { 'Content-Type': 'image/jpeg', 'Content-Length': data.length, 'Cache-Control': 'no-store' }); response.end(data); }

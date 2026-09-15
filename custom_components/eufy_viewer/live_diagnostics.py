@@ -10,6 +10,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+from .recording_diagnostics import version
 
 ENUMS = {
     "trigger": {"startup", "playing", "unmuted", "fallback", "audio_check"},
@@ -96,6 +97,8 @@ def browser_report(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return {}
     result: dict[str, Any] = {}
+    if "card_version" in raw:
+        result["card_version"] = version(raw["card_version"])
     for key, values in ENUMS.items():
         value = raw.get(key)
         if isinstance(value, str) and value in values:
@@ -115,6 +118,7 @@ def browser_report(raw: Any) -> dict[str, Any]:
         vol.Required("type"): "eufy_viewer/live_diagnostics",
         vol.Required("subscription"): vol.All(int, vol.Range(min=1)),
         vol.Required("report"): {
+            vol.Optional("card_version"): vol.All(str, vol.Length(max=19)),
             **{vol.Optional(key): vol.In(values) for key, values in ENUMS.items()},
             **{
                 vol.Optional(key): vol.All(int, vol.Range(min=low, max=high))

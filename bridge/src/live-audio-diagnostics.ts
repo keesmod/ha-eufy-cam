@@ -10,6 +10,7 @@ const codec = (value: unknown): Codec => typeof value === 'string' && (codecs as
 const elapsed = (value: number) => Math.min(120000, Math.max(0, Math.round(value)));
 export interface LiveAudioReport {
   attempt: number;
+  age_ms?: number;
   model: string;
   state: 'starting' | 'streaming' | 'ended' | 'failed' | 'closed';
   firmware?: string;
@@ -106,7 +107,7 @@ export class LiveAudioObservation {
     if (rows.length < 48 && !rows.some(row => row.event === event)) rows.push({ event, elapsed_ms: elapsed(this.now() - this.started) });
   }
   snapshot(): LiveAudioReport {
-    return { ...this.report,
+    return { ...this.report, age_ms: Math.max(0, Math.round(this.now() - this.started)),
       ...(this.stream ? { buffered_bytes: Math.min(2147483647, this.stream.readableLength), stream_ended: this.stream.readableEnded, stream_destroyed: this.stream.destroyed } : {}),
       duration_ms: this.closed ? this.report.duration_ms : elapsed(this.now() - this.started),
       ...(this.lastDataAt !== undefined ? {
@@ -137,6 +138,6 @@ export class LiveAudioDiagnostics {
     if (this.rows.length > 8) this.rows.shift()!.finish('closed');
     return row;
   }
-  report(): LiveAudioReport[] { return this.rows.map(row => row.snapshot()); }
+  report(): LiveAudioReport[] { return this.rows.map(row => row.snapshot()).filter(row => row.age_ms! < 900000); }
   close(): void { for (const row of this.rows) row.finish('closed'); }
 }

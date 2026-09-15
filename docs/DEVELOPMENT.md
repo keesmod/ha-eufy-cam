@@ -81,8 +81,10 @@ CI separates bridge build, tests and dependency audit. Bridge tests have a 30-se
 ## Diagnostic report contract
 
 The [collection guide](DISCOVERY_DIAGNOSTICS.md) is the user-facing reference.
-This contract covers discovery, authentication and connection diagnostics. It
-is not a general recorder of camera commands, event payloads or media activity.
+This contract covers discovery, authentication and connection diagnostics.
+The additive [playback report contract](PLAYBACK_REPORT.md) covers bounded live
+and recording observations, anonymous correlation, versions and assessments.
+Neither contract records camera commands, event payloads or media bytes.
 
 The [library diagnostic API](https://github.com/keesmod/eufy-mega-client/blob/main/docs/DIAGNOSTICS.md)
 owns bounded received cloud/discovery context. `DiscoveryIssue.deviceId` and
