@@ -275,6 +275,10 @@ export class EufyViewerCard extends HTMLElement {
     _recordControls;
     _rtc;
     _rtcCandidates = [];
+    _audioRtc;
+    _audioCandidates = [];
+    _audioTimeout;
+    _audioAttempted = false;
     _tick;
     _videoCallback;
     _diagnosticTimer;
@@ -599,6 +603,7 @@ export class EufyViewerCard extends HTMLElement {
         this._fallbackPending = false;
         this._fallbackSupported = false;
         this._rtcSubscription = undefined;
+        this._audioAttempted = false;
         this._live.hidden = webrtc;
         this._video.hidden = !webrtc;
         this._sound.hidden = !webrtc;
@@ -610,7 +615,7 @@ export class EufyViewerCard extends HTMLElement {
         this._startup = setTimeout(() => { if (this._watching(generation))
             this._stop("error"); }, 25_000);
         try {
-            const unsubscribe = await this._hass.connection.subscribeMessage(event => { void this._event(event, generation); }, { type: "eufy_viewer/watch", entity_id: this._config.entity, transport: webrtc ? "webrtc" : "jpeg" }, { resubscribe: false });
+            const unsubscribe = await this._hass.connection.subscribeMessage(event => { void this._event(event, generation); }, { type: "eufy_viewer/watch", entity_id: this._config.entity, transport: webrtc ? "webrtc" : "jpeg", ...(webrtc && this._hass.states[this._config.entity]?.attributes.viewer_late_audio ? { late_audio: true } : {}) }, { resubscribe: false });
             if (!this._watching(generation)) {
                 await unsubscribe();
                 return;
@@ -638,6 +643,18 @@ export class EufyViewerCard extends HTMLElement {
             this._video.hidden = true;
             this._sound.hidden = true;
             this._status(this._text().videoOnly);
+            return;
+        }
+        if (event.type === "audio_ready" || event.type === "audio_answer" || event.type === "audio_candidate" || event.type === "audio_ended") {
+            if (this._jpegFallback || this._fallbackPending)
+                return;
+            try {
+                await this._audioEvent(event, generation);
+            }
+            catch {
+                if (this._watching(generation))
+                    this._closeAudio(true);
+            }
             return;
         }
         if (event.type !== "frame") {
@@ -687,7 +704,105 @@ export class EufyViewerCard extends HTMLElement {
                 this._stop("error");
         }
     }
+    _closeAudio(notify = false) {
+        clearTimeout(this._audioTimeout);
+        const pc = this._audioRtc;
+        this._audioRtc = undefined;
+        this._audioCandidates = [];
+        if (pc) {
+            pc.onconnectionstatechange = null;
+            pc.ontrack = null;
+            for (const { track } of pc.getReceivers()) {
+                track.onunmute = null;
+                this._video.srcObject?.removeTrack(track);
+                track.stop();
+            }
+            pc.close();
+            if (notify && this._rtcSubscription !== undefined)
+                void this._hass?.callWS({
+                    type: "eufy_viewer/signal", subscription: this._rtcSubscription, audio: true, stop: true,
+                }).catch(() => { });
+        }
+    }
+    async _audioEvent(event, generation) {
+        if (event.type === "audio_ended") {
+            this._closeAudio();
+            return;
+        }
+        if (event.type === "audio_ready") {
+            if (this._audioAttempted || !this._rtc || this._rtcSubscription === undefined)
+                return;
+            this._audioAttempted = true;
+            const pc = this._audioRtc = new RTCPeerConnection({ iceServers: [] });
+            const active = () => this._watching(generation) && this._audioRtc === pc;
+            this._audioTimeout = window.setTimeout(() => { if (active())
+                this._closeAudio(true); }, 15000);
+            pc.addTransceiver("audio", { direction: "recvonly" });
+            pc.ontrack = event => {
+                if (!active() || event.track.kind !== "audio")
+                    return;
+                const stream = this._video.srcObject;
+                if (!stream || stream.getAudioTracks().length) {
+                    this._closeAudio(true);
+                    return;
+                }
+                stream.addTrack(event.track);
+                event.track.onunmute = () => { if (active())
+                    clearTimeout(this._audioTimeout); };
+                if (!event.track.muted)
+                    clearTimeout(this._audioTimeout);
+                void this._video.play().catch(() => { if (active())
+                    this._closeAudio(true); });
+            };
+            pc.onconnectionstatechange = () => {
+                if (active() && ["disconnected", "failed", "closed"].includes(pc.connectionState))
+                    this._closeAudio(true);
+            };
+            await pc.setLocalDescription(await pc.createOffer());
+            await new Promise((resolve, reject) => {
+                if (pc.iceGatheringState === "complete") {
+                    resolve();
+                    return;
+                }
+                const timer = setTimeout(() => { pc.removeEventListener("icegatheringstatechange", changed); reject(new Error("ICE timeout")); }, 5000);
+                const changed = () => { if (pc.iceGatheringState === "complete") {
+                    clearTimeout(timer);
+                    pc.removeEventListener("icegatheringstatechange", changed);
+                    resolve();
+                } };
+                pc.addEventListener("icegatheringstatechange", changed);
+            });
+            if (!active())
+                return;
+            const result = await this._hass.callWS({ type: "eufy_viewer/signal", subscription: this._rtcSubscription, audio: true, offer: pc.localDescription.sdp });
+            if (!result.accepted && active())
+                this._closeAudio(true);
+        }
+        else if (event.type === "audio_answer") {
+            const pc = this._audioRtc;
+            if (!pc || pc.remoteDescription)
+                return;
+            await pc.setRemoteDescription({ type: "answer", sdp: event.sdp });
+            if (!this._watching(generation) || this._audioRtc !== pc)
+                return;
+            for (const candidate of this._audioCandidates.splice(0))
+                await pc.addIceCandidate(candidate);
+        }
+        else {
+            const pc = this._audioRtc;
+            if (!pc)
+                return;
+            if (event.candidate.length > 2048 || this._audioCandidates.length >= 64)
+                throw new Error("Invalid candidate");
+            const candidate = { candidate: event.candidate, sdpMid: "0", sdpMLineIndex: 0 };
+            if (pc.remoteDescription)
+                await pc.addIceCandidate(candidate);
+            else
+                this._audioCandidates.push(candidate);
+        }
+    }
     _closeRTC() {
+        this._closeAudio();
         clearTimeout(this._diagnosticTimer);
         clearTimeout(this._audioDiagnosticTimer);
         clearTimeout(this._soundDiagnosticTimer);
@@ -866,10 +981,13 @@ export class EufyViewerCard extends HTMLElement {
             report.last_frame_ms = Math.round(performance.now() - playback.lastFrame);
         let timer;
         try {
+            const peers = [pc, ...(this._audioRtc ? [this._audioRtc] : [])];
             if (typeof pc.getTransceivers === "function")
-                report.audio_negotiated = pc.getTransceivers().some(t => t.receiver.track.kind === "audio" && ["recvonly", "sendrecv"].includes(t.currentDirection ?? ""));
-            const stats = await Promise.race([pc.getStats().catch(() => undefined), new Promise(resolve => { timer = window.setTimeout(resolve, 1000); })]);
-            if (stats) {
+                report.audio_negotiated = peers.some(peer => peer.getTransceivers().some(t => t.receiver.track.kind === "audio" && ["recvonly", "sendrecv"].includes(t.currentDirection ?? "")));
+            const reports = await Promise.race([Promise.all(peers.map(peer => peer.getStats().catch(() => undefined))), new Promise(resolve => { timer = window.setTimeout(resolve, 1000); })]);
+            for (const stats of reports ?? []) {
+                if (!stats)
+                    continue;
                 report.stats_available = true;
                 const count = (key, value) => {
                     if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
@@ -911,7 +1029,7 @@ export class EufyViewerCard extends HTMLElement {
                         }
                     }
                     // Selected transport type only. Never copy candidate addresses or IDs.
-                    if (stat.type === "transport" && stat.selectedCandidatePairId) {
+                    if (stats === reports?.[0] && stat.type === "transport" && stat.selectedCandidatePairId) {
                         const pair = stats.get(stat.selectedCandidatePairId);
                         const local = pair && stats.get(pair.localCandidateId), remote = pair && stats.get(pair.remoteCandidateId);
                         if (local) {

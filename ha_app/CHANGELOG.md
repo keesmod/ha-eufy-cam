@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.8.17 - 2026-09-15
+
+- Add AAC audio that arrives after a live session started without an audio track.
+  Video keeps its existing encoder and connection. The same camera owner supplies
+  complete AAC frames to an optional audio-only WebRTC connection. Failed audio
+  setup does not interrupt video or extend the camera's viewing deadline.
+- Keep initial A/V, video-only cameras, JPEG fallback, recordings, GPU settings,
+  credentials and entity identities unchanged. Audio readers use the existing
+  per-viewer grant and close with their owner. Older cards and integrations do
+  not receive the new audio control events unless they opt in.
+- Record `audio_late` when actual AAC becomes available, with browser audio
+  negotiation and decoding counters covering the added track. No audio payload
+  is retained in diagnostics.
+
+Update both the bridge and HACS integration to 0.8.17, reload the integration or
+restart Home Assistant, and refresh the dashboard. The published client remains
+0.12.2. Back up both components before installation. Restore their previous files
+or versions together to roll back, preserving app data and login state.
+
+References #10. This fixes late-audio admission in software. Exact T8134 reporter
+acceptance remains pending. An external WebRTC connection that cannot establish
+ICE still uses video-only JPEG fallback and needs reachable media connectivity.
+
 ## 0.8.16 - 2026-09-15
 
 - Handle recording playback client disconnects without logging a traceback when
