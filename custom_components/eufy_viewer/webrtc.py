@@ -9,6 +9,7 @@ import logging
 import re
 from contextlib import suppress
 from secrets import token_hex
+from time import monotonic
 from typing import Any, Protocol, cast
 
 import aiohttp
@@ -76,6 +77,7 @@ class WebRTCViewer(Viewer):
         self.audio_task: asyncio.Task[None] | None = None
         self.media_path: str | None = None
         self.playback_evidence: dict[str, Any] = {
+            "_created": monotonic(),
             "schema": 1,
             "offered": False,
             "answered": False,

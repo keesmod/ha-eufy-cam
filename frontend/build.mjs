@@ -3,5 +3,5 @@ const root = new URL('../custom_components/eufy_viewer/frontend/', import.meta.u
 // Ship the shared playback helper and both cards as one HACS resource.
 const files = ['recording-playback.js', 'eufy-viewer-card.js', 'eufy-events-card.js'];
 const source = await Promise.all(files.map(file => readFile(new URL(file, root), 'utf8')));
-await writeFile(new URL('eufy-viewer-card.js', root), source.join('\n'));
+await writeFile(new URL('eufy-viewer-card.js', root), `const EUFY_VIEWER_CARD_VERSION = ${JSON.stringify(JSON.parse(await readFile(new URL('../custom_components/eufy_viewer/manifest.json', import.meta.url), 'utf8')).version)};\n` + source.join('\n'));
 for (const file of ['recording-playback.js', 'eufy-events-card.js']) await unlink(new URL(file, root));

@@ -106,6 +106,7 @@ You can upgrade without us having tested your exact camera. Available functions
 still depend on the model and connection. See [known results and limitations](docs/COMPATIBILITY.md).
 
 - **Live video falls back without sound?** Download the integration diagnostics after one attempt. See [live playback diagnostics](docs/LIVE_DIAGNOSTICS.md).
+- **Recording or player error?** Use **Download diagnostics** at the error or in the integration menu. See [the playback report](docs/PLAYBACK_REPORT.md).
 - **Missing devices or failed setup?** Collect a [complete diagnostic report](docs/DISCOVERY_DIAGNOSTICS.md).
 - **Something does not work?** Check [troubleshooting](docs/INSTALLATION.md#troubleshooting).
   For live video or sound, see [playback and connection requirements](docs/USAGE.md#honest-snapshot-and-streaming-limits).
