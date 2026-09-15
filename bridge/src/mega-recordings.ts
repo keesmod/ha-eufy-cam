@@ -1,3 +1,4 @@
+import { RecordingDiagnostics } from './recording-diagnostics.js';
 import { createWriteStream } from 'node:fs';
 import { rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -17,6 +18,7 @@ import type { BackendRecordings, Recording } from './backend.js';
 
 /** Keeps bridge handles, conversion and limits stable across both backends. */
 export class MegaRecordings implements BackendRecordings {
+  readonly diagnostics = new RecordingDiagnostics();
   private operation?: AbortController;
   private references = new Map<string, { record: MegaRecording; expires: number }>();
   readonly metrics = {
@@ -171,45 +173,66 @@ export class MegaRecordings implements BackendRecordings {
   }
   async video(serial: string, id: string, signal: AbortSignal,
     consume: (result: RecordingResult, signal: AbortSignal) => Promise<void>,
-    format: RecordingFormat = 'h264', hevcSupported = false): Promise<void> {
-    await this.checkCapability(serial);
-    const record = this.reference(serial, id);
-    return this.run(signal, async (client, abort) => {
-      this.metrics.downloads++;
-      let transfer: RecordingDownload | undefined;
-      const directory = await recordingWorkspace();
-      const video = join(directory, 'video'), audio = join(directory, 'audio');
-      try {
-        transfer = await client.downloadRecording(record.id, abort);
-        const downloads = [
-          pipeline(transfer.video, createWriteStream(video, { mode: 0o600 }), { signal: abort }),
-          pipeline(transfer.audio, createWriteStream(audio, { mode: 0o600 }), { signal: abort }),
-          transfer.completed,
-        ] as const;
-        // On any write/transfer error cancel the source and wait for both writers.
-        let result;
-        try { [, , result] = await Promise.all(downloads); }
-        catch (error) { await transfer.cancel(); await Promise.allSettled(downloads); throw error; }
-        if (!result.complete) throw new RecordingError('recording_unavailable', 503);
-        const metadata = transfer.metadata;
-        const codec =
-          metadata.videoCodec === 'h264' ? 'h264' : metadata.videoCodec === 'h265' ? 'hevc' : null;
-        const output = await this.media.muxResult(
-          { videoCodec: codec, fps: metadata.fps },
-          { video, audio: (await stat(audio)).size ? audio : undefined, output: join(directory, 'output.mp4') },
-          abort,
-          format,
-          hevcSupported,
-        );
-        if (output.media.processing !== 'remux') this.metrics.transcoded++;
-        else this.metrics.remuxed++;
-        this.metrics.completed++;
-        await consume(output, abort);
-      } finally {
-        if (abort.aborted) this.metrics.cancelled++;
-        try { await transfer?.cancel(); }
-        finally { await rm(directory, { recursive: true, force: true }); }
-      }
-    });
+    format: RecordingFormat = 'h264', hevcSupported = false, started?: (attempt: number) => void): Promise<void> {
+    const observation = this.diagnostics.begin(format);
+    try { started?.(observation.data.attempt); } catch { /* Diagnostic delivery is optional. */ }
+    try {
+      await this.checkCapability(serial);
+      const record = this.reference(serial, id);
+      await this.run(signal, async (client, abort) => {
+        this.metrics.downloads++;
+        observation.stage('download');
+        let transfer: RecordingDownload | undefined;
+        const directory = await recordingWorkspace();
+        const video = join(directory, 'video'), audio = join(directory, 'audio');
+        try {
+          transfer = await client.downloadRecording(record.id, abort);
+          const downloads = [
+            pipeline(transfer.video, createWriteStream(video, { mode: 0o600 }), { signal: abort }),
+            pipeline(transfer.audio, createWriteStream(audio, { mode: 0o600 }), { signal: abort }),
+            transfer.completed,
+          ] as const;
+          // On any write/transfer error cancel the source and wait for both writers.
+          let result;
+          try { [, , result] = await Promise.all(downloads); }
+          catch (error) { await transfer.cancel(); await Promise.allSettled(downloads); throw error; }
+          if (!result.complete) throw new RecordingError('recording_unavailable', 503);
+          const metadata = transfer.metadata;
+          const codec =
+            metadata.videoCodec === 'h264' ? 'h264' : metadata.videoCodec === 'h265' ? 'hevc' : null;
+          const audioBytes = (await stat(audio)).size;
+          try { observation.data.source_bytes = (await stat(video)).size + audioBytes; } catch { /* Optional size observation cannot fail playback. */ }
+          observation.stage('conversion');
+          const output = await this.media.muxResult(
+            { videoCodec: codec, fps: metadata.fps },
+            { video, audio: audioBytes ? audio : undefined, output: join(directory, 'output.mp4') },
+            abort,
+            format,
+            hevcSupported,
+            { attempt: observation.data.attempt, mark: observation.conversion, progress: observation.progress, limits: observation.data.limits },
+          );
+          observation.data.output_bytes = output.size;
+          observation.data.media = output.media;
+          observation.stage('transfer');
+          if (output.media.processing !== 'remux') this.metrics.transcoded++;
+          else this.metrics.remuxed++;
+          this.metrics.completed++;
+          await consume(output, abort);
+        } finally {
+          observation.cleanup();
+          if (abort.aborted) { this.metrics.cancelled++; observation.finish("cancelled"); }
+          try { await transfer?.cancel(); if (transfer) observation.data.source_cancel_confirmed = true; }
+          catch (error) { observation.data.source_cancel_confirmed = false; throw error; }
+          finally {
+            try { await rm(directory, { recursive: true, force: true }); observation.data.files_removed = true; }
+            catch (error) { observation.data.files_removed = false; throw error; }
+          }
+        }
+      });
+      if (observation.data.outcome !== 'cancelled') observation.finish('completed');
+    } catch (error) {
+      observation.finish(signal.aborted || observation.data.outcome === 'cancelled' ? 'cancelled' : 'failed', error);
+      throw error;
+    }
   }
 }

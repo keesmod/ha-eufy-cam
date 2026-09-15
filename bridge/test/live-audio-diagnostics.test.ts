@@ -56,7 +56,7 @@ test('late excluded audio retains admission and records codec at first data, wit
   assert.deepEqual({ ...baseline, attempt: 1 }, {
     attempt: 1, model: 'T8134', state: 'streaming', chunks: 2, bytes: 10,
     initial_buffered_bytes: 0, buffered_bytes: 0, stream_ended: false, stream_destroyed: false,
-    duration_ms: 5200, metadata_ms: 3000, initial_codec: 'none',
+    age_ms: 5200, duration_ms: 5200, metadata_ms: 3000, initial_codec: 'none',
     first_data_codec: 'aac-lc', admission: 'excluded', first_data_ms: 5200,
     first_data_after_metadata_ms: 2200, header: 'adts',
   });

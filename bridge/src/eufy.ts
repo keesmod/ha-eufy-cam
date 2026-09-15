@@ -1,4 +1,4 @@
-import { DiscoveryDiagnostics, type SupportReport } from './discovery-diagnostics.js';
+import { DiscoveryDiagnostics, diagnosticSoftware, type SupportReport } from './discovery-diagnostics.js';
 import { EventEmitter } from 'node:events';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -29,6 +29,7 @@ export class Eufy extends EventEmitter {
   migrationError: string | null = null;
   private backend?: Backend;
   private failedSupportReport?: SupportReport;
+  private failedSupportAt = 0;
   private readonly setupDiagnostics = new DiscoveryDiagnostics(line => this.emit('discovery_diagnostic', line));
   private loginBusy = false;
   private migrationBusy = false;
@@ -244,7 +245,8 @@ export class Eufy extends EventEmitter {
     } catch (error) {
       if (error instanceof MigrationError) {
         this.migrationError = error.code;
-        this.failedSupportReport = this.backend?.supportReport?.() ?? this.failedSupportReport;
+        const failureReport = this.backend?.supportReport?.();
+        if (failureReport) { this.failedSupportReport = failureReport; this.failedSupportAt = performance.now(); }
         await this.backend?.close();
         this.backend = undefined;
         this.emit('backend_fault', error.code);
@@ -375,7 +377,7 @@ export class Eufy extends EventEmitter {
   supportReport(): SupportReport {
     const setup = this.setupDiagnostics.report();
     const report = this.backend?.supportReport?.() ?? this.failedSupportReport ?? setup;
-    return {...report, generated_at:setup.generated_at, recent_events:
+    return {...report, cache_age_ms: report === this.failedSupportReport ? Math.max(0, Math.round(performance.now() - this.failedSupportAt)) : 0, software: diagnosticSoftware(), generated_at:setup.generated_at, recent_events:
       report === setup ? setup.recent_events : [...report.recent_events, ...setup.recent_events]
         .sort((a,b) => String(a.timestamp).localeCompare(String(b.timestamp))).slice(-100)};
   }

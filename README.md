@@ -69,15 +69,16 @@ when finished. Idle images are the latest received snapshots and may be old.
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
 
-The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.18`.
+The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.19`.
 See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 </details>
 
 ## Upgrading
 
-The current integration release is **0.8.18**. Update the HACS integration and
-refresh the dashboard. The bridge remains **0.8.17** with client **0.12.2**.
+The **0.8.19** update combines playback diagnostics, media lifecycle checks and
+shared device profiles. Update both the integration and bridge to **0.8.19**,
+then refresh the dashboard. The bridge includes client **0.12.3**.
 See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
 for changes and any version-specific instructions.
 
@@ -91,7 +92,7 @@ For installations already on 0.8.0 or newer:
 1. Close live viewers and recordings. Back up Home Assistant and the bridge's
    private data.
 2. Update **Eufy Security Viewer** in HACS and restart Home Assistant.
-3. If your bridge is older than 0.8.17, update **Eufy Security Viewer Bridge**
+3. If your bridge is older than 0.8.19, update **Eufy Security Viewer Bridge**
    through the HA app store, or follow the
    [Docker update steps](docs/DOCKER.md#update-the-docker-bridge).
 4. Reload your dashboard and check snapshots, live video, recordings and events.
@@ -106,6 +107,7 @@ You can upgrade without us having tested your exact camera. Available functions
 still depend on the model and connection. See [known results and limitations](docs/COMPATIBILITY.md).
 
 - **Live video falls back without sound?** Download the integration diagnostics after one attempt. See [live playback diagnostics](docs/LIVE_DIAGNOSTICS.md).
+- **Recording or player error?** Use **Download diagnostics** at the error or in the integration menu. See [the playback report](docs/PLAYBACK_REPORT.md).
 - **Missing devices or failed setup?** Collect a [complete diagnostic report](docs/DISCOVERY_DIAGNOSTICS.md).
 - **Something does not work?** Check [troubleshooting](docs/INSTALLATION.md#troubleshooting).
   For live video or sound, see [playback and connection requirements](docs/USAGE.md#honest-snapshot-and-streaming-limits).

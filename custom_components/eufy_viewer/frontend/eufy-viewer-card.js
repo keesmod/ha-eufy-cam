@@ -1,3 +1,4 @@
+const EUFY_VIEWER_CARD_VERSION = "0.8.19";
 "use strict";
 const recordingModeKey = 'eufy-viewer.recording-mode';
 let recordingMemoryMode = 'auto';
@@ -174,7 +175,7 @@ class EufyRecordingPlayback {
     async prepare(ha, entity, id, signal, format = 'h264', hevcSupported = false) {
         this.media = undefined;
         const query = format === 'auto' ? `?format=auto&hevc_supported=${hevcSupported}` : format === 'native' ? '?format=native' : '';
-        const response = await ha.fetchWithAuth(`/api/eufy_viewer/recordings/${entity}/${id}/playback${query}`, { method: 'POST', signal });
+        const response = await ha.fetchWithAuth(`/api/eufy_viewer/recordings/${entity}/${id}/playback${query}${query ? "&" : "?"}card_version=${encodeURIComponent(EUFY_VIEWER_CARD_VERSION)}`, { method: 'POST', signal });
         const data = await response.json();
         if (!response.ok)
             throw new Error(data.error);
@@ -238,6 +239,94 @@ class EufyRecordingPlayback {
 }
 class RecordingCodecError extends Error {
 }
+/** Use HA's existing admin-only diagnostics download. Never starts camera work. */
+class EufyDiagnosticControl {
+    context;
+    button = document.createElement('button');
+    status = document.createElement('span');
+    busy = false;
+    constructor(host, context) {
+        this.context = context;
+        this.button.type = 'button';
+        this.button.className = 'close diagnostic-download';
+        this.status.setAttribute('role', 'status');
+        this.status.className = 'diagnostic-status';
+        const root = document.createElement('div');
+        root.className = 'diagnostic-controls';
+        root.style.cssText = 'padding:0 16px 12px';
+        root.append(this.button, this.status);
+        host.append(root);
+        this.button.onclick = () => { void this.download(); };
+        this.update(false);
+    }
+    update(show = true) {
+        const { ha } = this.context();
+        this.button.hidden = !show || ha?.user?.is_admin !== true;
+        this.button.textContent = ha?.language?.startsWith('nl') ? 'Diagnose downloaden' : 'Download diagnostics';
+        this.button.title = ha?.language?.startsWith('nl') ? 'Download vóór het herstarten. Recente pogingen blijven vijftien minuten bewaard.' : 'Download before restarting. Recent attempts are retained for fifteen minutes.';
+        if (!show)
+            this.status.textContent = '';
+    }
+    async download() {
+        const { ha, entity } = this.context();
+        if (this.busy || !ha || ha.user?.is_admin !== true || !entity)
+            return;
+        this.busy = true;
+        this.button.disabled = true;
+        this.status.textContent = '';
+        const abort = new AbortController();
+        let timer;
+        try {
+            const timeout = new Promise((_, reject) => { timer = window.setTimeout(() => { abort.abort(); reject(new Error('timeout')); }, 15000); });
+            await Promise.race([timeout, (async () => {
+                    const raw = await ha.callWS({ type: 'config/entity_registry/get', entity_id: entity });
+                    if (abort.signal.aborted)
+                        return;
+                    const entry = raw?.config_entry_id;
+                    if (typeof entry !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(entry))
+                        throw new Error('entry');
+                    const response = await ha.fetchWithAuth(`/api/diagnostics/config_entry/${entry}`, { signal: abort.signal });
+                    if (!response.ok || !response.body)
+                        throw new Error('download');
+                    const reader = response.body.getReader();
+                    const chunks = [];
+                    let size = 0;
+                    try {
+                        for (;;) {
+                            const { done, value } = await reader.read();
+                            if (done)
+                                break;
+                            size += value.byteLength;
+                            if (size > 2 * 1024 * 1024 || abort.signal.aborted)
+                                throw new Error('limit');
+                            chunks.push(new Uint8Array(value));
+                        }
+                    }
+                    finally {
+                        await reader.cancel().catch(() => { });
+                        reader.releaseLock();
+                    }
+                    if (abort.signal.aborted)
+                        return;
+                    const url = URL.createObjectURL(new Blob(chunks, { type: 'application/json' }));
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'eufy-diagnostics.json';
+                    link.click();
+                    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+                })()]);
+        }
+        catch {
+            this.status.textContent = ha.language?.startsWith('nl') ? ' Download mislukt. Probeer via Instellingen → Apparaten en diensten → Eufy Security Viewer.' : ' Download failed. Use Settings → Devices & services → Eufy Security Viewer.';
+        }
+        finally {
+            abort.abort();
+            clearTimeout(timer);
+            this.busy = false;
+            this.button.disabled = false;
+        }
+    }
+}
 
 /** Eufy Viewer: snapshots at rest, a single explicit user gesture per live session. */
 const TEXT = {
@@ -273,6 +362,8 @@ export class EufyViewerCard extends HTMLElement {
     _recordGeneration = 0;
     _recordId;
     _recordControls;
+    _liveDiagnostics;
+    _recordDiagnostics;
     _rtc;
     _rtcCandidates = [];
     _iceEvidence = new WeakMap();
@@ -360,6 +451,8 @@ export class EufyViewerCard extends HTMLElement {
                 void this._video.play().catch(() => this._stop("error"));
         });
         this._dialog = this.shadowRoot.querySelector("dialog");
+        this._liveDiagnostics = new EufyDiagnosticControl(this.shadowRoot.querySelector(".meta"), () => ({ ha: this._hass, entity: this._config?.entity }));
+        this._recordDiagnostics = new EufyDiagnosticControl(this._recordDialog, () => ({ ha: this._hass, entity: this._config?.entity }));
         this._preview.addEventListener("click", () => { void this._start(); });
         this.shadowRoot.querySelector(".stop").addEventListener("click", () => this._stop());
         this._dialog.addEventListener("cancel", event => { event.preventDefault(); this._stop(); });
@@ -507,6 +600,7 @@ export class EufyViewerCard extends HTMLElement {
         throw new Error(allowed.includes(data.error) ? data.error : "recordingError");
     }
     _recordingFailure(error) {
+        this._recordDiagnostics.update(true);
         if (error instanceof RecordingCodecError && recordingMode() === "native")
             return this._recordControls.codecError();
         const code = error instanceof Error ? error.message : "recordingError";
@@ -592,6 +686,7 @@ export class EufyViewerCard extends HTMLElement {
     }
     _watching(generation) { return this._open && generation === this._generation && this.isConnected && this._visible && document.visibilityState === "visible" && this._dialog.open; }
     async _start() {
+        this._liveDiagnostics.update(false);
         if (this._open || this._preview.disabled || !this._hass || !this._config || !this._visible || document.visibilityState !== "visible")
             return;
         const generation = ++this._generation;
@@ -990,6 +1085,7 @@ export class EufyViewerCard extends HTMLElement {
             return;
         playback.reports.add(trigger);
         const report = {
+            card_version: EUFY_VIEWER_CARD_VERSION,
             trigger, elapsed_ms: Math.round(performance.now() - playback.start),
             connection: pc.connectionState, ice: pc.iceConnectionState,
             ice_gathering: pc.iceGatheringState, ...this._iceEvidence.get(pc),
@@ -1088,6 +1184,7 @@ export class EufyViewerCard extends HTMLElement {
         }
     }
     _stop(reason) {
+        this._liveDiagnostics.update(reason === "error" || reason === "ended");
         this._generation++;
         this._open = false;
         clearTimeout(this._startup);
@@ -1159,6 +1256,7 @@ export class EufyEventsCard extends HTMLElement {
     urls = new Map();
     playback = new EufyRecordingPlayback();
     controls;
+    diagnostics;
     observer;
     cameraKey = '';
     loadedDate = '';
@@ -1184,6 +1282,7 @@ export class EufyEventsCard extends HTMLElement {
       dialog{width:min(1000px,95vw);max-width:95vw;padding:0;border:0;border-radius:16px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#152028)}dialog::backdrop{background:#000b}.player-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;flex-wrap:wrap}.player-title{font-weight:600}.player-status{padding:0 16px 12px}video{display:block;width:100%;max-height:65vh;background:#10161e}.player-nav{display:flex;gap:10px;justify-content:center;padding:14px}
       @media(max-width:450px){ha-card{padding:14px}.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.filters label:first-child{flex:1;min-width:130px}.event-time{font-size:11px}}
     </style><ha-card><h2></h2><div class="filters"><label><span data-text="camera"></span><select class="camera"></select></label><label><span data-text="date"></span><input class="date" type="date"></label><button class="show" data-text="show"></button></div><details><summary data-text="calendar"></summary><div class="calendar"><input class="month" type="month"><div class="days"></div><p class="legend"></p></div></details><div class="status" role="status" aria-live="polite"></div><div class="tiles"></div><div class="pagination" hidden><button class="page-prev" data-text="pagePrev"></button><span class="page-info"></span><button class="page-next" data-text="pageNext"></button></div></ha-card><dialog aria-labelledby="events-player-title"><div class="player-bar"><span class="player-title" id="events-player-title"></span><button class="close" data-text="close"></button></div><div class="player-status" role="status" aria-live="polite"></div><video playsinline controls hidden></video><div class="player-nav"><button class="previous" data-text="prev"></button><button class="next" data-text="next"></button></div></dialog>`;
+        this.diagnostics = new EufyDiagnosticControl(this.q('dialog'), () => ({ ha: this.ha, entity: this.filtered()[this.selected]?.entity_id }));
         this.controls = new EufyRecordingControls(this.q('dialog'), () => this.ha?.language, () => {
             if (this.q('dialog').open) {
                 const v = this.q('video');
@@ -1299,7 +1398,7 @@ export class EufyEventsCard extends HTMLElement {
             }
         });
     }
-    failure(error) { if (error instanceof RecordingCodecError && recordingMode() === "native")
+    failure(error) { this.diagnostics.update(); if (error instanceof RecordingCodecError && recordingMode() === "native")
         return this.controls.codecError(); const code = error instanceof Error ? error.message : ''; return code === 'recording_storage_unavailable' ? this.text.storage : code === 'live_busy' ? this.text.live : code === 'live_stopping' ? this.text.stopping : code === 'recording_busy' ? this.text.busy : code === 'recording_expired' ? this.text.expired : code === 'history_incomplete' ? this.text.incomplete : this.text.error; }
     async fetch(path, signal) { signal.throwIfAborted(); const response = await this.ha.fetchWithAuth(path, { signal }); if (!response.ok) {
         const data = await response.json().catch(() => ({}));
