@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.18 - Unreleased
+## 0.8.18 - 2026-09-15
 
 - Use Home Assistant's configured and provider-supplied STUN/TURN servers for
   both live video and optional late audio, on the browser and managed go2rtc.
@@ -12,10 +12,12 @@
   connection attempts. Diagnostics exclude addresses, candidate strings, SDP,
   server URLs and relay credentials.
 
-Update the integration and refresh the dashboard. Bridge 0.8.17 and client
-0.12.2 remain unchanged. Restore the backed-up integration to roll back.
+Back up Home Assistant, update the HACS integration, restart Home Assistant and
+refresh the dashboard. Bridge 0.8.17 and client 0.12.2 remain unchanged. Restore
+the backed-up integration to roll back.
 References #10. The reporter's external T8134 route still needs acceptance.
 A dashboard proxy alone does not provide a WebRTC media relay.
+See the [validation method and acceptance boundary](docs/WEBRTC_ICE.md).
 
 ## 0.8.17 - 2026-09-15
 
