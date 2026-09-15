@@ -70,6 +70,27 @@ BOOLEANS = set(
 )
 
 
+# Counts and fixed categories remain useful when ICE has no selected pair.
+for prefix in ("", "audio_"):
+    ENUMS[prefix + "ice_configuration"] = {"home_assistant", "unavailable", "legacy"}
+    ENUMS[prefix + "ice_gathering"] = {"new", "gathering", "complete"}
+    ENUMS[prefix + "ice"] = ENUMS["ice"]
+    BOOLEANS.add(prefix + "relay_configured")
+    for key in (
+        [
+            f"{side}_{kind}"
+            for side in ("local", "remote")
+            for kind in ("host", "srflx", "prflx", "relay")
+        ]
+        + [
+            f"pairs_{state}"
+            for state in ("frozen", "waiting", "in_progress", "failed", "succeeded")
+        ]
+        + [f"ice_errors_{kind}" for kind in ("unreachable", "auth", "other")]
+    ):
+        NUMBERS[prefix + key] = (0, 4096)
+
+
 def browser_report(raw: Any) -> dict[str, Any]:
     """Project only recognized scalar values, including for downloaded evidence."""
     if not isinstance(raw, dict):
