@@ -82,6 +82,17 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
   const server=createBridge(fake,'x'.repeat(32),'test-bridge');
   server.listen(0,'127.0.0.1');await once(server,'listening');
   const bridgeUrl=`http://127.0.0.1:${server.address().port}`, goUrl='http://127.0.0.1:21984';
+  // Match HA's ordered stream cleanup. Concurrent fixture writes can crash
+  // go2rtc's stream map before the close/reopen assertions run.
+  let streamChanges=Promise.resolve();
+  const changeStream=(query,method)=>{
+    streamChanges=streamChanges.catch(()=>{}).then(async()=>{
+      const response=await fetch(goUrl+'/api/streams?'+query,{method});
+      await response.arrayBuffer();
+      if(!response.ok)throw new Error(`go2rtc stream ${method} failed: ${response.status}`);
+    });
+    return streamChanges;
+  };
   const deliver=event=>page.evaluate(event=>window.receive?.(event),event).catch(()=>{});
   try {
     await expect.poll(async()=>{try{return(await fetch(goUrl+'/api')).status;}catch{return 0;}}).toBe(200);
@@ -101,7 +112,7 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
         if(message.type==='ready') {
           const query=new URLSearchParams({name:'acceptance'});
           query.append('src',bridgeUrl+message.path);if(message.audio)query.append('src','ffmpeg:acceptance#audio=opus');
-          await fetch(goUrl+'/api/streams?'+query,{method:'PUT'});
+          await changeStream(query,'PUT');
           signaling=new WebSocket(goUrl+'/api/ws?src=acceptance');
           signaling.on('message',raw=>{
             const message=JSON.parse(raw.toString());
@@ -113,7 +124,7 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
         } else if(message.type==='audio_ready') {
           const query=new URLSearchParams({name:'acceptance_audio'});
           query.append('src',bridgeUrl+message.path);query.append('src','ffmpeg:acceptance_audio#audio=opus');
-          await fetch(goUrl+'/api/streams?'+query,{method:'PUT'});
+          await changeStream(query,'PUT');
           audioSignaling=new WebSocket(goUrl+'/api/ws?src=acceptance_audio');
           audioSignaling.on('message',raw=>{
             const message=JSON.parse(raw.toString());
@@ -125,7 +136,7 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
         } else if(message.type==='fallback') {
           jpegMode=true;
           signaling?.close();
-          void fetch(goUrl+'/api/streams?src=acceptance',{method:'DELETE'}).catch(()=>{});
+          void changeStream('src=acceptance','DELETE').catch(()=>{});
           await deliver({type:'fallback'});
         } else if(message.type==='tick')await deliver({type:'tick',subscription:1,sequence:++sequence});
       });
@@ -136,7 +147,7 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
       else if(message.type==='eufy_viewer/ack'){acks++;cameraWs.send(jpegMode?'ack:jpeg':'ack');}
       else if(message.type==='eufy_viewer/fallback')cameraWs.send('fallback:'+message.reason);
       else if(message.audio){
-        if(message.stop){audioSignaling?.close();await fetch(goUrl+'/api/streams?src=acceptance_audio',{method:'DELETE'});}
+        if(message.stop){audioSignaling?.close();await changeStream('src=acceptance_audio','DELETE');}
         else if(message.candidate)audioSignaling.send(JSON.stringify({type:'webrtc/candidate',value:message.candidate}));
         else if(message.offer)audioSignaling.send(JSON.stringify({type:'webrtc',value:{type:'offer',sdp:message.offer,ice_servers:iceServers}}));
       }
@@ -154,7 +165,8 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
     });
     await page.exposeFunction('backendClose',async()=>{
       audioSignaling?.close();signaling?.close();cameraWs?.close();
-      await Promise.all(['acceptance_audio','acceptance'].map(src=>fetch(goUrl+'/api/streams?src='+src,{method:'DELETE'})));
+      await changeStream('src=acceptance_audio','DELETE');
+      await changeStream('src=acceptance','DELETE');
     });
     await page.evaluate(async()=>{
       await customElements.whenDefined('eufy-viewer-card');const connection=new EventTarget();
@@ -236,7 +248,10 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
     await expect.poll(()=>stops,{timeout:12000}).toBe(expectedStarts);
     await expect.poll(()=>sources.every(child=>child.exitCode!==null||child.signalCode!==null)).toBe(true);
     expect(timers).toHaveLength(0);
-    if(reopen) await expect.poll(async()=>Object.keys(await(await fetch(goUrl+'/api/streams')).json())).toEqual([]);
+    if(reopen) await expect.poll(async()=>{
+      await streamChanges;
+      return Object.keys(await(await fetch(goUrl+'/api/streams')).json());
+    }).toEqual([]);
     expect(reports.length).toBeLessThanOrEqual(5);expect(new Set(reports.map(r=>r.trigger)).size).toBe(reports.length);
     expect(JSON.stringify(reports)).not.toMatch(/candidate:|CAM123|192\.168|v1\/media|sdp/);
     expect(starts).toBe(expectedStarts);expect(hub.active).toBe(0);expect(hub.quarantined).toBe(0);
