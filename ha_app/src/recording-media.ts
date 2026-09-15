@@ -3,6 +3,13 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import { stat } from 'node:fs/promises';
 
+export interface RecordingProgress { output_bytes?: number; encoded_frames?: number; process_closed?: boolean }
+export interface RecordingObservationSink {
+  attempt: number;
+  mark: (event: RecordingDiagnostic) => void;
+  limits: Record<string, number>;
+  progress?: (value: RecordingProgress) => void;
+}
 export interface RecordingMetadata {
   videoCodec: 'h264' | 'hevc' | null;
   fps: number;
@@ -122,7 +129,7 @@ export class RecordingTranscoder {
     private readonly limits = { conversionMs: 45_000, remuxMs: 20_000, hardwareMs: 10_000, cleanupMs: 1000, bytes: RECORDING_BYTES },
     private readonly includeErrorText = false,
   ) {}
-  async muxResult(metadata: RecordingMetadata, files: RecordingFiles, signal: AbortSignal, requested: RecordingFormat = 'h264', hevcSupported = false): Promise<RecordingResult> {
+  async muxResult(metadata: RecordingMetadata, files: RecordingFiles, signal: AbortSignal, requested: RecordingFormat = 'h264', hevcSupported = false, observation?: RecordingObservationSink): Promise<RecordingResult> {
     signal.throwIfAborted();
     const format = requested === 'auto' ? (this.acceleration === 'nvidia' || !hevcSupported ? 'h264' : 'native') : requested;
     const source = metadata.videoCodec;
@@ -131,16 +138,19 @@ export class RecordingTranscoder {
     const result = (size: number, processing: RecordingMedia['processing']): RecordingResult => ({ path: files.output, size, media: { source, output: transcode ? 'h264' : source, processing, fallback } });
     if (this.unavailable) throw new Error('Recording converter requires restart');
     const transcode = metadata.videoCodec === 'hevc' && format === 'h264';
-    const started = performance.now(), attempt = ++this.sequence;
+    const started = performance.now(), attempt = observation?.attempt ?? ++this.sequence;
+    if (observation) Object.assign(observation.limits, { output_bytes: this.limits.bytes, conversion_ms: transcode ? this.limits.conversionMs : this.limits.remuxMs, hardware_progress_ms: this.limits.hardwareMs, cleanup_ms: this.limits.cleanupMs });
     const deadline = started + (transcode ? this.limits.conversionMs : this.limits.remuxMs);
-    const mark = (event: Event, failure?: ConversionFailure) => {
-      try { this.diagnostic({ diagnostic: 'recording', attempt, elapsed_ms: Math.round(performance.now() - started), event, ...(failure ? { failure } : {}) }); } catch { /* Logging cannot affect playback. */ }
+    const mark = (event: Event, failure?: ConversionFailure, log = true) => {
+      const row: RecordingDiagnostic = { diagnostic: 'recording', attempt, elapsed_ms: Math.round(performance.now() - started), event, ...(failure ? { failure } : {}) };
+      try { observation?.mark(row); } catch { /* Observation cannot affect conversion. */ }
+      try { if (log) this.diagnostic(row); } catch { /* Logging cannot affect playback. */ }
     };
     const run = (mode: RecordingAcceleration) => {
       const remaining = deadline - performance.now();
       if (remaining <= 0) throw new ConversionError(false, { reason: 'timeout', ffmpeg: [] });
       return this.convert(recordingArgs(metadata, !!files.audio, format, mode, files, this.limits.bytes), files.output, signal,
-        remaining, mode === 'nvidia' && transcode ? this.limits.hardwareMs : undefined);
+        remaining, mode === 'nvidia' && transcode ? this.limits.hardwareMs : undefined, observation?.progress);
     };
     if (transcode && this.acceleration === 'nvidia') {
       try {
@@ -149,6 +159,7 @@ export class RecordingTranscoder {
         mark('recording_active_nvidia');
         return result(output, 'nvidia');
       } catch (error) {
+        if (signal.aborted) mark('recording_failed', error instanceof ConversionError ? error.details : undefined, false);
         signal.throwIfAborted();
         if (!(error instanceof ConversionError) || !error.retryable) {
           mark('recording_failed', error instanceof ConversionError ? error.details : undefined);
@@ -164,6 +175,7 @@ export class RecordingTranscoder {
     let output: number;
     try { output = await run('software'); }
     catch (error) {
+      if (signal.aborted) mark('recording_failed', error instanceof ConversionError ? error.details : undefined, false);
       signal.throwIfAborted();
       mark('recording_failed', error instanceof ConversionError ? error.details : undefined);
       throw error;
@@ -172,7 +184,7 @@ export class RecordingTranscoder {
     mark(transcode ? 'recording_active_software' : 'recording_remuxed');
     return result(output, transcode ? 'software' : 'remux');
   }
-  private convert(args: string[], output: string, signal: AbortSignal, timeout: number, hardwareIdleMs?: number): Promise<number> {
+  private convert(args: string[], output: string, signal: AbortSignal, timeout: number, hardwareIdleMs?: number, observe?: (value: RecordingProgress) => void): Promise<number> {
     signal.throwIfAborted();
     return new Promise((resolve, reject) => {
       let child: ChildProcess;
@@ -186,6 +198,9 @@ export class RecordingTranscoder {
       const error = (retryable: boolean, reason: FailureReason) => new ConversionError(retryable,
         { reason, output_bytes: size,
           ...(hardwareIdleMs === undefined ? {} : { encoded_frames: encodedFrames }), ffmpeg: [] });
+      const reportProgress = (closed?: boolean) => {
+        try { observe?.({ ...(closed === true ? { output_bytes: size } : {}), ...(hardwareIdleMs === undefined ? {} : { encoded_frames: encodedFrames }), ...(closed === undefined ? {} : { process_closed: closed }) }); } catch { /* Observation cannot affect conversion. */ }
+      };
       const finish = (error?: ConversionError) => {
         if (settled) return;
         settled = true;
@@ -206,6 +221,7 @@ export class RecordingTranscoder {
         // A replacement may start only after close confirms the old process is gone.
         cleanupTimer = setTimeout(() => {
           this.unavailable = true;
+          reportProgress(false);
           finish(error(false, 'cleanup_unconfirmed'));
         }, this.limits.cleanupMs);
         child.kill('SIGKILL');
@@ -227,7 +243,7 @@ export class RecordingTranscoder {
           progressTail = (progressTail + chunk.subarray(offset, offset + 2048).toString('utf8')).slice(-4096);
           for (const match of progressTail.matchAll(/(?:^|\n)frame=(\d{1,10})\r?\n/g)) {
             const frames = Number(match[1]);
-            if (frames > encodedFrames) { encodedFrames = frames; refreshProgress(); }
+            if (frames > encodedFrames) { encodedFrames = frames; reportProgress(); refreshProgress(); }
           }
         }
       };
@@ -258,6 +274,7 @@ export class RecordingTranscoder {
           cause.details.exit_code = typeof code === 'number' && Number.isInteger(code) && code >= 0 && code <= 255 ? code : null;
           cause.details.signal = signal == null ? null : ['SIGKILL', 'SIGTERM', 'SIGSEGV', 'SIGABRT', 'SIGBUS', 'SIGILL'].includes(signal) ? signal : 'other';
         }
+        reportProgress(true);
         finish(cause);
       });
       if (signal.aborted) abort();

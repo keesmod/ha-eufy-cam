@@ -173,7 +173,7 @@ export class MegaBackend extends EventEmitter implements Backend {
       () => this.emit('change'),
     );
   }
-  supportReport() { return { ...this.discoveryDiagnostics.report(), live_audio: this.liveAudio.report() }; }
+  supportReport() { return { ...this.discoveryDiagnostics.report(), live_audio: this.liveAudio.report(), recording: this.recordings.diagnostics.report() }; }
   recordAudioEvent(serial: string, event: DiagnosticEvent): void { this.streams.get(serial)?.audio.mark(event); }
   audioAttempt(serial: string): number | undefined { return this.streams.get(serial)?.audio.report.attempt; }
   get connected(): boolean {
