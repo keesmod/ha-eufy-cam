@@ -175,6 +175,9 @@ class PlaybackView(HomeAssistantView):
                         start += len(chunk)
                 await response.write_eof()
             return response
+        except ConnectionResetError, BrokenPipeError:
+            # Closing or seeking can disconnect at any response write stage.
+            return response
         finally:
             self.readers -= 1
             body.close()

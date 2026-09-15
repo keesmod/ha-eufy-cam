@@ -2,14 +2,61 @@
 
 import asyncio
 import threading
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from aiohttp import ClientSession, web
+from aiohttp import ClientConnectionResetError, ClientSession, web
 
 from custom_components.eufy_viewer.api import BridgeClient, BridgeError
 from custom_components.eufy_viewer.playback import PlaybackView
 from custom_components.eufy_viewer.recording_file import RecordingFile
+
+
+@pytest.mark.parametrize("stage", ["prepare", "write", "write_eof"])
+@pytest.mark.parametrize(
+    "error", [ClientConnectionResetError, ConnectionResetError, BrokenPipeError]
+)
+async def test_playback_disconnect_releases_reader_and_preserves_seek(
+    tmp_path, stage, error
+):
+    store = PlaybackView(str(tmp_path))
+    request = Mock(headers={}, method="GET")
+    response = Mock(prepare=AsyncMock(), write=AsyncMock(), write_eof=AsyncMock())
+    getattr(response, stage).side_effect = error("closed")
+    async with store.reserve() as file:
+        await file.write(b"recording")
+        with patch(
+            "custom_components.eufy_viewer.playback.web.StreamResponse",
+            return_value=response,
+        ):
+            assert await store.send(request, file) is response
+        assert store.readers == 0
+        assert file.owners == 1
+        assert store.budget.used == 9
+        assert await file.read(3, 3) == b"ord"
+        if stage == "prepare":
+            response.write.assert_not_awaited()
+        if stage != "write_eof":
+            response.write_eof.assert_not_awaited()
+    assert file.file is None
+    assert store.budget.used == 0
+
+
+@pytest.mark.parametrize("error", [OSError, TimeoutError, asyncio.CancelledError])
+async def test_playback_other_failures_propagate_and_release_reader(tmp_path, error):
+    store = PlaybackView(str(tmp_path))
+    async with store.reserve() as file:
+        await file.write(b"recording")
+        with (
+            patch("aiohttp.web.StreamResponse.prepare", new_callable=AsyncMock),
+            patch.object(file, "read", side_effect=error),
+            pytest.raises(error),
+        ):
+            await store.send(Mock(headers={}, method="GET"), file)
+        assert store.readers == 0
+        assert file.owners == 1
+    assert file.file is None
+    assert store.budget.used == 0
 
 
 async def test_shared_budget_counts_pending_and_reader_owned_files(tmp_path):
@@ -177,14 +224,16 @@ async def test_failed_http_media_never_leaves_storage(
     assert not list(tmp_path.iterdir())
 
 
+@pytest.mark.parametrize("disconnect", [False, True])
 async def test_reader_keeps_storage_after_session_close_and_releases_on_disconnect(
-    aiohttp_server, socket_enabled, tmp_path
+    aiohttp_server, socket_enabled, tmp_path, caplog, disconnect
 ):
     store = PlaybackView(str(tmp_path))
     file = RecordingFile(str(tmp_path), store.budget)
     await file.open()
     await file.write(b"recording")
-    started, finish = asyncio.Event(), asyncio.Event()
+    started, finish, completed = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    requests = []
     original = file.read
 
     async def blocked(offset, size):
@@ -195,7 +244,11 @@ async def test_reader_keeps_storage_after_session_close_and_releases_on_disconne
     app = web.Application()
 
     async def serve_file(request):
-        return await store.send(request, file)
+        requests.append(request)
+        try:
+            return await store.send(request, file)
+        finally:
+            completed.set()
 
     app.router.add_get("/clip", serve_file)
     server = await aiohttp_server(app)
@@ -209,9 +262,26 @@ async def test_reader_keeps_storage_after_session_close_and_releases_on_disconne
             assert store.readers == 1
             with patch("custom_components.eufy_viewer.playback.MAX_RECORDING_FILES", 1):
                 assert (await client.get(server.make_url("/clip"))).status == 503
+            completed.clear()
+            if disconnect:
+                closed = asyncio.Event()
+                protocol_type = type(requests[0].protocol)
+                connection_lost = protocol_type.connection_lost
+
+                def on_close(protocol, error):
+                    connection_lost(protocol, error)
+                    if protocol is requests[0].protocol:
+                        closed.set()
+
+                with patch.object(protocol_type, "connection_lost", on_close):
+                    response.close()
+                    await asyncio.wait_for(closed.wait(), 2)
             finish.set()
-            assert await response.read() == b"recording"
+            if not disconnect:
+                assert await response.read() == b"recording"
+            await asyncio.wait_for(completed.wait(), 2)
     assert file.file is None
     assert file.owners == 0
     assert store.readers == 0
     assert store.budget.used == 0
+    assert not [record for record in caplog.records if record.levelno >= 40]

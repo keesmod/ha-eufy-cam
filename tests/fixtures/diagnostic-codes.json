@@ -1,0 +1,36 @@
+{
+  "accepted": [
+    "device_request_timeout",
+    "device_disconnected",
+    "connection_busy",
+    "cancelled",
+    "future_station_handshake_failed",
+    "protocol_v2_timeout",
+    "a",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "rejected": [
+    null,
+    true,
+    42,
+    {},
+    [],
+    "",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "PRIVATE_TOKEN",
+    "device_request_timeout\n",
+    "device_request_timeout\r",
+    "device_request_timeout\u2028",
+    "device request timeout",
+    "https://192.0.2.1/token",
+    "user@example.invalid",
+    "192.0.2.1",
+    "/data/eufy/session.json",
+    "device_timeout?token=secret",
+    "device_\u00e9rror",
+    "_timeout",
+    "timeout_",
+    "device__timeout",
+    "404_error"
+  ]
+}

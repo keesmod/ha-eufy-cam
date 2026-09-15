@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.8.16 - 2026-09-15
+
+- Handle recording playback client disconnects without logging a traceback when
+  the player closes or seeks. Header, chunk and final writes release their reader
+  ownership, preserving later range requests and the existing session lifetime.
+  Other I/O errors, timeouts and task cancellation still propagate. Addresses #69.
+
+- Preserve `device_request_timeout` and future machine error codes in normal
+  startup logs and Home Assistant diagnostic downloads without maintaining a
+  separate list of accepted codes in each component. Both validate the complete
+  code format and length. Raw error messages and unknown report fields remain
+  excluded.
+- Correct the HAOS app setup URL to `http://127.0.0.1:8063` in its README.
+
+Update both the HACS integration and HAOS bridge app to 0.8.16. The bundled
+client remains 0.12.2. Older integrations may omit newly preserved codes in the
+download, so use the updated bridge's startup logs until both are updated.
+Back up both components before installation. Restore their previous versions
+and preserve app data, credentials and identities to roll back.
+
+This improves diagnosis of issue #66. It does not fix the reported HomeBase
+connection timeout or add T84A1 standalone media support. Software tests exercise
+the diagnostic failure/download paths and real HTTP playback disconnects, with
+reader and storage cleanup. Device commands and encoding remain unchanged.
+Reporter verification of closing playback on their installation remains pending.
+
 ## 0.8.14 - 2026-09-14
 
 - Replace whole-recording RAM buffers with private temporary files and bounded
