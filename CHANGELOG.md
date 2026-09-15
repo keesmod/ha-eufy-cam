@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.18 - Unreleased
+
+- Use Home Assistant's configured and provider-supplied STUN/TURN servers for
+  both live video and optional late audio, on the browser and managed go2rtc.
+  Resolve fresh credentials for each peer without changing HA network settings.
+- Send ICE candidates as they arrive so an unreachable STUN server does not
+  prevent direct local playback. Existing startup, fallback and cleanup limits
+  still apply. If HA cannot supply ICE configuration, try direct connectivity.
+- Add bounded candidate-type, pair-state and ICE-error counters for failed
+  connection attempts. Diagnostics exclude addresses, candidate strings, SDP,
+  server URLs and relay credentials.
+
+Update the integration and refresh the dashboard. Bridge 0.8.17 and client
+0.12.2 remain unchanged. Restore the backed-up integration to roll back.
+References #10. The reporter's external T8134 route still needs acceptance.
+A dashboard proxy alone does not provide a WebRTC media relay.
+
 ## 0.8.17 - 2026-09-15
 
 - Add AAC audio that arrives after a live session started without an audio track.

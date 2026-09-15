@@ -17,8 +17,11 @@ const cases = [
   ...['close', 'navigation', 'frozen', 'blocked', 'media-loss', 'answer-loss', 'paint-loss', 'tick-loss'].map(ending=>({ending,profile:'normal'})),
   ...['silent', 'low-rate', 'delayed-audio', 'batched-audio', 'video-only', 'late-admission'].map(profile=>({ending:'close',profile})),
   {ending:'audio-answer-loss',profile:'late-admission'},
+  ...['normal','late-admission'].map(profile=>({ending:'close',profile,iceMode:'relay'})),
+  ...['relay-missing','relay-bad-auth'].map(iceMode=>({ending:'blocked',profile:'normal',iceMode})),
+  {ending:'close',profile:'normal',iceMode:'unreachable'},
 ];
-for (const {ending,profile} of cases) test(`real WebRTC ${profile} stops after ${ending}`, async ({ page }, testInfo) => {
+for (const {ending,profile,iceMode='direct'} of cases) test(`real WebRTC ${profile} stops after ${ending} (${iceMode})`, async ({ page }, testInfo) => {
   test.setTimeout(60000);
   const binary = process.env.GO2RTC_BINARY;
   test.skip(!binary, 'Set GO2RTC_BINARY for the media acceptance test');
@@ -27,7 +30,15 @@ for (const {ending,profile} of cases) test(`real WebRTC ${profile} stops after $
   const config = join(directory, 'go2rtc.yaml');
   const address = Object.values(networkInterfaces()).flat().find(a => a?.family === 'IPv4' && !a.internal)?.address;
   if (!address) throw new Error('A local network interface is required for the WebRTC fixture');
-  await writeFile(config, 'api:\n  listen: "127.0.0.1:21984"\nrtsp:\n  listen: "127.0.0.1:21554"\nwebrtc:\n  listen: "'+address+':21555"\n  candidates: ["'+address+':21555"]\n  ice_servers: []\n');
+  await writeFile(config, 'api:\n  listen: "127.0.0.1:21984"\nrtsp:\n  listen: "127.0.0.1:21554"\nwebrtc:\n  listen: "'+address+':21555/tcp"\n  candidates: ["'+address+':21555"]\n  ice_servers: []\n');
+  const relayOnly = iceMode.startsWith('relay');
+  const iceServers = iceMode==='unreachable' ? [{urls:['stun:192.0.2.1:3478']}] : relayOnly && iceMode!=='relay-missing' ? [{urls:[`turn:${address}:23478?transport=udp`],username:'fixture',credential:iceMode==='relay-bad-auth'?'wrong':'fixture-secret'}] : [];
+  // This fixture removes all direct candidates and requires browser relay ICE.
+  // Successful decoded media therefore requires the temporary TURN server.
+  const relaySdp = sdp => relayOnly ? sdp.split('\r\n').filter(line=>!line.startsWith('a=candidate:')||line.includes(' typ relay')).join('\r\n') : sdp;
+  const turn = relayOnly && iceMode!=='relay-missing' ? spawn(process.env.TURN_SERVER_BINARY ?? 'turnserver', ['-n','--no-cli','--no-tls','--no-tcp','--lt-cred-mech','--fingerprint','--realm=eufy-fixture',`--listening-ip=${address}`,`--relay-ip=${address}`,'--listening-port=23478','--min-port=23500','--max-port=23550','--user=fixture:fixture-secret',`--userdb=${directory}/turn.sqlite`,'--no-multicast-peers','--relay-threads=1',`--pidfile=${directory}/turn.pid`,'--log-file=stdout'], {stdio:['ignore','pipe','pipe']}) : undefined;
+  let turnFailure;turn?.on('error',error=>{turnFailure=error;});
+  turn?.stdout.resume();turn?.stderr.resume();
   const rtc = spawn(binary, ['-c', config], { stdio: ['ignore','pipe','pipe'] });
   let logs=''; rtc.stdout.on('data', c=>logs+=c); rtc.stderr.on('data', c=>logs+=c);
   const timers=[], reports=[]; let timeOffset=0;
@@ -61,8 +72,10 @@ for (const {ending,profile} of cases) test(`real WebRTC ${profile} stops after $
   const deliver=event=>page.evaluate(event=>window.receive?.(event),event).catch(()=>{});
   try {
     await expect.poll(async()=>{try{return(await fetch(goUrl+'/api')).status;}catch{return 0;}}).toBe(200);
+    if(turn && (turnFailure || turn.exitCode!==null)) throw new Error('TURN fixture did not start');
     await page.route(bridgeUrl+'/fixture',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><body></body>'}));
     await page.goto(bridgeUrl+'/fixture');
+    if (relayOnly) await page.evaluate(()=>{const Peer=window.RTCPeerConnection;window.RTCPeerConnection=class extends Peer {constructor(config){super({...config,iceTransportPolicy:'relay'});}};});
     const source=await readFile(new URL('../custom_components/eufy_viewer/frontend/eufy-viewer-card.js',import.meta.url),'utf8');
     await page.addScriptTag({content:source,type:'module'});
     let sequence=0, jpegMode=false;
@@ -78,11 +91,11 @@ for (const {ending,profile} of cases) test(`real WebRTC ${profile} stops after $
           signaling=new WebSocket(goUrl+'/api/ws?src=acceptance');
           signaling.on('message',raw=>{
             const message=JSON.parse(raw.toString());
-            if(message.type==='webrtc'&&message.value.type==='answer'&&ending!=='answer-loss')void deliver({type:'answer',sdp:ending==='blocked'?message.value.sdp.replaceAll(address,'192.0.2.1'):message.value.sdp});
-            else if(message.type==='webrtc/candidate')void deliver({type:'candidate',candidate:ending==='blocked'?message.value.replaceAll(address,'192.0.2.1'):message.value});
+            if(message.type==='webrtc'&&message.value.type==='answer'&&ending!=='answer-loss')void deliver({type:'answer',sdp:relayOnly?relaySdp(message.value.sdp):ending==='blocked'?message.value.sdp.replaceAll(address,'192.0.2.1'):message.value.sdp});
+            else if(message.type==='webrtc/candidate'&&(!relayOnly||message.value.includes(' typ relay')))void deliver({type:'candidate',candidate:!relayOnly&&ending==='blocked'?message.value.replaceAll(address,'192.0.2.1'):message.value});
             else if(message.type==='error'){console.error('go2rtc fixture:',message.value);void deliver({type:'ended'});}
           });
-          await once(signaling,'open');await deliver({type:'ready',subscription:1,fallback:message.fallback,diagnostics:true});
+          await once(signaling,'open');await deliver({type:'ready',subscription:1,fallback:message.fallback,diagnostics:true,ice_servers:iceServers,ice_configuration:'home_assistant'});
         } else if(message.type==='audio_ready') {
           const query=new URLSearchParams({name:'acceptance_audio'});
           query.append('src',bridgeUrl+message.path);query.append('src','ffmpeg:acceptance_audio#audio=opus');
@@ -90,11 +103,11 @@ for (const {ending,profile} of cases) test(`real WebRTC ${profile} stops after $
           audioSignaling=new WebSocket(goUrl+'/api/ws?src=acceptance_audio');
           audioSignaling.on('message',raw=>{
             const message=JSON.parse(raw.toString());
-            if(message.type==='webrtc'&&message.value.type==='answer'&&ending!=='audio-answer-loss')void deliver({type:'audio_answer',sdp:message.value.sdp});
-            else if(message.type==='webrtc/candidate')void deliver({type:'audio_candidate',candidate:message.value});
+            if(message.type==='webrtc'&&message.value.type==='answer'&&ending!=='audio-answer-loss')void deliver({type:'audio_answer',sdp:relaySdp(message.value.sdp)});
+            else if(message.type==='webrtc/candidate'&&(!relayOnly||message.value.includes(' typ relay')))void deliver({type:'audio_candidate',candidate:message.value});
             else if(message.type==='error')void deliver({type:'audio_ended'});
           });
-          await once(audioSignaling,'open');await deliver({type:'audio_ready'});
+          await once(audioSignaling,'open');await deliver({type:'audio_ready',ice_servers:iceServers,ice_configuration:'home_assistant'});
         } else if(message.type==='fallback') {
           jpegMode=true;
           signaling?.close();
@@ -110,13 +123,18 @@ for (const {ending,profile} of cases) test(`real WebRTC ${profile} stops after $
       else if(message.type==='eufy_viewer/fallback')cameraWs.send('fallback:'+message.reason);
       else if(message.audio){
         if(message.stop){audioSignaling?.close();await fetch(goUrl+'/api/streams?src=acceptance_audio',{method:'DELETE'});}
-        else if(message.offer)audioSignaling.send(JSON.stringify({type:'webrtc',value:{type:'offer',sdp:message.offer,ice_servers:[]}}));
+        else if(message.candidate)audioSignaling.send(JSON.stringify({type:'webrtc/candidate',value:message.candidate}));
+        else if(message.offer)audioSignaling.send(JSON.stringify({type:'webrtc',value:{type:'offer',sdp:message.offer,ice_servers:iceServers}}));
+      }
+      else if(message.candidate){
+        const candidate=!relayOnly&&ending==='blocked'?message.candidate.replace(/(candidate:[^\r\n]*? )(?:[0-9.]+|[a-zA-Z0-9-]+\.local)( \d+ typ)/g,'$1192.0.2.2$2'):message.candidate;
+        signaling.send(JSON.stringify({type:'webrtc/candidate',value:candidate}));
       }
       else if(message.offer){
         // Model a remote browser whose advertised media address is unreachable.
         // Both directions are replaced, so peer-reflexive ICE cannot bridge the fixture.
-        const offer=ending==='blocked'?message.offer.replace(/(a=candidate:[^\r\n]*? )(?:[0-9.]+|[a-zA-Z0-9-]+\.local)( \d+ typ)/g,'$1192.0.2.2$2'):message.offer;
-        signaling.send(JSON.stringify({type:'webrtc',value:{type:'offer',sdp:offer,ice_servers:[]}}));
+        const offer=!relayOnly&&ending==='blocked'?message.offer.replace(/(a=candidate:[^\r\n]*? )(?:[0-9.]+|[a-zA-Z0-9-]+\.local)( \d+ typ)/g,'$1192.0.2.2$2'):message.offer;
+        signaling.send(JSON.stringify({type:'webrtc',value:{type:'offer',sdp:offer,ice_servers:iceServers}}));
       }
       return{accepted:true};
     });
@@ -137,6 +155,13 @@ for (const {ending,profile} of cases) test(`real WebRTC ${profile} stops after $
     if(profile!=='video-only'&&ending!=='audio-answer-loss') await expect.poll(()=>page.evaluate(async silent=>[...(await (card._audioRtc??card._rtc)?.getStats())?.values()??[]].some(s=>s.type==='inbound-rtp'&&s.kind==='audio'&&s.packetsReceived>0&&(silent||s.totalAudioEnergy>0)),profile==='silent'),{timeout:10000}).toBe(true);
     await expect.poll(()=>acks).toBeGreaterThan(2);
     await expect.poll(()=>reports.some(r=>r.trigger==='playing'&&r.painted>0&&r.acks_accepted>0&&r.video_decoded>0)).toBe(true);
+    if (iceMode==='relay') {
+      const peers=await page.evaluate(async()=>Promise.all([card._rtc,...(card._audioRtc?[card._audioRtc]:[])].map(async pc=>{const stats=await pc.getStats();const pair=[...stats.values()].find(s=>s.type==='candidate-pair'&&s.state==='succeeded'&&s.nominated);return {local:stats.get(pair?.localCandidateId)?.candidateType,remote:stats.get(pair?.remoteCandidateId)?.candidateType,serverRelay: [...stats.values()].some(s=>s.type==='remote-candidate'&&s.candidateType==='relay')};})));
+      expect(peers).toHaveLength(profile==='late-admission'?2:1);
+      // go2rtc may nominate a peer-reflexive response through the browser's
+      // relay. The browser still has no direct route and both servers gather relay.
+      for(const peer of peers){expect(peer.local).toBe('relay');expect(['relay','prflx']).toContain(peer.remote);expect(peer.serverRelay).toBe(true);}
+    }
     if(profile!=='normal') {
       const before=acks; await new Promise(resolve=>setTimeout(resolve,8000));
       expect(jpegMode).toBe(false);expect(acks).toBeGreaterThan(before+2);
@@ -155,7 +180,7 @@ for (const {ending,profile} of cases) test(`real WebRTC ${profile} stops after $
       await expect(page.locator('dialog .live-status')).toHaveText('Live video without sound',{timeout:20000});
       await expect.poll(()=>reports.some(r=>r.trigger==='fallback')).toBe(true);
       const report=reports.find(r=>r.trigger==='fallback');
-      if(ending==='blocked') {expect(report.answer).toBe(true);expect(report.painted).toBe(0);expect(report.acks_accepted).toBe(0);}
+      if(ending==='blocked') {if(relayOnly)expect(report.relay_configured).toBe(iceMode!=='relay-missing');expect(report.answer).toBe(true);expect(report.painted).toBe(0);expect(report.acks_accepted).toBe(0);}
       if(ending==='answer-loss') {expect(report.offer).toBe(true);expect(report.answer).toBe(false);expect(report.painted).toBe(0);}
       if(ending==='paint-loss') {expect(report.last_frame_ms).toBeGreaterThan(5000);expect(report.video_decoded).toBeGreaterThan(report.painted);}
       if(ending==='tick-loss') {expect(report.last_frame_ms).toBeLessThan(1000);expect(report.painted).toBeGreaterThan(report.acks_accepted+20);ticks=setInterval(()=>hub.frame('CAM123',jpeg),125);}
@@ -187,7 +212,8 @@ for (const {ending,profile} of cases) test(`real WebRTC ${profile} stops after $
     expect(reports.length).toBeLessThanOrEqual(5);expect(new Set(reports.map(r=>r.trigger)).size).toBe(reports.length);
     expect(JSON.stringify(reports)).not.toMatch(/candidate:|CAM123|192\.168|v1\/media|sdp/);
     expect(starts).toBe(1);expect(hub.active).toBe(0);expect(hub.quarantined).toBe(0);
+    await testInfo.attach('playback-evidence',{body:JSON.stringify({iceMode,starts,stops,active:hub.active,quarantined:hub.quarantined,reports},null,2),contentType:'application/json'});
     if (ending === 'close') expect(await page.locator('video.video').evaluate(v=>v.srcObject)).toBeNull();
-  }catch(error){console.error(logs.replace(/https?:\/\/[^\s"]+/g,'[fixture-url]'));throw error;}
-  finally{timers.forEach(clearTimeout);cameraWs?.terminate();audioSignaling?.terminate();signaling?.terminate();hub.close();media.stop('CAM123');server.emit('shutdown');server.closeAllConnections();server.close();rtc.kill();video?.kill();audio?.kill();clearInterval(ticks);await rm(directory,{recursive:true,force:true});}
+  }catch(error){console.error('TURN fixture status:',{exitCode:turn?.exitCode,startFailed:Boolean(turnFailure)});console.error('ICE fixture reports:',JSON.stringify(reports));console.error(logs.replace(/https?:\/\/[^\s"]+/g,'[fixture-url]'));throw error;}
+  finally{turn?.kill();timers.forEach(clearTimeout);cameraWs?.terminate();audioSignaling?.terminate();signaling?.terminate();hub.close();media.stop('CAM123');server.emit('shutdown');server.closeAllConnections();server.close();rtc.kill();video?.kill();audio?.kill();clearInterval(ticks);await rm(directory,{recursive:true,force:true});}
 });

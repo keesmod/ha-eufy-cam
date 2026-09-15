@@ -334,3 +334,55 @@ test('late audio check runs once at fifteen seconds and is cancelled on close', 
   await page.clock.runFor(16000);
   expect(await page.evaluate(()=>acks.filter(m=>m.report?.trigger==='audio_check').length)).toBe(1);
 });
+
+
+for (const audio of [false,true]) test(`HA ICE configuration and trickle ordering survive incomplete gathering, audio=${audio}`, async ({page})=>{
+  await page.evaluate(()=>{
+    card._hass.states['camera.front'].attributes.viewer_webrtc=true;
+    window.peers=[];
+    window.RTCPeerConnection=class extends EventTarget {
+      iceGatheringState='gathering';connectionState='new';iceConnectionState='checking';localDescription=null;
+      constructor(config){super();this.config=config;peers.push(this);}
+      addTransceiver(){} getReceivers(){return [];} getTransceivers(){return [];}
+      async createOffer(){return {type:'offer',sdp:'fixture-offer'};}
+      async setLocalDescription(offer){this.localDescription=offer;this.onicecandidate?.({candidate:{candidate:'candidate:PRIVATE'}});}
+      async getStats(){return new Map([
+        ['private-local',{type:'local-candidate',candidateType:'relay',address:'PRIVATE',url:'turn:PRIVATE',username:'PRIVATE'}],
+        ['private-remote',{type:'remote-candidate',candidateType:'host',address:'PRIVATE'}],
+        ['private-pair',{type:'candidate-pair',state:'in-progress',localCandidateId:'private-local',remoteCandidateId:'private-remote'}],
+      ]);}
+      close(){this.connectionState='closed';}
+    };
+  });
+  await page.getByRole('button',{name:'Watch live',exact:true}).click();
+  await page.evaluate(()=>receive({type:'ready',subscription:9,fallback:true,diagnostics:true,ice_servers:[{urls:['turn:PRIVATE'],username:'PRIVATE',credential:'PRIVATE'}],ice_configuration:'home_assistant'}));
+  await expect.poll(()=>page.evaluate(()=>acks.filter(m=>m.candidate).length)).toBe(1);
+  if(audio) {
+    await page.evaluate(()=>receive({type:'audio_ready',ice_servers:[{urls:'turns:PRIVATE',username:'PRIVATE_NEXT',credential:'PRIVATE_NEXT'}],ice_configuration:'home_assistant'}));
+    await expect.poll(()=>page.evaluate(()=>acks.filter(m=>m.candidate).length)).toBe(2);
+  }
+  const result=await page.evaluate(async audio=>{
+    const pc=peers[audio?1:0];
+    for(let i=0;i<80;i++)pc.onicecandidateerror({errorCode:701,errorText:'PRIVATE',url:'turn:PRIVATE',address:'PRIVATE'});
+    pc.onicecandidateerror({errorCode:441});pc.onicecandidateerror({errorCode:500});
+    await card._reportLive('startup');
+    return {config:pc.config,signals:acks.filter(m=>m.type==='eufy_viewer/signal').map(m=>({audio:Boolean(m.audio),offer:Boolean(m.offer),candidate:Boolean(m.candidate)})),report:acks.find(m=>m.report).report};
+  },audio);
+  expect(result.config.iceServers).toEqual(audio?[{urls:'turns:PRIVATE',username:'PRIVATE_NEXT',credential:'PRIVATE_NEXT'}]:[{urls:['turn:PRIVATE'],username:'PRIVATE',credential:'PRIVATE'}]);
+  expect(result.signals.filter(s=>s.audio===audio).map(s=>s.offer)).toEqual([true,false]);
+  const prefix=audio?'audio_':'';
+  expect(result.report[prefix+'ice_gathering']).toBe('gathering');
+  expect(result.report[prefix+'relay_configured']).toBe(true);
+  expect(result.report[prefix+'local_relay']).toBe(1);
+  expect(result.report[prefix+'pairs_in_progress']).toBe(1);
+  expect(result.report[prefix+'ice_errors_unreachable']).toBe(64);
+  expect(result.report[prefix+'ice_errors_auth']).toBe(1);
+  expect(result.report[prefix+'ice_errors_other']).toBe(1);
+  expect(JSON.stringify(result.report)).not.toMatch(/PRIVATE|private-|candidate:|turn:/);
+  await page.evaluate(()=>{window.lateCandidate=peers[0].onicecandidate;});
+  await page.getByRole('button',{name:'Close live view',exact:true}).click();
+  const count=await page.evaluate(()=>acks.length);
+  await page.evaluate(()=>lateCandidate({candidate:{candidate:'candidate:late'}}));
+  expect(await page.evaluate(()=>acks.length)).toBe(count);
+  expect(await page.evaluate(()=>peers.every(p=>p.connectionState==='closed'&&p.onicecandidate===null&&p.onicecandidateerror===null))).toBe(true);
+});

@@ -19,6 +19,9 @@ from go2rtc_client.ws import (
     WsError,
 )
 from homeassistant.core import HomeAssistant, callback
+from webrtc_models import RTCIceServer
+
+from .ice import ice_configuration
 
 
 class LateAudioTrack:
@@ -41,6 +44,7 @@ class LateAudioTrack:
         self.registered = False
         self.closed = False
         self.offered = False
+        self.ice_servers: list[RTCIceServer] = []
 
     async def prepare(self, source: str) -> None:
         """Reuse managed go2rtc's AAC-to-Opus path for actual incoming audio."""
@@ -53,7 +57,14 @@ class LateAudioTrack:
             return
         self.signaling = Go2RtcWsClient(self.session, self.url, source=self.name)
         self.signaling.subscribe(self._message)
-        self.emit({"type": "audio_ready"})
+        self.ice_servers, ice_status = ice_configuration(self.hass)
+        self.emit(
+            {
+                "type": "audio_ready",
+                "ice_servers": [server.to_dict() for server in self.ice_servers],
+                "ice_configuration": ice_status,
+            }
+        )
 
     @callback
     def _message(self, message: ReceiveMessages) -> None:
@@ -74,7 +85,7 @@ class LateAudioTrack:
             async with asyncio.timeout(10):
                 if offer is not None and not self.offered:
                     self.offered = True
-                    await self.signaling.send(WebRTCOffer(offer, []))
+                    await self.signaling.send(WebRTCOffer(offer, self.ice_servers))
                 elif candidate is not None and self.offered:
                     await self.signaling.send(WebRTCCandidate(candidate))
                 else:
@@ -87,6 +98,7 @@ class LateAudioTrack:
 
     async def close(self) -> None:
         self.closed = True
+        self.ice_servers = []
         signaling, self.signaling = self.signaling, None
         registered, self.registered = self.registered, False
         if signaling:
