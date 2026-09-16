@@ -213,6 +213,35 @@ changes, incomplete frames, inspection limits, privacy, stream preservation and
 browser timer cleanup have regression coverage. Exact T8134 hardware validation
 remains open. These observations do not themselves change playback.
 
+## Audio always via the late route, 0.8.20
+
+The T8134 reports in issue #10 showed first AAC 3.96-5.15 s after startup
+metadata on a cold camera and 39-41 ms on a warm one, continuous once started
+(chunk 160-300 bytes, `max_gap_ms` under one second). The 3-second library
+deadline therefore excluded audio on every cold start, and admitted audio was
+muxed into the video encoder, which emits nothing until its first AAC frame and
+holds video for every audio gap. Bridge 0.8.20 never muxes audio: `ready`
+always carries `audio: false`, so `audio_expected` is always `false` for this
+bridge and describes nothing about the camera. Read the audio state instead:
+
+| Evidence | Meaning |
+| --- | --- |
+| Attempt `audio_late` | Furthest late-audio stage HA reached: `announced`, `ready`, `offered`, `answered` |
+| Attempt `audio_late_end` | First fixed reason audio ended before video: `unavailable`, `setup_failed`, `signaling_failed`, `upstream_error`, `stopped`; absent when audio outlived the session |
+| Relay row `audio_late: true` | The row also includes the late-audio go2rtc stream, so `source_aac_*` and `output_opus_*` describe late audio |
+| Browser `audio_late` | The card's audio peer state: `none`, `connecting`, `attached`, `ended` |
+| Bridge `audio_supported`, `audio_absent` | Observational only: the library's startup classification no longer selects a pipeline |
+| Bridge `audio_input`, `audio_late` | Any audio data arrived; the first complete ADTS frame was offered to the viewer |
+
+The same release stamps encoder output with arrival time instead of the
+announced frame rate. The 0.8.11 report of a working local attempt showed the
+browser's average jitter-buffer delay per frame growing from 48 ms to 238 ms in
+four seconds with zero loss because the HomeBase delivered 16-17.5 frames per
+second against a 15 fps header. Encoder output is also bounded (`4M` default,
+`EUFY_LIVE_MAX_BITRATE`); the same reports measured 9.8-12.4 Mbit/s unbounded
+output with ~96 KB frames, and the failed local attempt showed packets arriving
+at ~8 Mbit/s while decoded frames fell from 12 to 1.5 per second.
+
 ## Late audio admission, 0.8.17
 
 The [September 15 issue #10 report](https://github.com/keesmod/ha-eufy-cam/issues/10#issuecomment-5676491961)

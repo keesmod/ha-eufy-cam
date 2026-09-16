@@ -548,12 +548,237 @@ async def test_late_audio_failure_cannot_end_video_or_leak_upstream_errors(
     assert (await client.receive_json())["event"] == {"type": "audio_ended"}
     await hass.async_block_till_done()
     assert viewer.audio.closed and not viewer.closed
+    assert viewer.playback_evidence["audio_late"] == "ready"
+    assert viewer.playback_evidence["audio_late_end"] == "upstream_error"
     assert not socket.acks and not socket.closed.is_set()
     await socket.queue.put(
         SimpleNamespace(type=aiohttp.WSMsgType.TEXT, data='{"type":"tick"}')
     )
     tick = (await client.receive_json())["event"]
     assert await viewer.ack(tick["sequence"])
+    assert "PRIVATE" not in json.dumps(viewer.playback_evidence)
+    await client.close()
+
+
+READY = {
+    "type": "ready",
+    "path": "/v1/media/" + "a" * 64,
+    "audio": False,
+    "audio_attempt": 7,
+    "fallback": True,
+    "fallback_after_ms": 4000,
+}
+AUDIO_READY = {"type": "audio_ready", "path": "/v1/media/" + "a" * 64 + "/audio"}
+
+
+def text(payload):
+    return SimpleNamespace(type=aiohttp.WSMsgType.TEXT, data=json.dumps(payload))
+
+
+async def test_warm_start_audio_queued_behind_ready_is_prepared(
+    hass, hass_ws_client, rtc_setup
+):
+    """A warm camera announces audio ~40 ms after ready: both arrive together."""
+    socket, rest, _, connect = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    await socket.queue.put(text(READY))
+    await socket.queue.put(text(AUDIO_READY))
+    assert (await client.receive_json())["event"]["type"] == "ready"
+    assert (await client.receive_json())["event"]["type"] == "audio_ready"
+    connect.assert_awaited_once_with("/v1/live/CAM123?transport=webrtc&late_audio=1")
+    video, audio = (call.args for call in rest.streams.add.await_args_list)
+    assert video[0] == viewer.name and video[1] == [
+        viewer.coordinator.api.url + READY["path"]
+    ]
+    assert audio[0] == viewer.name + "_audio" and audio[1] == [
+        viewer.coordinator.api.url + AUDIO_READY["path"],
+        f"ffmpeg:{viewer.name}_audio#audio=opus",
+    ]
+    evidence = viewer.playback_evidence
+    assert evidence["audio_expected"] is False and evidence["audio_attempt"] == 7
+    assert evidence["audio_late"] == "ready" and "audio_late_end" not in evidence
+    # Video and audio signaling proceed independently, in either order.
+    assert await viewer.signal("audio-sdp", None, True)
+    assert evidence["audio_late"] == "offered"
+    assert await viewer.signal("video-sdp", None)
+    viewer.audio._message(WebRTCAnswer("audio-answer"))
+    assert (await client.receive_json())["event"]["type"] == "audio_answer"
+    assert evidence["audio_late"] == "answered"
+    viewer._message(WebRTCAnswer("video-answer"))
+    assert (await client.receive_json())["event"]["type"] == "answer"
+    await socket.queue.put(text({"type": "tick"}))
+    tick = (await client.receive_json())["event"]
+    assert await viewer.ack(tick["sequence"])
+    assert socket.acks == ["ack"] and not viewer.closed
+    await client.close()
+    await hass.async_block_till_done()
+    assert socket.closed.is_set() and viewer.audio.closed
+    assert "audio_late_end" not in evidence  # Session end is not an audio failure.
+
+
+async def test_cold_start_audio_after_ticks_keeps_flowing(
+    hass, hass_ws_client, rtc_setup
+):
+    """Cold cameras announce audio seconds into playback, after frames and acks."""
+    socket, rest, _, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    await socket.queue.put(text(READY))
+    assert (await client.receive_json())["event"]["type"] == "ready"
+    assert await viewer.signal("video-sdp", None)
+    viewer._message(WebRTCAnswer("video-answer"))
+    assert (await client.receive_json())["event"]["type"] == "answer"
+    for expected in (1, 2, 3):
+        await socket.queue.put(text({"type": "tick"}))
+        tick = (await client.receive_json())["event"]
+        assert tick["sequence"] == expected and await viewer.ack(expected)
+    assert "audio_late" not in viewer.playback_evidence
+    await socket.queue.put(text(AUDIO_READY))
+    assert (await client.receive_json())["event"]["type"] == "audio_ready"
+    assert rest.streams.add.await_count == 2
+    assert viewer.playback_evidence["audio_late"] == "ready"
+    assert await viewer.signal("audio-sdp", None, True)
+    assert await viewer.signal(None, "candidate:1", True)
+    # The camera lease keeps renewing through video acknowledgements only.
+    await socket.queue.put(text({"type": "tick"}))
+    tick = (await client.receive_json())["event"]
+    assert tick["sequence"] == 4 and await viewer.ack(4)
+    assert socket.acks == ["ack"] * 4
+    assert viewer.playback_evidence["ticks"] == 4
+    assert not viewer.closed and not viewer.audio.closed
+    await client.close()
+    await hass.async_block_till_done()
+
+
+async def test_audio_ready_without_opt_in_is_rejected(hass, hass_ws_client, rtc_setup):
+    socket, rest, _, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=False)
+    await socket.queue.put(text(READY))
+    assert (await client.receive_json())["event"]["type"] == "ready"
+    await socket.queue.put(text(AUDIO_READY))
+    assert (await client.receive_json())["event"]["type"] == "ended"
+    await viewer.task
+    assert rest.streams.add.await_count == 1 and viewer.audio is None
+    assert "audio_late" not in viewer.playback_evidence
+    await client.close()
+
+
+async def test_duplicate_audio_ready_is_ignored_without_ending_video(
+    hass, hass_ws_client, rtc_setup
+):
+    socket, rest, _, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    await audio_ready(client, socket)
+    first = viewer.audio
+    assert await viewer.signal("audio-sdp", None, True)
+    await socket.queue.put(text(AUDIO_READY))
+    await socket.queue.put(text({"type": "tick"}))
+    tick = (await client.receive_json())["event"]
+    assert tick["type"] == "tick" and await viewer.ack(tick["sequence"])
+    assert viewer.audio is first and not first.closed and not viewer.closed
+    assert rest.streams.add.await_count == 2
+    assert viewer.playback_evidence["audio_late"] == "offered"
+    assert "audio_late_end" not in viewer.playback_evidence
+    # A repeat after audio failed cannot restart it either.
+    viewer.audio._message(WsError("PRIVATE"))
+    assert (await client.receive_json())["event"] == {"type": "audio_ended"}
+    await hass.async_block_till_done()
+    await socket.queue.put(text(AUDIO_READY))
+    await socket.queue.put(text({"type": "tick"}))
+    tick = (await client.receive_json())["event"]
+    assert tick["type"] == "tick" and await viewer.ack(tick["sequence"])
+    assert viewer.audio is first and rest.streams.add.await_count == 2
+    assert not await viewer.signal("retry-sdp", None, True)
+    await client.close()
+
+
+async def test_audio_announced_during_failed_video_setup_keeps_fallback(
+    hass, hass_ws_client, rtc_setup, caplog
+):
+    """Warm start: audio_ready is already queued when go2rtc video setup fails."""
+    socket, rest, session, connect = rtc_setup
+    rest.streams.add.side_effect = Go2RtcClientError("PRIVATE go2rtc detail")
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    await socket.queue.put(text(READY))
+    await socket.queue.put(text(AUDIO_READY))
+    await socket.queue.put(text({"type": "tick"}))
+    await hass.async_block_till_done()
+    assert socket.acks == ["fallback:signaling_error"]
+    assert viewer.fallback_requested and not viewer.closed and viewer.audio is None
+    assert viewer.playback_evidence["audio_late"] == "announced"
+    assert viewer.playback_evidence["audio_late_end"] == "unavailable"
+    assert rest.streams.add.await_count == 1
+    await socket.queue.put(text({"type": "fallback", "reason": "signaling_error"}))
+    assert (await client.receive_json())["event"] == {"type": "fallback"}
+    await socket.queue.put(SimpleNamespace(type=aiohttp.WSMsgType.BINARY, data=b"jpeg"))
+    frame = (await client.receive_json())["event"]
+    assert frame["type"] == "frame" and await viewer.ack(frame["sequence"])
+    assert socket.acks == ["fallback:signaling_error", "ack:jpeg"]
+    connect.assert_awaited_once()
+    assert "PRIVATE" not in caplog.text
+    await client.close()
+    await hass.async_block_till_done()
+    assert socket.closed.is_set() and len(session.deleted) == 1
+
+
+@pytest.mark.parametrize("state", ["jpeg", "fallback_requested"])
+async def test_audio_announced_after_downgrade_is_ignored(
+    hass, hass_ws_client, rtc_setup, state
+):
+    socket, rest, _, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    await socket.queue.put(text(READY))
+    assert (await client.receive_json())["event"]["type"] == "ready"
+    if state == "jpeg":
+        await socket.queue.put(text({"type": "fallback", "reason": "playback_timeout"}))
+        assert (await client.receive_json())["event"] == {"type": "fallback"}
+        await socket.queue.put(text(AUDIO_READY))
+        await socket.queue.put(
+            SimpleNamespace(type=aiohttp.WSMsgType.BINARY, data=b"j")
+        )
+        assert (await client.receive_json())["event"]["type"] == "frame"
+    else:
+        assert await viewer.fallback("playback_error")
+        await socket.queue.put(text(AUDIO_READY))
+        await socket.queue.put(text({"type": "tick"}))  # Ignored while downgrading.
+        await hass.async_block_till_done()
+    await hass.async_block_till_done()
+    assert viewer.audio is None and not viewer.closed
+    assert rest.streams.add.await_count == 1
+    assert viewer.playback_evidence["audio_late_end"] == "unavailable"
+    await client.close()
+
+
+async def test_older_bridge_joint_audio_ignores_late_audio(
+    hass, hass_ws_client, rtc_setup
+):
+    """A 0.8.17 bridge muxing AAC into video keeps go2rtc's joint opus source."""
+    socket, rest, _, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    await socket.queue.put(text({**READY, "audio": True}))
+    assert (await client.receive_json())["event"]["type"] == "ready"
+    assert rest.streams.add.call_args.args[1] == [
+        viewer.coordinator.api.url + READY["path"],
+        f"ffmpeg:{viewer.name}#audio=opus",
+    ]
+    assert viewer.playback_evidence["audio_expected"] is True
+    await socket.queue.put(text(AUDIO_READY))
+    await socket.queue.put(text({"type": "tick"}))
+    tick = (await client.receive_json())["event"]
+    assert tick["type"] == "tick" and await viewer.ack(tick["sequence"])
+    assert viewer.audio is None and rest.streams.add.await_count == 1
+    assert viewer.playback_evidence["audio_late_end"] == "unavailable"
+    assert not await viewer.signal("audio-sdp", None, True)
+    await client.close()
+
+
+async def test_audio_stop_records_browser_decision(hass, hass_ws_client, rtc_setup):
+    socket, _, _, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    await audio_ready(client, socket)
+    assert await viewer.signal(None, None, True, True)
+    assert viewer.audio.closed and not viewer.closed
+    assert viewer.playback_evidence["audio_late"] == "ready"
+    assert viewer.playback_evidence["audio_late_end"] == "stopped"
     await client.close()
 
 
@@ -636,6 +861,14 @@ async def test_audio_transport_exception_keeps_video_and_releases_audio(
     assert (await client.receive_json())["event"] == {"type": "audio_ended"}
     await hass.async_block_till_done()
     assert viewer.audio.closed and not viewer.closed and not socket.closed.is_set()
+    evidence = viewer.playback_evidence
+    if phase == "prepare":
+        assert evidence["audio_late"] == "announced"
+        assert evidence["audio_late_end"] == "setup_failed"
+    else:
+        assert evidence["audio_late"] == "ready"
+        assert evidence["audio_late_end"] == "signaling_failed"
+    assert "PRIVATE" not in json.dumps(evidence)
     await socket.queue.put(
         SimpleNamespace(type=aiohttp.WSMsgType.TEXT, data='{"type":"tick"}')
     )

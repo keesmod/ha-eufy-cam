@@ -336,6 +336,106 @@ test('late audio check runs once at fifteen seconds and is cancelled on close', 
 });
 
 
+// Late audio: the bridge announces AAC once per session, right after video for a
+// warm camera or seconds later for a cold one, possibly after sound was enabled.
+const installLateAudioFixture = page => page.evaluate(() => {
+  card._hass.states['camera.front'].attributes.viewer_webrtc = true;
+  card._hass.states['camera.front'].attributes.viewer_late_audio = true;
+  window.peers = [];
+  window.RTCPeerConnection = class extends EventTarget {
+    iceGatheringState = 'complete'; connectionState = 'connected'; iceConnectionState = 'connected'; localDescription = null; remoteDescription = null;
+    constructor(config) { super(); this.config = config; this.transceivers = []; this.receivers = []; peers.push(this); }
+    addTransceiver(kind) { this.transceivers.push({ kind, receiver: { track: { kind } }, currentDirection: 'recvonly' }); }
+    getTransceivers() { return this.transceivers; } getReceivers() { return this.receivers; }
+    async createOffer() { return { type: 'offer', sdp: 'PRIVATE offer' }; }
+    async setLocalDescription(offer) { this.localDescription = offer; }
+    async setRemoteDescription(answer) { this.remoteDescription = answer; }
+    async addIceCandidate() {} async getStats() { return new Map(); }
+    close() { this.connectionState = 'closed'; }
+    deliver(track) { this.receivers.push({ track }); this.ontrack?.({ track, streams: [] }); }
+  };
+  const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 16;
+  window.videoTrack = canvas.captureStream(5).getVideoTracks()[0];
+  window.audioContext = new AudioContext();
+  window.audioTrack = audioContext.createMediaStreamDestination().stream.getAudioTracks()[0];
+  window.signals = () => acks.filter(m => m.type === 'eufy_viewer/signal').map(m => ({ audio: Boolean(m.audio), offer: Boolean(m.offer), stop: Boolean(m.stop) }));
+  window.element = () => { const stream = card._video.srcObject; return { muted: card._video.muted, paused: card._video.paused, audio: stream?.getAudioTracks().length ?? null, video: stream?.getVideoTracks().length ?? null, state: card._audioState, peer: Boolean(card._audioRtc) }; };
+});
+
+for (const order of ['warm', 'cold']) test(`late audio track joins the playing video element when announced ${order}, after or before sound is enabled`, async ({ page }) => {
+  await installLateAudioFixture(page);
+  await page.getByRole('button', { name: 'Watch live', exact: true }).click();
+  expect(await page.evaluate(() => calls.map(call => call.message))).toEqual([{ type: 'eufy_viewer/watch', entity_id: 'camera.front', transport: 'webrtc', late_audio: true }]);
+  await page.evaluate(() => receive({ type: 'ready', subscription: 9, fallback: true, diagnostics: true }));
+  await expect.poll(() => page.evaluate(() => signals())).toEqual([{ audio: false, offer: true, stop: false }]);
+  if (order === 'warm') {
+    // A warm camera's audio_ready follows ready by milliseconds, before any track exists.
+    await page.evaluate(() => receive({ type: 'audio_ready' }));
+    await expect.poll(() => page.evaluate(() => peers.length)).toBe(2);
+    await page.evaluate(() => { receive({ type: 'answer', sdp: 'PRIVATE' }); receive({ type: 'audio_answer', sdp: 'PRIVATE' }); });
+    await expect.poll(() => page.evaluate(() => Boolean(peers[0].remoteDescription && peers[1].remoteDescription))).toBe(true);
+    await page.evaluate(() => { peers[1].deliver(audioTrack); peers[0].deliver(videoTrack); });
+    await expect.poll(() => page.evaluate(() => element())).toEqual({ muted: true, paused: false, audio: 1, video: 1, state: 'attached', peer: true });
+    await page.getByRole('button', { name: 'Enable sound', exact: true }).click();
+  } else {
+    // A cold camera delivers video first; the viewer enables sound while the bridge still waits for AAC.
+    await page.evaluate(() => { receive({ type: 'answer', sdp: 'PRIVATE' }); peers[0].deliver(videoTrack); });
+    await expect.poll(() => page.evaluate(() => element())).toEqual({ muted: true, paused: false, audio: 0, video: 1, state: 'none', peer: false });
+    await page.getByRole('button', { name: 'Enable sound', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => element().muted)).toBe(false);
+    await page.evaluate(() => receive({ type: 'audio_ready' }));
+    await expect.poll(() => page.evaluate(() => signals())).toEqual([{ audio: false, offer: true, stop: false }, { audio: true, offer: true, stop: false }]);
+    await page.evaluate(() => receive({ type: 'audio_answer', sdp: 'PRIVATE' }));
+    await expect.poll(() => page.evaluate(() => Boolean(peers[1].remoteDescription))).toBe(true);
+    await page.evaluate(() => peers[1].deliver(audioTrack));
+  }
+  // Sound enabled before or after the track arrived: the element stays unmuted and playing with both tracks.
+  await expect.poll(() => page.evaluate(() => element())).toEqual({ muted: false, paused: false, audio: 1, video: 1, state: 'attached', peer: true });
+  expect(await page.evaluate(() => peers[1].transceivers.map(t => t.kind))).toEqual(['audio']);
+  expect(await page.evaluate(() => peers[1].config.iceServers)).toEqual([]);
+  // A repeated announcement cannot replace the connected peer or its track.
+  await page.evaluate(() => receive({ type: 'audio_ready' }));
+  await page.waitForTimeout(50);
+  expect(await page.evaluate(() => peers.length)).toBe(2);
+  expect(await page.evaluate(() => signals().filter(s => s.audio && s.offer).length)).toBe(1);
+  const report = await page.evaluate(async () => { await card._reportLive('audio_check'); return acks.find(m => m.type === 'eufy_viewer/live_diagnostics').report; });
+  expect(report).toMatchObject({ trigger: 'audio_check', audio_late: 'attached', audio_tracks: 1, audio_tracks_enabled: 1, audio_negotiated: true, muted: false, audio_ice: 'connected' });
+  expect(JSON.stringify(report)).not.toContain('PRIVATE');
+  // The bridge ending audio removes only the audio track; video and its lease continue.
+  await page.evaluate(() => receive({ type: 'audio_ended' }));
+  await expect.poll(() => page.evaluate(() => element())).toEqual({ muted: false, paused: false, audio: 0, video: 1, state: 'ended', peer: false });
+  expect(await page.evaluate(() => peers[1].connectionState)).toBe('closed');
+  expect(await page.evaluate(() => signals().some(s => s.stop))).toBe(false);
+  expect(await page.evaluate(() => acks.some(m => m.type === 'eufy_viewer/fallback'))).toBe(false);
+  expect(await page.evaluate(() => Boolean(card._rtc) && closeCount)).toBe(0);
+  await page.getByRole('button', { name: 'Close live view', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  expect(await page.evaluate(() => card._video.srcObject)).toBeNull();
+});
+
+test('late audio without media within fifteen seconds is released with a stop signal while video continues', async ({ page }) => {
+  await page.clock.install();
+  await installLateAudioFixture(page);
+  await page.getByRole('button', { name: 'Watch live', exact: true }).click();
+  await page.evaluate(() => receive({ type: 'ready', subscription: 9, fallback: true, diagnostics: true }));
+  await expect.poll(() => page.evaluate(() => signals().length)).toBe(1);
+  await page.evaluate(() => { clearTimeout(card._startup); receive({ type: 'answer', sdp: 'PRIVATE' }); peers[0].deliver(videoTrack); receive({ type: 'audio_ready' }); });
+  await expect.poll(() => page.evaluate(() => signals().length)).toBe(2);
+  await page.evaluate(() => receive({ type: 'audio_answer', sdp: 'PRIVATE' }));
+  await page.clock.runFor(14900);
+  expect(await page.evaluate(() => element())).toMatchObject({ audio: 0, video: 1, state: 'connecting', peer: true });
+  await page.clock.runFor(200);
+  await expect.poll(() => page.evaluate(() => element())).toMatchObject({ audio: 0, video: 1, state: 'ended', peer: false });
+  expect(await page.evaluate(() => signals())).toEqual([{ audio: false, offer: true, stop: false }, { audio: true, offer: true, stop: false }, { audio: true, offer: false, stop: true }]);
+  // A track arriving for the abandoned peer is not attached; the bridge announces once, so no retry follows.
+  await page.evaluate(() => peers[1].deliver(audioTrack));
+  expect(await page.evaluate(() => element())).toMatchObject({ audio: 0, state: 'ended', peer: false });
+  expect(await page.evaluate(() => acks.some(m => m.type === 'eufy_viewer/fallback'))).toBe(false);
+  expect(await page.evaluate(() => Boolean(card._rtc))).toBe(true);
+  await page.getByRole('button', { name: 'Close live view', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+});
+
 for (const audio of [false,true]) test(`HA ICE configuration and trickle ordering survive incomplete gathering, audio=${audio}`, async ({page})=>{
   await page.evaluate(()=>{
     card._hass.states['camera.front'].attributes.viewer_webrtc=true;

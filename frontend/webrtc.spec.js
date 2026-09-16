@@ -14,6 +14,9 @@ import { createBridge } from '../bridge/src/server.ts';
 
 // Real FFmpeg, go2rtc, encrypted WebRTC and decoded audio/video in Chromium.
 // Only Eufy hardware and Home Assistant dispatch are simulated.
+// The bridge's main stream is always video-only: AAC arrives through the late
+// audio route whether its first frame follows video by 40 ms ('normal', a warm
+// camera) or by seconds ('delayed-audio', 'late-admission', a cold camera).
 const cases = [
   ...['close', 'navigation', 'frozen', 'blocked', 'media-loss', 'answer-loss', 'paint-loss', 'tick-loss'].map(ending=>({ending,profile:'normal'})),
   ...['silent', 'low-rate', 'delayed-audio', 'batched-audio', 'video-only', 'late-admission'].map(profile=>({ending:'close',profile})),
@@ -48,7 +51,7 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
   turn?.stdout.resume();turn?.stderr.resume();
   const rtc = spawn(binary, ['-c', config], { stdio: ['ignore','pipe','pipe'] });
   let logs=''; rtc.stdout.on('data', c=>logs+=c); rtc.stderr.on('data', c=>logs+=c);
-  const timers=[], reports=[], sources=[]; let timeOffset=0;
+  const timers=[], reports=[], sources=[], readyAudio=[]; let timeOffset=0;
   let starts=0, stops=0, acks=0, video, audio, ticks, cameraWs, signaling, audioSignaling;
   const encoderDiagnostics = new class extends StreamDiagnostics {
     encoder(serial, kind, child) {sources.push(child);super.encoder(serial,kind,child);}
@@ -69,7 +72,7 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
       };
       video.stderr.resume();
       if(profile==='late-admission') timers.push(setTimeout(startAudio,6000)); else if(profile!=='video-only') startAudio();
-      media.start('CAM123','h264',video.stdout,sound,!['video-only','late-admission'].includes(profile),profile==='low-rate'?10:15); hub.started('CAM123');
+      media.start('CAM123','h264',video.stdout,sound,profile==='low-rate'?10:15); hub.started('CAM123');
 
       ticks=setInterval(()=>hub.frame('CAM123',jpeg),125);
     },
@@ -110,6 +113,8 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
         if(binary) { await deliver({type:'frame',subscription:1,sequence:++sequence,jpeg:raw.toString('base64')}); return; }
         const message=JSON.parse(raw.toString());
         if(message.type==='ready') {
+          // Mirror HA: a joint opus source only for an older bridge's audio=true.
+          readyAudio.push(message.audio);
           const query=new URLSearchParams({name:'acceptance'});
           query.append('src',bridgeUrl+message.path);if(message.audio)query.append('src','ffmpeg:acceptance#audio=opus');
           await changeStream(query,'PUT');
@@ -183,9 +188,20 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
     if(!['blocked','answer-loss'].includes(ending)) {
     await expect.poll(()=>page.locator('video.video').evaluate(v=>v.videoWidth),{timeout:20000}).toBe(1280);
     if(ending!=='before-audio') {
+    // Sound is enabled on the video element before the late audio track can
+    // exist for a cold camera. The track added later must still be audible:
+    // the element stays unmuted and the audio peer's RTP carries energy.
     await page.getByRole('button',{name:'Enable sound',exact:true}).click();
     expect(await page.locator('video.video').evaluate(v=>v.muted)).toBe(false);
-    if(profile!=='video-only'&&ending!=='audio-answer-loss') await expect.poll(()=>page.evaluate(async silent=>[...(await (card._audioRtc??card._rtc)?.getStats())?.values()??[]].some(s=>s.type==='inbound-rtp'&&s.kind==='audio'&&s.packetsReceived>0&&(silent||s.totalAudioEnergy>0)),profile==='silent'),{timeout:10000}).toBe(true);
+    if(profile!=='video-only'&&ending!=='audio-answer-loss') {
+      await expect.poll(()=>page.evaluate(async silent=>[...(await card._audioRtc?.getStats())?.values()??[]].some(s=>s.type==='inbound-rtp'&&s.kind==='audio'&&s.packetsReceived>0&&(silent||s.totalAudioEnergy>0)),profile==='silent'),{timeout:15000}).toBe(true);
+      expect(await page.locator('video.video').evaluate(v=>({muted:v.muted,paused:v.paused,audio:v.srcObject.getAudioTracks().length,video:v.srcObject.getVideoTracks().length}))).toEqual({muted:false,paused:false,audio:1,video:1});
+      expect(await page.evaluate(()=>card._audioState)).toBe('attached');
+    }
+    if(profile==='video-only') {
+      expect(media.lateAudioSupported('CAM123')).toBe(false);
+      expect(await page.evaluate(()=>Boolean(card._audioRtc))).toBe(false);
+    }
     } else {
       expect(media.lateAudioSupported('CAM123')).toBe(false);
       expect(await page.evaluate(()=>Boolean(card._audioRtc))).toBe(false);
@@ -194,7 +210,7 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
     await expect.poll(()=>reports.some(r=>r.trigger==='playing'&&r.painted>0&&r.acks_accepted>0&&r.video_decoded>0)).toBe(true);
     if (iceMode==='relay') {
       const peers=await page.evaluate(async()=>Promise.all([card._rtc,...(card._audioRtc?[card._audioRtc]:[])].map(async pc=>{const stats=await pc.getStats();const pair=[...stats.values()].find(s=>s.type==='candidate-pair'&&s.state==='succeeded'&&s.nominated);return {local:stats.get(pair?.localCandidateId)?.candidateType,remote:stats.get(pair?.remoteCandidateId)?.candidateType,serverRelay: [...stats.values()].some(s=>s.type==='remote-candidate'&&s.candidateType==='relay')};})));
-      expect(peers).toHaveLength(profile==='late-admission'?2:1);
+      expect(peers).toHaveLength(profile==='video-only'?1:2);
       // go2rtc may nominate a peer-reflexive response through the browser's
       // relay. The browser still has no direct route and both servers gather relay.
       for(const peer of peers){expect(peer.local).toBe('relay');expect(['relay','prflx']).toContain(peer.remote);expect(peer.serverRelay).toBe(true);}
@@ -203,10 +219,12 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
       const before=acks; await new Promise(resolve=>setTimeout(resolve,8000));
       expect(jpegMode).toBe(false);expect(acks).toBeGreaterThan(before+2);
       expect(reports.some(r=>r.trigger==='unmuted'&&r.muted===false)).toBe(true);
-      // The one-second unmute report can precede a three-second audio batch.
-      // Require decoded energy above and in the later audio report instead.
-      if(!['silent','video-only','late-admission','batched-audio'].includes(profile))expect(reports.find(r=>r.trigger==='unmuted').audio_energy).toBe(true);
-      if(['late-admission','batched-audio'].includes(profile)&&ending!=='audio-answer-loss'){await expect.poll(()=>reports.some(r=>r.trigger==='audio_check'&&r.audio_energy&&r.audio_negotiated),{timeout:10000}).toBe(true);expect(starts).toBe(expectedStarts);}
+      // The one-second unmute report can precede the audio peer's first
+      // packets or a three-second audio batch. Require decoded energy above
+      // and in the fifteen-second audio report instead, which also records
+      // whether the late audio track is attached to the video element.
+      if(profile==='video-only'){await expect.poll(()=>reports.some(r=>r.trigger==='audio_check'),{timeout:10000}).toBe(true);expect(reports.find(r=>r.trigger==='audio_check')).toMatchObject({audio_late:'none',audio_tracks:0});}
+      else if(ending!=='audio-answer-loss'){await expect.poll(()=>reports.some(r=>r.trigger==='audio_check'&&(profile==='silent'||r.audio_energy)&&r.audio_negotiated&&r.audio_late==='attached'&&r.audio_tracks===1),{timeout:10000}).toBe(true);expect(starts).toBe(expectedStarts);}
     }
     }
     if(['blocked','answer-loss','media-loss','paint-loss','tick-loss'].includes(ending)) {
@@ -232,6 +250,9 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
       const before=acks;
       await expect.poll(()=>page.evaluate(()=>Boolean(card._audioRtc)),{timeout:10000}).toBe(true);
       await expect.poll(()=>page.evaluate(()=>Boolean(card._audioRtc)),{timeout:20000}).toBe(false);
+      // The abandoned audio peer leaves the unmuted video element playing without an audio track.
+      expect(await page.locator('video.video').evaluate(v=>({muted:v.muted,paused:v.paused,audio:v.srcObject.getAudioTracks().length}))).toEqual({muted:false,paused:false,audio:0});
+      expect(await page.evaluate(()=>card._audioState)).toBe('ended');
       expect(jpegMode).toBe(false);expect(acks).toBeGreaterThan(before+5);
       expect(starts).toBe(expectedStarts);expect(stops).toBe(cycle);
       await expect(page.locator('video.video')).toBeVisible();
@@ -252,6 +273,7 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
       await streamChanges;
       return Object.keys(await(await fetch(goUrl+'/api/streams')).json());
     }).toEqual([]);
+    expect(readyAudio).toEqual(Array(expectedStarts).fill(false));
     expect(reports.length).toBeLessThanOrEqual(5);expect(new Set(reports.map(r=>r.trigger)).size).toBe(reports.length);
     expect(JSON.stringify(reports)).not.toMatch(/candidate:|CAM123|192\.168|v1\/media|sdp/);
     expect(starts).toBe(expectedStarts);expect(hub.active).toBe(0);expect(hub.quarantined).toBe(0);

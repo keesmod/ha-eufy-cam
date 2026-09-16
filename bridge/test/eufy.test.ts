@@ -5,7 +5,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Readable } from 'node:stream';
+import { PassThrough } from 'node:stream';
 import type { Backend, AuthState } from '../src/backend.js';
 import { Eufy } from '../src/eufy.js';
 import { Storage } from '../src/storage.js';
@@ -29,7 +29,8 @@ function fixtureBackend(login: () => Promise<AuthState> = async () => ({ state: 
 const provider = { login: async (): Promise<AuthState> => ({ state: 'connected' }) };
 const makeBridge = (storage: Storage) => new Eufy(storage, 'mega', false, () => fixtureBackend(() => provider.login()));
 
-test('shared bridge converts real media and retains last frame on close', { timeout: 20_000 }, async () => {
+test('shared bridge converts real media, keeps video through audio failure and retains last frame on close', { timeout: 20_000 }, async () => {
+  const { spawnSync } = await import('node:child_process');
   const directory = await mkdtemp(join(tmpdir(), 'eufy-viewer-test-'));
   const storage = new Storage(directory);
   const calls: string[] = [];
@@ -48,11 +49,12 @@ test('shared bridge converts real media and retains last frame on close', { time
     assert.deepEqual(calls, []);
     const frames = new EventEmitter();
     const frame = once(frames, 'frame', { signal: controller.signal });
-    bridge.hub.attach('CAM123', {
+    const peer = {
       bufferedAmount: 0,
-      send: jpeg => frames.emit('frame', jpeg),
-      close: (_code, reason) => controller.abort(new Error(`Viewer ended before first frame: ${reason}`)),
-    });
+      send: (jpeg: Buffer) => frames.emit('frame', jpeg),
+      close: (_code: number, reason: string) => controller.abort(new Error(`Viewer ended before first frame: ${reason}`)),
+    };
+    bridge.hub.attach('CAM123', peer);
     // A live camera keeps producing until its viewer closes. A finite fixture
     // lets the A/V encoder reach EOF and tear down the slower JPEG decoder.
     producer = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-re', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=8', '-c:v', 'libx264', '-threads', '1', '-tune', 'zerolatency', '-f', 'h264', 'pipe:1']);
@@ -63,15 +65,40 @@ test('shared bridge converts real media and retains last frame on close', { time
     producer.stderr!.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-4096); });
     producer.on('exit', (code, signal) => controller.abort(new Error(`Test producer exited (${code ?? signal}): ${stderr}`)));
     const ready = once(bridge, 'media-ready');
-    backend.emit('live-start', { serial: 'CAM123', videoCodec: 'h264', audioSupported: false, fps: 8, video: producer.stdout, audio: Readable.from([]) });
+    const audio = new PassThrough();
+    // The library's deadline classified audio as absent, as on a cold SoloCam start.
+    backend.emit('live-start', { serial: 'CAM123', videoCodec: 'h264', audioSupported: false, fps: 8, video: producer.stdout, audio });
     assert.deepEqual(await ready, ['CAM123']);
     assert.equal(bridge.metrics.frames, 0, 'Actual metadata is ready before JPEG decoding');
-    assert.equal(bridge.media.audioSupported('CAM123'), false);
+    assert.equal(bridge.media.active('CAM123'), true);
+    assert.equal(bridge.media.lateAudioSupported('CAM123'), false);
     const [jpeg] = await frame;
-    assert.ok(diagnosticEvents.includes('audio_absent'));
+    assert.ok(diagnosticEvents.includes('audio_absent'), 'Classification is still observed');
     assert.ok(diagnosticEvents.includes('video_input'));
     clearTimeout(deadline);
     assert.equal(jpeg[0], 255); assert.equal(jpeg[1], 216);
+    // AAC arriving after the deadline is still input, and its first complete
+    // frame is advertised late without touching the running video session.
+    const sound = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=16000', '-t', '0.2', '-c:a', 'aac', '-f', 'adts', 'pipe:1']);
+    assert.equal(sound.status, 0, sound.stderr.toString());
+    const audioReady = once(bridge, 'audio-ready');
+    audio.write(sound.stdout);
+    assert.deepEqual(await audioReady, ['CAM123']);
+    assert.ok(diagnosticEvents.includes('audio_input'));
+    assert.ok(diagnosticEvents.includes('audio_late'));
+    assert.equal(bridge.media.lateAudioSupported('CAM123'), true);
+    // An audio transport failure ends only the late audio delivery.
+    audio.destroy(new Error('private transport detail'));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.ok(diagnosticEvents.includes('audio_transport_error'));
+    assert.equal(bridge.media.lateAudioSupported('CAM123'), false);
+    assert.equal(bridge.hub.active, 1, 'Video session survives the audio failure');
+    assert.equal(bridge.media.active('CAM123'), true);
+    assert.equal(calls.includes('stop:CAM123'), false);
+    const next = once(frames, 'frame', { signal: AbortSignal.timeout(3000) });
+    assert.equal(bridge.hub.ack('CAM123', peer), true);
+    await next;
+    assert.equal(bridge.hub.active, 1, 'JPEG frames keep flowing after the audio failure');
     bridge.hub.close();
     assert.ok(calls.includes('stop:CAM123'));
     assert.equal(bridge.metrics.start_requests, 1);
