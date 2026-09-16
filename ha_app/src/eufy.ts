@@ -41,7 +41,7 @@ export class Eufy extends EventEmitter {
   private livePictures = new Map<string, Picture>();
   readonly pictures = new Map<string, Picture>();
   readonly diagnostics = new StreamDiagnostics(undefined, undefined, (serial, event) => this.backend?.recordAudioEvent?.(serial, event));
-  readonly media = new MediaRelay((serial) => this.hub.end(serial, 'Audio/video encoder failed'), this.diagnostics,
+  readonly media = new MediaRelay((serial) => this.hub.end(serial, 'Video encoder failed'), this.diagnostics,
     serial => this.emit('audio-ready', serial));
   private readonly unavailableRecordings: BackendRecordings = {
     busy: false,
@@ -285,7 +285,9 @@ export class Eufy extends EventEmitter {
       ({ serial, videoCodec, audioSupported, fps, video, audio }: LiveMedia) => {
         this.metrics.started_events++;
         this.metrics.last_started_event = new Date().toISOString();
-        audio.on('error', () => { this.diagnostics.mark(serial, 'audio_transport_error'); this.hub.end(serial, 'Audio transport error'); });
+        // Audio rides its own reader, so its transport failing ends only the
+        // late audio delivery. The video session and camera ownership continue.
+        audio.on('error', () => { this.diagnostics.mark(serial, 'audio_transport_error'); this.media.stopAudio(serial); });
         if (!this.hub.started(serial)) {
           video.resume();
           audio.resume();
@@ -303,10 +305,13 @@ export class Eufy extends EventEmitter {
           return;
         }
         this.diagnostics.mark(serial, codec);
+        // The library's startup classification is observation only. It no
+        // longer selects a pipeline: audio always travels through the late
+        // audio reader, and audio_late marks its first complete frame.
         this.diagnostics.mark(serial, audioSupported ? 'audio_supported' : 'audio_absent');
         video.once('data', () => this.diagnostics.mark(serial, 'video_input'));
-        if (audioSupported) audio.once('data', () => this.diagnostics.mark(serial, 'audio_input'));
-        this.media.start(serial, codec, video, audio, audioSupported, fps);
+        audio.once('data', () => this.diagnostics.mark(serial, 'audio_input'));
+        this.media.start(serial, codec, video, audio, fps);
         const encoder = spawn(
           'ffmpeg',
           [

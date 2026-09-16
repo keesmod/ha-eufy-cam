@@ -82,6 +82,15 @@ collecting the evidence. It applies to the Mega backend.
 For Docker, set `EUFY_DIAGNOSTICS=true` and recreate the bridge container with
 its existing data volume. Remove it or set it to `false` afterward.
 
+From bridge 0.8.20 the live WebRTC encoder is bounded at 4 Mbit/s. Change it
+with the optional app option `live_max_bitrate` (Docker: `EUFY_LIVE_MAX_BITRATE`),
+for example `2500k` for a weaker WiFi viewer or `8M` for a wired one. Values
+between `200k` and `50M` are accepted; other values stop the bridge at startup.
+The cap applies at the camera's announced frame rate, so a HomeBase that delivers
+more frames than it announces uses proportionally more. Live audio no longer
+depends on the camera sending audio within three seconds: it is delivered on its
+own route whenever it starts, so there is nothing to configure for it.
+
 Each attempt has a temporary number and elapsed milliseconds. `video_input`
 and `audio_input` mean input bytes arrived, not that decoding succeeded.
 `jpeg_frame` and `media_output` identify output from the two encoders.

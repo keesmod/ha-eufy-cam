@@ -90,13 +90,15 @@ to recover the normal software installation. See
 
 The NVIDIA command requests CUDA decoding, transfers frames to system memory for
 the existing maximum-1920-pixel scaler, and uses `h264_nvenc` with low-latency
-settings. Audio keeps the existing AAC path. GPU memory transfers and CPU scaling
-remain, so this is not a fully GPU-resident pipeline. NVENC targets 4 Mbit/s with
-no B frames. Its quality and load need actual camera validation.
+settings. Audio never enters this encoder; it travels on its own late-audio
+route. GPU memory transfers and CPU scaling remain, so this is not a fully
+GPU-resident pipeline. NVENC targets `EUFY_LIVE_MAX_BITRATE` (default 4 Mbit/s)
+with no B frames, the same cap that bounds the software encoder since 0.8.20.
+Its quality and load need actual camera validation.
 
 The first actual hardware stream is the capability test. If FFmpeg fails before
 producing output, the bridge kills that process and replays the initial video
-and audio to one software encoder within the same owned camera session. A silent
+to one software encoder within the same owned camera session. A silent
 hardware start gets five seconds. Process cleanup gets one additional second.
 Replay is limited to 8 MiB across both tracks. No camera start command is retried.
 A hardware failure disables GPU attempts across the bridge until restart.

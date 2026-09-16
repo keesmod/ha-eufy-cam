@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from .live_diagnostics import LATE_AUDIO_STAGES
+
 
 def assess(report: dict[str, Any]) -> dict[str, Any]:
     """Only inspect the projected report. Findings never contain upstream text."""
@@ -69,10 +71,19 @@ def assess(report: dict[str, Any]) -> dict[str, Any]:
                 attempt,
             )
         if "audio_late" in events:
+            times = {
+                e.get("event"): e.get("elapsed_ms") for e in row.get("pipeline", [])
+            }
+            first, video = times.get("audio_late"), times.get("video_input")
+            delay = (
+                f" {first - video} ms after the first video data"
+                if isinstance(first, int) and isinstance(video, int) and first >= video
+                else ""
+            )
             add(
                 "audio_admission",
-                "Audio arrived after video startup and was forwarded by "
-                "the late-audio path.",
+                f"Complete AAC was offered on the late-audio route{delay}. "
+                "Since bridge 0.8.20 this is the only live audio route.",
                 "support.live_audio.pipeline",
                 attempt,
             )
@@ -93,6 +104,43 @@ def assess(report: dict[str, Any]) -> dict[str, Any]:
             missing.add("live_evidence_time_unavailable")
         if attempt is None or attempt not in audio_attempts:
             missing.add("live_bridge_correlation_unavailable")
+        # The bridge's initial classification is video-only whenever audio is
+        # delivered through the late audio route, so it alone proves nothing.
+        late = live.get("audio_late")
+        if live.get("audio_expected") is False and late is None:
+            add(
+                "audio_admission",
+                "Startup metadata excluded audio and no late audio had been "
+                "announced for this attempt when the report was made. "
+                "Audio may still arrive later or be absent at the source.",
+                "live_playback.audio_late",
+                attempt,
+            )
+        elif late in LATE_AUDIO_STAGES:
+            add(
+                "audio_admission",
+                f"Late audio reached the '{late}' stage for this attempt. "
+                "Browser audio counters describe its separate peer.",
+                "live_playback.audio_late",
+                attempt,
+            )
+        end = live.get("audio_late_end")
+        if end in {"setup_failed", "signaling_failed", "upstream_error"}:
+            add(
+                "late_audio",
+                "Late audio ended before its video session, at the recorded "
+                "fixed reason. Video playback was not interrupted by this.",
+                "live_playback.audio_late_end",
+                attempt,
+            )
+        elif end == "unavailable":
+            add(
+                "late_audio",
+                "The bridge announced late audio while this viewer could not "
+                "use it, for example during video setup failure or fallback.",
+                "live_playback.audio_late_end",
+                attempt,
+            )
         browser = live.get("browser", [])
         if not browser:
             missing.add("live_browser_sample_unavailable")

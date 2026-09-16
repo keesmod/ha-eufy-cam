@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.20 - 2026-09-15
+
+- Never mux audio into the live video encoder. Every session starts video-only
+  and delivers AAC on the late-audio route as soon as its first complete frame
+  arrives, 40 ms or 5 s after video. `ready` always reports `audio: false`; an
+  audio transport error ends only the audio feed. Fixes the video stall and the
+  missing audio of SoloCam cameras behind a HomeBase 3 whose audio starts
+  seconds after video (issue #10).
+- Bound the live encoder with a VBV cap, default `4M`, configurable through the
+  new optional `live_max_bitrate` option (`200k` to `50M`). Stamp frames with
+  their arrival time instead of the camera's announced rate so WebRTC playback
+  no longer accumulates delay when the HomeBase delivers more frames.
+- Pair with integration 0.8.20. The bundled client remains 0.12.3.
+
 ## 0.8.19 - 2026-09-15
 
 - Add bounded recording attempt evidence to the existing diagnostic report,

@@ -61,6 +61,8 @@ export class EufyViewerCard extends HTMLElement {
   private _audioCandidates: RTCIceCandidateInit[] = [];
   private _audioTimeout?: number;
   private _audioAttempted = false;
+  /** Late audio peer state for playback reports. The bridge announces audio once per session. */
+  private _audioState: "none" | "connecting" | "attached" | "ended" = "none";
   private _tick?: { subscription: number; sequence: number };
   private _videoCallback?: number;
   private _diagnosticTimer?: number;
@@ -305,7 +307,7 @@ export class EufyViewerCard extends HTMLElement {
     this._fallbackPending = false;
     this._fallbackSupported = false;
     this._rtcSubscription = undefined;
-    this._audioAttempted = false;
+    this._audioAttempted = false; this._audioState = "none";
     this._live.hidden = webrtc; this._video.hidden = !webrtc; this._sound.hidden = !webrtc;
     this._video.muted = true; this._sound.textContent = this._text().sound;
     this._open = true;
@@ -368,6 +370,7 @@ export class EufyViewerCard extends HTMLElement {
     const pc = this._audioRtc;
     this._audioRtc = undefined; this._audioCandidates = [];
     if (pc) {
+      this._audioState = "ended";
       pc.onconnectionstatechange = null; pc.ontrack = null; pc.onicecandidate = null; pc.onicecandidateerror = null;
       for (const { track } of pc.getReceivers()) {
         track.onunmute = null;
@@ -383,8 +386,11 @@ export class EufyViewerCard extends HTMLElement {
   private async _audioEvent(event: AudioEvent, generation: number) {
     if (event.type === "audio_ended") { this._closeAudio(); return; }
     if (event.type === "audio_ready") {
+      // One audio peer per session. The bridge announces its AAC once, either
+      // right after video (warm camera) or seconds into playback (cold camera),
+      // possibly after the viewer already enabled sound on the video element.
       if (this._audioAttempted || !this._rtc || this._rtcSubscription === undefined) return;
-      this._audioAttempted = true;
+      this._audioAttempted = true; this._audioState = "connecting";
       const pc = this._audioRtc = this._createPeer(event);
       const active = () => this._watching(generation) && this._audioRtc === pc;
       this._audioTimeout = window.setTimeout(() => { if (active()) this._closeAudio(true); }, 15000);
@@ -393,7 +399,10 @@ export class EufyViewerCard extends HTMLElement {
         if (!active() || event.track.kind !== "audio") return;
         const stream = this._video.srcObject as MediaStream | null;
         if (!stream || stream.getAudioTracks().length) { this._closeAudio(true); return; }
+        // Adding the track to the element's live stream keeps its current
+        // mute and volume settings: sound enabled earlier stays enabled.
         stream.addTrack(event.track);
+        this._audioState = "attached";
         event.track.onunmute = () => { if (active()) clearTimeout(this._audioTimeout); };
         if (!event.track.muted) clearTimeout(this._audioTimeout);
         void this._video.play().catch(() => { if (active()) this._closeAudio(true); });
@@ -561,6 +570,7 @@ export class EufyViewerCard extends HTMLElement {
       ready_state: this._video.readyState, paused: this._video.paused, muted: this._video.muted,
       ticks: playback.ticks, acks_sent: playback.sent, acks_accepted: playback.accepted, painted: playback.painted,
       stats_available: false, audio_volume_percent: Math.round(this._video.volume * 100),
+      audio_late: this._audioState,
     };
     if (this._audioRtc) {
       report.audio_ice = this._audioRtc.iceConnectionState;

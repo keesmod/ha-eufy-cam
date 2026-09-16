@@ -35,6 +35,31 @@ test('late AAC preserves complete frames across arbitrary fragmentation, without
   source.destroy();
 });
 
+test('an audio transport error ends only the late delivery and its readers', async () => {
+  const video = new PassThrough(), source = new PassThrough();
+  let available = 0;
+  const relay = new MediaRelay(() => assert.fail('video encoder must not fail'), undefined, () => available++);
+  const grant = relay.grant('camera');
+  const reader = Object.assign(new EventEmitter(), {
+    destroyed: false, writableLength: 0, writeHead() {}, write() { return true; },
+    destroy() { this.destroyed = true; this.emit('close'); },
+  });
+  relay.start('camera', 'h264', video, source);
+  source.write(frames[0]);
+  assert.equal(relay.serveAudio(grant, reader as unknown as ServerResponse), true);
+  source.on('error', () => {}); // The session owner keeps its own listener in production.
+  source.destroy(new Error('private transport detail'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(reader.destroyed, true);
+  assert.equal(relay.lateAudioSupported('camera'), false);
+  assert.equal(relay.active('camera'), true, 'Video keeps its encoder and owner');
+  assert.equal(video.destroyed, false);
+  assert.equal(relay.serveAudio(grant, reader as unknown as ServerResponse), false);
+  relay.stopAudio('camera'); // Idempotent after a failure.
+  assert.equal(available, 1);
+  relay.stop('camera'); video.destroy();
+});
+
 test('unknown and incomplete audio never advertise a track or affect their source owner', () => {
   for (const bytes of [Buffer.from('unknown stream'), frames[0]!.subarray(0, -1)]) {
     const source = new PassThrough(); let called = false;
@@ -57,11 +82,11 @@ test('late audio readers join at frame boundaries, share revocation and cannot b
   });
   const a = response(), b = response();
   assert.equal(relay.serveAudio(first, a as unknown as ServerResponse), false);
-  // Exercise the production video-only admission, with metadata remaining false.
-  relay.start('camera', 'h264', video, source, false);
+  // The production relay: video has its own encoder, audio only this framer.
+  relay.start('camera', 'h264', video, source);
   source.write(frames[0]);
   assert.equal(available, 1);
-  assert.equal(relay.audioSupported('camera'), false);
+  assert.equal(relay.active('camera'), true);
   assert.equal(relay.lateAudioSupported('camera'), true);
   source.write(frames[1]!.subarray(0, 9));
   assert.equal(relay.serveAudio(first, a as unknown as ServerResponse), true);

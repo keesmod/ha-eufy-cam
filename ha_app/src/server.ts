@@ -155,13 +155,15 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
       let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
       const mediaReady = (camera: string) => {
         if (camera !== serial || ready || !webrtc || ws.readyState !== WebSocket.OPEN || eufy.hub.remaining(serial, peer) <= 0) return;
-        const audio = eufy.media.audioSupported(serial);
-        if (audio === undefined) return;
+        if (!eufy.media.active(serial)) return;
         ready = true;
         eufy.off('media-ready', mediaReady);
         // Metadata is available at encoder start. JPEG decoding must not gate
         // reader attachment and discard the first encoded video/keyframe.
-        ws.send(JSON.stringify({ type: "ready", path: `/v1/media/${grant}`, audio, audio_attempt: eufy.audioAttempt?.(serial), fallback: true, fallback_after_ms: Math.max(1, Math.ceil(eufy.hub.remaining(serial, peer) - 5000)) }));
+        // The main stream is always video-only; audio follows in audio_ready
+        // once its first frame exists, so the integration must not add an
+        // audio source to the main stream.
+        ws.send(JSON.stringify({ type: "ready", path: `/v1/media/${grant}`, audio: false, audio_attempt: eufy.audioAttempt?.(serial), fallback: true, fallback_after_ms: Math.max(1, Math.ceil(eufy.hub.remaining(serial, peer) - 5000)) }));
         audioReady(serial);
       };
       const fallback = (reason: 'startup_timeout' | 'playback_timeout' | 'connection_failed' | 'signaling_error' | 'playback_error') => {

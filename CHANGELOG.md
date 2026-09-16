@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.8.20 - 2026-09-15
+
+### Live audio whenever the camera starts sending it
+
+The reporter's T8134 cameras behind a HomeBase 3 send their first AAC frame
+four to five seconds after the first video frame on a cold start and 40 ms
+after it on a warm start. The library's three-second startup deadline excluded
+audio on every cold start, and admitted audio was muxed into the video encoder,
+which emits nothing until its first audio frame and holds video for the length
+of every audio gap.
+
+- The bridge never muxes audio into the live video stream. Every session starts
+  a video-only encoder and delivers AAC on the existing late-audio route as soon
+  as its first complete frame arrives, whether that is 40 ms or 5 s after video.
+  `ready` always reports `audio: false`; an audio transport error ends only the
+  audio feed. The library's startup classification remains as observational
+  `audio_supported`/`audio_absent` marks.
+- Home Assistant never ends a live session for an `audio_ready` it cannot use
+  (video setup failed or was downgraded, an older bridge reporting `audio: true`)
+  or for a repeated announcement. Older bridges keep their joint audio source.
+- Diagnostics record the late-audio stage and end reason per attempt, include
+  the late-audio go2rtc stream's counters in relay rows, report the card's audio
+  peer state, and assess the new states. `audio_expected` now only mirrors the
+  bridge's initial classification.
+
+### Bounded live encoder and arrival-time stamps
+
+- The live WebRTC encoder is capped with a VBV window (default `4M`, add-on
+  option `live_max_bitrate`, Docker `EUFY_LIVE_MAX_BITRATE`). The reporter's
+  relay counters measured 9.8-12.4 Mbit/s unbounded output with 300-500 KB
+  keyframe bursts alongside stalled decoding. Those counters alone do not
+  establish the cause of the reporter's playback failure.
+- Frames are stamped with their arrival time instead of being counted at the
+  camera's announced rate. A HomeBase delivering 16-17.5 frames per second
+  against a 15 fps header made the browser's jitter-buffer delay grow steadily.
+
+### Upgrade and rollback
+
+Update both the integration and bridge to 0.8.20, restart Home Assistant and
+refresh the dashboard. Back up both components with their private data first
+and restore the previous versions together to roll back. The bundled client
+remains 0.12.3. The card makes one late-audio attempt per live view; close and
+reopen the view to retry audio.
+
+### Scope and known limits
+
+References #10. Bridge tests cover the arrival-time stamping and the bounded
+output with real FFmpeg; HA and card tests cover warm and cold audio ordering.
+Exact T8134 hardware acceptance still needs the reporter's local retest. A
+dashboard proxy does not carry the separate WebRTC media connection. When no
+direct media route is available, use reachable TURN or routed LAN/VPN access.
+
 ## 0.8.19 - 2026-09-15
 
 ### More useful playback reports

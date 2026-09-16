@@ -104,24 +104,38 @@ class WebRTCViewer(Viewer):
         if self.registered and not self.jpeg and not self.fallback_requested:
             # This request runs independently of frame acknowledgements. Do not
             # hold cleanup for a slow or unavailable diagnostic endpoint.
+            row: dict[str, Any] = {"trigger": trigger}
             try:
                 async with asyncio.timeout(1):
-                    async with self.config.session.get(
-                        self.config.url.rstrip("/") + "/api/streams",
-                        params={"src": self.name},
-                    ) as response:
-                        response.raise_for_status()
-                        try:
-                            raw = await response.content.readexactly(65537)
-                        except asyncio.IncompleteReadError as err:
-                            raw = err.partial
-                        if len(raw) <= 65536:
-                            self.playback_evidence["relay"].append(
-                                {"trigger": trigger, **relay_report(json.loads(raw))}
-                            )
+                    row.update(await self._relay_stats(self.name))
             except aiohttp.ClientError, TimeoutError, ValueError:
-                pass
+                return True
+            # AAC never travels in the video stream: late audio has its own
+            # go2rtc stream, whose codec counters are added to the same row.
+            audio = self.audio
+            if audio and audio.registered and not audio.closed:
+                with suppress(aiohttp.ClientError, TimeoutError, ValueError):
+                    async with asyncio.timeout(1):
+                        stats = await self._relay_stats(audio.name)
+                    row["audio_late"] = True
+                    for key, value in stats.items():
+                        row[key] = row.get(key, 0) + value
+            self.playback_evidence["relay"].append(row)
         return True
+
+    async def _relay_stats(self, name: str) -> dict[str, int]:
+        """Codec packet totals of one of this viewer's own go2rtc streams."""
+        async with self.config.session.get(
+            self.config.url.rstrip("/") + "/api/streams", params={"src": name}
+        ) as response:
+            response.raise_for_status()
+            try:
+                raw = await response.content.readexactly(65537)
+            except asyncio.IncompleteReadError as err:
+                raw = err.partial
+            if len(raw) > 65536:
+                raise ValueError("Oversized relay report")
+            return relay_report(json.loads(raw))
 
     async def ack(self, sequence: int) -> bool:
         accepted = await super().ack(sequence)
@@ -191,6 +205,7 @@ class WebRTCViewer(Viewer):
             if not self.audio:
                 return False
             if stop:
+                self.audio.ended("stopped")
                 await self.audio.close()
                 return True
             return await self.audio.signal(offer, candidate)
@@ -263,6 +278,7 @@ class WebRTCViewer(Viewer):
             self.connection.send_event(self.subscription, event)
 
     async def _prepare_audio(self, path: str) -> None:
+        """Audio setup failure ends only audio; video and its lease continue."""
         assert self.audio is not None
         try:
             await self.audio.prepare(self.coordinator.api.url + path)
@@ -270,8 +286,47 @@ class WebRTCViewer(Viewer):
             await self.audio.close()
             raise
         except Go2RtcClientError, aiohttp.ClientError, TimeoutError:
+            self.audio.ended("setup_failed")
             self._audio_event({"type": "audio_ended"})
             await self.audio.close()
+
+    def _audio_announced(self, data: dict[str, Any]) -> None:
+        """Start late audio when this ready, opted-in viewer owns the route."""
+        if (
+            not self.late_audio
+            or self.media_path is None
+            or data.get("path") != f"{self.media_path}/audio"
+        ):
+            # Only an opted-in viewer may open its own grant's audio route.
+            raise BridgeError("Invalid late audio control")
+        if self.audio is not None:
+            # The bridge announces audio once. A repeat cannot replace or end
+            # the current attempt, whether it is still connecting or failed.
+            return
+        self.playback_evidence["audio_late"] = "announced"
+        if (
+            not self.ready
+            or self.jpeg
+            or self.fallback_requested
+            or self.playback_evidence.get("audio_expected") is not False
+        ):
+            # A warm start announces audio right after ready, so it can be
+            # queued behind a failed or downgraded video setup. Audio is then
+            # unavailable, but the video session or its JPEG fallback continues.
+            self.playback_evidence.setdefault("audio_late_end", "unavailable")
+            return
+        self.audio = LateAudioTrack(
+            self.hass,
+            self.config.session,
+            self.config.url,
+            self.name + "_audio",
+            self._audio_event,
+            self.playback_evidence,
+        )
+        # Setup must not block video ticks or renew ownership.
+        self.audio_task = self.hass.async_create_background_task(
+            self._prepare_audio(data["path"]), "Eufy late audio"
+        )
 
     async def _cleanup(self) -> None:
         if self.audio_task and not self.audio_task.done():
@@ -357,28 +412,7 @@ class WebRTCViewer(Viewer):
                             except Go2RtcClientError, aiohttp.ClientError, TimeoutError:
                                 await self._failed("signaling_error")
                         elif data.get("type") == "audio_ready":
-                            if (
-                                not self.late_audio
-                                or not self.ready
-                                or self.audio
-                                or self.jpeg
-                                or self.fallback_requested
-                                or self.playback_evidence.get("audio_expected")
-                                is not False
-                                or data.get("path") != f"{self.media_path}/audio"
-                            ):
-                                raise BridgeError("Invalid late audio control")
-                            self.audio = LateAudioTrack(
-                                self.hass,
-                                self.config.session,
-                                self.config.url,
-                                self.name + "_audio",
-                                self._audio_event,
-                            )
-                            # Setup must not block video ticks or renew ownership.
-                            self.audio_task = self.hass.async_create_background_task(
-                                self._prepare_audio(data["path"]), "Eufy late audio"
-                            )
+                            self._audio_announced(data)
                         elif data.get("type") == "fallback":
                             reason = data.get("reason")
                             if self.jpeg or reason not in FALLBACK_REASONS:

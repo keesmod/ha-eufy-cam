@@ -12,6 +12,8 @@ process.env.EUFY_DATA_DIR = directory;
 process.env.BIND_ADDRESS = '127.0.0.1';
 process.env.PORT = '8063';
 process.env.EUFY_DIAGNOSTICS = options.diagnostics === true ? 'true' : 'false';
+// Optional live encoder cap such as 4M or 2500k; the bridge validates and defaults to 4M.
+if (typeof options.live_max_bitrate === 'string' && options.live_max_bitrate.trim()) process.env.EUFY_LIVE_MAX_BITRATE = options.live_max_bitrate.trim();
 // Old Supervisor options may still contain legacy. Only the Mega migration
 // service starts, and its saved-inventory gate prevents importing old credentials.
 process.env.EUFY_BACKEND = options.backend === 'legacy' ? 'mega' : (options.backend ?? 'mega');

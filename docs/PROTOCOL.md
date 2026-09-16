@@ -56,6 +56,36 @@ failure closes only audio. Navigation, viewer close, JPEG fallback and session
 expiry release both peers and both go2rtc streams. Audio never renews the camera
 lease. External ICE reachability and JPEG's video-only behavior remain unchanged.
 
+## Audio always on its own route, 0.8.20
+
+The 0.8.17 late-audio route is now the only live audio route. The bridge never
+muxes AAC into the MPEG-TS at `/v1/media/{grant}`: a joint encoder emits nothing
+until its first audio frame exists and holds video for the length of every audio
+gap, which a HomeBase 3 relaying a sleeping SoloCam produces (first AAC 4-5 s
+after the first video frame on a cold start, 40 ms on a warm start). `ready`
+therefore always carries `audio: false`, and the integration must not add an
+audio source to the main go2rtc stream. Whenever the first complete ADTS frame
+arrives, before or after the browser peer plays, the bridge emits `audio_ready`
+for the same grant once per lease, still only when HA opened the lease with
+`late_audio=1`. The library's startup classification survives only as the
+observational `audio_supported`/`audio_absent` diagnostic marks; `audio_input`
+now records any arriving audio data and `audio_late` the first forwarded frame.
+
+HA opens the audio stream only for a ready, opted-in viewer that owns the route.
+An `audio_ready` it cannot use (video setup failed or was downgraded to JPEG, or
+an older bridge that reported `audio: true`) and a repeated `audio_ready` are
+ignored and recorded, never fatal; a missing opt-in or a foreign path still ends
+the lease. Older bridges reporting `audio: true` keep their joint go2rtc audio
+source. An audio transport error on the bridge closes only the audio feed. The
+browser makes one audio attempt per live view; a failed or timed-out attempt
+gets audio again only after closing and reopening the view.
+
+The video encoder stamps each frame with its arrival time rather than counting
+frames at the camera's announced rate, so WebRTC playback no longer accumulates
+delay when a HomeBase delivers more frames than the header announces. Its
+output is bounded by a VBV cap, `EUFY_LIVE_MAX_BITRATE` (default `4M`; add-on
+option `live_max_bitrate`), which limits keyframe bursts on WiFi viewers.
+
 ## Existing recordings
 
 - `GET /v1/recordings/{serial}?date=YYYY-MM-DD`: authenticated on-demand P2P calendar query. Returns `{recordings: [{id,start,end,bytes}], returned}`. Dates/times retain the HomeBase calendar values. `returned` is the station response count before camera filtering, not a verified total. No raw device paths or account fields cross the bridge boundary.

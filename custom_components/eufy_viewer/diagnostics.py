@@ -15,7 +15,7 @@ from .api import BridgeClient, BridgeError
 from .const import CONF_TOKEN, CONF_URL, DOMAIN
 from .coordinator import EufyConfigEntry
 from .diagnostic_assessment import assess
-from .live_diagnostics import browser_report
+from .live_diagnostics import LATE_AUDIO_END_REASONS, LATE_AUDIO_STAGES, browser_report
 from .recording_diagnostics import recording_report
 
 _CODE_FIELDS = {"outcome", "code", "reason", "relationship_reason"}
@@ -402,6 +402,14 @@ def playback_report(raw: dict[str, Any]) -> dict[str, Any]:
     for key in ("audio_expected", "offered", "answered"):
         if type(raw.get(key)) is bool:
             result[key] = raw[key]
+    # Late audio is a separate route from the initial A/V classification.
+    for key, values in (
+        ("audio_late", LATE_AUDIO_STAGES),
+        ("audio_late_end", LATE_AUDIO_END_REASONS),
+    ):
+        value = raw.get(key)
+        if isinstance(value, str) and value in values:
+            result[key] = value
     for key, low, high in (
         ("audio_attempt", 1, 2**48 - 1),
         ("ticks", 0, 2**53 - 1),
@@ -439,6 +447,8 @@ def playback_report(raw: dict[str, Any]) -> dict[str, Any]:
             for key in keys
             if type(value := row.get(key)) is int and 0 <= value <= 2**53 - 1
         }
+        if row.get("audio_late") is True:
+            safe["audio_late"] = True  # Counters include the late audio stream.
         trigger = browser_report({"trigger": row.get("trigger")})
         result["relay"].append({**safe, **trigger})
     return result

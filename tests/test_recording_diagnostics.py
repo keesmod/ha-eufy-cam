@@ -345,12 +345,90 @@ def test_live_projection_keeps_late_audio_ice_but_removes_arbitrary_stored_text(
     assert result["age_ms"] is None
     assert result["relay"] == [{"source_h264_packets": 12, "trigger": "startup"}]
     assert result["browser"][0]["audio_ice"] == "failed"
+    assert "audio_late" not in result and "audio_late_end" not in result
     assert (
         playback_report({"fallback": [], "relay": "PRIVATE", "browser": "PRIVATE"})[
             "relay"
         ]
         == []
     )
+    late = playback_report(
+        {
+            "audio_expected": False,
+            "audio_late": "answered",
+            "audio_late_end": "upstream_error",
+            "relay": [
+                {"source_aac_packets": 3, "audio_late": True, "trigger": "playing"},
+                {"source_h264_packets": 1, "audio_late": "PRIVATE"},
+            ],
+            "browser": [{"trigger": "audio_check", "audio_late": "attached"}],
+        }
+    )
+    assert late["audio_late"] == "answered"
+    assert late["audio_late_end"] == "upstream_error"
+    assert late["relay"] == [
+        {"source_aac_packets": 3, "audio_late": True, "trigger": "playing"},
+        {"source_h264_packets": 1},
+    ]
+    assert late["browser"] == [{"trigger": "audio_check", "audio_late": "attached"}]
+    unknown = playback_report(
+        {"audio_late": "PRIVATE", "audio_late_end": 1, "browser": [{"audio_late": 1}]}
+    )
+    assert "audio_late" not in unknown and "audio_late_end" not in unknown
+    assert unknown["browser"] == [{}]
+
+
+@pytest.mark.parametrize(
+    ("live", "observations", "stages"),
+    [
+        ({"audio_expected": False}, ["no late audio had been announced"], set()),
+        (
+            {"audio_expected": False, "audio_late": "announced"},
+            ["reached the 'announced' stage"],
+            set(),
+        ),
+        (
+            {
+                "audio_expected": False,
+                "audio_late": "ready",
+                "audio_late_end": "stopped",
+            },
+            ["reached the 'ready' stage"],
+            set(),
+        ),
+        (
+            {
+                "audio_expected": False,
+                "audio_late": "offered",
+                "audio_late_end": "signaling_failed",
+            },
+            ["reached the 'offered' stage", "ended before its video session"],
+            {"late_audio"},
+        ),
+        (
+            {
+                "audio_expected": False,
+                "audio_late": "announced",
+                "audio_late_end": "unavailable",
+            },
+            ["reached the 'announced' stage", "could not use it"],
+            {"late_audio"},
+        ),
+        ({"audio_expected": True}, [], set()),
+        ({"audio_late": "PRIVATE"}, [], set()),
+    ],
+)
+def test_late_audio_assessment_separates_route_from_initial_classification(
+    live, observations, stages
+):
+    result = assess({"support": {}, "live_playback": [{"age_ms": 1, **live}]})
+    text = json.dumps(result)
+    assert "PRIVATE" not in text
+    for observation in observations:
+        assert observation in text
+    findings = [f for f in result["findings"] if f["stage"] != "audio_admission"]
+    assert {f["stage"] for f in findings} == stages
+    assert len(result["findings"]) == len(observations)
 
 
 @pytest.mark.parametrize("failure", [False, True])

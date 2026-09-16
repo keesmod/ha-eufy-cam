@@ -12,8 +12,22 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN
 from .recording_diagnostics import version
 
+# Late audio evidence per attempt: the furthest fixed stage reached, in order,
+# and the first fixed reason it ended while its video session continued.
+LATE_AUDIO_STAGES = ("announced", "ready", "offered", "answered")
+LATE_AUDIO_END_REASONS = {
+    "unavailable",
+    "setup_failed",
+    "signaling_failed",
+    "upstream_error",
+    "stopped",
+}
+
 ENUMS = {
     "trigger": {"startup", "playing", "unmuted", "fallback", "audio_check"},
+    # The browser's late audio peer: absent, connecting, attached to the video
+    # element, or ended after an attempt. Independent of the initial A/V route.
+    "audio_late": {"none", "connecting", "attached", "ended"},
     "audio_codec": {
         "audio/opus",
         "audio/pcma",
