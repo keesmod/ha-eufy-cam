@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { PassThrough } from 'node:stream';
 import { RecordingTranscoder } from '/app/dist/recording-media.js';
 import { LiveTranscoder } from '/app/dist/live-transcoder.js';
+import { LateAudio } from '/app/dist/late-audio.js';
 import { StreamDiagnostics } from '/app/dist/diagnostics.js';
 function ffmpeg(args) {
   const result = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args], { timeout: 10000, maxBuffer: 4 * 1024 * 1024 });
@@ -16,12 +17,14 @@ const audioBytes = ffmpeg(['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=
 for (const codec of ['h264', 'hevc']) {
   const videoBytes = ffmpeg(['-f', 'lavfi', '-i', 'testsrc=size=320x180:rate=15', '-t', '1', '-pix_fmt', 'yuv420p', '-c:v', codec === 'h264' ? 'libx264' : 'libx265', '-preset', 'ultrafast', '-threads', '1', ...(codec === 'hevc' ? ['-x265-params', 'pools=none:frame-threads=1'] : []), '-f', codec, 'pipe:1']);
   for (const mode of ['software', 'nvidia']) {
-    const video = new PassThrough(), audio = new PassThrough(), chunks = [], events = [];
+    const video = new PassThrough(), audio = new PassThrough(), chunks = [], audioFrames = [], events = [];
+    let audioReady = false;
+    const audioReader = new LateAudio(audio, () => { audioReady = true; }, frame => audioFrames.push(Buffer.from(frame)));
     const diagnostics = new StreamDiagnostics(line => events.push(JSON.parse(line).event));
     diagnostics.enabled = true; diagnostics.begin('synthetic');
     let ended;
     const done = new Promise(resolve => { ended = resolve; });
-    const session = new LiveTranscoder('synthetic', codec, video, audio, true, 15, mode, diagnostics, chunk => chunks.push(chunk), ended, () => {});
+    const session = new LiveTranscoder('synthetic', codec, video, 15, mode, diagnostics, chunk => chunks.push(chunk), ended, () => {});
     const timer = setTimeout(() => { session.stop(); ended(); }, 10000);
     try {
       session.start(); video.end(videoBytes); audio.end(audioBytes); await done;
@@ -29,13 +32,24 @@ for (const codec of ['h264', 'hevc']) {
       assert.equal(events.includes('media_software_fallback'), mode === 'nvidia');
       const encoded = Buffer.concat(chunks);
       assert.ok(encoded.length > 188);
-      const probe = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name', '-of', 'json', '-i', 'pipe:0'], { input: encoded, timeout: 5000 });
+      const probe = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_name:packet=dts', '-of', 'json', '-i', 'pipe:0'], { input: encoded, timeout: 5000 });
       assert.equal(probe.status, 0);
-      assert.deepEqual(JSON.parse(probe.stdout).streams.map(stream => stream.codec_name).sort(), ['aac', 'h264']);
-      const decode = spawnSync('ffmpeg', ['-v', 'error', '-i', 'pipe:0', '-f', 'null', '-'], { input: encoded, timeout: 5000 });
+      const observed = JSON.parse(probe.stdout);
+      assert.deepEqual(observed.streams.map(stream => stream.codec_name), ['h264']);
+      assert.equal(observed.packets.length, 15);
+      for (let i = 1; i < observed.packets.length; i++) assert.ok(observed.packets[i].dts > observed.packets[i - 1].dts);
+      // The fixture arrives in one burst. Preserve its 90 kHz timestamps in
+      // the validation sink instead of rounding them back to nominal 15 fps.
+      const decode = spawnSync('ffmpeg', ['-v', 'error', '-i', 'pipe:0', '-fps_mode', 'passthrough', '-enc_time_base', '1:90000', '-f', 'null', '-'], { input: encoded, timeout: 5000 });
       assert.equal(decode.status, 0); assert.equal(decode.stderr.length, 0, decode.stderr.toString());
-      console.log(`${codec} ${mode}: real A/V software output and cleanup passed`);
-    } finally { clearTimeout(timer); session.stop(); }
+      assert.equal(audioReady, true);
+      assert.deepEqual(Buffer.concat(audioFrames), audioBytes, 'The independent audio reader retains every complete AAC frame');
+      const audioDecode = spawnSync('ffmpeg', ['-v', 'error', '-f', 'aac', '-i', 'pipe:0', '-f', 'null', '-'], { input: Buffer.concat(audioFrames), timeout: 5000 });
+      assert.equal(audioDecode.status, 0); assert.equal(audioDecode.stderr.length, 0, audioDecode.stderr.toString());
+      assert.equal(audioReader.ready, false, 'Audio EOF releases its reader');
+      assert.equal(audio.listenerCount('data'), 0);
+      console.log(`${codec} ${mode}: separate decoded video and AAC, software fallback and cleanup passed`);
+    } finally { clearTimeout(timer); session.stop(); audioReader.stop(); video.destroy(); audio.destroy(); }
   }
   // Raw recording tracks have no packet timestamps. Use a synthetic stream
   // without frame reordering for native remux checks. Keep the original HEVC

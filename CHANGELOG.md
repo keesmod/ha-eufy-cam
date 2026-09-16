@@ -30,7 +30,8 @@ of every audio gap.
 - The live WebRTC encoder is capped with a VBV window (default `4M`, add-on
   option `live_max_bitrate`, Docker `EUFY_LIVE_MAX_BITRATE`). The reporter's
   relay counters measured 9.8-12.4 Mbit/s unbounded output with 300-500 KB
-  keyframe bursts, which WiFi viewers could not decode in time.
+  keyframe bursts alongside stalled decoding. Those counters alone do not
+  establish the cause of the reporter's playback failure.
 - Frames are stamped with their arrival time instead of being counted at the
   camera's announced rate. A HomeBase delivering 16-17.5 frames per second
   against a 15 fps header made the browser's jitter-buffer delay grow steadily.
@@ -47,8 +48,9 @@ reopen the view to retry audio.
 
 References #10. Bridge tests cover the arrival-time stamping and the bounded
 output with real FFmpeg; HA and card tests cover warm and cold audio ordering.
-Exact T8134 hardware acceptance still needs the reporter's local retest, and an
-external route through a dashboard proxy still needs a reachable TURN server.
+Exact T8134 hardware acceptance still needs the reporter's local retest. A
+dashboard proxy does not carry the separate WebRTC media connection. When no
+direct media route is available, use reachable TURN or routed LAN/VPN access.
 
 ## 0.8.19 - 2026-09-15
 
