@@ -4,7 +4,7 @@ Control routes require `Authorization: Bearer <bridge token>`. The media-only ro
 
 | Endpoint | Meaning | Camera side effect |
 |---|---|---|
-| `GET /v1/state` | Protocol version, stable bridge ID, account state, cached camera inventory | None |
+| `GET /v1/state` | Protocol version, stable bridge ID, account state, cached camera inventory, configured live limit per HomeBase | None |
 | `POST /v1/login` | Account credentials or verification/captcha response | Login/discovery only |
 | `GET /v1/snapshot/{serial}` | Cached JPEG/PNG; 404 if absent | None |
 | `WS /v1/events` | Initial state followed by push updates | None |
@@ -15,7 +15,7 @@ Control routes require `Authorization: Bearer <bridge token>`. The media-only ro
 
 The HA-side `eufy_viewer/watch` subscription accepts `entity_id` and optional `transport` (`jpeg`, the compatibility default, or `webrtc`). Frames carry the subscription ID, sequence and base64 JPEG. `eufy_viewer/ack` accepts the subscription and sequence, bound to the requesting HA connection. HA's normal `unsubscribe_events` releases the viewer.
 
-Limits: 5 MB cached snapshot, 1 MB state message, 256 KB live JPEG, 4 viewers per camera, one live camera per HomeBase (the client owns one live stream per station), 8 camera slots at the bridge (including quarantined stops), 40 bridge sockets, 4 watches per HA connection and 16 per HA config entry. No media auto-reconnect. Watchdog tick 250 ms; first-frame timeout 20 s; processed-frame lease 10 s; absolute cap 120 s.
+Limits: 5 MB cached snapshot, 1 MB state message, 256 KB live JPEG, 4 viewers per camera, `live_max_streams_per_station` live cameras per HomeBase (default 1, up to 4, one client P2P session per concurrent camera), 8 camera slots at the bridge (including quarantined stops), 40 bridge sockets, 4 watches per HA connection and 16 per HA config entry. No media auto-reconnect. Watchdog tick 250 ms; first-frame timeout 20 s; processed-frame lease 10 s; absolute cap 120 s.
 
 Upstream references used independently:
 
@@ -25,7 +25,7 @@ Upstream references used independently:
 - [Home Assistant WebSocket extension API](https://developers.home-assistant.io/docs/frontend/extending/websocket-api/).
 - [HA frontend WebSocket client](https://github.com/home-assistant/home-assistant-js-websocket/blob/master/lib/connection.ts), including `resubscribe: false`.
 
-`/v1/state` advertises `transports: ["jpeg", "webrtc"]`. WebRTC watch events contain `ready`, `answer`, `candidate`, `tick` or `ended`. The browser sends `eufy_viewer/signal` with its subscription and `offer` or `candidate`, bound to the original connection and current entity permission. Only one offer is accepted; SDP is bounded at 65,536 characters and ICE candidates at 2,048. The card gathers local ICE before offering, queues early remote candidates, and never reconnects media automatically. Each fresh painted video frame can acknowledge at most one pending tick through `eufy_viewer/ack`. Merely receiving control messages does not renew the camera lease.
+`/v1/state` advertises `transports: ["jpeg", "webrtc"]`. WebRTC watch events contain `ready`, `answer`, `candidate`, `tick` or `ended` (optionally with `reason`). The browser sends `eufy_viewer/signal` with its subscription and `offer` or `candidate`, bound to the original connection and current entity permission. Only one offer is accepted; SDP is bounded at 65,536 characters and ICE candidates at 2,048. The card gathers local ICE before offering, queues early remote candidates, and never reconnects media automatically. Each fresh painted video frame can acknowledge at most one pending tick through `eufy_viewer/ack`. Merely receiving control messages does not renew the camera lease.
 
 
 ## Late live audio, 0.8.17
@@ -85,6 +85,22 @@ frames at the camera's announced rate, so WebRTC playback no longer accumulates
 delay when a HomeBase delivers more frames than the header announces. Its
 output is bounded by a VBV cap, `EUFY_LIVE_MAX_BITRATE` (default `4M`; add-on
 option `live_max_bitrate`), which limits keyframe bursts on WiFi viewers.
+
+
+## Live cameras per HomeBase, 0.8.21
+
+The bridge admits a first viewer for a camera while the number of live and
+starting cameras on its HomeBase is below `EUFY_LIVE_MAX_STREAMS_PER_STATION`
+(app option `live_max_streams_per_station`, a whole number from 1 to 4, default
+1), mirroring the bundled client's `maxLiveStreamsPerStation` before a start is
+issued. The same camera is never admitted twice, and recording preparation still
+requires that no camera on the HomeBase is live. A viewer refused by the limit
+is closed with WebSocket code `4013` and reason `HomeBase live limit reached`;
+every other refusal keeps `1013 Camera busy or stopping`. The integration
+forwards `4013` as `reason: "station_limit"` on its `ended` event and omits
+`reason` otherwise, so older cards and integrations keep their generic
+behaviour. `/v1/state` reports the configured limit as
+`live_max_streams_per_station`.
 
 ## Existing recordings
 

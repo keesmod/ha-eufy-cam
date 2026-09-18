@@ -13,7 +13,7 @@ import {
   type CameraCapabilities,
   type DiscoveryResult,
 } from '@keesmod/eufy-mega-client';
-import { MegaBackend } from '../src/mega-backend.js';
+import { MegaBackend, liveStreamsPerStation } from '../src/mega-backend.js';
 import { Storage } from '../src/storage.js';
 import { backendName } from '../src/backend.js';
 import { MegaRecordings } from '../src/mega-recordings.js';
@@ -85,9 +85,8 @@ test('recording cancellation before the media handle arrives is counted and rele
   assert.equal(recordings.busy, false);
   assert.equal(recordings.metrics.cancelled, 1);
 });
-function fixture() {
+function fixture(limit?: number) {
   const calls: string[] = [];
-  let finish!: (value: { confirmed: boolean; reason: 'device' }) => void;
   const state = {
     id: 'BASE',
     connected: true,
@@ -138,14 +137,15 @@ function fixture() {
       commandSent: true,
       state: { ...state, guardMode: mode, currentMode: mode },
     }),
-    startLive: async () => {
+    startLive: async (id: string) => {
       calls.push('start');
+      let finish!: (value: { confirmed: boolean; reason: 'device' }) => void;
       const ended = new Promise<{ confirmed: boolean; reason: 'device' }>((resolve) => {
         finish = resolve;
       });
       return {
-        id: 'stream',
-        deviceId: 'CAM',
+        id: `stream-${id}`,
+        deviceId: id,
         video: Readable.from([]),
         audio: Readable.from([]),
         metadata: {
@@ -175,16 +175,64 @@ function fixture() {
     return undefined;
   };
   storage.write = async () => {};
+  const options: ClientOptions[] = [];
   const backend = new MegaBackend(
     storage,
     () => false,
-    (options) => {
-      void options.sessionStore.load();
+    (clientOptions) => {
+      options.push(clientOptions);
+      void clientOptions.sessionStore.load();
       return client as unknown as EufyMegaClient;
     },
+    undefined,
+    limit,
   );
-  return { backend, client, calls, reads, storage };
+  return { backend, client, calls, reads, storage, options };
 }
+test('EUFY_LIVE_MAX_STREAMS_PER_STATION accepts whole numbers from 1 to 4 and defaults to 1', () => {
+  assert.equal(liveStreamsPerStation(undefined), 1);
+  assert.equal(liveStreamsPerStation(''), 1);
+  assert.equal(liveStreamsPerStation(' 2 '), 2);
+  assert.equal(liveStreamsPerStation('4'), 4);
+  for (const bad of ['0', '5', '02', '2.5', '1e0', 'two', '-1'])
+    assert.throws(() => liveStreamsPerStation(bad), /EUFY_LIVE_MAX_STREAMS_PER_STATION/, bad);
+  assert.throws(() => new MegaBackend(new Storage('/unused'), () => false, undefined, undefined, 5), /1 to 4/);
+  assert.throws(() => new MegaBackend(new Storage('/unused'), () => false, undefined, undefined, 1.5), /1 to 4/);
+});
+test('the per-station live limit reaches the client, counts owned cameras and names the refusal', async () => {
+  const more: Device[] = [
+    { ...devices[1]!, id: 'CAM2', name: 'Second' },
+    { ...devices[1]!, id: 'CAM3', name: 'Third' },
+  ];
+  for (const limit of [undefined, 2]) {
+    const f = fixture(limit);
+    f.client.discoverDevices = async () => ({ devices: [...devices, ...more], relationships: [], issues: [] });
+    try {
+      await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+      assert.equal(f.options[0]?.maxLiveStreamsPerStation, limit ?? 1);
+      assert.equal(f.backend.liveStreamsPerStation, limit ?? 1);
+      assert.equal(f.backend.canStartLive('CAM'), true);
+      await f.backend.startLive('CAM');
+      assert.equal(f.backend.canStartLive('CAM'), false, 'the same camera never streams twice');
+      assert.equal(f.backend.canStartLive('CAM2'), limit ? true : 'station_limit');
+      await assert.rejects(f.backend.recoverStation('BASE'), /Station still owned/);
+      if (limit) {
+        await f.backend.startLive('CAM2');
+        assert.equal(f.backend.canStartLive('CAM3'), 'station_limit');
+        assert.equal(typeof f.backend.audioAttempt('CAM2'), 'number');
+        assert.notEqual(f.backend.audioAttempt('CAM'), f.backend.audioAttempt('CAM2'));
+        await f.backend.stopLive('CAM2');
+        assert.equal(f.backend.canStartLive('CAM3'), true);
+      }
+      await f.backend.stopLive('CAM');
+      assert.equal(f.backend.canStartLive('CAM2'), true);
+      assert.deepEqual(f.calls, limit ? ['start', 'start', 'stop', 'stop'] : ['start', 'stop']);
+      assert.equal(f.backend.supportReport().live_audio.every((row) => row.stop_confirmed === true), true);
+    } finally {
+      await f.backend.close();
+    }
+  }
+});
 test('Mega adapter preserves camera identity, notifications, and device-confirmed stream cleanup', async () => {
   const f = fixture();
   try {
@@ -585,7 +633,7 @@ for (const empty of [false,true])
       const rows=lines.map(line=>JSON.parse(line));
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
-      assert.equal(summary.software.library,'0.12.3');
+      assert.equal(summary.software.library,'0.13.0');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);

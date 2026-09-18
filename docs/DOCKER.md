@@ -57,6 +57,8 @@ docker run -d --name eufy-viewer-bridge \
 
 Port 8080 on that address must be free. Host networking uses the chosen bind address directly; do not add Docker `-p` mappings. If HA shares the host network, you can bind to `127.0.0.1` and use that address in HA instead. Home Assistant connects to `http://YOUR_LAN_IP:8080`. Use the Docker host's LAN address even if Home Assistant also runs in Docker; `localhost` inside HA points to HA's own container.
 
+Optional settings: `-e EUFY_LIVE_MAX_BITRATE=2500k` caps the live encoder (default `4M`), `-e EUFY_LIVE_MAX_STREAMS_PER_STATION=2` lets that many cameras on one HomeBase stream live at the same time (a whole number from 1 to 4, default 1), and `-e EUFY_DIAGNOSTICS=true` adds bounded live diagnostics to the log. See [playback and recovery](USAGE.md#honest-snapshot-and-streaming-limits).
+
 Allow Home Assistant to reach the published port. Keep it on a trusted LAN or protect it with a TLS reverse proxy; plain HTTP exposes the token and login credentials on an untrusted network. Do not forward this port from the internet. Your browser connects through Home Assistant and does not need direct access to the bridge.
 
 If login works but the HomeBase cannot connect, check that the Docker host is
