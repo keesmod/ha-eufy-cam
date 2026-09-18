@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.8.22 - 2026-09-18
+
+### Inline live mode for several live cameras
+
+- New card option `live_mode: inline` plays the live view inside the card
+  instead of the modal dialog, so a dashboard can show several cameras live at
+  the same time, up to the bridge's `live_max_streams_per_station` limit per
+  HomeBase. The default `dialog` keeps today's popup. The visual card editor
+  offers the choice.
+- An inline card keeps every rule of the dialog: one tap starts one lease with
+  the frame acknowledgement loop, the two-minute cap, WebRTC with the JPEG
+  fallback, the sound toggle and late audio, the diagnostics download, and a
+  stop on close, Escape, page hide, navigation, card removal, disconnection or
+  when the card scrolls out of view. Its close and sound controls sit on the
+  video and status messages appear below the camera name. A card refused by
+  the HomeBase limit shows "Another camera on this HomeBase is live" there and
+  returns to its snapshot.
+- Nothing starts automatically. Each live camera still needs its own tap.
+
+### Evidence and limits
+
+Playwright covers the inline mode with simulated Home Assistant dispatch: start
+on both transports, frame acknowledgements, stop on close, Escape, hidden page,
+page hide, disconnection and removal, three inline cards on one page with two
+live at once and the third refused at the limit, the card editor, and real
+decoded WebRTC media plus the JPEG fallback inside the card. Two inline cards
+on one HomeBase in a real browser against a bridge with the limit at 2 are
+pending hardware validation in
+[issue #87](https://github.com/keesmod/ha-eufy-cam/issues/87). Three or four
+concurrent streams remain unverified.
+
+### Upgrade and rollback
+
+Integration-only release, the bridge stays at 0.8.21. Update the integration,
+restart Home Assistant and refresh the dashboard. If you update from 0.8.20,
+the 0.8.21 notes below apply as well. Existing cards keep the dialog until you
+set `live_mode: inline`. To roll back, restore the previous integration version
+from your backup and reload the dashboard.
+
 ## 0.8.21 - 2026-09-18
 
 ### Configurable live cameras per HomeBase

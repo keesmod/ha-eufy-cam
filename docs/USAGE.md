@@ -16,15 +16,41 @@ On the tested HB3, increasing the SDK's existing query limit retrieved 105 datab
 
 - UI-only integration setup, reauthentication, endpoint reconfiguration, verification-code and captcha flows.
 - Camera entities show Eufy's latest received snapshot, image requests never start a camera.
-- A visual-editor Lovelace card starts live video after a click or keyboard activation. Supported clients use WebRTC with optional listen-only audio, clients without WebRTC use JPEG video.
+- A visual-editor Lovelace card starts live video after a click or keyboard activation. Supported clients use WebRTC with optional listen-only audio, clients without WebRTC use JPEG video. The live view opens as a popup dialog, or inside the card with `live_mode: inline`, see [card options](#card-options).
 - Choose **Recordings → Date → Show recordings** to play an existing HomeBase event in Home Assistant. This reads stored events, it does not record a new live stream.
-- Closing the dialog, leaving the dashboard, hiding the tab, disconnecting or failing to process frames releases the viewer.
+- Closing the live view, leaving the dashboard, hiding the tab, disconnecting or failing to process frames releases the viewer.
 - Multiple viewers of a camera share one upstream stream. Closing one viewer does not interrupt the others.
-- One camera per HomeBase can be live at a time. A second camera on the same HomeBase is refused until the first live view has stopped, and its card reports the view as ended. See [one live camera per HomeBase](#one-live-camera-per-homebase).
+- By default one camera per HomeBase is live at a time. A second camera on the same HomeBase is refused until the first live view has stopped, and its card says that another camera on this HomeBase is live. The bridge option `live_max_streams_per_station` raises that limit, see [live cameras per HomeBase](#live-cameras-per-homebase).
 - The bridge independently expires silent viewers and stops the camera after the last viewer leaves.
 - HomeBase alarm and Guard Mode entities with station-confirmed commands and push status.
 - Push discovery and battery sensors, stable registry IDs, clean unload, English/Dutch UI and allowlisted diagnostics.
 - No cloud polling timer: the pinned Eufy client is configured with `pollingIntervalMinutes: 0`. Login, push-triggered refreshes, token renewal and the library's local station communication still occur.
+
+### Card options
+
+The visual editor sets these. In YAML:
+
+```yaml
+type: custom:eufy-viewer-card
+entity: camera.front_door
+name: Front door
+live_mode: inline
+```
+
+| Option | Values | Meaning |
+|---|---|---|
+| `entity` | a Eufy Viewer camera entity | Required. |
+| `name` | text | Optional title. The default is the entity's friendly name. |
+| `live_mode` | `dialog` (default) or `inline` | `dialog` opens the live view in a popup dialog that closes on Escape or a tap outside. `inline` plays the live view inside the card with its close and sound controls on the video, so several cards can be live at once. |
+
+An inline card follows the same rules as the dialog: one tap starts one live
+session, the two-minute cap applies, the sound toggle and late audio work the
+same, the diagnostics download stays available to administrators, and the view
+stops on close, Escape while it has focus, page hide, navigation, card removal,
+disconnection or when the card scrolls out of view. Status messages appear
+below the camera name. A card refused by the HomeBase live limit shows that
+message there and returns to its snapshot. Nothing starts automatically on
+dashboard load.
 
 ### Honest snapshot and streaming limits
 
@@ -40,7 +66,7 @@ By default one camera per HomeBase streams live at a time. The bridge refuses a 
 
 From bridge 0.8.21 the optional app option `live_max_streams_per_station` (Docker: `EUFY_LIVE_MAX_STREAMS_PER_STATION`, a whole number from 1 to 4) raises that limit. The bundled client then opens one additional P2P session per further concurrent camera, with its own confirmed STOP and two-minute cap, while the HomeBase's primary session keeps control, snapshots and recordings. Recording playback and mode commands still wait until no camera on that HomeBase is live. Other values stop the bridge at startup.
 
-Two concurrent streams are verified by the client on one HomeBase 3 (T8030, firmware 3.8.7.4) with two eufyCam 3 (T8160) cameras, each at full rate with audio. The bridge path was exercised on 2026-09-18 with two concurrent eufyCam 3 on that HomeBase, with confirmed stops and a third camera refused at the limit, see [the test record](CONCURRENT_LIVE_2026-09-18.md). Three or four are permitted but unverified. Each concurrent camera adds an encoder pipeline on the bridge host. The card opens one modal live view per card, so a dashboard with several simultaneous live cards still needs an inline live mode, tracked in [issue #84](https://github.com/keesmod/ha-eufy-cam/issues/84). Cameras on different HomeBases are admitted independently within the bridge's eight camera slots, but that combination has not been validated on hardware.
+Two concurrent streams are verified by the client on one HomeBase 3 (T8030, firmware 3.8.7.4) with two eufyCam 3 (T8160) cameras, each at full rate with audio. The bridge path was exercised on 2026-09-18 with two concurrent eufyCam 3 on that HomeBase, with confirmed stops and a third camera refused at the limit, see [the test record](CONCURRENT_LIVE_2026-09-18.md). Three or four are permitted but unverified. Each concurrent camera adds an encoder pipeline on the bridge host. For a dashboard with several live cards at once, set `live_mode: inline` on each card, see [card options](#card-options). Each card is admitted or refused by the bridge on its own tap, up to the limit. Two inline cards on one HomeBase in a real browser are pending hardware validation in [issue #87](https://github.com/keesmod/ha-eufy-cam/issues/87). Cameras on different HomeBases are admitted independently within the bridge's eight camera slots, but that combination has not been validated on hardware.
 
 Clients without WebRTC or video-frame callback support, including the Home Assistant macOS app, automatically use JPEG live video at up to **8 fps / 960 pixels**, without audio. The same explicit-start and stream cleanup rules apply. Use Safari on the Mac for WebRTC with live audio. If an established WebRTC attempt fails, the viewer can switch once to video-only JPEG. See [automatic fallback](#automatic-live-video-fallback).
 
@@ -119,8 +145,9 @@ This option does not change timeouts, keep cameras awake or enable SDK debug.
 ### Automatic live-video fallback
 
 When WebRTC signaling, connection or playback fails, the viewer switches once
-to live JPEG through the existing authenticated HA connection. The live popup
-shows **Live video without sound** and hides its audio button. WebRTC is kept
+to live JPEG through the existing authenticated HA connection. The live view
+shows **Live video without sound** (below the camera name for an inline card)
+and hides its audio button. WebRTC is kept
 when it works. The next explicit opening can try WebRTC again.
 
 The bridge initiates fallback five seconds before the initial viewer deadline

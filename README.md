@@ -65,23 +65,39 @@ The cards are included with the integration.
 
 Tap a camera to watch live video and enable sound if wanted. Close the viewer
 when finished. Idle images are the latest received snapshots and may be old.
-One camera per HomeBase can be live at a time.
+By default the live view opens as a popup and one camera per HomeBase is live
+at a time. For a surveillance-style view, set the card's live view to **Inside
+the card** in the editor, or in YAML:
+
+```yaml
+type: custom:eufy-viewer-card
+entity: camera.front_door
+live_mode: inline
+```
+
+Each inline card still starts with a tap and stops when you close it or leave
+the page. Raise the bridge option `live_max_streams_per_station` to let more
+than one camera on the same HomeBase be live at once. See
+[card options](docs/USAGE.md#card-options) and
+[live cameras per HomeBase](docs/USAGE.md#live-cameras-per-homebase).
 
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
 
-The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.21`.
+The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.22`.
 See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 </details>
 
 ## Upgrading
 
-The **0.8.21** update lets several cameras on one HomeBase stream live at the
-same time through the new optional bridge option `live_max_streams_per_station`
+The **0.8.22** integration adds the card option `live_mode: inline`, which
+plays live video inside the card so several cameras can be live at once. The
+bridge stays at **0.8.21**, which lets several cameras on one HomeBase stream
+live at the same time through the optional option `live_max_streams_per_station`
 (default 1, unchanged behaviour) and tells you when another camera on the
-HomeBase is live. Update both the integration and bridge to **0.8.21**, then
-refresh the dashboard. The bridge includes client **0.13.0**.
+HomeBase is live. Update the integration to **0.8.22** and the bridge to
+**0.8.21**, then refresh the dashboard. The bridge includes client **0.13.0**.
 See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
 for changes and any version-specific instructions.
 
