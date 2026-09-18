@@ -14,8 +14,15 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 
 from .api import BridgeError
-from .const import DOMAIN, MAX_FRAME_BYTES
+from .const import DOMAIN, MAX_FRAME_BYTES, STATION_LIMIT_CLOSE_CODE
 from .coordinator import EufyCoordinator
+
+
+def ended_event(close_code: int | None) -> dict[str, Any]:
+    """Only the bridge's per-HomeBase live limit close code names a reason."""
+    if close_code == STATION_LIMIT_CLOSE_CODE:
+        return {"type": "ended", "reason": "station_limit"}
+    return {"type": "ended"}
 
 
 class Viewer:
@@ -62,6 +69,7 @@ class Viewer:
 
     async def run(self) -> None:
         """Relay at most one unacknowledged frame. Never reconnect media."""
+        ended = ended_event(None)
         try:
             async with await self.coordinator.api.websocket(
                 f"/v1/live/{self.serial}"
@@ -90,6 +98,8 @@ class Viewer:
                                 "jpeg": base64.b64encode(message.data).decode("ascii"),
                             },
                         )
+                # A bridge close ends the iteration; its code may name the reason.
+                ended = ended_event(socket.close_code)
         except BridgeError, aiohttp.ClientError, TimeoutError:
             pass
         finally:
@@ -101,7 +111,7 @@ class Viewer:
             # Leave HA's subscription callback in place until frontend unsubscribe;
             # deleting it while ActiveConnection iterates would break disconnect.
             if not self.closed:
-                self.connection.send_event(self.subscription, {"type": "ended"})
+                self.connection.send_event(self.subscription, ended)
             self.closed = True
 
     async def ack(self, sequence: int) -> bool:

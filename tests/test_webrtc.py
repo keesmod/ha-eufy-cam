@@ -163,6 +163,23 @@ async def test_bad_bridge_messages_stop_without_ack(
     assert socket.closed.is_set() and not socket.acks
 
 
+@pytest.mark.parametrize(
+    ("close_code", "event"),
+    [(4013, {"type": "ended", "reason": "station_limit"}), (1013, {"type": "ended"})],
+)
+async def test_bridge_close_code_selects_the_ended_reason(
+    hass, hass_ws_client, rtc_setup, close_code, event
+):
+    socket, _, _, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client)
+    await socket.queue.put(
+        SimpleNamespace(type=aiohttp.WSMsgType.CLOSE, data=close_code)
+    )
+    assert (await client.receive_json())["event"] == event
+    await viewer.task
+    assert socket.closed.is_set() and not socket.acks
+
+
 async def test_duplicate_tick_ends_session(hass, hass_ws_client, rtc_setup):
     socket, _, _, _ = rtc_setup
     client, viewer = await open_viewer(hass, hass_ws_client)

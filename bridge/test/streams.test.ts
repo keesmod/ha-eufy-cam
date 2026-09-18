@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { StreamHub, type Peer } from "../src/streams.js";
+import { StreamHub, STATION_LIMIT_CLOSE_CODE, type Peer } from "../src/streams.js";
 import { JpegFramer } from "../src/jpeg.js";
 
 function fixture() {
@@ -63,6 +63,16 @@ test("JPEG parser handles split markers, concatenated frames and oversized data"
   for (const byte of Buffer.concat([jpeg, jpeg])) parser.push(Buffer.from([byte]));
   assert.equal(frames.length, 2); assert.deepEqual(frames[0], jpeg);
   assert.throws(() => parser.push(Buffer.alloc(1_048_577)));
+});
+
+test("station limit refusal closes with its own code and creates no camera or quarantine", () => {
+  const closes: [number, string][] = [];
+  const hub = new StreamHub({ admit: () => "station_limit", start: async () => { assert.fail("must not start"); }, stop: async () => { assert.fail("must not stop"); }, disposeMedia: () => {} });
+  const peer: Peer = { bufferedAmount: 0, send: () => {}, close: (code, reason) => { closes.push([code, reason]); } };
+  assert.equal(hub.attach("a", peer), false);
+  assert.deepEqual(closes, [[4013, "HomeBase live limit reached"]]);
+  assert.equal(STATION_LIMIT_CLOSE_CODE, 4013);
+  assert.equal(hub.active, 0); assert.equal(hub.quarantined, 0);
 });
 
 test("recording admission rejection creates no camera or quarantine", () => {

@@ -14,6 +14,8 @@ process.env.PORT = '8063';
 process.env.EUFY_DIAGNOSTICS = options.diagnostics === true ? 'true' : 'false';
 // Optional live encoder cap such as 4M or 2500k; the bridge validates and defaults to 4M.
 if (typeof options.live_max_bitrate === 'string' && options.live_max_bitrate.trim()) process.env.EUFY_LIVE_MAX_BITRATE = options.live_max_bitrate.trim();
+// Optional concurrent live cameras per HomeBase, 1 to 4; the bridge validates and defaults to 1.
+if (Number.isInteger(options.live_max_streams_per_station)) process.env.EUFY_LIVE_MAX_STREAMS_PER_STATION = String(options.live_max_streams_per_station);
 // Old Supervisor options may still contain legacy. Only the Mega migration
 // service starts, and its saved-inventory gate prevents importing old credentials.
 process.env.EUFY_BACKEND = options.backend === 'legacy' ? 'mega' : (options.backend ?? 'mega');

@@ -18,6 +18,7 @@ import { DiscoveryDiagnostics, diagnosticCode } from './discovery-diagnostics.js
 import { RecordingTranscoder } from './recording-media.js';
 import { MegaRecordings } from './mega-recordings.js';
 import { RecordingError, StationError } from './errors.js';
+import type { LiveAdmission } from './streams.js';
 import type {
   Backend,
   BackendStations,
@@ -32,6 +33,16 @@ import type {
 } from './backend.js';
 
 const modes = [0, 1, 2, 3, 4, 5, 47, 63];
+/**
+ * Parse EUFY_LIVE_MAX_STREAMS_PER_STATION, an integer from 1 to 4. Unset keeps
+ * one live camera per HomeBase, the behaviour verified before client 0.13.0.
+ */
+export function liveStreamsPerStation(value?: string): number {
+  if (value === undefined || value.trim() === '') return 1;
+  const limit = /^[1-4]$/.test(value.trim()) ? Number(value.trim()) : 0;
+  if (!limit) throw new Error('EUFY_LIVE_MAX_STREAMS_PER_STATION must be a whole number from 1 to 4');
+  return limit;
+}
 function discoveryDetail(issue: DiscoveryIssue): string | undefined {
   if (issue.code !== 'unsupported_device') return undefined;
   // Revalidate even library-sanitized values at this logging boundary. These
@@ -152,8 +163,12 @@ export class MegaBackend extends EventEmitter implements Backend {
     private factory: (options: ClientOptions) => EufyMegaClient = (options) =>
       new EufyMegaClient(options),
     recordingMedia = new RecordingTranscoder(),
+    /** Concurrent live cameras per HomeBase, forwarded to the client as its own limit. */
+    readonly liveStreamsPerStation = 1,
   ) {
     super();
+    if (!Number.isInteger(liveStreamsPerStation) || liveStreamsPerStation < 1 || liveStreamsPerStation > 4)
+      throw new Error('liveStreamsPerStation must be a whole number from 1 to 4');
     this.on('backend_fault', (code) => this.discoveryDiagnostics.fault(code));
     this.recordings = new MegaRecordings(
       () => this.client,
@@ -198,6 +213,7 @@ export class MegaBackend extends EventEmitter implements Backend {
     if (credentials) {
       this.client = this.factory({
         diagnostics: (event) => this.discoveryDiagnostics.cloud(event),
+        maxLiveStreamsPerStation: this.liveStreamsPerStation,
         credentials: {
           email: credentials.username,
           password: credentials.password,
@@ -460,13 +476,15 @@ export class MegaBackend extends EventEmitter implements Backend {
       this.emit('backend_fault', error instanceof EufyError ? error.code : 'device_failed'),
     );
   }
-  canStartLive(serial: string): boolean {
-    if (!this.capabilities.get(serial)?.live.available) return false;
+  canStartLive(serial: string): LiveAdmission {
+    if (!this.capabilities.get(serial)?.live.available || this.streams.has(serial)) return false;
     const station = this.devices.get(serial)?.stationId;
-    return (
-      !!station &&
-      ![...this.streams.keys()].some((id) => this.devices.get(id)?.stationId === station)
-    );
+    if (!station) return false;
+    // Starting cameras count: the client rejects a start beyond its own limit
+    // with station_busy, so admission mirrors it before a start is issued.
+    let owned = 0;
+    for (const id of this.streams.keys()) if (this.devices.get(id)?.stationId === station) owned++;
+    return owned < this.liveStreamsPerStation ? true : 'station_limit';
   }
   async startLive(serial: string): Promise<void> {
     if (!this.client || !this.hasCamera(serial) || this.streams.has(serial))

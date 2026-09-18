@@ -32,7 +32,7 @@ from .const import DOMAIN, MAX_FRAME_BYTES
 from .ice import ice_configuration
 from .late_audio import LateAudioTrack
 from .live_diagnostics import browser_report, relay_report
-from .viewers import Viewer
+from .viewers import Viewer, ended_event
 
 _LOGGER = logging.getLogger(__name__)
 FALLBACK_REASONS = {
@@ -354,6 +354,7 @@ class WebRTCViewer(Viewer):
 
     async def run(self) -> None:
         """Own a bridge lease until close; never reconnect or preload media."""
+        ended = ended_event(None)
         try:
             async with await self.coordinator.api.websocket(
                 f"/v1/live/{self.serial}?transport=webrtc"
@@ -450,6 +451,8 @@ class WebRTCViewer(Viewer):
                             )
                         else:
                             raise BridgeError("Invalid media control")
+                # A bridge close ends the iteration; its code may name the reason.
+                ended = ended_event(socket.close_code)
         except (
             BridgeError,
             Go2RtcClientError,
@@ -467,7 +470,7 @@ class WebRTCViewer(Viewer):
                 (self.connection, self.subscription), None
             )
             if not self.closed:
-                self.connection.send_event(self.subscription, {"type": "ended"})
+                self.connection.send_event(self.subscription, ended)
             self.closed = True
             await self._cleanup()
             if self.cleanup_task:

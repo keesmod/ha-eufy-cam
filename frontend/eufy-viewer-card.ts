@@ -2,7 +2,7 @@ interface ViewerCapability { available: boolean; status?: string; reason?: strin
 interface CameraState { state: string; attributes: { friendly_name?: string; capabilities?: Record<string, ViewerCapability>; viewer_card?: boolean; viewer_webrtc?: boolean; viewer_late_audio?: boolean; snapshot_received_at?: string; entity_picture?: string } }
 interface CardConfig { entity: string; name?: string }
 interface FrameEvent { type: "frame"; subscription: number; sequence: number; jpeg: string }
-interface EndEvent { type: "ended" }
+interface EndEvent { type: "ended"; reason?: string }
 interface FallbackEvent { type: "fallback" }
 type Unsubscribe = () => Promise<void>;
 interface IceConfiguration { ice_servers?: RTCIceServer[]; ice_configuration?: "home_assistant" | "unavailable" }
@@ -19,8 +19,8 @@ declare global { interface Window { customCards: CardDefinition[] } }
 
 /** Eufy Viewer: snapshots at rest, a single explicit user gesture per live session. */
 const TEXT = {
-  en: { recording_storage_unavailable: "Not enough recording storage. Close other recordings or try Native.", capability_unavailable: "This media operation is unavailable for the camera connection.", videoOnly: "Live video without sound", switching: "Switching to live video without sound…", live: "Watch live", close: "Close live view", connecting: "Connecting…", ended: "Live view ended. Tap again to watch.", unavailable: "Camera unavailable", noSnapshot: "No snapshot received yet", title: "Camera", error: "Live view failed. Tap again to retry.", sound: "Enable sound", mute: "Mute sound", recordings: "Recordings", date: "Date", load: "Show recordings", loading: "Loading HomeBase recordings…", preparing: "Preparing recording…", empty: "No recordings returned for this camera and date.", recordingError: "HomeBase recording unavailable. Load the date again.", live_busy: "A live viewer is still open. Close it and load the date again.", live_stopping: "The previous live session is still stopping. Wait a moment and load the date again.", recording_busy: "Another recording is being prepared. Wait a moment and try again.", recording_expired: "This recording link has expired. Load the date again.", recording_unavailable: "The HomeBase connection is unavailable. Try again shortly.", closeRecordings: "Close recordings", results: "recordings returned", homebaseTime: "HomeBase time" },
-  nl: { recording_storage_unavailable: "Onvoldoende opslag voor deze opname. Sluit andere opnames of probeer Native.", capability_unavailable: "Deze mediafunctie is niet beschikbaar voor de cameraverbinding.", videoOnly: "Livebeeld zonder geluid", switching: "Omschakelen naar livebeeld zonder geluid…", live: "Live bekijken", close: "Livebeeld sluiten", connecting: "Verbinden…", ended: "Livebeeld gestopt. Tik opnieuw om te kijken.", unavailable: "Camera niet beschikbaar", noSnapshot: "Nog geen snapshot ontvangen", title: "Camera", error: "Livebeeld mislukt. Tik opnieuw om te proberen.", sound: "Geluid aan", mute: "Geluid uit", recordings: "Opnames", date: "Datum", load: "Opnames tonen", loading: "HomeBase-opnames laden…", preparing: "Opname voorbereiden…", empty: "Geen opnames teruggegeven voor deze camera en datum.", recordingError: "HomeBase-opname niet beschikbaar. Laad de datum opnieuw.", live_busy: "Er staat nog een livebeeld open. Sluit dit en laad de datum opnieuw.", live_stopping: "De vorige live-sessie wordt nog afgesloten. Wacht even en laad de datum opnieuw.", recording_busy: "Er wordt al een opname voorbereid. Wacht even en probeer opnieuw.", recording_expired: "Deze opnamelink is verlopen. Laad de datum opnieuw.", recording_unavailable: "De HomeBase-verbinding is niet beschikbaar. Probeer het zo opnieuw.", closeRecordings: "Opnames sluiten", results: "opnames teruggegeven", homebaseTime: "HomeBase-tijd" },
+  en: { recording_storage_unavailable: "Not enough recording storage. Close other recordings or try Native.", capability_unavailable: "This media operation is unavailable for the camera connection.", videoOnly: "Live video without sound", switching: "Switching to live video without sound…", live: "Watch live", close: "Close live view", connecting: "Connecting…", ended: "Live view ended. Tap again to watch.", station_limit: "Another camera on this HomeBase is live. Close that live view first, then tap again.", unavailable: "Camera unavailable", noSnapshot: "No snapshot received yet", title: "Camera", error: "Live view failed. Tap again to retry.", sound: "Enable sound", mute: "Mute sound", recordings: "Recordings", date: "Date", load: "Show recordings", loading: "Loading HomeBase recordings…", preparing: "Preparing recording…", empty: "No recordings returned for this camera and date.", recordingError: "HomeBase recording unavailable. Load the date again.", live_busy: "A live viewer is still open. Close it and load the date again.", live_stopping: "The previous live session is still stopping. Wait a moment and load the date again.", recording_busy: "Another recording is being prepared. Wait a moment and try again.", recording_expired: "This recording link has expired. Load the date again.", recording_unavailable: "The HomeBase connection is unavailable. Try again shortly.", closeRecordings: "Close recordings", results: "recordings returned", homebaseTime: "HomeBase time" },
+  nl: { recording_storage_unavailable: "Onvoldoende opslag voor deze opname. Sluit andere opnames of probeer Native.", capability_unavailable: "Deze mediafunctie is niet beschikbaar voor de cameraverbinding.", videoOnly: "Livebeeld zonder geluid", switching: "Omschakelen naar livebeeld zonder geluid…", live: "Live bekijken", close: "Livebeeld sluiten", connecting: "Verbinden…", ended: "Livebeeld gestopt. Tik opnieuw om te kijken.", station_limit: "Een andere camera op deze HomeBase is live. Sluit eerst dat livebeeld en tik dan opnieuw.", unavailable: "Camera niet beschikbaar", noSnapshot: "Nog geen snapshot ontvangen", title: "Camera", error: "Livebeeld mislukt. Tik opnieuw om te proberen.", sound: "Geluid aan", mute: "Geluid uit", recordings: "Opnames", date: "Datum", load: "Opnames tonen", loading: "HomeBase-opnames laden…", preparing: "Opname voorbereiden…", empty: "Geen opnames teruggegeven voor deze camera en datum.", recordingError: "HomeBase-opname niet beschikbaar. Laad de datum opnieuw.", live_busy: "Er staat nog een livebeeld open. Sluit dit en laad de datum opnieuw.", live_stopping: "De vorige live-sessie wordt nog afgesloten. Wacht even en laad de datum opnieuw.", recording_busy: "Er wordt al een opname voorbereid. Wacht even en probeer opnieuw.", recording_expired: "Deze opnamelink is verlopen. Laad de datum opnieuw.", recording_unavailable: "De HomeBase-verbinding is niet beschikbaar. Probeer het zo opnieuw.", closeRecordings: "Opnames sluiten", results: "opnames teruggegeven", homebaseTime: "HomeBase-tijd" },
 };
 
 export class EufyViewerCard extends HTMLElement {
@@ -323,7 +323,7 @@ export class EufyViewerCard extends HTMLElement {
   }
   async _event(event: ViewerEvent, generation: number) {
     if (!this._watching(generation)) return;
-    if (event.type === "ended") { this._stop("ended"); return; }
+    if (event.type === "ended") { this._stop(event.reason === "station_limit" ? "station_limit" : "ended"); return; }
     if (event.type === "fallback") {
       void this._reportLive("fallback");
       this._fallbackPending = false;
@@ -635,8 +635,8 @@ export class EufyViewerCard extends HTMLElement {
     } catch { /* Diagnostics cannot interrupt playback or renew a lease. */ }
     finally { clearTimeout(timer); }
   }
-  _stop(reason?: "ended" | "error") {
-    this._liveDiagnostics.update(reason === "error" || reason === "ended");
+  _stop(reason?: "ended" | "error" | "station_limit") {
+    this._liveDiagnostics.update(reason !== undefined);
     this._generation++; this._open = false;
     clearTimeout(this._startup);
     this._closeRTC();

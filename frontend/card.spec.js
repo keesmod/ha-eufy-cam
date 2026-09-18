@@ -168,6 +168,24 @@ test('camera recovery clears the stale unavailable message without starting a st
   await expect(page.locator('.status')).toHaveText('Live view ended. Tap again to watch.');
 });
 
+test('a viewer refused by the HomeBase live limit names the reason instead of "ended"', async ({ page }) => {
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  await expect(page.locator('dialog:not(.record-dialog)')).toBeVisible();
+  await page.evaluate(() => receive({ type: 'ended', reason: 'station_limit' }));
+  await expect(page.locator('.status')).toHaveText('Another camera on this HomeBase is live. Close that live view first, then tap again.');
+  await expect(page.locator('dialog:not(.record-dialog)')).toBeHidden();
+  expect(await page.evaluate(() => closeCount)).toBe(1);
+  // An unknown reason keeps the generic message; older integrations send none.
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  await page.evaluate(() => receive({ type: 'ended', reason: 'other' }));
+  await expect(page.locator('.status')).toHaveText('Live view ended. Tap again to watch.');
+  await page.evaluate(() => { card.hass = { ...card._hass, language: 'nl' }; });
+  await page.getByRole('button', { name: 'Live bekijken' }).click();
+  await page.evaluate(() => receive({ type: 'ended', reason: 'station_limit' }));
+  await expect(page.locator('.status')).toHaveText('Een andere camera op deze HomeBase is live. Sluit eerst dat livebeeld en tik dan opnieuw.');
+  expect(await page.evaluate(() => closeCount)).toBe(3);
+});
+
 for (const failure of ['offer', 'connection']) test(`WebRTC ${failure} failure downgrades the existing subscription with a visible no-audio notice`, async ({ page }) => {
   await page.evaluate(failure => {
     card._hass.states['camera.front'].attributes.viewer_webrtc = true;

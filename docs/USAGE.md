@@ -34,9 +34,13 @@ On supported clients, live viewing uses **WebRTC video with listen-only audio** 
 
 A normal HA camera card/more-info dialog shows snapshots only. Use the companion card for live video. Talkback, new live recordings, HLS, PTZ and permanent RTSP are not provided. Use **Recordings** on a companion card to choose a date and play an existing HomeBase recording. The date and times are HomeBase-local. Clips are downloaded on demand into private temporary files, then played as MP4. Close or navigation cancels preparation. No Eufy Cloud subscription is required for these local files.
 
-#### One live camera per HomeBase
+#### Live cameras per HomeBase
 
-The pinned Eufy Mega client owns one live stream per station: its P2P session to the HomeBase carries a single live video channel at a time, and a media start for another camera on that session would replace the running one. The bridge therefore refuses a second camera on the same HomeBase while the first is live, and the second card reports the view as ended. Close the first live view, then start the other camera. Cameras on different HomeBases are admitted independently within the bridge's eight camera slots, but that combination has not been validated on hardware. Simultaneous live views of several cameras on one HomeBase are tracked in [issue #84](https://github.com/keesmod/ha-eufy-cam/issues/84).
+By default one camera per HomeBase streams live at a time. The bridge refuses a second camera on the same HomeBase while the first is live, and that card says that another camera on this HomeBase is live. Close the first live view, then start the other camera.
+
+From bridge 0.8.21 the optional app option `live_max_streams_per_station` (Docker: `EUFY_LIVE_MAX_STREAMS_PER_STATION`, a whole number from 1 to 4) raises that limit. The bundled client then opens one additional P2P session per further concurrent camera, with its own confirmed STOP and two-minute cap, while the HomeBase's primary session keeps control, snapshots and recordings. Recording playback and mode commands still wait until no camera on that HomeBase is live. Other values stop the bridge at startup.
+
+Two concurrent streams are verified by the client on one HomeBase 3 (T8030, firmware 3.8.7.4) with two eufyCam 3 (T8160) cameras, each at full rate with audio. Three or four are permitted but unverified, and the bridge path itself has not been exercised on hardware yet. Each concurrent camera adds an encoder pipeline on the bridge host. The card opens one modal live view per card, so a dashboard with several simultaneous live cards still needs an inline live mode, tracked in [issue #84](https://github.com/keesmod/ha-eufy-cam/issues/84). Cameras on different HomeBases are admitted independently within the bridge's eight camera slots, but that combination has not been validated on hardware.
 
 Clients without WebRTC or video-frame callback support, including the Home Assistant macOS app, automatically use JPEG live video at up to **8 fps / 960 pixels**, without audio. The same explicit-start and stream cleanup rules apply. Use Safari on the Mac for WebRTC with live audio. If an established WebRTC attempt fails, the viewer can switch once to video-only JPEG. See [automatic fallback](#automatic-live-video-fallback).
 
@@ -61,7 +65,7 @@ Sessions have a **two-minute absolute limit**, continuing requires another tap. 
 | Integration | Home Assistant ≥ 2026.9.0, built-in `camera`, `http`, `lovelace`, `websocket_api`, `go2rtc-client` 0.4.0 (installed automatically), HA-managed `go2rtc` for WebRTC |
 | Card | Bundled JavaScript, Home Assistant frontend and a modern browser, no separate frontend runtime package |
 | Bridge | Node.js 24, FFmpeg and tini, all included in the app/container |
-| Bridge libraries | `@keesmod/eufy-mega-client` 0.10.0 from its checksum-pinned GitHub release and `ws` 8.21.3. Mega retains MIT and Apache-2.0 attribution. Dependencies are pinned by `bridge/package-lock.json`. |
+| Bridge libraries | `@keesmod/eufy-mega-client` 0.13.0 from its checksum-pinned GitHub release and `ws` 8.21.3. Mega retains MIT and Apache-2.0 attribution. Dependencies are pinned by `bridge/package-lock.json`. |
 | External services | Eufy account with camera access, Eufy cloud/push connectivity and local connectivity to camera/HomeBase |
 
 No MQTT, separately installed RTSP server, existing Eufy integration or `eufy-security-ws` app is required. WebRTC uses HA's managed go2rtc and its FFmpeg audio conversion. Upgrade the bridge and integration together for the new transport. A dedicated shared Eufy account is recommended for ongoing use. Simultaneous operation with another Eufy client using the same account has only been briefly observed, not long-term validated. TypeScript, Playwright and Python test tools are development-only dependencies.

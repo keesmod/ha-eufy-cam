@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.21 - 2026-09-18
+
+- Include client 0.13.0. Its `maxLiveStreamsPerStation` option lets further
+  cameras on one HomeBase stream live at the same time, each on its own P2P
+  session, and its cloud identity renewal recovers from Mega result code 4404
+  or 4416 without a manual reset.
+- Add the optional `live_max_streams_per_station` option (a whole number from
+  1 to 4, default 1). The bridge admits a camera while its HomeBase carries
+  fewer live and starting cameras than the limit. Two concurrent streams are
+  verified by the library on a HomeBase 3 with two eufyCam 3; three or four are
+  unverified.
+- Close a viewer refused by that limit with code 4013 so the integration and
+  card can say that another camera on this HomeBase is live. Report the
+  configured limit in `/v1/state`.
+- Pair with integration 0.8.21.
+
 ## 0.8.20 - 2026-09-15
 
 - Never mux audio into the live video encoder. Every session starts video-only

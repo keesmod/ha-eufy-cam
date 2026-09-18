@@ -19,6 +19,7 @@ class MediaSocket:
         self.queue = asyncio.Queue()
         self.closed = asyncio.Event()
         self.acks = []
+        self.close_code = None
 
     async def __aenter__(self):
         return self
@@ -30,7 +31,12 @@ class MediaSocket:
         return self
 
     async def __anext__(self):
-        return await self.queue.get()
+        message = await self.queue.get()
+        # aiohttp ends the iteration on a close frame and retains its code.
+        if message.type == aiohttp.WSMsgType.CLOSE:
+            self.close_code = getattr(message, "data", None)
+            raise StopAsyncIteration
+        return message
 
     async def send_str(self, value):
         self.acks.append(value)
@@ -182,6 +188,36 @@ async def test_bad_frame_ends_viewer_and_no_media_retry(
         )
         assert (await client.receive_json())["event"]["type"] == "ended"
         assert socket.closed.is_set()
+        assert connect.call_count == 1
+        await client.close()
+
+
+@pytest.mark.parametrize(
+    ("close_code", "event"),
+    [
+        (4013, {"type": "ended", "reason": "station_limit"}),
+        (1013, {"type": "ended"}),
+        (1000, {"type": "ended"}),
+    ],
+)
+async def test_bridge_close_code_selects_the_ended_reason(
+    hass, hass_ws_client, viewer_setup, close_code, event
+):
+    socket = MediaSocket()
+    with patch.object(
+        viewer_setup.runtime_data.api, "websocket", return_value=socket
+    ) as connect:
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {"id": 1, "type": "eufy_viewer/watch", "entity_id": "camera.front_door"}
+        )
+        await client.receive_json()
+        await socket.queue.put(
+            SimpleNamespace(type=aiohttp.WSMsgType.CLOSE, data=close_code)
+        )
+        assert (await client.receive_json())["event"] == event
+        assert socket.closed.is_set()
+        assert not socket.acks
         assert connect.call_count == 1
         await client.close()
 

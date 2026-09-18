@@ -2,6 +2,7 @@ import type { RecordingFormat, RecordingResult } from './recording-media.js';
 import type { DiagnosticEvent } from './diagnostics.js';
 import type { EventEmitter } from 'node:events';
 import type { Readable } from 'node:stream';
+import type { LiveAdmission } from './streams.js';
 
 export interface Credentials {
   username: string;
@@ -121,7 +122,7 @@ export interface Backend extends EventEmitter {
   login(credentials?: Credentials, options?: LoginOptions): Promise<AuthState>;
   inventory(): CameraInfo[];
   hasCamera(serial: string): boolean;
-  canStartLive(serial: string): boolean;
+  canStartLive(serial: string): LiveAdmission;
   startLive(serial: string): Promise<void>;
   stopLive(serial: string): Promise<void>;
   recoverStation(serial: string): Promise<string[]>;

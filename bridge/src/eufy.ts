@@ -74,12 +74,14 @@ export class Eufy extends EventEmitter {
     last_stopped_event: null as string | null,
   };
   auth: AuthState = { state: 'unconfigured' };
+  /** Configured concurrent live cameras per HomeBase, reported in state. */
+  liveStreamsPerStation = 1;
   readonly hub = new StreamHub({
     diagnostic: (serial, event) => this.diagnostics.mark(serial, event),
-    admit: (serial) =>
-      !this.recordings.busy &&
-      Boolean(this.backend?.connected) &&
-      Boolean(this.backend?.canStartLive(serial)),
+    admit: (serial) => {
+      if (this.recordings.busy || !this.backend?.connected) return false;
+      return this.backend.canStartLive(serial);
+    },
     recover: (serial) => this.recoverStation(serial),
     start: async (serial) => {
       if (this.recordings.busy) throw new Error('Recording operation in progress');
