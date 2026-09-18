@@ -26,8 +26,10 @@ const cases = [
   {ending:'close',profile:'normal',iceMode:'unreachable'},
   {ending:'blocked',profile:'normal',reopen:true},
   {ending:'before-audio',profile:'late-admission',reopen:true},
+  // Inline live mode plays the same decoded media inside the card, no dialog.
+  ...['close','blocked'].map(ending=>({ending,profile:'normal',inline:true})),
 ];
-for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases) test(`real WebRTC ${profile} stops after ${initialEnding} (${iceMode})${reopen?' and reopens':''}`, async ({ page }, testInfo) => {
+for (const {ending:initialEnding,profile,iceMode='direct',reopen=false,inline=false} of cases) test(`real WebRTC ${profile} stops after ${initialEnding} (${iceMode})${reopen?' and reopens':''}${inline?' inline':''}`, async ({ page }, testInfo) => {
   test.setTimeout(reopen ? 90000 : 60000);
   let ending = initialEnding;
   const binary = process.env.GO2RTC_BINARY;
@@ -173,18 +175,18 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
       await changeStream('src=acceptance_audio','DELETE');
       await changeStream('src=acceptance','DELETE');
     });
-    await page.evaluate(async()=>{
+    await page.evaluate(async inline=>{
       await customElements.whenDefined('eufy-viewer-card');const connection=new EventTarget();
       connection.subscribeMessage=async callback=>{window.receive=callback;await backendWatch();return()=>backendClose();};
-      const card=window.card=document.createElement('eufy-viewer-card');document.body.append(card);card.setConfig({entity:'camera.test'});
+      const card=window.card=document.createElement('eufy-viewer-card');document.body.append(card);card.setConfig(inline?{entity:'camera.test',live_mode:'inline'}:{entity:'camera.test'});
       card.hass={language:'en',connection,states:{'camera.test':{state:'idle',attributes:{friendly_name:'Test camera',viewer_card:true,viewer_webrtc:true,viewer_late_audio:true}}},callWS:backendCall};
-
-    });
+    },inline);
     expect(starts).toBe(0);
     for (let cycle=0;cycle<(reopen?2:1);cycle++) {
     ending=cycle?'close':initialEnding;reports.length=0;
     const expectedStarts=cycle+1, previousAcks=acks;
     await page.getByRole('button',{name:'Watch live',exact:true}).click();
+    if(inline){await expect(page.locator('dialog[open]')).toHaveCount(0);await expect(page.locator('ha-card video.video')).toBeVisible();}
     if(!['blocked','answer-loss'].includes(ending)) {
     await expect.poll(()=>page.locator('video.video').evaluate(v=>v.videoWidth),{timeout:20000}).toBe(1280);
     if(ending!=='before-audio') {
@@ -232,14 +234,14 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false} of cases
       if(ending==='media-loss')rtc.kill();
       if(ending==='paint-loss')await page.evaluate(()=>card._video.cancelVideoFrameCallback(card._videoCallback));
       if(ending==='tick-loss')clearInterval(ticks);
-      await expect(page.locator('dialog .live-status')).toHaveText('Live video without sound',{timeout:20000});
+      await expect(page.locator(inline?'ha-card .status':'dialog .live-status')).toHaveText('Live video without sound',{timeout:20000});
       await expect.poll(()=>reports.some(r=>r.trigger==='fallback')).toBe(true);
       const report=reports.find(r=>r.trigger==='fallback');
       if(ending==='blocked') {if(relayOnly)expect(report.relay_configured).toBe(iceMode!=='relay-missing');expect(report.answer).toBe(true);expect(report.painted).toBe(0);expect(report.acks_accepted).toBe(0);}
       if(ending==='answer-loss') {expect(report.offer).toBe(true);expect(report.answer).toBe(false);expect(report.painted).toBe(0);}
       if(ending==='paint-loss') {expect(report.last_frame_ms).toBeGreaterThan(5000);expect(report.video_decoded).toBeGreaterThan(report.painted);}
       if(ending==='tick-loss') {expect(report.last_frame_ms).toBeLessThan(1000);expect(report.painted).toBeGreaterThan(report.acks_accepted+20);ticks=setInterval(()=>hub.frame('CAM123',jpeg),125);}
-      await expect(page.locator('img.live')).toBeVisible();
+      await expect(page.locator(inline?'ha-card img.live':'dialog img.live')).toBeVisible();
       await expect.poll(()=>page.locator('img.live').evaluate(v=>v.naturalWidth)).toBe(16);
       await expect(page.getByRole('button',{name:'Enable sound',exact:true})).toBeHidden();
       await expect.poll(()=>acks).toBeGreaterThan(beforeFallbackAcks+3);

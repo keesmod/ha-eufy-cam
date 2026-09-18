@@ -8,10 +8,10 @@ test.beforeEach(async ({ page }) => {
   await page.addScriptTag({ content: source.replace('export class EufyViewerCard', 'class EufyViewerCard'), type: 'module' });
   await page.evaluate(async () => {
     await customElements.whenDefined('eufy-viewer-card');
-    window.calls = []; window.closeCount = 0; window.acks = []; window.delaySubscription = false;
+    window.calls = []; window.closeCount = 0; window.acks = []; window.delaySubscription = false; window.receivers = {};
     const connection = new EventTarget();
     connection.subscribeMessage = async (callback, message, options) => {
-      calls.push({ message, options }); window.receive = callback;
+      calls.push({ message, options }); window.receive = callback; receivers[message.entity_id] = callback;
       if (window.delaySubscription) await new Promise(resolve => { window.resolveSubscription = resolve; });
       return async () => { window.closeCount++; };
     };
@@ -503,4 +503,172 @@ for (const audio of [false,true]) test(`HA ICE configuration and trickle orderin
   await page.evaluate(()=>lateCandidate({candidate:{candidate:'candidate:late'}}));
   expect(await page.evaluate(()=>acks.length)).toBe(count);
   expect(await page.evaluate(()=>peers.every(p=>p.connectionState==='closed'&&p.onicecandidate===null&&p.onicecandidateerror===null))).toBe(true);
+});
+
+// Inline live mode: the same live elements play inside the card instead of the modal dialog,
+// so several cards can be live at once. Every start, lease, stop and message rule is shared.
+const inlineFixture = page => page.evaluate(() => {
+  card.setConfig({ entity: 'camera.front', live_mode: 'inline' });
+  const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 16;
+  window.jpeg = canvas.toDataURL('image/jpeg').split(',')[1];
+});
+
+test('live_mode rejects unknown values and the default keeps the modal dialog', async ({ page }) => {
+  expect(await page.evaluate(() => { try { card.setConfig({ entity: 'camera.front', live_mode: 'popup' }); return null; } catch (error) { return error.message; } })).toBe('live_mode must be "dialog" or "inline"');
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  await expect(page.locator('dialog:not(.record-dialog)')).toBeVisible();
+  expect(await page.evaluate(() => card._stage.parentElement === card._dialog)).toBe(true);
+  await page.getByRole('button', { name: 'Close live view' }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+});
+
+for (const transport of ['jpeg', 'webrtc']) test(`inline ${transport} live view plays inside the card, acknowledges frames and returns to the snapshot on close`, async ({ page }) => {
+  await inlineFixture(page);
+  if (transport === 'webrtc') await page.evaluate(() => { card._hass.states['camera.front'].attributes.viewer_webrtc = true; });
+  expect(await page.evaluate(() => calls.length)).toBe(0);
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  expect(await page.evaluate(() => calls.map(call => call.message.transport))).toEqual([transport]);
+  await expect(page.locator('dialog:not(.record-dialog)')).toBeHidden();
+  expect(await page.evaluate(() => ({ stage: card._stage.parentElement.tagName, dialogOpen: card._dialog.open, previewHidden: card._preview.hidden, focused: card.shadowRoot.activeElement?.className }))).toEqual({ stage: 'HA-CARD', dialogOpen: false, previewHidden: true, focused: 'close stop' });
+  await expect(page.locator('ha-card .stage')).toBeVisible();
+  await expect(page.locator('ha-card .stage .live-status')).toBeHidden();
+  await expect(page.locator('.status')).toHaveText('Connecting…');
+  if (transport === 'webrtc') {
+    await expect(page.locator('ha-card video.video')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Enable sound' })).toBeVisible();
+  } else {
+    await expect(page.getByRole('button', { name: 'Enable sound' })).toBeHidden();
+    await page.evaluate(() => receive({ type: 'frame', subscription: 9, sequence: 1, jpeg }));
+    await expect.poll(() => page.evaluate(() => acks.length)).toBe(1);
+    await expect(page.locator('ha-card img.live')).toBeVisible();
+    expect(await page.locator('ha-card img.live').evaluate(image => image.naturalWidth)).toBe(16);
+    await expect(page.locator('.status')).toHaveText('Live video without sound');
+  }
+  await page.getByRole('button', { name: 'Close live view' }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  await expect(page.locator('ha-card .stage')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Watch live' })).toBeVisible();
+  expect(await page.evaluate(() => card.shadowRoot.activeElement === card._preview)).toBe(true);
+  if (transport === 'jpeg') {
+    await page.evaluate(() => receive({ type: 'frame', subscription: 9, sequence: 2, jpeg }));
+    expect(await page.evaluate(() => acks.length)).toBe(1);
+  }
+  expect(await page.evaluate(() => calls.length)).toBe(1);
+});
+
+test('inline live view releases on escape, hidden page, pagehide, disconnection and removal', async ({ page }) => {
+  await inlineFixture(page);
+  const actions = ['escape', 'hidden', 'pagehide', 'disconnect', 'detach'];
+  for (const action of actions) {
+    await page.getByRole('button', { name: 'Watch live' }).click();
+    await expect(page.locator('ha-card .stage')).toBeVisible();
+    if (action === 'escape') await page.keyboard.press('Escape');
+    else await page.evaluate(action => {
+      if (action === 'hidden') { Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); }
+      if (action === 'pagehide') window.dispatchEvent(new Event('pagehide'));
+      if (action === 'disconnect') connection.dispatchEvent(new Event('disconnected'));
+      if (action === 'detach') card.remove();
+    }, action);
+    await expect.poll(() => page.evaluate(() => closeCount)).toBe(actions.indexOf(action) + 1);
+    await expect(page.locator('ha-card .stage')).toBeHidden();
+    expect(await page.evaluate(() => card._stage.hidden && !card._preview.hidden)).toBe(true);
+    await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); });
+  }
+  expect(await page.evaluate(() => calls.length)).toBe(actions.length);
+});
+
+test('three inline cards: two play live at once and the third, refused by the HomeBase limit, returns to its snapshot', async ({ page }) => {
+  await inlineFixture(page);
+  const entities = ['camera.front', 'camera.back', 'camera.side'];
+  await page.evaluate(entities => {
+    // A dashboard grid: all three cards are in view at once.
+    document.body.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0';
+    const states = { ...card._hass.states };
+    for (const entity of entities.slice(1)) states[entity] = { state: 'idle', attributes: { friendly_name: entity, viewer_card: true } };
+    window.cards = [card];
+    for (const entity of entities.slice(1)) {
+      const other = document.createElement('eufy-viewer-card'); document.body.append(other);
+      other.setConfig({ entity, live_mode: 'inline' }); cards.push(other);
+    }
+    for (const each of cards) each.hass = { ...card._hass, states };
+  }, entities);
+  await expect.poll(() => page.evaluate(() => cards.every(each => each._visible))).toBe(true);
+  const cardOf = entity => page.locator('eufy-viewer-card').nth(entities.indexOf(entity));
+  for (const entity of entities) await cardOf(entity).getByRole('button', { name: 'Watch live' }).click();
+  expect(await page.evaluate(() => calls.map(call => call.message.entity_id))).toEqual(entities);
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  // The bridge admits the first two cameras and refuses the third at the limit.
+  await page.evaluate(() => {
+    receivers['camera.front']({ type: 'frame', subscription: 1, sequence: 1, jpeg });
+    receivers['camera.back']({ type: 'frame', subscription: 2, sequence: 1, jpeg });
+    receivers['camera.side']({ type: 'ended', reason: 'station_limit' });
+  });
+  await expect.poll(() => page.evaluate(() => acks.map(ack => ack.subscription).sort())).toEqual([1, 2]);
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  await expect(cardOf('camera.side').locator('.status')).toHaveText('Another camera on this HomeBase is live. Close that live view first, then tap again.');
+  await expect(cardOf('camera.side').locator('.stage')).toBeHidden();
+  await expect(cardOf('camera.side').getByRole('button', { name: 'Watch live' })).toBeVisible();
+  for (const entity of ['camera.front', 'camera.back']) {
+    await expect(cardOf(entity).locator('img.live')).toBeVisible();
+    expect(await cardOf(entity).locator('img.live').evaluate(image => image.naturalWidth)).toBe(16);
+    await expect(cardOf(entity).getByRole('button', { name: 'Close live view' })).toBeVisible();
+    await expect(cardOf(entity).locator('.status')).toHaveText('Live video without sound');
+  }
+  // Closing one card releases only its own lease. The other keeps acknowledging frames.
+  await cardOf('camera.front').getByRole('button', { name: 'Close live view' }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(2);
+  await expect(cardOf('camera.front').locator('.stage')).toBeHidden();
+  await page.evaluate(() => {
+    receivers['camera.front']({ type: 'frame', subscription: 1, sequence: 2, jpeg });
+    receivers['camera.back']({ type: 'frame', subscription: 2, sequence: 2, jpeg });
+  });
+  await expect.poll(() => page.evaluate(() => acks.filter(ack => ack.subscription === 2).length)).toBe(2);
+  expect(await page.evaluate(() => acks.filter(ack => ack.subscription === 1).length)).toBe(1);
+  await cardOf('camera.back').getByRole('button', { name: 'Close live view' }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(3);
+  await expect(page.locator('ha-card .stage:not([hidden])')).toHaveCount(0);
+  expect(await page.evaluate(() => calls.length)).toBe(3);
+});
+
+test('changing live_mode while live stops the view and moves the live elements between card and dialog', async ({ page }) => {
+  await inlineFixture(page);
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  await expect(page.locator('ha-card .stage')).toBeVisible();
+  await page.evaluate(() => card.setConfig({ entity: 'camera.front' }));
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  expect(await page.evaluate(() => ({ inDialog: card._stage.parentElement === card._dialog, stageHidden: card._stage.hidden, previewHidden: card._preview.hidden }))).toEqual({ inDialog: true, stageHidden: false, previewHidden: false });
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  await expect(page.locator('dialog:not(.record-dialog)')).toBeVisible();
+  await page.evaluate(() => card.setConfig({ entity: 'camera.front', live_mode: 'inline' }));
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(2);
+  await expect(page.locator('dialog:not(.record-dialog)')).toBeHidden();
+  expect(await page.evaluate(() => card._stage.parentElement.tagName)).toBe('HA-CARD');
+  await expect(page.locator('ha-card .stage')).toBeHidden();
+  expect(await page.evaluate(() => calls.length)).toBe(2);
+});
+
+test('card editor offers the live mode and stores the default as an absent key', async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    await customElements.whenDefined('eufy-viewer-card-editor');
+    const editor = document.createElement('eufy-viewer-card-editor');
+    const events = [];
+    editor.addEventListener('config-changed', event => events.push(event.detail.config));
+    document.body.append(editor);
+    editor.setConfig({ entity: 'camera.front' });
+    editor.hass = card._hass;
+    const form = editor.querySelector('ha-form'), picker = editor.querySelector('ha-entity-picker');
+    const initial = { schema: form.schema, data: form.data, label: form.computeLabel(form.schema[0]), picker: picker.value, filtered: picker.entityFilter({ attributes: {} }) };
+    const change = live_mode => form.dispatchEvent(new CustomEvent('value-changed', { detail: { value: { live_mode } } }));
+    change('inline'); change('inline');
+    picker.dispatchEvent(new CustomEvent('value-changed', { detail: { value: 'camera.back' } }));
+    change('dialog');
+    editor.hass = { ...card._hass, language: 'nl' };
+    return { initial, events, dutch: { options: form.schema[0].selector.select.options.map(option => option.label), label: form.computeLabel(form.schema[0]), data: form.data } };
+  });
+  expect(result.initial).toEqual({
+    schema: [{ name: 'live_mode', selector: { select: { mode: 'dropdown', options: [{ value: 'dialog', label: 'Popup dialog (default)' }, { value: 'inline', label: 'Inside the card, for several live cameras' }] } } }],
+    data: { live_mode: 'dialog' }, label: 'Live view', picker: 'camera.front', filtered: false,
+  });
+  expect(result.events).toEqual([{ entity: 'camera.front', live_mode: 'inline' }, { entity: 'camera.back', live_mode: 'inline' }, { entity: 'camera.back' }]);
+  expect(result.dutch).toEqual({ options: ['Pop-updialoog (standaard)', "In de kaart, voor meerdere livecamera's"], label: 'Livebeeld', data: { live_mode: 'dialog' } });
 });
