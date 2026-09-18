@@ -672,3 +672,321 @@ test('card editor offers the live mode and stores the default as an absent key',
   expect(result.events).toEqual([{ entity: 'camera.front', live_mode: 'inline' }, { entity: 'camera.back', live_mode: 'inline' }, { entity: 'camera.back' }]);
   expect(result.dutch).toEqual({ options: ['Pop-updialoog (standaard)', "In de kaart, voor meerdere livecamera's"], label: 'Livebeeld', data: { live_mode: 'dialog' } });
 });
+
+// Optional autostart: an inline card starts its live view without a tap when it is attached in view,
+// when it scrolls back into view or when the page becomes visible again. One trigger starts at most one
+// session, and a session that ended never restarts by itself. Pause releases the lease and offers resume,
+// stop also disables autostart until the card is attached again.
+const attachAutostart = (page, config = { entity: 'camera.front', live_mode: 'inline', live_autostart: true }) => page.evaluate(config => {
+  // Home Assistant's order: config and hass first, then the card is attached to the view.
+  const hass = card._hass; card.remove();
+  window.card = document.createElement('eufy-viewer-card');
+  card.setConfig(config); card.hass = hass; document.body.append(card);
+  const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 16;
+  window.jpeg = canvas.toDataURL('image/jpeg').split(',')[1];
+  window.pageVisible = visible => { Object.defineProperty(document, 'visibilityState', { value: visible ? 'visible' : 'hidden', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); };
+  window.state = () => ({ open: card._open, stage: !card._stage.hidden, preview: !card._preview.hidden, paused: !card._pausedBar.hidden, pause: !card._pauseButton.hidden && !card._stage.hidden, stop: !card._haltButton.hidden && !card._stage.hidden, calls: calls.length, closes: closeCount });
+}, config);
+
+test('live_autostart starts an inline card without a tap when it is attached in view, and once more when the page or the card comes back into view', async ({ page }) => {
+  await attachAutostart(page);
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  expect(await page.evaluate(() => calls[0])).toEqual({ message: { type: 'eufy_viewer/watch', entity_id: 'camera.front', transport: 'jpeg' }, options: { resubscribe: false } });
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  await expect(page.locator('ha-card .stage')).toBeVisible();
+  expect(await page.evaluate(() => state())).toEqual({ open: true, stage: true, preview: false, paused: false, pause: true, stop: true, calls: 1, closes: 0 });
+  for (const name of ['Pause', 'Stop', 'Close live view']) await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
+  await expect(page.locator('.status')).toHaveText('Connecting…');
+  // The session keeps the frame acknowledgement loop.
+  await page.evaluate(() => receive({ type: 'frame', subscription: 9, sequence: 1, jpeg }));
+  await expect.poll(() => page.evaluate(() => acks.length)).toBe(1);
+  // Hidden page: the lease is released and state updates start nothing. Visible again: one new session.
+  await page.evaluate(() => pageVisible(false));
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  await expect(page.locator('ha-card .stage')).toBeHidden();
+  await page.evaluate(() => { card.hass = { ...card._hass }; });
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => calls.length)).toBe(1);
+  await page.evaluate(() => pageVisible(true));
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(2);
+  // Scrolled out of view: released. Back in view: one new session, and repeated state updates start nothing more.
+  await page.evaluate(() => { card.style.marginTop = '4000px'; });
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(2);
+  await page.evaluate(() => { card.style.marginTop = ''; });
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(3);
+  await page.evaluate(() => { card.hass = { ...card._hass }; card.hass = { ...card._hass }; });
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => state())).toMatchObject({ open: true, calls: 3, closes: 2 });
+  // The existing close still releases the lease and returns the card to its snapshot.
+  await page.getByRole('button', { name: 'Close live view', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(3);
+  expect(await page.evaluate(() => state())).toEqual({ open: false, stage: false, preview: true, paused: false, pause: false, stop: false, calls: 3, closes: 3 });
+  expect(await page.evaluate(() => card.shadowRoot.activeElement === card._preview)).toBe(true);
+});
+
+test('live_autostart is rejected outside the inline mode, and without it an inline or dialog card still waits for a tap', async ({ page }) => {
+  const rejected = config => page.evaluate(config => { try { card.setConfig(config); return null; } catch (error) { return error.message; } }, config);
+  expect(await rejected({ entity: 'camera.front', live_autostart: true })).toBe('live_autostart requires live_mode "inline"');
+  expect(await rejected({ entity: 'camera.front', live_mode: 'dialog', live_autostart: true })).toBe('live_autostart requires live_mode "inline"');
+  expect(await rejected({ entity: 'camera.front', live_mode: 'inline', live_autostart: 'yes' })).toBe('live_autostart must be true or false');
+  expect(await rejected({ entity: 'camera.front', live_autostart: false })).toBeNull();
+  for (const config of [{ entity: 'camera.front', live_mode: 'inline' }, { entity: 'camera.front', live_mode: 'inline', live_autostart: false }, { entity: 'camera.front' }]) {
+    await attachAutostart(page, config);
+    await expect.poll(() => page.evaluate(() => card._visible)).toBe(true);
+    await page.evaluate(() => { pageVisible(true); card.hass = { ...card._hass }; });
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => state())).toMatchObject({ open: false, paused: false, calls: 0 });
+  }
+  // Enabling the option on an attached card starts nothing by itself. The next view opening does.
+  await page.evaluate(() => card.setConfig({ entity: 'camera.front', live_mode: 'inline', live_autostart: true }));
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => calls.length)).toBe(0);
+  // A tap works as before. The pause and stop controls exist only with the option.
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close live view', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  await page.evaluate(() => card.setConfig({ entity: 'camera.front', live_mode: 'inline' }));
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  await expect(page.locator('ha-card .stage')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeHidden();
+  await page.evaluate(() => { card.remove(); document.body.append(card); });
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(2);
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => calls.length)).toBe(2);
+});
+
+test('pause releases the lease and shows the snapshot with resume and stop, and resume starts a fresh session', async ({ page }) => {
+  await attachAutostart(page);
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  await page.evaluate(() => receive({ type: 'frame', subscription: 9, sequence: 1, jpeg }));
+  await expect.poll(() => page.evaluate(() => acks.length)).toBe(1);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  expect(await page.evaluate(() => state())).toEqual({ open: false, stage: false, preview: true, paused: true, pause: false, stop: false, calls: 1, closes: 1 });
+  await expect(page.locator('.status')).toHaveText('Paused. Tap Resume to watch.');
+  for (const name of ['Resume', 'Stop', 'Watch live']) await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
+  expect(await page.evaluate(() => card.shadowRoot.activeElement === card._resumeButton)).toBe(true);
+  // A late frame of the released session is not acknowledged, and state updates start nothing while paused.
+  await page.evaluate(() => { receive({ type: 'frame', subscription: 9, sequence: 2, jpeg }); card.hass = { ...card._hass }; });
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => ({ acks: acks.length, calls: calls.length }))).toEqual({ acks: 1, calls: 1 });
+  await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(2);
+  expect(await page.evaluate(() => state())).toEqual({ open: true, stage: true, preview: false, paused: false, pause: true, stop: true, calls: 2, closes: 1 });
+  await expect(page.locator('.status')).toHaveText('Connecting…');
+  await page.evaluate(() => receive({ type: 'frame', subscription: 10, sequence: 1, jpeg }));
+  await expect.poll(() => page.evaluate(() => acks.filter(ack => ack.subscription === 10).length)).toBe(1);
+  // Pause does not disable autostart: the next trigger starts again.
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(2);
+  await page.evaluate(() => { pageVisible(false); pageVisible(true); });
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(3);
+  expect(await page.evaluate(() => state())).toMatchObject({ open: true, paused: false });
+  // The existing close returns the card to its plain snapshot without the paused bar.
+  await page.getByRole('button', { name: 'Close live view', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(3);
+  expect(await page.evaluate(() => state())).toMatchObject({ open: false, stage: false, preview: true, paused: false });
+  // Dutch controls.
+  await page.evaluate(() => { card.hass = { ...card._hass, language: 'nl' }; });
+  await page.getByRole('button', { name: 'Live bekijken' }).click();
+  await page.getByRole('button', { name: 'Pauze', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(4);
+  await expect(page.locator('.status')).toHaveText('Gepauzeerd. Tik op Hervatten om te kijken.');
+  await expect(page.getByRole('button', { name: 'Hervatten', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => calls.length)).toBe(4);
+});
+
+test('stop ends the session and disables autostart until the card is attached again, a tap still works', async ({ page }) => {
+  await attachAutostart(page);
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  expect(await page.evaluate(() => state())).toEqual({ open: false, stage: false, preview: true, paused: false, pause: false, stop: false, calls: 1, closes: 1 });
+  await expect(page.locator('.status')).toHaveText('Stopped until you open this view again. Tap to watch.');
+  expect(await page.evaluate(() => card.shadowRoot.activeElement === card._preview)).toBe(true);
+  // No trigger restarts a stopped card: page visibility, scrolling back into view or state updates.
+  await page.evaluate(() => { pageVisible(false); pageVisible(true); card.style.marginTop = '4000px'; });
+  await expect.poll(() => page.evaluate(() => card._visible)).toBe(false);
+  await page.evaluate(() => { card.style.marginTop = ''; });
+  await expect.poll(() => page.evaluate(() => card._visible)).toBe(true);
+  await page.evaluate(() => { card.hass = { ...card._hass }; });
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => calls.length)).toBe(1);
+  // A tap starts a manual session with the same controls. Its end does not restart it either.
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(2);
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  await page.evaluate(() => receive({ type: 'ended' }));
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(2);
+  await expect(page.locator('.status')).toHaveText('Live view ended. Tap again to watch.');
+  await page.evaluate(() => { pageVisible(false); pageVisible(true); card.hass = { ...card._hass }; });
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => calls.length)).toBe(2);
+  // Attaching the card again, as navigation back to the view does, applies autostart again.
+  await page.evaluate(() => { card.remove(); document.body.append(card); });
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(3);
+  // Stop from the paused bar blocks autostart as well and moves focus back to the preview.
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(3);
+  expect(await page.evaluate(() => state())).toEqual({ open: false, stage: false, preview: true, paused: false, pause: false, stop: false, calls: 3, closes: 3 });
+  await expect(page.locator('.status')).toHaveText('Stopped until you open this view again. Tap to watch.');
+  expect(await page.evaluate(() => card.shadowRoot.activeElement === card._preview)).toBe(true);
+  await page.evaluate(() => { pageVisible(false); pageVisible(true); card.hass = { ...card._hass }; });
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => calls.length)).toBe(3);
+  await page.evaluate(() => { card.remove(); document.body.append(card); });
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(4);
+  await page.evaluate(() => { card.hass = { ...card._hass, language: 'nl' }; });
+  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await expect(page.locator('.status')).toHaveText('Gestopt tot je deze weergave opnieuw opent. Tik om te kijken.');
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(4);
+});
+
+test('three autostart cards start without a tap, the card refused by the HomeBase limit returns to its snapshot without a retry, and leaving the view stops every session', async ({ page }) => {
+  const entities = ['camera.front', 'camera.back', 'camera.side'];
+  await page.evaluate(entities => {
+    // A dashboard grid: all three cards are in view at once.
+    document.body.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0';
+    const states = { ...card._hass.states };
+    for (const entity of entities.slice(1)) states[entity] = { state: 'idle', attributes: { friendly_name: entity, viewer_card: true } };
+    const hass = { ...card._hass, states }; card.remove();
+    const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 16;
+    window.jpeg = canvas.toDataURL('image/jpeg').split(',')[1];
+    window.pageVisible = visible => { Object.defineProperty(document, 'visibilityState', { value: visible ? 'visible' : 'hidden', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); };
+    window.cards = entities.map(entity => { const each = document.createElement('eufy-viewer-card'); each.setConfig({ entity, live_mode: 'inline', live_autostart: true }); each.hass = hass; document.body.append(each); return each; });
+    window.card = cards[0];
+  }, entities);
+  await expect.poll(() => page.evaluate(() => calls.map(call => call.message.entity_id).sort())).toEqual([...entities].sort());
+  await expect(page.locator('dialog[open]')).toHaveCount(0);
+  await expect(page.locator('ha-card .stage:not([hidden])')).toHaveCount(3);
+  const cardOf = entity => page.locator('eufy-viewer-card').nth(entities.indexOf(entity));
+  // The bridge admits the first two cameras and refuses the third at the limit.
+  await page.evaluate(() => {
+    receivers['camera.front']({ type: 'frame', subscription: 1, sequence: 1, jpeg });
+    receivers['camera.back']({ type: 'frame', subscription: 2, sequence: 1, jpeg });
+    receivers['camera.side']({ type: 'ended', reason: 'station_limit' });
+  });
+  await expect.poll(() => page.evaluate(() => acks.map(ack => ack.subscription).sort())).toEqual([1, 2]);
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  await expect(cardOf('camera.side').locator('.status')).toHaveText('Another camera on this HomeBase is live. Close that live view first, then tap again.');
+  await expect(cardOf('camera.side').locator('.stage')).toBeHidden();
+  await expect(cardOf('camera.side').getByRole('button', { name: 'Watch live' })).toBeVisible();
+  await expect(cardOf('camera.side').getByRole('button', { name: 'Resume', exact: true })).toBeHidden();
+  // The refused card does not retry on state updates or time. The others keep acknowledging.
+  await page.evaluate(() => { for (const each of cards) each.hass = { ...each._hass }; });
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => calls.length)).toBe(3);
+  await page.evaluate(() => { receivers['camera.front']({ type: 'frame', subscription: 1, sequence: 2, jpeg }); receivers['camera.back']({ type: 'frame', subscription: 2, sequence: 2, jpeg }); });
+  await expect.poll(() => page.evaluate(() => acks.length)).toBe(4);
+  // Pause one card: only its lease is released.
+  await cardOf('camera.back').getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(2);
+  await expect(cardOf('camera.back').getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
+  await expect(cardOf('camera.front').locator('img.live')).toBeVisible();
+  // Leaving the view: a hidden page releases every session. Returning applies autostart to all three, the refused and the paused one included.
+  await page.evaluate(() => pageVisible(false));
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(3);
+  await expect(page.locator('ha-card .stage:not([hidden])')).toHaveCount(0);
+  await page.evaluate(() => pageVisible(true));
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(6);
+  await expect(page.locator('ha-card .stage:not([hidden])')).toHaveCount(3);
+  // Navigation removes the cards: every session stops and nothing starts while they are detached.
+  await page.evaluate(() => { for (const each of cards) each.remove(); });
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(6);
+  await page.evaluate(() => { for (const each of cards) each.hass = { ...each._hass }; pageVisible(false); pageVisible(true); });
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => calls.length)).toBe(6);
+});
+
+test('a session the bridge ends at the cap or for any other reason stays on the snapshot until the next trigger or a tap', async ({ page }) => {
+  await attachAutostart(page);
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  await page.evaluate(() => receive({ type: 'frame', subscription: 9, sequence: 1, jpeg }));
+  await expect.poll(() => page.evaluate(() => acks.length)).toBe(1);
+  await page.evaluate(() => receive({ type: 'ended' }));
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  await expect(page.locator('.status')).toHaveText('Live view ended. Tap again to watch.');
+  expect(await page.evaluate(() => state())).toMatchObject({ open: false, stage: false, preview: true, paused: false });
+  await page.evaluate(() => { for (let i = 0; i < 3; i++) card.hass = { ...card._hass }; });
+  await page.waitForTimeout(200);
+  expect(await page.evaluate(() => calls.length)).toBe(1);
+  // A failed session behaves the same after a tap.
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(2);
+  await page.evaluate(() => receive({ type: 'frame', subscription: 10, sequence: 1, jpeg: btoa('not a JPEG') }));
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(2);
+  await expect(page.locator('.status')).toHaveText('Live view failed. Tap again to retry.');
+  await page.evaluate(() => { card.hass = { ...card._hass }; });
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => calls.length)).toBe(2);
+  // Returning to the view starts again.
+  await page.evaluate(() => { pageVisible(false); pageVisible(true); });
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(3);
+});
+
+test('an autostart card releases on hidden page, pagehide, disconnection and removal, and starts nothing while away', async ({ page }) => {
+  await attachAutostart(page);
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  const actions = ['hidden', 'pagehide', 'disconnect', 'detach'];
+  for (const action of actions) {
+    await page.evaluate(action => {
+      if (action === 'hidden') pageVisible(false);
+      if (action === 'pagehide') window.dispatchEvent(new Event('pagehide'));
+      if (action === 'disconnect') connection.dispatchEvent(new Event('disconnected'));
+      if (action === 'detach') card.remove();
+    }, action);
+    await expect.poll(() => page.evaluate(() => closeCount)).toBe(actions.indexOf(action) + 1);
+    expect(await page.evaluate(() => card._stage.hidden && !card._open)).toBe(true);
+    await page.evaluate(() => { card.hass = { ...card._hass }; });
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => calls.length)).toBe(actions.indexOf(action) + 1);
+    // Returning to the view: the page becomes visible again, or the card is attached again after navigation.
+    await page.evaluate(action => { if (action === 'detach') document.body.append(card); else pageVisible(true); }, action);
+    await expect.poll(() => page.evaluate(() => calls.length)).toBe(actions.indexOf(action) + 2);
+  }
+  expect(await page.evaluate(() => closeCount)).toBe(4);
+});
+
+test('card editor offers automatic start only for the inline mode and stores false as an absent key', async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    await customElements.whenDefined('eufy-viewer-card-editor');
+    const editor = document.createElement('eufy-viewer-card-editor');
+    const events = [];
+    editor.addEventListener('config-changed', event => events.push(event.detail.config));
+    document.body.append(editor);
+    editor.setConfig({ entity: 'camera.front', live_mode: 'inline' });
+    editor.hass = card._hass;
+    const form = editor.querySelector('ha-form');
+    const snapshot = () => ({ names: form.schema.map(field => field.name), selectors: form.schema.map(field => Object.keys(field.selector)[0]), data: form.data, labels: form.schema.map(field => form.computeLabel(field)), helpers: form.schema.map(field => form.computeHelper(field) ?? null) });
+    const initial = snapshot();
+    const change = value => form.dispatchEvent(new CustomEvent('value-changed', { detail: { value } }));
+    change({ live_mode: 'inline', live_autostart: true });
+    const enabled = snapshot();
+    change({ live_mode: 'inline', live_autostart: true });
+    change({ live_mode: 'inline', live_autostart: false });
+    change({ live_mode: 'inline', live_autostart: true });
+    change({ live_mode: 'dialog', live_autostart: true });
+    const dialog = snapshot();
+    change({ live_mode: 'inline' });
+    editor.hass = { ...card._hass, language: 'nl' };
+    return { initial, enabled, dialog, events, dutch: snapshot() };
+  });
+  const helper = 'Inline only. Starts the live view without a tap when the view opens, up to the HomeBase limit. Each card can be paused, resumed and stopped.';
+  expect(result.initial).toEqual({ names: ['live_mode', 'live_autostart'], selectors: ['select', 'boolean'], data: { live_mode: 'inline', live_autostart: false }, labels: ['Live view', 'Start live automatically'], helpers: [null, helper] });
+  expect(result.enabled.data).toEqual({ live_mode: 'inline', live_autostart: true });
+  expect(result.dialog).toEqual({ names: ['live_mode'], selectors: ['select'], data: { live_mode: 'dialog' }, labels: ['Live view'], helpers: [null] });
+  expect(result.events).toEqual([
+    { entity: 'camera.front', live_mode: 'inline', live_autostart: true },
+    { entity: 'camera.front', live_mode: 'inline' },
+    { entity: 'camera.front', live_mode: 'inline', live_autostart: true },
+    { entity: 'camera.front' },
+    { entity: 'camera.front', live_mode: 'inline' },
+  ]);
+  expect(result.dutch).toEqual({ names: ['live_mode', 'live_autostart'], selectors: ['select', 'boolean'], data: { live_mode: 'inline', live_autostart: false }, labels: ['Livebeeld', 'Automatisch live starten'], helpers: [null, 'Alleen in de kaart. Start het livebeeld zonder tik zodra de weergave opent, tot de HomeBase-limiet. Elke kaart kan pauzeren, hervatten en stoppen.'] });
+  expect(await page.evaluate(() => calls.length)).toBe(0);
+});
