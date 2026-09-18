@@ -9,8 +9,8 @@
 - Add the optional `live_max_streams_per_station` option (a whole number from
   1 to 4, default 1). The bridge admits a camera while its HomeBase carries
   fewer live and starting cameras than the limit. Two concurrent streams are
-  verified by the library on a HomeBase 3 with two eufyCam 3; three or four are
-  unverified.
+  verified by the library and through this bridge on a HomeBase 3 with two
+  eufyCam 3; three or four are unverified.
 - Close a viewer refused by that limit with code 4013 so the integration and
   card can say that another camera on this HomeBase is live. Report the
   configured limit in `/v1/state`.

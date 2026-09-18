@@ -27,7 +27,10 @@
 Two concurrent streams are verified by the library on one HomeBase 3 (T8030,
 firmware 3.8.7.4) with two eufyCam 3 (T8160) cameras at full rate with audio.
 Three or four streams are permitted by the option but unverified. The bridge
-path with limit 2 has not yet been exercised on hardware. The card still opens
+path with limit 2 was exercised on 2026-09-18 on the maintainer's HomeBase 3
+with two eufyCam 3 on the JPEG transport, with device-confirmed stops and a
+third camera refused at the limit, see
+[the test record](docs/CONCURRENT_LIVE_2026-09-18.md). The card still opens
 one modal live view per card, so a grid of simultaneous live cards needs the
 inline live mode that follows [issue #84](https://github.com/keesmod/ha-eufy-cam/issues/84).
 Each concurrent camera adds an encoder pipeline on the bridge host (two FFmpeg
