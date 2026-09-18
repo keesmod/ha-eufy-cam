@@ -42,6 +42,7 @@ live_mode: inline
 | `entity` | a Eufy Viewer camera entity | Required. |
 | `name` | text | Optional title. The default is the entity's friendly name. |
 | `live_mode` | `dialog` (default) or `inline` | `dialog` opens the live view in a popup dialog that closes on Escape or a tap outside. `inline` plays the live view inside the card with its close and sound controls on the video, so several cards can be live at once. |
+| `live_autostart` | `true` or `false` (default) | Only with `live_mode: inline`. Starts the live view without a tap when the view opens, up to the bridge's `live_max_streams_per_station`, and adds pause, resume and stop controls to the card. See [automatic live start](#automatic-live-start). |
 
 An inline card follows the same rules as the dialog: one tap starts one live
 session, the two-minute cap applies, the sound toggle and late audio work the
@@ -49,8 +50,33 @@ same, the diagnostics download stays available to administrators, and the view
 stops on close, Escape while it has focus, page hide, navigation, card removal,
 disconnection or when the card scrolls out of view. Status messages appear
 below the camera name. A card refused by the HomeBase live limit shows that
-message there and returns to its snapshot. Nothing starts automatically on
-dashboard load.
+message there and returns to its snapshot. Nothing starts automatically unless
+the card has `live_autostart: true`.
+
+#### Automatic live start
+
+With `live_autostart: true` an inline card starts its live view without a tap
+when it is attached in view: when the view opens, when the card scrolls back
+into view or when the page becomes visible again. Each trigger starts at most
+one session per card, up to the bridge's `live_max_streams_per_station`. A
+card refused at the limit shows the station-limit message, returns to its
+snapshot and does not retry by itself. When the bridge ends a session, at the
+two-minute cap or for any other reason, the card returns to its snapshot and
+does not restart by itself. Opening the view again applies autostart again.
+There is no retry loop and no keep-alive. A camera that is unavailable when
+the view opens starts once it becomes available while the view stays open.
+
+The live view gets two controls next to the sound and close controls.
+**Pause** releases the lease and shows the snapshot with a **Resume** control,
+which starts a new session with a fresh lease. The next autostart trigger also
+resumes a paused card. **Stop** ends the session and disables autostart for
+that card until the view is opened again. A tap on the snapshot always starts
+a session by hand, and the close control keeps its meaning. Every rule above
+still applies: one lease per card with the frame acknowledgement loop, the
+two-minute cap, and a stop on close, page hide, navigation, card removal,
+disconnection and when the card scrolls out of view, each confirmed by the
+bridge. The visual editor shows the switch for inline cards, and the default
+is stored as an absent key.
 
 ### Honest snapshot and streaming limits
 
@@ -66,13 +92,13 @@ By default one camera per HomeBase streams live at a time. The bridge refuses a 
 
 From bridge 0.8.21 the optional app option `live_max_streams_per_station` (Docker: `EUFY_LIVE_MAX_STREAMS_PER_STATION`, a whole number from 1 to 4) raises that limit. The bundled client then opens one additional P2P session per further concurrent camera, with its own confirmed STOP and two-minute cap, while the HomeBase's primary session keeps control, snapshots and recordings. Recording playback and mode commands still wait until no camera on that HomeBase is live. Other values stop the bridge at startup.
 
-Two concurrent streams are verified by the client on one HomeBase 3 (T8030, firmware 3.8.7.4) with two eufyCam 3 (T8160) cameras, each at full rate with audio. The bridge path was exercised on 2026-09-18 with two concurrent eufyCam 3 on that HomeBase, with confirmed stops and a third camera refused at the limit, see [the test record](CONCURRENT_LIVE_2026-09-18.md). Three or four are permitted but unverified. Each concurrent camera adds an encoder pipeline on the bridge host. For a dashboard with several live cards at once, set `live_mode: inline` on each card, see [card options](#card-options). Each card is admitted or refused by the bridge on its own tap, up to the limit. Two inline cards played two eufyCam 3 cameras of one HomeBase 3 at the same time in a browser on 2026-09-18 with device-confirmed stops, see [the test record](CONCURRENT_LIVE_2026-09-18.md#two-inline-cards-in-a-browser-2026-09-18). Cameras on different HomeBases are admitted independently within the bridge's eight camera slots, but that combination has not been validated on hardware.
+Two concurrent streams are verified by the client on one HomeBase 3 (T8030, firmware 3.8.7.4) with two eufyCam 3 (T8160) cameras, each at full rate with audio. The bridge path was exercised on 2026-09-18 with two concurrent eufyCam 3 on that HomeBase, with confirmed stops and a third camera refused at the limit, see [the test record](CONCURRENT_LIVE_2026-09-18.md). Three or four are permitted but unverified. Each concurrent camera adds an encoder pipeline on the bridge host. For a dashboard with several live cards at once, set `live_mode: inline` on each card, and `live_autostart: true` to start them when the view opens, see [card options](#card-options). Each card is admitted or refused by the bridge on its own tap or automatic start, up to the limit. Two inline cards played two eufyCam 3 cameras of one HomeBase 3 at the same time in a browser on 2026-09-18 with device-confirmed stops, see [the test record](CONCURRENT_LIVE_2026-09-18.md#two-inline-cards-in-a-browser-2026-09-18). Cameras on different HomeBases are admitted independently within the bridge's eight camera slots, but that combination has not been validated on hardware.
 
 Clients without WebRTC or video-frame callback support, including the Home Assistant macOS app, automatically use JPEG live video at up to **8 fps / 960 pixels**, without audio. The same explicit-start and stream cleanup rules apply. Use Safari on the Mac for WebRTC with live audio. If an established WebRTC attempt fails, the viewer can switch once to video-only JPEG. See [automatic fallback](#automatic-live-video-fallback).
 
 WebRTC requires Home Assistant's **go2rtc integration** to be loaded and the browser to have a media route to HA (the managed service uses TCP port **18555**). A dashboard accessible through an HTTPS reverse proxy alone does not establish this media route. The viewer uses Home Assistant's existing [WebRTC ICE configuration](https://www.home-assistant.io/integrations/web_rtc/) for both live video and optional late audio. HA supplies configured STUN/TURN servers and any registered providers, with its default STUN servers when no custom servers are configured. STUN discovers possible routes but cannot relay media. A route blocked by NAT or firewall may require an existing TURN provider or routed LAN/VPN access. This integration does not configure a separate relay service. If HA's ICE provider fails, direct playback is still attempted and the existing video-only JPEG fallback remains available. Do not expose the bridge API to solve WebRTC connectivity. See [0.2 validation](VALIDATION_0.2.md).
 
-Sessions have a **two-minute absolute limit**, continuing requires another tap. Normal close immediately issues stop. After a network partition or frozen page the bridge expires a viewer within **10 seconds**, plus its 250 ms watchdog tick. Startup without frames expires after 20 seconds. A bridge or host hard failure cannot deliver a stop command, camera firmware/P2P behavior in that case must be verified on the intended hardware. No software can promise instantaneous physical stop across a dead network.
+Sessions have a **two-minute absolute limit**, continuing requires another tap, also on a card with `live_autostart`. Normal close immediately issues stop. After a network partition or frozen page the bridge expires a viewer within **10 seconds**, plus its 250 ms watchdog tick. Startup without frames expires after 20 seconds. A bridge or host hard failure cannot deliver a stop command, camera firmware/P2P behavior in that case must be verified on the intended hardware. No software can promise instantaneous physical stop across a dead network.
 
 ## Recovery and maintenance
 

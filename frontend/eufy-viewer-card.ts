@@ -1,7 +1,7 @@
 interface ViewerCapability { available: boolean; status?: string; reason?: string | null }
 interface CameraState { state: string; attributes: { friendly_name?: string; capabilities?: Record<string, ViewerCapability>; viewer_card?: boolean; viewer_webrtc?: boolean; viewer_late_audio?: boolean; snapshot_received_at?: string; entity_picture?: string } }
-interface CardConfig { entity: string; name?: string; live_mode?: "dialog" | "inline" }
-interface LiveModeForm extends HTMLElement { hass: HA; data: { live_mode: string }; schema: unknown[]; computeLabel: (schema: { name: string }) => string }
+interface CardConfig { entity: string; name?: string; live_mode?: "dialog" | "inline"; live_autostart?: boolean }
+interface CardForm extends HTMLElement { hass: HA; data: Record<string, unknown>; schema: { name: string; selector: unknown }[]; computeLabel: (schema: { name: string }) => string; computeHelper: (schema: { name: string }) => string | undefined }
 interface FrameEvent { type: "frame"; subscription: number; sequence: number; jpeg: string }
 interface EndEvent { type: "ended"; reason?: string }
 interface FallbackEvent { type: "fallback" }
@@ -20,8 +20,8 @@ declare global { interface Window { customCards: CardDefinition[] } }
 
 /** Eufy Viewer: snapshots at rest, a single explicit user gesture per live session. */
 const TEXT = {
-  en: { recording_storage_unavailable: "Not enough recording storage. Close other recordings or try Native.", capability_unavailable: "This media operation is unavailable for the camera connection.", videoOnly: "Live video without sound", switching: "Switching to live video without sound…", live: "Watch live", close: "Close live view", connecting: "Connecting…", ended: "Live view ended. Tap again to watch.", station_limit: "Another camera on this HomeBase is live. Close that live view first, then tap again.", unavailable: "Camera unavailable", noSnapshot: "No snapshot received yet", title: "Camera", error: "Live view failed. Tap again to retry.", sound: "Enable sound", mute: "Mute sound", recordings: "Recordings", date: "Date", load: "Show recordings", loading: "Loading HomeBase recordings…", preparing: "Preparing recording…", empty: "No recordings returned for this camera and date.", recordingError: "HomeBase recording unavailable. Load the date again.", live_busy: "A live viewer is still open. Close it and load the date again.", live_stopping: "The previous live session is still stopping. Wait a moment and load the date again.", recording_busy: "Another recording is being prepared. Wait a moment and try again.", recording_expired: "This recording link has expired. Load the date again.", recording_unavailable: "The HomeBase connection is unavailable. Try again shortly.", closeRecordings: "Close recordings", results: "recordings returned", homebaseTime: "HomeBase time", liveMode: "Live view", liveModeDialog: "Popup dialog (default)", liveModeInline: "Inside the card, for several live cameras" },
-  nl: { recording_storage_unavailable: "Onvoldoende opslag voor deze opname. Sluit andere opnames of probeer Native.", capability_unavailable: "Deze mediafunctie is niet beschikbaar voor de cameraverbinding.", videoOnly: "Livebeeld zonder geluid", switching: "Omschakelen naar livebeeld zonder geluid…", live: "Live bekijken", close: "Livebeeld sluiten", connecting: "Verbinden…", ended: "Livebeeld gestopt. Tik opnieuw om te kijken.", station_limit: "Een andere camera op deze HomeBase is live. Sluit eerst dat livebeeld en tik dan opnieuw.", unavailable: "Camera niet beschikbaar", noSnapshot: "Nog geen snapshot ontvangen", title: "Camera", error: "Livebeeld mislukt. Tik opnieuw om te proberen.", sound: "Geluid aan", mute: "Geluid uit", recordings: "Opnames", date: "Datum", load: "Opnames tonen", loading: "HomeBase-opnames laden…", preparing: "Opname voorbereiden…", empty: "Geen opnames teruggegeven voor deze camera en datum.", recordingError: "HomeBase-opname niet beschikbaar. Laad de datum opnieuw.", live_busy: "Er staat nog een livebeeld open. Sluit dit en laad de datum opnieuw.", live_stopping: "De vorige live-sessie wordt nog afgesloten. Wacht even en laad de datum opnieuw.", recording_busy: "Er wordt al een opname voorbereid. Wacht even en probeer opnieuw.", recording_expired: "Deze opnamelink is verlopen. Laad de datum opnieuw.", recording_unavailable: "De HomeBase-verbinding is niet beschikbaar. Probeer het zo opnieuw.", closeRecordings: "Opnames sluiten", results: "opnames teruggegeven", homebaseTime: "HomeBase-tijd", liveMode: "Livebeeld", liveModeDialog: "Pop-updialoog (standaard)", liveModeInline: "In de kaart, voor meerdere livecamera's" },
+  en: { recording_storage_unavailable: "Not enough recording storage. Close other recordings or try Native.", capability_unavailable: "This media operation is unavailable for the camera connection.", videoOnly: "Live video without sound", switching: "Switching to live video without sound…", live: "Watch live", close: "Close live view", connecting: "Connecting…", ended: "Live view ended. Tap again to watch.", station_limit: "Another camera on this HomeBase is live. Close that live view first, then tap again.", unavailable: "Camera unavailable", noSnapshot: "No snapshot received yet", title: "Camera", error: "Live view failed. Tap again to retry.", sound: "Enable sound", mute: "Mute sound", recordings: "Recordings", date: "Date", load: "Show recordings", loading: "Loading HomeBase recordings…", preparing: "Preparing recording…", empty: "No recordings returned for this camera and date.", recordingError: "HomeBase recording unavailable. Load the date again.", live_busy: "A live viewer is still open. Close it and load the date again.", live_stopping: "The previous live session is still stopping. Wait a moment and load the date again.", recording_busy: "Another recording is being prepared. Wait a moment and try again.", recording_expired: "This recording link has expired. Load the date again.", recording_unavailable: "The HomeBase connection is unavailable. Try again shortly.", closeRecordings: "Close recordings", results: "recordings returned", homebaseTime: "HomeBase time", liveMode: "Live view", liveModeDialog: "Popup dialog (default)", liveModeInline: "Inside the card, for several live cameras", pause: "Pause", resume: "Resume", stopLive: "Stop", paused: "Paused. Tap Resume to watch.", stopped: "Stopped until you open this view again. Tap to watch.", liveAutostart: "Start live automatically", liveAutostartHelper: "Inline only. Starts the live view without a tap when the view opens, up to the HomeBase limit. Each card can be paused, resumed and stopped." },
+  nl: { recording_storage_unavailable: "Onvoldoende opslag voor deze opname. Sluit andere opnames of probeer Native.", capability_unavailable: "Deze mediafunctie is niet beschikbaar voor de cameraverbinding.", videoOnly: "Livebeeld zonder geluid", switching: "Omschakelen naar livebeeld zonder geluid…", live: "Live bekijken", close: "Livebeeld sluiten", connecting: "Verbinden…", ended: "Livebeeld gestopt. Tik opnieuw om te kijken.", station_limit: "Een andere camera op deze HomeBase is live. Sluit eerst dat livebeeld en tik dan opnieuw.", unavailable: "Camera niet beschikbaar", noSnapshot: "Nog geen snapshot ontvangen", title: "Camera", error: "Livebeeld mislukt. Tik opnieuw om te proberen.", sound: "Geluid aan", mute: "Geluid uit", recordings: "Opnames", date: "Datum", load: "Opnames tonen", loading: "HomeBase-opnames laden…", preparing: "Opname voorbereiden…", empty: "Geen opnames teruggegeven voor deze camera en datum.", recordingError: "HomeBase-opname niet beschikbaar. Laad de datum opnieuw.", live_busy: "Er staat nog een livebeeld open. Sluit dit en laad de datum opnieuw.", live_stopping: "De vorige live-sessie wordt nog afgesloten. Wacht even en laad de datum opnieuw.", recording_busy: "Er wordt al een opname voorbereid. Wacht even en probeer opnieuw.", recording_expired: "Deze opnamelink is verlopen. Laad de datum opnieuw.", recording_unavailable: "De HomeBase-verbinding is niet beschikbaar. Probeer het zo opnieuw.", closeRecordings: "Opnames sluiten", results: "opnames teruggegeven", homebaseTime: "HomeBase-tijd", liveMode: "Livebeeld", liveModeDialog: "Pop-updialoog (standaard)", liveModeInline: "In de kaart, voor meerdere livecamera's", pause: "Pauze", resume: "Hervatten", stopLive: "Stop", paused: "Gepauzeerd. Tik op Hervatten om te kijken.", stopped: "Gestopt tot je deze weergave opnieuw opent. Tik om te kijken.", liveAutostart: "Automatisch live starten", liveAutostartHelper: "Alleen in de kaart. Start het livebeeld zonder tik zodra de weergave opent, tot de HomeBase-limiet. Elke kaart kan pauzeren, hervatten en stoppen." },
 };
 
 export class EufyViewerCard extends HTMLElement {
@@ -74,6 +74,15 @@ export class EufyViewerCard extends HTMLElement {
   /** The live view elements. Inline mode moves them from the modal dialog into the card. */
   private _stage: HTMLElement;
   private _stopButton: HTMLButtonElement;
+  private _pauseButton: HTMLButtonElement;
+  private _haltButton: HTMLButtonElement;
+  private _resumeButton: HTMLButtonElement;
+  private _pausedBar: HTMLElement;
+  /** Autostart: a view opening or visibility trigger that has not started a session yet. One trigger starts at most one session. */
+  private _autostartPending = false;
+  /** The stop control disables autostart until the card is attached again. */
+  private _autostartBlocked = false;
+  private _paused = false;
   private _inline = false;
   private _visibility: () => void;
   private _pagehide: () => void;
@@ -91,21 +100,21 @@ export class EufyViewerCard extends HTMLElement {
     this._unsubscribe = null;
     this._frameUrl = null;
     this._snapshotKey = null;
-    this._visibility = () => { if (document.visibilityState !== "visible") { this._stop(); this._closeRecordings(); } };
+    this._visibility = () => { if (document.visibilityState !== "visible") { this._stop(); this._closeRecordings(); } else { this._autostartPending = true; this._autostart(); } };
     this._pagehide = () => { this._stop(); this._closeRecordings(); };
     this._disconnected = () => { this._stop("ended"); this._closeRecordings(); };
     // Static markup only. Entity names and all remote strings use textContent.
     this.shadowRoot!.innerHTML = `
       <style>
-        :host{display:block;min-width:0}*{box-sizing:border-box}ha-card{display:block;overflow:hidden;border-radius:16px}button{font:inherit;cursor:pointer}
+        :host{display:block;min-width:0}*{box-sizing:border-box}ha-card{display:block;position:relative;overflow:hidden;border-radius:16px}button{font:inherit;cursor:pointer}
         .preview{display:block;width:100%;border:0;padding:0;position:relative;color:var(--primary-text-color);background:var(--card-background-color,#18212b)}
         .preview:focus-visible,.close:focus-visible{outline:3px solid var(--primary-color,#03a9f4);outline-offset:-3px}
         .capability{padding:10px 16px;color:var(--secondary-text-color);font-size:12px;line-height:1.5}.capability:empty{display:none}
         .snapshot,.live{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#10161e}
-        .snapshot[hidden],.empty[hidden],.live[hidden],.sound[hidden],.record-video[hidden]{display:none}.empty{display:grid;place-items:center;aspect-ratio:16/9;padding:24px;color:var(--secondary-text-color);font-size:13px;background:var(--secondary-background-color,#18212b)}
+        .snapshot[hidden],.empty[hidden],.live[hidden],.sound[hidden],.pause[hidden],.halt[hidden],.record-video[hidden]{display:none}.empty{display:grid;place-items:center;aspect-ratio:16/9;padding:24px;color:var(--secondary-text-color);font-size:13px;background:var(--secondary-background-color,#18212b)}
         .play{position:absolute;right:16px;bottom:16px;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:#0008;font-size:20px;color:white;pointer-events:none}.preview:disabled{cursor:default}.preview:disabled .play{display:none}
-        .preview[hidden],.stage[hidden]{display:none}.stage.inline{position:relative;background:#10161e}.stage.inline img.live:not([src]){visibility:hidden}.stage.inline .bar{position:absolute;top:0;left:0;right:0;z-index:1;justify-content:flex-end;padding:8px;background:linear-gradient(#000a,#0000)}
-        .stage.inline #live-title,.stage.inline .live-status{display:none}.stage.inline .close{background:#000a;color:#fff}
+        .preview[hidden],.stage[hidden],.paused[hidden]{display:none}.stage.inline{position:relative;background:#10161e}.stage.inline img.live:not([src]){visibility:hidden}.stage.inline .bar,.paused{position:absolute;top:0;left:0;right:0;z-index:1;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:8px;background:linear-gradient(#000a,#0000)}
+        .stage.inline #live-title,.stage.inline .live-status{display:none}.stage.inline .close,.paused .close{background:#000a;color:#fff}
         .meta{padding:16px}.name{font-weight:600;font-size:16px;line-height:24px}.status:empty{display:none}.status{font-size:13px;color:var(--secondary-text-color);margin-top:5px}
         dialog{border:0;border-radius:16px;padding:0;width:min(960px,94vw);max-width:94vw;background:var(--card-background-color,#fff);color:var(--primary-text-color,#111)}
         dialog::backdrop{background:#000b}.bar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;gap:16px}
@@ -116,9 +125,10 @@ export class EufyViewerCard extends HTMLElement {
       </style>
       <ha-card>
         <button class="preview" type="button"><img class="snapshot" alt="" hidden><span class="empty"></span><span class="play" aria-hidden="true">▶</span></button>
+        <div class="bar paused" hidden><button class="close resume" type="button"></button><button class="close halt" type="button"></button></div>
         <div class="capability" role="note"></div><div class="meta"><div class="name"></div><div class="status" role="status" aria-live="polite"></div><button class="close record-open" type="button"></button></div>
       </ha-card>
-      <dialog aria-labelledby="live-title"><div class="stage"><div class="bar"><span id="live-title"></span><button class="sound close" type="button" hidden></button><button class="close stop" type="button"></button></div><div class="live-status" role="status" aria-live="polite"></div><img class="live" alt=""><video class="live video" playsinline autoplay muted hidden></video></div></dialog>
+      <dialog aria-labelledby="live-title"><div class="stage"><div class="bar"><span id="live-title"></span><button class="close pause" type="button" hidden></button><button class="close halt" type="button" hidden></button><button class="sound close" type="button" hidden></button><button class="close stop" type="button"></button></div><div class="live-status" role="status" aria-live="polite"></div><img class="live" alt=""><video class="live video" playsinline autoplay muted hidden></video></div></dialog>
       <dialog class="record-dialog" aria-labelledby="record-title"><div class="bar"><span id="record-title"></span><button class="close record-close" type="button"></button></div><div class="record-filters"><label><span class="date-label"></span><input type="date" class="record-date"></label><button class="close record-load" type="button"></button></div><div class="record-status" role="status" aria-live="polite"></div><video class="record-video" playsinline controls hidden></video><div class="record-list"></div></dialog>`;
     this._recordDialog = this.shadowRoot!.querySelector<HTMLDialogElement>(".record-dialog")!;
     this._recordVideo = this.shadowRoot!.querySelector<HTMLVideoElement>(".record-video")!;
@@ -146,6 +156,13 @@ export class EufyViewerCard extends HTMLElement {
     this._dialog = this.shadowRoot!.querySelector<HTMLDialogElement>("dialog")!;
     this._stage = this.shadowRoot!.querySelector<HTMLElement>(".stage")!;
     this._stopButton = this.shadowRoot!.querySelector<HTMLButtonElement>(".stop")!;
+    this._pauseButton = this.shadowRoot!.querySelector<HTMLButtonElement>(".stage .pause")!;
+    this._haltButton = this.shadowRoot!.querySelector<HTMLButtonElement>(".stage .halt")!;
+    this._pausedBar = this.shadowRoot!.querySelector<HTMLElement>(".paused")!;
+    this._resumeButton = this.shadowRoot!.querySelector<HTMLButtonElement>(".resume")!;
+    this._pauseButton.addEventListener("click", () => this._pause());
+    this._resumeButton.addEventListener("click", () => { void this._start(); });
+    for (const halt of this.shadowRoot!.querySelectorAll<HTMLButtonElement>(".halt")) halt.addEventListener("click", () => this._halt());
     // Escape closes the modal dialog through its cancel event. An inline live view closes on Escape while it has focus.
     this._stage.addEventListener("keydown", event => { if (event.key === "Escape" && this._inline && this._open) { event.preventDefault(); this._stop(); } });
     this._liveDiagnostics = new EufyDiagnosticControl(this.shadowRoot!.querySelector(".meta")!, () => ({ ha: this._hass, entity: this._config?.entity }));
@@ -162,6 +179,8 @@ export class EufyViewerCard extends HTMLElement {
     if (!config.entity?.startsWith("camera.")) throw new Error("Select a Eufy Viewer camera entity");
     if (config.live_mode !== undefined && !["dialog", "inline"].includes(config.live_mode)) throw new Error('live_mode must be "dialog" or "inline"');
     const inline = config.live_mode === "inline";
+    if (config.live_autostart !== undefined && typeof config.live_autostart !== "boolean") throw new Error("live_autostart must be true or false");
+    if (config.live_autostart && !inline) throw new Error('live_autostart requires live_mode "inline"');
     if (this._config?.entity !== config.entity) { this._stop(); this._closeRecordings(); }
     if (inline !== this._inline) {
       // A mode change stops the current view first, then moves the live elements.
@@ -191,9 +210,12 @@ export class EufyViewerCard extends HTMLElement {
     document.addEventListener("visibilitychange", this._visibility);
     window.addEventListener("pagehide", this._pagehide);
     this._hass?.connection?.addEventListener("disconnected", this._disconnected);
+    // Attaching the card again, for example when the view opens, clears a stop and a pause. The observer's first callback is the autostart trigger.
+    this._autostartBlocked = false; this._paused = false; this._autostartPending = false;
     this._observer = new IntersectionObserver(entries => {
-      this._visible = entries[0]?.isIntersecting ?? false;
+      this._visible = entries[entries.length - 1]?.isIntersecting ?? false;
       if (!this._visible) { this._stop(); this._closeRecordings(); }
+      else { this._autostartPending = true; this._autostart(); }
     });
     this._observer.observe(this);
     this._render();
@@ -217,6 +239,8 @@ export class EufyViewerCard extends HTMLElement {
     for (const [selector, value] of [[".record-open",text.recordings],["#record-title",text.recordings],[".record-close",text.closeRecordings],[".record-load",text.load],[".date-label",text.date]]) this.shadowRoot!.querySelector<HTMLElement>(selector!)!.textContent = value!;
     this._preview.setAttribute("aria-label", text.live);
     this.shadowRoot!.querySelector<HTMLElement>(".stop")!.textContent = text.close;
+    this._pauseButton.textContent = text.pause; this._resumeButton.textContent = text.resume;
+    for (const halt of this.shadowRoot!.querySelectorAll<HTMLElement>(".halt")) halt.textContent = text.stopLive;
     const title = this._config.name || state?.attributes.friendly_name || text.title;
     this.shadowRoot!.querySelector<HTMLElement>(".name")!.textContent = title;
     this.shadowRoot!.querySelector<HTMLElement>("#live-title")!.textContent = title;
@@ -243,6 +267,8 @@ export class EufyViewerCard extends HTMLElement {
     if (!available) { this._closeRecordings(); this._stop(); this._status(text.unavailable); }
     else if (this._unavailable) this._status("");
     this._unavailable = !available;
+    this._controls();
+    this._autostart();
   }
   _permits(feature: string) { return this._hass?.states[this._config?.entity ?? ""]?.attributes.capabilities?.[feature]?.available !== false; }
   _capabilityReason(reason?: string | null) {
@@ -258,7 +284,7 @@ export class EufyViewerCard extends HTMLElement {
     this._recordVideo.pause(); this._recordVideo.removeAttribute("src"); this._recordVideo.load(); this._recordVideo.hidden = true;
     this._recordPlayback.clear(); this._recordControls.update(undefined, false);
   }
-  _closeRecordings() { this._recordId = undefined; this._clearRecording(); if (this._recordDialog?.open) this._recordDialog.close(); }
+  _closeRecordings() { this._recordId = undefined; this._clearRecording(); if (this._recordDialog?.open) { this._recordDialog.close(); this._autostart(); } }
   async _recordingResponse(response: Response) {
     if (response.ok) return;
     const data = await response.json().catch(() => ({}));
@@ -331,9 +357,10 @@ export class EufyViewerCard extends HTMLElement {
     this._audioAttempted = false; this._audioState = "none";
     this._live.hidden = webrtc; this._video.hidden = !webrtc; this._sound.hidden = !webrtc;
     this._video.muted = true; this._sound.textContent = this._text().sound;
-    this._open = true;
+    this._open = true; this._autostartPending = false; this._paused = false;
     if (this._inline) { this._preview.hidden = true; this._stage.hidden = false; this._stopButton.focus(); }
     else this._dialog.showModal();
+    this._controls();
     this._status(this._text().connecting);
     this._startup = setTimeout(() => { if (this._watching(generation)) this._stop("error"); }, 25_000);
     try {
@@ -657,6 +684,39 @@ export class EufyViewerCard extends HTMLElement {
     } catch { /* Diagnostics cannot interrupt playback or renew a lease. */ }
     finally { clearTimeout(timer); }
   }
+  /** Autostart starts one session per trigger: the card comes into view after attach or scroll, or the page becomes visible again. A session that ended never restarts by itself. */
+  _autostart() {
+    if (!this._autostartPending) return;
+    if (!this._config?.live_autostart || !this._inline || this._autostartBlocked || this._open || !this.isConnected || !this._visible || document.visibilityState !== "visible") { this._autostartPending = false; return; }
+    // A camera that is unavailable at the trigger keeps it until a later state update. Open recordings keep it until they close.
+    if (!this._hass || this._preview.disabled || this._recordDialog.open) return;
+    this._autostartPending = false;
+    void this._start();
+  }
+  /** Pause and stop exist only on an inline card with autostart. The paused bar offers resume and stop over the snapshot. */
+  _controls() {
+    const autostart = this._inline && this._config?.live_autostart === true;
+    this._pauseButton.hidden = this._haltButton.hidden = !autostart;
+    this._pausedBar.hidden = !(autostart && this._paused && !this._open);
+  }
+  /** Pause releases the lease and shows the snapshot. Resume starts a new session, and so does the next autostart trigger. */
+  _pause() {
+    if (!this._open) return;
+    this._stop();
+    this._paused = true;
+    this._status(this._text().paused);
+    this._controls();
+    this._resumeButton.focus();
+  }
+  /** The stop control ends the session and disables autostart until the card is attached again. */
+  _halt() {
+    const focused = this.shadowRoot!.activeElement;
+    this._stop();
+    this._autostartBlocked = true; this._autostartPending = false; this._paused = false;
+    this._status(this._text().stopped);
+    this._controls();
+    if (focused && this._pausedBar.contains(focused)) this._preview.focus();
+  }
   _stop(reason?: "ended" | "error" | "station_limit") {
     this._liveDiagnostics.update(reason !== undefined);
     this._generation++; this._open = false;
@@ -674,6 +734,7 @@ export class EufyViewerCard extends HTMLElement {
     if (this._frameUrl) URL.revokeObjectURL(this._frameUrl);
     this._frameUrl = null;
     if (reason) this._status(this._text()[reason]);
+    this._controls();
   }
 }
 
@@ -681,12 +742,13 @@ class EufyViewerCardEditor extends HTMLElement {
   private _config?: CardConfig;
   private _hass?: HA;
   private _picker?: EntityPicker;
-  private _form?: LiveModeForm;
+  private _form?: CardForm;
   setConfig(config: CardConfig) { this._config = config; this._render(); }
   set hass(hass: HA) { this._hass = hass; this._render(); }
   _text() { return TEXT[this._hass?.language?.startsWith("nl") ? "nl" : "en"]; }
   _emit(config: CardConfig) {
     this._config = config;
+    this._render();
     this.dispatchEvent(new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true }));
   }
   _render() {
@@ -700,15 +762,18 @@ class EufyViewerCardEditor extends HTMLElement {
         if (!this._config || value === this._config.entity) return;
         this._emit({ ...this._config, entity: value });
       });
-      this._form = document.createElement("ha-form") as LiveModeForm;
-      this._form.computeLabel = () => this._text().liveMode;
+      this._form = document.createElement("ha-form") as CardForm;
+      this._form.computeLabel = schema => schema.name === "live_autostart" ? this._text().liveAutostart : this._text().liveMode;
+      this._form.computeHelper = schema => schema.name === "live_autostart" ? this._text().liveAutostartHelper : undefined;
       this._form.addEventListener("value-changed", event => {
-        const value = (event as CustomEvent<{ value?: { live_mode?: string } }>).detail.value?.live_mode;
+        const value = (event as CustomEvent<{ value?: { live_mode?: string; live_autostart?: boolean } }>).detail.value ?? {};
         if (!this._config) return;
-        // The default mode is stored as an absent key, so a saved card config stays minimal.
-        const { live_mode, ...rest } = this._config;
-        const next: CardConfig = value === "inline" ? { ...rest, live_mode: "inline" } : rest;
-        if (next.live_mode !== live_mode) this._emit(next);
+        // Defaults are stored as absent keys, so a saved card config stays minimal. Autostart is only valid inline.
+        const { live_mode, live_autostart, ...rest } = this._config;
+        const inline = value.live_mode === "inline";
+        const autostart = inline && ("live_autostart" in value ? value.live_autostart === true : live_autostart === true);
+        const next: CardConfig = { ...rest, ...(inline ? { live_mode: "inline" as const } : {}), ...(autostart ? { live_autostart: true } : {}) };
+        if (next.live_mode !== live_mode || next.live_autostart !== live_autostart) this._emit(next);
       });
       this.append(this._picker, this._form);
     }
@@ -716,8 +781,9 @@ class EufyViewerCardEditor extends HTMLElement {
     this._picker.entityFilter = entity => Boolean(entity.attributes.viewer_card);
     const text = this._text();
     this._form.hass = this._hass;
-    this._form.schema = [{ name: "live_mode", selector: { select: { mode: "dropdown", options: [{ value: "dialog", label: text.liveModeDialog }, { value: "inline", label: text.liveModeInline }] } } }];
-    this._form.data = { live_mode: this._config.live_mode ?? "dialog" };
+    const inline = this._config.live_mode === "inline";
+    this._form.schema = [{ name: "live_mode", selector: { select: { mode: "dropdown", options: [{ value: "dialog", label: text.liveModeDialog }, { value: "inline", label: text.liveModeInline }] } } }, ...(inline ? [{ name: "live_autostart", selector: { boolean: {} } }] : [])];
+    this._form.data = inline ? { live_mode: "inline", live_autostart: this._config.live_autostart === true } : { live_mode: "dialog" };
   }
 }
 if (!customElements.get("eufy-viewer-card")) customElements.define("eufy-viewer-card", EufyViewerCard);
