@@ -63,6 +63,17 @@ covers the declared T8160/T8213/T8030 combinations, migration and retained-relea
 rollback, including a real doorbell event. Other combinations retain their own
 evidence. See the [0.8.0 upgrade guide](MEGA_MIGRATION.md).
 
+## Dated 0.8.21 concurrent live test
+
+On 2026-09-18, after the 0.8.21 bridge deployment on HA OS 2026.9.2 and amd64,
+two T8160 (firmware 3.4.3.0) on one T8030 (firmware 3.8.7.4) streamed live at
+the same time through the bridge with `live_max_streams_per_station: 2` on the
+JPEG transport. Both stops were device-confirmed, a third camera was refused at
+the limit before any device command, and station telemetry, push and snapshots
+were intact afterwards. Three or four streams and WebRTC playback of two
+cameras in a dashboard are not covered. See the
+[test record](CONCURRENT_LIVE_2026-09-18.md).
+
 ## Report your installation
 
 You do not need to be a developer or complete every check. There is no required
