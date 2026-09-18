@@ -25,11 +25,12 @@ Playwright covers the inline mode with simulated Home Assistant dispatch: start
 on both transports, frame acknowledgements, stop on close, Escape, hidden page,
 page hide, disconnection and removal, three inline cards on one page with two
 live at once and the third refused at the limit, the card editor, and real
-decoded WebRTC media plus the JPEG fallback inside the card. Two inline cards
-on one HomeBase in a real browser against a bridge with the limit at 2 are
-pending hardware validation in
-[issue #87](https://github.com/keesmod/ha-eufy-cam/issues/87). Three or four
-concurrent streams remain unverified.
+decoded WebRTC media plus the JPEG fallback inside the card. On 2026-09-18 two inline
+cards played two eufyCam 3 (T8160) cameras of one HomeBase 3 (T8030, firmware
+3.8.7.4) at the same time in Chromium through WebRTC with late audio, with
+bridge 0.8.21 and the option at 4, and both closed with device-confirmed stops,
+see [the test record](docs/CONCURRENT_LIVE_2026-09-18.md#two-inline-cards-in-a-browser-2026-09-18).
+Three or four concurrent streams remain unverified.
 
 ### Upgrade and rollback
 

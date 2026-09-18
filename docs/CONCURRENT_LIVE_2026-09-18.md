@@ -51,3 +51,60 @@ WebRTC playback of two concurrent cameras in a dashboard is not shown here.
 Bridge CPU and NVENC load were not measured. Three or four concurrent streams
 remain unverified and are not claimed. The option was reset to its default of 1
 after the test.
+
+## Two inline cards in a browser, 2026-09-18
+
+Second supervised test on the same installation, after the integration was
+updated to 0.8.22 with the inline live mode of
+[issue #87](https://github.com/keesmod/ha-eufy-cam/issues/87), with a backup of
+the 0.8.20 integration taken first. The bridge stayed at 0.8.21 with client
+0.13.0 and its option `live_max_streams_per_station` at 4, which the maintainer
+had set earlier that day. No diagnostics option was changed. The viewers were
+two Eufy Security Viewer cards with `live_mode: inline` side by side in a
+temporary panel view of a Chromium browser on the LAN, removed after the test.
+This record is sanitized: no identifiers, names or captures.
+
+### Bench
+
+| Item | Value |
+|---|---|
+| Home Assistant | HA OS, Core 2026.9.2, amd64 |
+| Bridge | Supervisor app 0.8.21, client 0.13.0, option `live_max_streams_per_station: 4`, software transcoding |
+| Integration and card | 0.8.22, card resource `?v=0.8.22` |
+| Station | T8030 HomeBase 3, firmware 3.8.7.4, connected over the LAN |
+| Cameras | Two T8160 eufyCam 3, firmware 3.4.3.0, on that HomeBase |
+| Browser | Chromium on a Mac on the LAN, WebRTC through Home Assistant's go2rtc with HA's ICE configuration, host candidates over UDP, no relay |
+
+### Method
+
+Tap camera A, wait about ten seconds, tap camera B while A is live, hold both
+for about a minute, enable sound on B, close B while A continues, close A after
+about 100 seconds, then read the bridge counters, the integration's live
+diagnostics and the camera snapshots. Card state was read from the page: the
+open flag, stage visibility, dialog state, decoded video size and the tick and
+acknowledgement counters. Both cards were closed explicitly, so the two-minute
+cap was not reached.
+
+### Observations
+
+| Step | Result |
+|---|---|
+| A alone | Inline, no dialog, WebRTC 1920 by 1080, first "playing" report 3.2 s after the tap, 63 painted frames and 24 acknowledged ticks after 9 s, late audio attached as Opus |
+| B while A is live | Admitted, inline, WebRTC 1920 by 1080, first "playing" report 4.5 s after the tap, bridge started event 4.0 s after the start request, late audio attached. A unaffected, its ticks continued from 174 to 235 across B's start |
+| Concurrent window | Bridge 2 active cameras, 0 quarantined, station connected. 11 to 14 painted frames and 5 to 6 acknowledged ticks per second per card |
+| Sound on B | Element unmuted with one audio track, 2899 audio packets received with energy |
+| Close B | B returned to its snapshot with no status message, A continued to 621 accepted ticks and 1371 painted frames at 100 s |
+| Close A | Both cards back at their snapshots with no media stream and no dialog |
+| Counters | 2 start requests, 2 stop requests, 2 started and 2 stopped events, 0 recovery attempts, 0 active, 0 quarantined. The last stop request and its stopped event were 23 ms apart |
+| Integration diagnostics | Two attempts with card version 0.8.22, 636 and 366 ticks each fully acknowledged, ICE host to host over UDP, audio negotiated late on both |
+| Snapshots | Both updated from the last live frame at the moment each card closed |
+| Home Assistant | No errors in the log, camera entities idle afterwards |
+
+### Limits of this evidence
+
+One installation, one firmware tuple, two of three cameras, one attempt of
+about 100 seconds in one browser. Three or four concurrent streams remain
+unverified. CPU and NVENC load were not measured. The option stayed at 4
+because that is the installation's current setting, so the refusal at the
+limit was not exercised in the browser. It is covered by the card suite and by
+the JPEG test above.
