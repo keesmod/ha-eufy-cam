@@ -1,3 +1,11 @@
+/**
+ * true admits a first viewer, false refuses it for capability, ownership or
+ * recording reasons, and 'station_limit' refuses it because the camera's
+ * HomeBase already carries its configured number of live cameras.
+ */
+export type LiveAdmission = boolean | 'station_limit';
+/** Close code for a viewer refused by the per-station live limit. 1013 stays generic. */
+export const STATION_LIMIT_CLOSE_CODE = 4013;
 /** Viewer ownership is independent of HA and of the media encoder. */
 export interface Peer {
   send(frame: Buffer): void;
@@ -6,7 +14,7 @@ export interface Peer {
 }
 export interface Control {
   diagnostic?(serial: string, event: "frame_ack" | "viewer_timeout" | "camera_timeout" | "stream_failure" | "no_viewers"): void;
-  admit?(serial: string): boolean;
+  admit?(serial: string): LiveAdmission;
   start(serial: string): Promise<void>;
   recover?(serial: string): Promise<string[]>;
   stop(serial: string): Promise<void>;
@@ -31,8 +39,13 @@ export class StreamHub {
 
   attach(serial: string, peer: Peer): boolean {
     let camera = this.cameras.get(serial);
-    if (this.recovering || (!camera && this.control.admit?.(serial) === false) || camera?.phase === "stopping" || (camera?.viewers.size ?? 0) >= 4 || (!camera && this.cameras.size >= 8)) {
+    const admission: LiveAdmission = camera ? true : (this.control.admit?.(serial) ?? true);
+    if (this.recovering || admission === false || camera?.phase === "stopping" || (camera?.viewers.size ?? 0) >= 4 || (!camera && this.cameras.size >= 8)) {
       peer.close(1013, "Camera busy or stopping");
+      return false;
+    }
+    if (admission === "station_limit") {
+      peer.close(STATION_LIMIT_CLOSE_CODE, "HomeBase live limit reached");
       return false;
     }
     if (!camera) {

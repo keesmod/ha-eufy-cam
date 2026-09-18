@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.8.21 - 2026-09-18
+
+### Configurable live cameras per HomeBase
+
+- The bridge includes client 0.13.0, whose `maxLiveStreamsPerStation` option
+  lets further cameras on one HomeBase stream live at the same time, each on
+  its own P2P session with its own confirmed STOP and 120-second cap. The new
+  optional app option `live_max_streams_per_station` (Docker
+  `EUFY_LIVE_MAX_STREAMS_PER_STATION`, a whole number from 1 to 4) sets that
+  limit. The default 1 keeps today's one live camera per HomeBase.
+- The bridge admits a camera while the number of live and starting cameras on
+  its HomeBase is below the limit instead of refusing every second camera on
+  the same HomeBase. The 8 camera slots, 4 viewers per camera, the recording
+  interlock and stop recovery are unchanged. `/v1/state` reports the configured
+  limit as `live_max_streams_per_station`.
+- A viewer refused by that limit is closed with code 4013 instead of the
+  generic 1013. Home Assistant forwards it as `reason: "station_limit"` on the
+  `ended` event, and the card says that another camera on this HomeBase is live
+  (English and Dutch) instead of "Live view ended".
+- Client 0.13.0 also renews the cloud identity after Mega result code 4404 or
+  4416, which the bridge hit once as HTTP 463 during the library research.
+
+### Evidence and limits
+
+Two concurrent streams are verified by the library on one HomeBase 3 (T8030,
+firmware 3.8.7.4) with two eufyCam 3 (T8160) cameras at full rate with audio.
+Three or four streams are permitted by the option but unverified. The bridge
+path with limit 2 has not yet been exercised on hardware. The card still opens
+one modal live view per card, so a grid of simultaneous live cards needs the
+inline live mode that follows [issue #84](https://github.com/keesmod/ha-eufy-cam/issues/84).
+Each concurrent camera adds an encoder pipeline on the bridge host (two FFmpeg
+processes, one go2rtc stream per viewer, one NVENC session when accelerated).
+
+### Upgrade and rollback
+
+Update both the integration and bridge to 0.8.21, restart Home Assistant and
+refresh the dashboard. The limit stays 1 unless you set the option. Back up
+both components with their private data first and restore the previous versions
+together to roll back. Bridge 0.8.21 with integration 0.8.20 keeps working; the
+refused-camera message then stays generic.
+
 ## 0.8.20 - 2026-09-15
 
 ### Live audio whenever the camera starts sending it
