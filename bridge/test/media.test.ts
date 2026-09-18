@@ -107,7 +107,7 @@ for (const delayMs of [40, 5000]) {
     }
     const video = new PassThrough(), audio = new PassThrough();
     const available: number[] = [];
-    const media = new MediaRelay(() => assert.fail('encoder failed'), undefined, () => available.push(Math.round(performance.now() - started)));
+    const media = new MediaRelay(() => assert.fail('encoder failed'), undefined, () => available.push(performance.now() - started));
     const tsChunks: Buffer[] = [];
     const reader = Object.assign(new EventEmitter(), { writableLength: 0, writeHead() {}, write(chunk: Buffer) { tsChunks.push(chunk); reader.emit('data'); return true; }, destroy() { reader.emit('close'); } });
     const listener = Object.assign(new EventEmitter(), { destroyed: false, writableLength: 0, chunks: [] as Buffer[], writeHead() {}, write(frame: Buffer) { listener.chunks.push(frame); return true; }, destroy() { listener.destroyed = true; listener.emit('close'); } });
@@ -119,7 +119,7 @@ for (const delayMs of [40, 5000]) {
     const firstVideo = once(reader, 'data', { signal: AbortSignal.timeout(3000) });
     video.write(fixture.stdout);
     await firstVideo;
-    const videoAt = Math.round(performance.now() - started);
+    const videoAt = performance.now() - started;
     assert.equal(media.lateAudioSupported('fixture'), false);
     assert.equal(media.serveAudio(grant, listener as any), false, 'No audio reader before the first complete frame');
     await new Promise(resolve => setTimeout(resolve, Math.max(0, delayMs - (performance.now() - started))));
@@ -129,7 +129,12 @@ for (const delayMs of [40, 5000]) {
     audio.write(frames[0]!.subarray(9));
     assert.equal(available.length, 1);
     assert.ok(available[0]! >= delayMs - 5, `audio advertised ${available[0]} ms after start`);
-    assert.ok(videoAt < available[0]!, `video output at ${videoAt} ms preceded audio at ${available[0]} ms`);
+    // Both timestamps come from the same monotonic clock at sub-millisecond
+    // precision and video is sampled first, so an equal reading means the clock
+    // did not tick in between, not that video waited for audio. Rounding to
+    // whole milliseconds made this fail on slow runners when both landed in the
+    // same millisecond.
+    assert.ok(videoAt <= available[0]!, `video output at ${videoAt.toFixed(3)} ms preceded audio at ${available[0]!.toFixed(3)} ms`);
     assert.equal(media.lateAudioSupported('fixture'), true);
     assert.equal(media.serveAudio(grant, listener as any), true);
     audio.write(Buffer.concat(frames.slice(1)));
