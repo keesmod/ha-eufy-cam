@@ -73,7 +73,10 @@ the limit before any device command, and station telemetry, push and snapshots
 were intact afterwards. Later that day, with integration 0.8.22 and its inline
 card mode, two inline cards played the same two T8160 through WebRTC at 1920 by
 1080 in Chromium at the same time with the bridge option at 4, and both closed
-with device-confirmed stops. Three or four streams are not covered. See the
+with device-confirmed stops. Later still, with integration 0.8.23 and four
+autostart cards with the option at 3, two cameras played at the same time in
+each of two rounds while the third admitted camera timed out at startup and
+the fourth card was refused. Three or four streams are not covered. See the
 [test record](CONCURRENT_LIVE_2026-09-18.md).
 
 ## Report your installation

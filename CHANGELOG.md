@@ -32,8 +32,17 @@ without the option, pause, resume, stop from the live bar and from the paused
 bar, three autostart cards with the third refused at the limit and no retry,
 an end at the cap without restart, cleanup on hidden page, pagehide,
 disconnection and removal, the card editor, and real decoded WebRTC media that
-starts inline without a tap. Three or four concurrent streams remain
-unverified.
+starts inline without a tap. On 2026-09-18 four autostart cards on one
+HomeBase 3 (T8030, firmware 3.8.7.4) with the bridge option at 3 started
+without a tap in Chromium in two rounds: two cameras played through WebRTC
+with late audio each time, the fourth card was refused at the limit and did
+not retry, pause, resume and stop worked per card, a session that reached the
+two-minute cap stayed on its snapshot, and leaving the view stopped the
+remaining session with a device-confirmed stop, see
+[the test record](docs/CONCURRENT_LIVE_2026-09-18.md#four-autostart-cards-in-a-browser-2026-09-18).
+The third admitted camera timed out at startup in both rounds, so three
+concurrent streams remain unverified and two was the number that played at
+the same time on that bench.
 
 ### Upgrade and rollback
 
