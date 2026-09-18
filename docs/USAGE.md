@@ -20,6 +20,7 @@ On the tested HB3, increasing the SDK's existing query limit retrieved 105 datab
 - Choose **Recordings → Date → Show recordings** to play an existing HomeBase event in Home Assistant. This reads stored events, it does not record a new live stream.
 - Closing the dialog, leaving the dashboard, hiding the tab, disconnecting or failing to process frames releases the viewer.
 - Multiple viewers of a camera share one upstream stream. Closing one viewer does not interrupt the others.
+- One camera per HomeBase can be live at a time. A second camera on the same HomeBase is refused until the first live view has stopped, and its card reports the view as ended. See [one live camera per HomeBase](#one-live-camera-per-homebase).
 - The bridge independently expires silent viewers and stops the camera after the last viewer leaves.
 - HomeBase alarm and Guard Mode entities with station-confirmed commands and push status.
 - Push discovery and battery sensors, stable registry IDs, clean unload, English/Dutch UI and allowlisted diagnostics.
@@ -32,6 +33,10 @@ A sleeping battery camera cannot provide a newly captured photo on every dashboa
 On supported clients, live viewing uses **WebRTC video with listen-only audio** through Home Assistant's managed go2rtc. The bridge converts H.264/H.265 to browser-compatible H.264, up to **1920 pixels wide and 30 fps**, limited by the camera's source frame rate. Supported camera audio is converted to Opus. Playback starts muted, tap **Sound on / Geluid aan** to listen. A camera that supplies no supported audio remains video-only.
 
 A normal HA camera card/more-info dialog shows snapshots only. Use the companion card for live video. Talkback, new live recordings, HLS, PTZ and permanent RTSP are not provided. Use **Recordings** on a companion card to choose a date and play an existing HomeBase recording. The date and times are HomeBase-local. Clips are downloaded on demand into private temporary files, then played as MP4. Close or navigation cancels preparation. No Eufy Cloud subscription is required for these local files.
+
+#### One live camera per HomeBase
+
+The pinned Eufy Mega client owns one live stream per station: its P2P session to the HomeBase carries a single live video channel at a time, and a media start for another camera on that session would replace the running one. The bridge therefore refuses a second camera on the same HomeBase while the first is live, and the second card reports the view as ended. Close the first live view, then start the other camera. Cameras on different HomeBases are admitted independently within the bridge's eight camera slots, but that combination has not been validated on hardware. Simultaneous live views of several cameras on one HomeBase are tracked in [issue #84](https://github.com/keesmod/ha-eufy-cam/issues/84).
 
 Clients without WebRTC or video-frame callback support, including the Home Assistant macOS app, automatically use JPEG live video at up to **8 fps / 960 pixels**, without audio. The same explicit-start and stream cleanup rules apply. Use Safari on the Mac for WebRTC with live audio. If an established WebRTC attempt fails, the viewer can switch once to video-only JPEG. See [automatic fallback](#automatic-live-video-fallback).
 

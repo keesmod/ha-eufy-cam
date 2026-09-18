@@ -65,6 +65,7 @@ The cards are included with the integration.
 
 Tap a camera to watch live video and enable sound if wanted. Close the viewer
 when finished. Idle images are the latest received snapshots and may be old.
+One camera per HomeBase can be live at a time.
 
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
