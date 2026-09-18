@@ -42,6 +42,23 @@ test('migration transfer requires authentication and reports only fixed refusal 
   } finally { server.emit('shutdown'); server.closeAllConnections(); server.close(); await once(server,'close'); }
 });
 
+test('state reports the configured per-station live limit', async () => {
+  const fake = Object.assign(new EventEmitter(), {
+    auth: { state: 'connected' }, backendName: 'mega', migrationError: null, inventory: () => [], pictures: new Map(),
+    liveStreamsPerStation: 2, metrics: {}, hub: new StreamHub({ start: async () => {}, stop: async () => {}, disposeMedia: () => {} }),
+  });
+  const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/v1/state`, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(response.status, 200);
+    const state = await response.json() as { live_max_streams_per_station: number; protocol: number };
+    assert.equal(state.protocol, 1);
+    assert.equal(state.live_max_streams_per_station, 2);
+  } finally { server.emit('shutdown'); server.close(); await once(server, 'close'); }
+});
+
 test('authenticated bridge snapshots never start; websocket close stops last viewer', async () => {
   const calls: string[] = [];
   const fake = Object.assign(new EventEmitter(), {
