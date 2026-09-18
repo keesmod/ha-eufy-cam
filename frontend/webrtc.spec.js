@@ -28,8 +28,10 @@ const cases = [
   {ending:'before-audio',profile:'late-admission',reopen:true},
   // Inline live mode plays the same decoded media inside the card, no dialog.
   ...['close','blocked'].map(ending=>({ending,profile:'normal',inline:true})),
+  // Optional autostart: the inline card starts the same decoded media without a tap.
+  {ending:'close',profile:'normal',inline:true,autostart:true},
 ];
-for (const {ending:initialEnding,profile,iceMode='direct',reopen=false,inline=false} of cases) test(`real WebRTC ${profile} stops after ${initialEnding} (${iceMode})${reopen?' and reopens':''}${inline?' inline':''}`, async ({ page }, testInfo) => {
+for (const {ending:initialEnding,profile,iceMode='direct',reopen=false,inline=false,autostart=false} of cases) test(`real WebRTC ${profile} stops after ${initialEnding} (${iceMode})${reopen?' and reopens':''}${inline?' inline':''}${autostart?' autostart':''}`, async ({ page }, testInfo) => {
   test.setTimeout(reopen ? 90000 : 60000);
   let ending = initialEnding;
   const binary = process.env.GO2RTC_BINARY;
@@ -175,17 +177,18 @@ for (const {ending:initialEnding,profile,iceMode='direct',reopen=false,inline=fa
       await changeStream('src=acceptance_audio','DELETE');
       await changeStream('src=acceptance','DELETE');
     });
-    await page.evaluate(async inline=>{
+    await page.evaluate(async ({inline,autostart})=>{
       await customElements.whenDefined('eufy-viewer-card');const connection=new EventTarget();
       connection.subscribeMessage=async callback=>{window.receive=callback;await backendWatch();return()=>backendClose();};
-      const card=window.card=document.createElement('eufy-viewer-card');document.body.append(card);card.setConfig(inline?{entity:'camera.test',live_mode:'inline'}:{entity:'camera.test'});
+      const card=window.card=document.createElement('eufy-viewer-card');document.body.append(card);card.setConfig(inline?{entity:'camera.test',live_mode:'inline',...(autostart?{live_autostart:true}:{})}:{entity:'camera.test'});
       card.hass={language:'en',connection,states:{'camera.test':{state:'idle',attributes:{friendly_name:'Test camera',viewer_card:true,viewer_webrtc:true,viewer_late_audio:true}}},callWS:backendCall};
-    },inline);
-    expect(starts).toBe(0);
+    },{inline,autostart});
+    if(!autostart)expect(starts).toBe(0);
     for (let cycle=0;cycle<(reopen?2:1);cycle++) {
     ending=cycle?'close':initialEnding;reports.length=0;
     const expectedStarts=cycle+1, previousAcks=acks;
-    await page.getByRole('button',{name:'Watch live',exact:true}).click();
+    if(autostart&&cycle===0){await expect.poll(()=>starts).toBe(1);await expect(page.getByRole('button',{name:'Pause',exact:true})).toBeVisible();}
+    else await page.getByRole('button',{name:'Watch live',exact:true}).click();
     if(inline){await expect(page.locator('dialog[open]')).toHaveCount(0);await expect(page.locator('ha-card video.video')).toBeVisible();}
     if(!['blocked','answer-loss'].includes(ending)) {
     await expect.poll(()=>page.locator('video.video').evaluate(v=>v.videoWidth),{timeout:20000}).toBe(1280);

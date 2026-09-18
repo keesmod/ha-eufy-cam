@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.8.23 - 2026-09-18
+
+### Optional automatic live start for inline cards
+
+- New card option `live_autostart: true`, default false and only valid with
+  `live_mode: inline`. The card starts its live view without a tap when it is
+  attached in view: when the view opens, when the card scrolls back into view
+  or when the page becomes visible again. Each trigger starts at most one
+  session per card, up to the bridge's `live_max_streams_per_station`. A card
+  refused at the limit shows "Another camera on this HomeBase is live",
+  returns to its snapshot and does not retry by itself. The visual card editor
+  offers the switch for inline cards.
+- Pause, resume and stop per card, next to the existing sound and close
+  controls. Pause releases the lease and shows the snapshot with a resume
+  control, which starts a new session with a fresh lease. Stop ends the session
+  and disables autostart for that card until the view is opened again.
+- Every rule holds: one lease per card with the frame acknowledgement loop,
+  the two-minute cap, and a device-confirmed stop on close, page hide,
+  navigation, card removal, disconnection or when the card scrolls out of
+  view. When the bridge ends a session, at the cap or for any other reason,
+  the card returns to its snapshot and does not restart by itself. Opening the
+  view again applies autostart again. There is no retry loop and no
+  keep-alive. The default stays the explicit start by tap.
+
+### Evidence and limits
+
+Playwright covers autostart on attach, on the page becoming visible again and
+on the card scrolling back into view, no autostart in the dialog mode or
+without the option, pause, resume, stop from the live bar and from the paused
+bar, three autostart cards with the third refused at the limit and no retry,
+an end at the cap without restart, cleanup on hidden page, pagehide,
+disconnection and removal, the card editor, and real decoded WebRTC media that
+starts inline without a tap. On 2026-09-18 four autostart cards on one
+HomeBase 3 (T8030, firmware 3.8.7.4) with the bridge option at 3 started
+without a tap in Chromium in two rounds: two cameras played through WebRTC
+with late audio each time, the fourth card was refused at the limit and did
+not retry, pause, resume and stop worked per card, a session that reached the
+two-minute cap stayed on its snapshot, and leaving the view stopped the
+remaining session with a device-confirmed stop, see
+[the test record](docs/CONCURRENT_LIVE_2026-09-18.md#four-autostart-cards-in-a-browser-2026-09-18).
+The third admitted camera timed out at startup in both rounds, so three
+concurrent streams remain unverified and two was the number that played at
+the same time on that bench.
+
+### Upgrade and rollback
+
+Integration-only release, the bridge stays at 0.8.21. Update the integration,
+restart Home Assistant and refresh the dashboard. If you update from 0.8.20,
+the 0.8.22 and 0.8.21 notes below apply as well. Existing cards keep their
+behaviour until you set `live_autostart: true`. To roll back, restore the
+previous integration version from your backup and reload the dashboard.
+
 ## 0.8.22 - 2026-09-18
 
 ### Inline live mode for several live cameras
