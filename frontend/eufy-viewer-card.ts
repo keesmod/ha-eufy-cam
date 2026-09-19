@@ -78,7 +78,7 @@ export class EufyViewerCard extends HTMLElement {
   private _haltButton: HTMLButtonElement;
   private _resumeButton: HTMLButtonElement;
   private _pausedBar: HTMLElement;
-  /** Autostart: a view opening or visibility trigger that has not started a session yet. One trigger starts at most one session. */
+  /** Autostart: an attach (the view opens) or page visibility trigger that has not started a session yet. One trigger starts at most one session, once the card is in view. */
   private _autostartPending = false;
   /** The stop control disables autostart until the card is attached again. */
   private _autostartBlocked = false;
@@ -194,6 +194,8 @@ export class EufyViewerCard extends HTMLElement {
       this._stage.hidden = inline;
     }
     this._config = { ...config };
+    // The intersection rule follows the configuration: a live card that may no longer stay out of view stops now.
+    if (this._open && !this._visible && !this._keepsOutOfView()) this._stop();
     this._render();
   }
   set hass(hass: HA) {
@@ -213,12 +215,15 @@ export class EufyViewerCard extends HTMLElement {
     document.addEventListener("visibilitychange", this._visibility);
     window.addEventListener("pagehide", this._pagehide);
     this._hass?.connection?.addEventListener("disconnected", this._disconnected);
-    // Attaching the card again, for example when the view opens, clears a stop and a pause. The observer's first callback is the autostart trigger.
+    // Attaching the card again, for example when the view opens, clears a stop and a pause. The observer's first report arms autostart, which fires once the card is in view.
     this._autostartBlocked = false; this._paused = false; this._autostartPending = false;
+    let first = true;
     this._observer = new IntersectionObserver(entries => {
       this._visible = entries[entries.length - 1]?.isIntersecting ?? false;
-      if (!this._visible) { this._stop(); this._closeRecordings(); }
-      else { this._autostartPending = true; this._autostart(); }
+      if (first) { first = false; this._autostartPending = true; }
+      // Scrolling out of view stops the live view unless autostart keeps it, and closes open recordings. Scrolling back into view is not a trigger of its own.
+      if (this._visible) this._autostart();
+      else { if (!this._keepsOutOfView()) this._stop(); this._closeRecordings(); }
     });
     this._observer.observe(this);
     this._render();
@@ -343,7 +348,9 @@ export class EufyViewerCard extends HTMLElement {
     this.shadowRoot!.querySelector<HTMLElement>(".status")!.textContent = message;
     this.shadowRoot!.querySelector<HTMLElement>(".live-status")!.textContent = message;
   }
-  _watching(generation: number) { return this._open && generation === this._generation && this.isConnected && this._visible && document.visibilityState === "visible" && (this._inline ? !this._stage.hidden : this._dialog.open); }
+  /** An inline card with autostart keeps its session and its acknowledgement loop while it is scrolled out of view. Every other card stops on intersection loss. */
+  _keepsOutOfView() { return this._inline && this._config?.live_autostart === true; }
+  _watching(generation: number) { return this._open && generation === this._generation && this.isConnected && (this._visible || this._keepsOutOfView()) && document.visibilityState === "visible" && (this._inline ? !this._stage.hidden : this._dialog.open); }
   async _start() {
     this._liveDiagnostics.update(false);
     if (this._open || this._preview.disabled || !this._hass || !this._config || !this._visible || document.visibilityState !== "visible") return;
@@ -687,12 +694,12 @@ export class EufyViewerCard extends HTMLElement {
     } catch { /* Diagnostics cannot interrupt playback or renew a lease. */ }
     finally { clearTimeout(timer); }
   }
-  /** Autostart starts one session per trigger: the card comes into view after attach or scroll, or the page becomes visible again. A session that ended never restarts by itself. */
+  /** Autostart starts one session per trigger: the card is attached (the view opens) or the page becomes visible again. The trigger fires once the card is in view. A session that ended never restarts by itself. */
   _autostart() {
     if (!this._autostartPending) return;
-    if (!this._config?.live_autostart || !this._inline || this._autostartBlocked || this._open || !this.isConnected || !this._visible || document.visibilityState !== "visible") { this._autostartPending = false; return; }
-    // A camera that is unavailable at the trigger keeps it until a later state update. Open recordings keep it until they close.
-    if (!this._hass || this._preview.disabled || this._recordDialog.open) return;
+    if (!this._config?.live_autostart || !this._inline || this._autostartBlocked || this._open || !this.isConnected || document.visibilityState !== "visible") { this._autostartPending = false; return; }
+    // A card that is out of view, a camera that is unavailable at the trigger or open recordings keep it until a later intersection report, state update or close.
+    if (!this._visible || !this._hass || this._preview.disabled || this._recordDialog.open) return;
     this._autostartPending = false;
     void this._start();
   }
@@ -731,7 +738,8 @@ export class EufyViewerCard extends HTMLElement {
     if (this._inline) {
       const focused = this.shadowRoot!.activeElement !== null && this._stage.contains(this.shadowRoot!.activeElement);
       this._stage.hidden = true; this._preview.hidden = false;
-      if (focused) this._preview.focus();
+      // A session can end while the card is out of view, at the cap for example. Returning focus must not scroll the page to it.
+      if (focused) this._preview.focus({ preventScroll: true });
     }
     this._live.removeAttribute("src");
     if (this._frameUrl) URL.revokeObjectURL(this._frameUrl);

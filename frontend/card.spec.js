@@ -673,10 +673,10 @@ test('card editor offers the live mode and stores the default as an absent key',
   expect(result.dutch).toEqual({ options: ['Pop-updialoog (standaard)', "In de kaart, voor meerdere livecamera's"], label: 'Livebeeld', data: { live_mode: 'dialog' } });
 });
 
-// Optional autostart: an inline card starts its live view without a tap when it is attached in view,
-// when it scrolls back into view or when the page becomes visible again. One trigger starts at most one
-// session, and a session that ended never restarts by itself. Pause releases the lease and offers resume,
-// stop also disables autostart until the card is attached again.
+// Optional autostart: an inline card starts its live view without a tap when it comes into view after it
+// is attached, or when the page becomes visible again. One trigger starts at most one session, the card
+// keeps its session while it is scrolled out of view, and a session that ended never restarts by itself.
+// Pause releases the lease and offers resume, stop also disables autostart until the card is attached again.
 const attachAutostart = (page, config = { entity: 'camera.front', live_mode: 'inline', live_autostart: true }) => page.evaluate(config => {
   // Home Assistant's order: config and hass first, then the card is attached to the view.
   const hass = card._hass; card.remove();
@@ -688,7 +688,7 @@ const attachAutostart = (page, config = { entity: 'camera.front', live_mode: 'in
   window.state = () => ({ open: card._open, stage: !card._stage.hidden, preview: !card._preview.hidden, paused: !card._pausedBar.hidden, pause: !card._pauseButton.hidden && !card._stage.hidden, stop: !card._haltButton.hidden && !card._stage.hidden, calls: calls.length, closes: closeCount });
 }, config);
 
-test('live_autostart starts an inline card without a tap when it is attached in view, and once more when the page or the card comes back into view', async ({ page }) => {
+test('live_autostart starts an inline card without a tap when it is attached in view, and once more when the page comes back into view', async ({ page }) => {
   await attachAutostart(page);
   await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
   expect(await page.evaluate(() => calls[0])).toEqual({ message: { type: 'eufy_viewer/watch', entity_id: 'camera.front', transport: 'jpeg' }, options: { resubscribe: false } });
@@ -709,18 +709,14 @@ test('live_autostart starts an inline card without a tap when it is attached in 
   expect(await page.evaluate(() => calls.length)).toBe(1);
   await page.evaluate(() => pageVisible(true));
   await expect.poll(() => page.evaluate(() => calls.length)).toBe(2);
-  // Scrolled out of view: released. Back in view: one new session, and repeated state updates start nothing more.
-  await page.evaluate(() => { card.style.marginTop = '4000px'; });
-  await expect.poll(() => page.evaluate(() => closeCount)).toBe(2);
-  await page.evaluate(() => { card.style.marginTop = ''; });
-  await expect.poll(() => page.evaluate(() => calls.length)).toBe(3);
+  // Repeated state updates start nothing more.
   await page.evaluate(() => { card.hass = { ...card._hass }; card.hass = { ...card._hass }; });
   await page.waitForTimeout(100);
-  expect(await page.evaluate(() => state())).toMatchObject({ open: true, calls: 3, closes: 2 });
+  expect(await page.evaluate(() => state())).toMatchObject({ open: true, calls: 2, closes: 1 });
   // The existing close still releases the lease and returns the card to its snapshot.
   await page.getByRole('button', { name: 'Close live view', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => closeCount)).toBe(3);
-  expect(await page.evaluate(() => state())).toEqual({ open: false, stage: false, preview: true, paused: false, pause: false, stop: false, calls: 3, closes: 3 });
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(2);
+  expect(await page.evaluate(() => state())).toEqual({ open: false, stage: false, preview: true, paused: false, pause: false, stop: false, calls: 2, closes: 2 });
   expect(await page.evaluate(() => card.shadowRoot.activeElement === card._preview)).toBe(true);
 });
 
@@ -950,6 +946,214 @@ test('an autostart card releases on hidden page, pagehide, disconnection and rem
     await expect.poll(() => page.evaluate(() => calls.length)).toBe(actions.indexOf(action) + 2);
   }
   expect(await page.evaluate(() => closeCount)).toBe(4);
+});
+
+// Scrolling: an autostart card keeps its session while it is out of view, so a long dashboard does not
+// stop and restart its cameras. Every other card still stops on intersection loss.
+test('an autostart card scrolled out of view keeps its session and keeps acknowledging frames, and scrolling back starts no second session', async ({ page }) => {
+  await attachAutostart(page);
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  await page.evaluate(() => receive({ type: 'frame', subscription: 9, sequence: 1, jpeg }));
+  await expect.poll(() => page.evaluate(() => acks.length)).toBe(1);
+  await page.evaluate(() => { card.style.marginTop = '4000px'; });
+  await expect.poll(() => page.evaluate(() => card._visible)).toBe(false);
+  expect(await page.evaluate(() => state())).toMatchObject({ open: true, stage: true, preview: false, calls: 1, closes: 0 });
+  // Frames delivered while the card is out of view are still decoded, painted and acknowledged, so the bridge keeps the lease.
+  for (const sequence of [2, 3, 4]) {
+    await page.evaluate(sequence => receive({ type: 'frame', subscription: 9, sequence, jpeg }), sequence);
+    await expect.poll(() => page.evaluate(() => acks.length)).toBe(sequence);
+  }
+  expect(await page.evaluate(() => acks.map(ack => ack.sequence))).toEqual([1, 2, 3, 4]);
+  // State updates and time start nothing while the card is out of view.
+  await page.evaluate(() => { card.hass = { ...card._hass }; card.hass = { ...card._hass }; });
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => state())).toMatchObject({ open: true, calls: 1, closes: 0 });
+  // Back in view: the same session is still live and nothing new starts.
+  await page.evaluate(() => { card.style.marginTop = ''; });
+  await expect.poll(() => page.evaluate(() => card._visible)).toBe(true);
+  await page.evaluate(() => { card.hass = { ...card._hass }; });
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => state())).toMatchObject({ open: true, stage: true, calls: 1, closes: 0 });
+  await page.evaluate(() => receive({ type: 'frame', subscription: 9, sequence: 5, jpeg }));
+  await expect.poll(() => page.evaluate(() => acks.length)).toBe(5);
+  await expect(page.locator('ha-card img.live')).toBeVisible();
+  // The cap still ends the session while the card is out of view, and scrolling back does not restart it. The page becoming visible again does.
+  await page.evaluate(() => { card.style.marginTop = '4000px'; });
+  await expect.poll(() => page.evaluate(() => card._visible)).toBe(false);
+  await page.evaluate(() => receive({ type: 'ended' }));
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  // The stop returns focus to the snapshot without scrolling the page to the card.
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => ({ visible: card._visible, scrollY: window.scrollY, focused: card.shadowRoot.activeElement === card._preview }))).toEqual({ visible: false, scrollY: 0, focused: true });
+  await page.evaluate(() => { card.style.marginTop = ''; });
+  await expect.poll(() => page.evaluate(() => card._visible)).toBe(true);
+  await page.evaluate(() => { card.hass = { ...card._hass }; });
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => state())).toMatchObject({ open: false, stage: false, preview: true, paused: false, calls: 1, closes: 1 });
+  await expect(page.locator('.status')).toHaveText('Live view ended. Tap again to watch.');
+  await page.evaluate(() => { pageVisible(false); pageVisible(true); });
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(2);
+});
+
+test('an autostart card scrolled out of view keeps acknowledging WebRTC ticks from painted frames', async ({ page }) => {
+  await installLateAudioFixture(page);
+  await page.evaluate(() => {
+    // A changing canvas keeps the captured track producing frames, as a camera does. A static canvas produces none.
+    const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 16;
+    const context = canvas.getContext('2d');
+    setInterval(() => { context.fillStyle = `hsl(${Date.now() % 360} 50% 50%)`; context.fillRect(0, 0, 16, 16); }, 40);
+    window.videoTrack = canvas.captureStream(5).getVideoTracks()[0];
+  });
+  await attachAutostart(page);
+  await expect.poll(() => page.evaluate(() => calls.map(call => call.message.transport))).toEqual(['webrtc']);
+  await page.evaluate(() => receive({ type: 'ready', subscription: 9, fallback: true }));
+  await expect.poll(() => page.evaluate(() => signals())).toEqual([{ audio: false, offer: true, stop: false }]);
+  await page.evaluate(() => { receive({ type: 'answer', sdp: 'PRIVATE' }); peers[0].deliver(videoTrack); });
+  await expect.poll(() => page.evaluate(() => element().paused)).toBe(false);
+  const ticks = () => page.evaluate(() => acks.filter(m => m.type === 'eufy_viewer/ack').map(m => m.sequence));
+  await page.evaluate(() => receive({ type: 'tick', subscription: 9, sequence: 1 }));
+  await expect.poll(ticks).toEqual([1]);
+  await page.evaluate(() => { card.style.marginTop = '4000px'; });
+  await expect.poll(() => page.evaluate(() => card._visible)).toBe(false);
+  // Each tick is acknowledged from a fresh painted frame while the video element is out of view.
+  for (const sequence of [2, 3, 4]) {
+    await page.evaluate(sequence => receive({ type: 'tick', subscription: 9, sequence }), sequence);
+    await expect.poll(ticks).toEqual([1, 2, 3, 4].slice(0, sequence));
+  }
+  expect(await page.evaluate(() => state())).toMatchObject({ open: true, stage: true, calls: 1, closes: 0 });
+  await page.evaluate(() => { card.style.marginTop = ''; });
+  await expect.poll(() => page.evaluate(() => card._visible)).toBe(true);
+  await page.evaluate(() => receive({ type: 'tick', subscription: 9, sequence: 5 }));
+  await expect.poll(ticks).toEqual([1, 2, 3, 4, 5]);
+  expect(await page.evaluate(() => ({ calls: calls.length, fallback: acks.some(m => m.type === 'eufy_viewer/fallback') }))).toEqual({ calls: 1, fallback: false });
+  await page.getByRole('button', { name: 'Close live view', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  expect(await page.evaluate(() => card._video.srcObject)).toBeNull();
+});
+
+test('an inline card without autostart and the popup still stop when the card scrolls out of view, and scrolling back starts nothing', async ({ page }) => {
+  const configs = [{ entity: 'camera.front', live_mode: 'inline' }, { entity: 'camera.front' }];
+  for (const config of configs) {
+    const round = configs.indexOf(config) + 1;
+    await attachAutostart(page, config);
+    await expect.poll(() => page.evaluate(() => card._visible)).toBe(true);
+    await page.getByRole('button', { name: 'Watch live' }).click();
+    await expect.poll(() => page.evaluate(() => calls.length)).toBe(round);
+    await page.evaluate(() => receive({ type: 'frame', subscription: 9, sequence: 1, jpeg }));
+    await expect.poll(() => page.evaluate(() => acks.length)).toBe(round);
+    await page.evaluate(() => { card.style.marginTop = '4000px'; });
+    await expect.poll(() => page.evaluate(() => closeCount)).toBe(round);
+    expect(await page.evaluate(() => ({ open: card._open, dialog: card._dialog.open, stage: card._inline && !card._stage.hidden }))).toEqual({ open: false, dialog: false, stage: false });
+    // A late frame of the released session is not acknowledged, and scrolling back into view starts nothing.
+    await page.evaluate(() => { receive({ type: 'frame', subscription: 9, sequence: 2, jpeg }); card.style.marginTop = ''; });
+    await expect.poll(() => page.evaluate(() => card._visible)).toBe(true);
+    await page.evaluate(() => { card.hass = { ...card._hass }; });
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => ({ calls: calls.length, acks: acks.length, closes: closeCount }))).toEqual({ calls: round, acks: round, closes: round });
+  }
+});
+
+test('an autostart card scrolled out of view still releases on hidden page, pagehide, disconnection and removal, and the next trigger waits until it is in view again', async ({ page }) => {
+  await attachAutostart(page);
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  const actions = ['hidden', 'pagehide', 'disconnect', 'detach'];
+  for (const action of actions) {
+    const round = actions.indexOf(action) + 1;
+    await page.evaluate(() => { card.style.marginTop = '4000px'; });
+    await expect.poll(() => page.evaluate(() => card._visible)).toBe(false);
+    await page.evaluate(round => receive({ type: 'frame', subscription: round, sequence: 1, jpeg }), round);
+    await expect.poll(() => page.evaluate(() => acks.length)).toBe(round);
+    expect(await page.evaluate(() => state())).toMatchObject({ open: true, calls: round, closes: round - 1 });
+    await page.evaluate(action => {
+      if (action === 'hidden') pageVisible(false);
+      if (action === 'pagehide') window.dispatchEvent(new Event('pagehide'));
+      if (action === 'disconnect') connection.dispatchEvent(new Event('disconnected'));
+      if (action === 'detach') card.remove();
+    }, action);
+    await expect.poll(() => page.evaluate(() => closeCount)).toBe(round);
+    expect(await page.evaluate(() => card._stage.hidden && !card._open)).toBe(true);
+    // A late frame of the released session is not acknowledged.
+    await page.evaluate(round => receive({ type: 'frame', subscription: round, sequence: 2, jpeg }), round);
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => acks.length)).toBe(round);
+    // Returning to the view while the card is still out of view: the trigger waits until the card scrolls into view.
+    await page.evaluate(action => { if (action === 'detach') document.body.append(card); else pageVisible(true); }, action);
+    await page.evaluate(() => { card.hass = { ...card._hass }; });
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => calls.length)).toBe(round);
+    await page.evaluate(() => { card.style.marginTop = ''; });
+    await expect.poll(() => page.evaluate(() => calls.length)).toBe(round + 1);
+  }
+  expect(await page.evaluate(() => closeCount)).toBe(4);
+});
+
+test('three autostart cards in one narrow column stay live while the page scrolls between them, and a hidden page or navigation stops every session', async ({ page }) => {
+  await page.setViewportSize({ width: 400, height: 700 });
+  const entities = ['camera.front', 'camera.back', 'camera.side'];
+  await page.evaluate(entities => {
+    // A mobile dashboard: one card per row, each taller than the viewport, so one card is in view at a time.
+    document.body.style.cssText = 'display:grid;grid-template-columns:1fr;gap:200px;margin:0';
+    const states = { ...card._hass.states };
+    for (const entity of entities.slice(1)) states[entity] = { state: 'idle', attributes: { friendly_name: entity, viewer_card: true } };
+    const hass = { ...card._hass, states }; card.remove();
+    const canvas = document.createElement('canvas'); canvas.width = 16; canvas.height = 16;
+    window.jpeg = canvas.toDataURL('image/jpeg').split(',')[1];
+    window.pageVisible = visible => { Object.defineProperty(document, 'visibilityState', { value: visible ? 'visible' : 'hidden', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); };
+    window.cards = entities.map(entity => { const each = document.createElement('eufy-viewer-card'); each.style.minHeight = '900px'; each.setConfig({ entity, live_mode: 'inline', live_autostart: true }); each.hass = hass; document.body.append(each); return each; });
+    window.card = cards[0];
+    window.inView = () => cards.map(each => each._visible);
+    window.live = () => cards.map(each => each._open);
+    window.started = () => calls.map(call => call.message.entity_id);
+    window.frame = (index, sequence) => receivers[entities[index]]({ type: 'frame', subscription: index + 1, sequence, jpeg });
+    window.ackCounts = () => [1, 2, 3].map(subscription => acks.filter(ack => ack.subscription === subscription).length);
+  }, entities);
+  // Only the first card is in view when the view opens, so only it starts. The others hold their trigger.
+  await expect.poll(() => page.evaluate(() => inView())).toEqual([true, false, false]);
+  await expect.poll(() => page.evaluate(() => started())).toEqual(['camera.front']);
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => started())).toEqual(['camera.front']);
+  await page.evaluate(() => frame(0, 1));
+  await expect.poll(() => page.evaluate(() => ackCounts())).toEqual([1, 0, 0]);
+  // Scrolling to the second card starts it. The first stays live and keeps acknowledging out of view.
+  await page.evaluate(() => cards[1].scrollIntoView());
+  await expect.poll(() => page.evaluate(() => inView())).toEqual([false, true, false]);
+  await expect.poll(() => page.evaluate(() => started())).toEqual(['camera.front', 'camera.back']);
+  await page.evaluate(() => { frame(0, 2); frame(1, 1); });
+  await expect.poll(() => page.evaluate(() => ackCounts())).toEqual([2, 1, 0]);
+  expect(await page.evaluate(() => ({ live: live(), closes: closeCount }))).toEqual({ live: [true, true, false], closes: 0 });
+  // Scrolling to the third card starts it. All three stay live and acknowledge while two are out of view.
+  await page.evaluate(() => cards[2].scrollIntoView());
+  await expect.poll(() => page.evaluate(() => inView())).toEqual([false, false, true]);
+  await expect.poll(() => page.evaluate(() => started())).toEqual(entities);
+  await page.evaluate(() => { frame(0, 3); frame(1, 2); frame(2, 1); });
+  await expect.poll(() => page.evaluate(() => ackCounts())).toEqual([3, 2, 1]);
+  // Scrolling back to the top starts nothing: every card is still on its first session.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect.poll(() => page.evaluate(() => inView())).toEqual([true, false, false]);
+  await page.evaluate(() => { for (const each of cards) each.hass = { ...each._hass }; });
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => ({ started: started(), live: live(), closes: closeCount }))).toEqual({ started: entities, live: [true, true, true], closes: 0 });
+  await page.evaluate(() => { frame(0, 4); frame(1, 3); frame(2, 2); });
+  await expect.poll(() => page.evaluate(() => ackCounts())).toEqual([4, 3, 2]);
+  // A hidden page releases every session, the out-of-view ones included. Visible again: the card in view starts, the others wait for their scroll.
+  await page.evaluate(() => pageVisible(false));
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(3);
+  expect(await page.evaluate(() => live())).toEqual([false, false, false]);
+  await page.evaluate(() => pageVisible(true));
+  await expect.poll(() => page.evaluate(() => started())).toEqual([...entities, 'camera.front']);
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => calls.length)).toBe(4);
+  await page.evaluate(() => cards[2].scrollIntoView());
+  await expect.poll(() => page.evaluate(() => started())).toEqual([...entities, 'camera.front', 'camera.side']);
+  await page.evaluate(() => cards[1].scrollIntoView());
+  await expect.poll(() => page.evaluate(() => started())).toEqual([...entities, 'camera.front', 'camera.side', 'camera.back']);
+  expect(await page.evaluate(() => live())).toEqual([true, true, true]);
+  // Navigation removes the cards: every session stops and nothing starts while they are detached.
+  await page.evaluate(() => { for (const each of cards) each.remove(); });
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(6);
+  await page.evaluate(() => { for (const each of cards) each.hass = { ...each._hass }; pageVisible(false); pageVisible(true); });
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => calls.length)).toBe(6);
 });
 
 test('card editor offers automatic start only for the inline mode and stores false as an absent key', async ({ page }) => {
