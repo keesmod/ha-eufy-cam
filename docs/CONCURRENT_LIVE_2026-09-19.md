@@ -104,7 +104,8 @@ restore.
 - This is consistent with the external second-HomeBase report on #94, where all
   three streams reached `frame_ack` on a GPU host with the CPU near idle and the
   third stream only intermittently hit `fallback_startup_timeout`, and where a
-  Home Assistant side change to the card lifecycle let all three play.
+  change to the lifecycle of the tester's own local card, not the bundled card,
+  let all three play.
 
 ## The 2026-09-18 stop retries and failed recovery explained
 
@@ -162,7 +163,15 @@ processes on the T600, GPU memory about 764 of 4096 MiB and GPU utilisation abou
 stream intermittently hit `fallback_startup_timeout` then `stream_failure`, all
 three sometimes hit `fallback_playback_timeout` at 13 to 18 seconds, and sessions
 ended with `no_viewers`. The tester attributed the `no_viewers` churn to cards
-stopping when they scrolled out of view and reported that a Home Assistant side
-change to the card lifecycle then let all three cameras play at once, with go2rtc
-`unexpected EOF` logged on audio at some stops. Source: the tester's comments on
-issue #94.
+stopping when they scrolled out of view and reported that removing the stop on
+scroll out and on page hide from his own local card, not the bundled card, then
+let all three cameras play at once, with go2rtc `unexpected EOF` logged on audio
+at some stops. On 2026-09-19 he also reported a session on one camera that ended
+at 120 s with `camera_timeout`, `stream_failure` and `session_end` and a new
+session started by his card at once, which is the documented two-minute cap
+followed by that card's own restart, and he shared the integration's redacted
+diagnostics download: all three cameras are mains powered, seven of the last
+eight attempts carry no card report, and the discovery events hold eight HomeBase
+disconnect and reconnect pairs between 08:04 and 08:58 UTC after the start-up
+connection, each reconnecting within about a second, in a list capped at 22
+events. Source: the tester's comments on issue #94.

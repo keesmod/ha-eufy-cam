@@ -158,8 +158,9 @@ and `audio_input` mean input bytes arrived, not that decoding succeeded.
 `media_reader` means a client requested the media stream, not that it played.
 `frame_ack` means the viewer acknowledged a delivered frame. `viewer_timeout`
 means that acknowledgement deadline expired. `camera_timeout` means the
-camera frame deadline or maximum viewing duration expired. `stream_failure`
-is a general termination category. Encoder error, exit, invalid-data and
+camera frame deadline or the two-minute maximum viewing duration expired, so a
+session that played for 120 s ends with `camera_timeout`, `stream_failure` and
+`session_end` by design. `stream_failure` is a general termination category. Encoder error, exit, invalid-data and
 decode-error categories narrow the failure without exposing raw FFmpeg text.
 
 Diagnostics emit each category once per attempt and never include device
