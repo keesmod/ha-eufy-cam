@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.8.25 - 2026-09-19
+
+### Autostart cards stay live while scrolled out of view
+
+- An inline card with `live_autostart: true` keeps its live session while it
+  is scrolled out of view and keeps acknowledging frames, so scrolling a long
+  dashboard no longer stops and restarts its cameras. A card that scrolls back
+  into view is still the same session. Reported on #94 from a mobile
+  dashboard with three autostart cards in one column, where every scroll cost
+  a device-confirmed stop and a fresh start of several seconds.
+- Autostart still starts when the card first comes into view after the view
+  opens, so a card below the fold starts the first time you scroll to it, and
+  again when the page becomes visible again. Scrolling back into view is no
+  longer a trigger of its own. The two-minute cap still ends the session, and
+  the session still stops on close, pause, stop, page hide, navigation, card
+  removal and disconnection, each confirmed by the bridge. A session that
+  ended never restarts by itself, scrolling included, and opening the view
+  again applies autostart again. The focus return to the snapshot after a stop
+  no longer scrolls the page, so a session that ends while its card is out of
+  view leaves the page where it is.
+- Inline cards without autostart and the popup keep stopping when the card
+  scrolls out of view. No new card option, the editor is unchanged. The bridge
+  stays at 0.8.21.
+
+### Evidence and limits
+
+Playwright covers an autostart card that keeps its session and its
+acknowledgement counter while scrolled out of view on the JPEG path and on the
+WebRTC tick path, no second session when it scrolls back, the cap ending an
+out-of-view session without a restart on scroll, a manual inline card and the
+popup still stopping on scroll out, an autostart card scrolled out of view
+still stopping on hidden page, pagehide, disconnection and removal with the
+next trigger waiting until it is in view, and three autostart cards in one
+narrow column that stay live while the page scrolls between them and all stop
+when the page hides or the cards are removed. In headless Chromium both
+acknowledgement paths ran at the same rate for a video element 4000 pixels
+below the viewport as in view. The reporter's mobile dashboard has not
+confirmed this release yet.
+
+### Upgrade and rollback
+
+Integration-only release, the bridge stays at 0.8.21. Update the integration,
+restart Home Assistant and refresh the dashboard. Coming from 0.8.23, this
+update also brings the 0.8.24 toolbar below the video on narrow cards. To roll
+back, restore the previous integration version from your backup and reload the
+dashboard.
+
 ## 0.8.24 - 2026-09-19
 
 ### Inline live controls below the video on narrow cards

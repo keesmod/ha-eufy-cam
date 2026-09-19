@@ -42,16 +42,16 @@ live_mode: inline
 | `entity` | a Eufy Viewer camera entity | Required. |
 | `name` | text | Optional title. The default is the entity's friendly name. |
 | `live_mode` | `dialog` (default) or `inline` | `dialog` opens the live view in a popup dialog that closes on Escape or a tap outside. `inline` plays the live view inside the card with its controls on the video, or in a toolbar below it on a card narrower than 500 px, so several cards can be live at once. |
-| `live_autostart` | `true` or `false` (default) | Only with `live_mode: inline`. Starts the live view without a tap when the view opens, up to the bridge's `live_max_streams_per_station`, and adds pause, resume and stop controls to the card. See [automatic live start](#automatic-live-start). |
+| `live_autostart` | `true` or `false` (default) | Only with `live_mode: inline`. Starts the live view without a tap when the view opens, up to the bridge's `live_max_streams_per_station`, keeps it while the card is scrolled out of view, and adds pause, resume and stop controls to the card. See [automatic live start](#automatic-live-start). |
 
 An inline card follows the same rules as the dialog: one tap starts one live
 session, the two-minute cap applies, the sound toggle and late audio work the
 same, the diagnostics download stays available to administrators, and the view
-stops on close, Escape while it has focus, page hide, navigation, card removal,
-disconnection or when the card scrolls out of view. Status messages appear
-below the camera name. A card refused by the HomeBase live limit shows that
-message there and returns to its snapshot. Nothing starts automatically unless
-the card has `live_autostart: true`.
+stops on close, Escape while it has focus, page hide, navigation, card removal
+or disconnection. A card without `live_autostart` also stops when it scrolls
+out of view. Status messages appear below the camera name. A card refused by
+the HomeBase live limit shows that message there and returns to its snapshot.
+Nothing starts automatically unless the card has `live_autostart: true`.
 
 On a card narrower than 500 px, about a phone in portrait, the live controls
 sit in a compact toolbar directly below the video instead of on it, and the
@@ -64,15 +64,19 @@ meaning are the same in both layouts.
 #### Automatic live start
 
 With `live_autostart: true` an inline card starts its live view without a tap
-when it is attached in view: when the view opens, when the card scrolls back
-into view or when the page becomes visible again. Each trigger starts at most
-one session per card, up to the bridge's `live_max_streams_per_station`. A
-card refused at the limit shows the station-limit message, returns to its
-snapshot and does not retry by itself. When the bridge ends a session, at the
-two-minute cap or for any other reason, the card returns to its snapshot and
-does not restart by itself. Opening the view again applies autostart again.
-There is no retry loop and no keep-alive. A camera that is unavailable when
-the view opens starts once it becomes available while the view stays open.
+when it comes into view after the view opens, and again when the page becomes
+visible again. A card below the fold starts the first time you scroll to it.
+Each trigger starts at most one session per card, up to the bridge's
+`live_max_streams_per_station`. The card keeps its live session while it is
+scrolled out of view and keeps acknowledging frames, so scrolling a long
+dashboard does not stop and restart its cameras, and a card that scrolls back
+into view is still the same session. A card refused at the limit shows the
+station-limit message, returns to its snapshot and does not retry by itself.
+When the bridge ends a session, at the two-minute cap or for any other reason,
+the card returns to its snapshot and does not restart by itself, scrolling
+included. Opening the view again applies autostart again. There is no retry
+loop and no keep-alive. A camera that is unavailable when the view opens
+starts once it becomes available while the view stays open.
 
 The live view gets two controls next to the sound and close controls.
 **Pause** releases the lease and shows the snapshot with a **Resume** control,
@@ -81,10 +85,10 @@ resumes a paused card. **Stop** ends the session and disables autostart for
 that card until the view is opened again. A tap on the snapshot always starts
 a session by hand, and the close control keeps its meaning. Every rule above
 still applies: one lease per card with the frame acknowledgement loop, the
-two-minute cap, and a stop on close, page hide, navigation, card removal,
-disconnection and when the card scrolls out of view, each confirmed by the
-bridge. The visual editor shows the switch for inline cards, and the default
-is stored as an absent key.
+two-minute cap, and a stop on close, page hide, navigation, card removal and
+disconnection, each confirmed by the bridge. Scrolling the card out of view is
+the one exception: an autostart card stays live. The visual editor shows the
+switch for inline cards, and the default is stored as an absent key.
 
 ### Honest snapshot and streaming limits
 
