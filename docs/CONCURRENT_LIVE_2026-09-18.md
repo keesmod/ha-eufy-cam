@@ -191,3 +191,10 @@ concurrent streams remain unverified, and on this bench two was the number of
 cameras that played at the same time. A resume 12 s after a pause worked once
 and a resume 1.5 s after a pause failed once. One installation, one firmware
 tuple, one browser, two rounds of about 100 seconds.
+
+Continued on 2026-09-19: a supervised bridge-path test with the option at 3 and
+host CPU measured delivered three concurrent eufyCam 3 through the bridge's own
+viewer path with device-confirmed stops and no startup timeout, which locates the
+third-stream browser timeout on the WebRTC consumer path and host CPU headroom
+rather than the HomeBase, the P2P sessions or the bridge encoder. See the
+[2026-09-19 record](CONCURRENT_LIVE_2026-09-19.md).

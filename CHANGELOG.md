@@ -40,9 +40,13 @@ not retry, pause, resume and stop worked per card, a session that reached the
 two-minute cap stayed on its snapshot, and leaving the view stopped the
 remaining session with a device-confirmed stop, see
 [the test record](docs/CONCURRENT_LIVE_2026-09-18.md#four-autostart-cards-in-a-browser-2026-09-18).
-The third admitted camera timed out at startup in both rounds, so three
-concurrent streams remain unverified and two was the number that played at
-the same time on that bench.
+The third admitted camera timed out at startup in both rounds. A supervised
+bridge-path test on 2026-09-19 then delivered three concurrent eufyCam 3 through
+the bridge's own viewer path with device-confirmed stops and no startup timeout,
+which locates that third-stream browser timeout on the WebRTC consumer path and
+host CPU headroom rather than the HomeBase or the bridge, see
+[the 2026-09-19 record](docs/CONCURRENT_LIVE_2026-09-19.md). Three concurrent
+WebRTC streams in a browser on a software-transcoding host remain unverified.
 
 ### Upgrade and rollback
 
@@ -118,11 +122,14 @@ from your backup and reload the dashboard.
 
 Two concurrent streams are verified by the library on one HomeBase 3 (T8030,
 firmware 3.8.7.4) with two eufyCam 3 (T8160) cameras at full rate with audio.
-Three or four streams are permitted by the option but unverified. The bridge
-path with limit 2 was exercised on 2026-09-18 on the maintainer's HomeBase 3
-with two eufyCam 3 on the JPEG transport, with device-confirmed stops and a
-third camera refused at the limit, see
-[the test record](docs/CONCURRENT_LIVE_2026-09-18.md). The card still opens
+The bridge path was exercised on the maintainer's HomeBase 3 with two eufyCam 3
+on 2026-09-18 (see [that record](docs/CONCURRENT_LIVE_2026-09-18.md)) and with
+three eufyCam 3 on 2026-09-19, all reaching the first frame with device-confirmed
+stops and no startup timeout (see
+[the 2026-09-19 record](docs/CONCURRENT_LIVE_2026-09-19.md)). Software
+transcoding of three streams saturated a 2-core host, so the sustainable value
+depends on host CPU and transport. Four streams, and three concurrent WebRTC
+streams in a browser on a software-transcoding host, remain unverified. The card still opens
 one modal live view per card, so a grid of simultaneous live cards needs the
 inline live mode that follows [issue #84](https://github.com/keesmod/ha-eufy-cam/issues/84).
 Each concurrent camera adds an encoder pipeline on the bridge host (two FFmpeg

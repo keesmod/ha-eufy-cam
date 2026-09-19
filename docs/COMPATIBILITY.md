@@ -76,8 +76,29 @@ card mode, two inline cards played the same two T8160 through WebRTC at 1920 by
 with device-confirmed stops. Later still, with integration 0.8.23 and four
 autostart cards with the option at 3, two cameras played at the same time in
 each of two rounds while the third admitted camera timed out at startup and
-the fourth card was refused. Three or four streams are not covered. See the
+the fourth card was refused. See the
 [test record](CONCURRENT_LIVE_2026-09-18.md).
+
+On 2026-09-19, with the option at 3 and bounded diagnostics, three T8160
+(firmware 3.4.3.0) on that T8030 (firmware 3.8.7.4) streamed live at the same
+time through the bridge on the JPEG transport, in a staggered round, a
+simultaneous round and a simultaneous round that replaced one camera with the
+T8213 doorbell (HEVC). All three admitted cameras reached `frame_ack` in every
+round, every stop was device-confirmed, and there were no startup timeouts, stop
+retries, recovery attempts or quarantine. Software transcoding of three streams
+saturated the 2-core host CPU (six ffmpeg processes) while still delivering about
+6 to 8 JPEG frames per second per camera. This shows the earlier third-stream
+browser timeout was on the WebRTC consumer path and host CPU headroom, not the
+HomeBase, the P2P sessions or the bridge encoder. Three concurrent WebRTC streams
+in a browser on this software-transcoding host remain unverified. See the
+[2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md).
+
+An external tester reported a second HomeBase 3 (T8030 firmware 3.8.5.2) with
+T8416, T8417 and T8425 on an NVIDIA T600: three streams reached `frame_ack`
+together with the GPU at about 7 percent, with an intermittent third-stream
+`fallback_startup_timeout` that a Home Assistant side card-lifecycle change
+resolved. Reported, not independently reproduced. Source: comments on
+[issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
 
 ## Report your installation
 
