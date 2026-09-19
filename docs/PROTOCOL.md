@@ -102,6 +102,14 @@ forwards `4013` as `reason: "station_limit"` on its `ended` event and omits
 behaviour. `/v1/state` reports the configured limit as
 `live_max_streams_per_station`.
 
+Three concurrent cameras were verified on hardware through the bridge's own
+viewer path on 2026-09-19 (one HomeBase 3, three eufyCam 3, device-confirmed
+stops, no startup timeout), see the [test record](CONCURRENT_LIVE_2026-09-19.md).
+Software transcoding of three streams saturated a 2-core host, so the option
+value that a given host and transport can sustain is a capacity question, not a
+protocol limit. Three concurrent WebRTC streams in a browser on a
+software-transcoding host remain unverified.
+
 ## Existing recordings
 
 - `GET /v1/recordings/{serial}?date=YYYY-MM-DD`: authenticated on-demand P2P calendar query. Returns `{recordings: [{id,start,end,bytes}], returned}`. Dates/times retain the HomeBase calendar values. `returned` is the station response count before camera filtering, not a verified total. No raw device paths or account fields cross the bridge boundary.

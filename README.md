@@ -79,7 +79,10 @@ Each inline card still starts with a tap and stops when you close it or leave
 the page. Add `live_autostart: true` to an inline card to start it without a
 tap when the view opens, with pause, resume and stop controls on the card.
 Raise the bridge option `live_max_streams_per_station` to let more than one
-camera on the same HomeBase be live at once. See
+camera on the same HomeBase be live at once. Three concurrent eufyCam 3 are
+verified through the bridge on one HomeBase 3, but each stream adds transcoding
+load, so on a low-core host without hardware acceleration keep the option at 2
+for a browser dashboard. See
 [card options](docs/USAGE.md#card-options) and
 [live cameras per HomeBase](docs/USAGE.md#live-cameras-per-homebase).
 
