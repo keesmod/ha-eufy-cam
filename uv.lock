@@ -955,7 +955,7 @@ wheels = [
 
 [[package]]
 name = "eufy-security-viewer"
-version = "0.8.23"
+version = "0.8.24"
 source = { virtual = "." }
 
 [package.dev-dependencies]

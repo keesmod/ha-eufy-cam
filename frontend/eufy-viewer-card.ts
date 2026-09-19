@@ -104,9 +104,11 @@ export class EufyViewerCard extends HTMLElement {
     this._pagehide = () => { this._stop(); this._closeRecordings(); };
     this._disconnected = () => { this._stop("ended"); this._closeRecordings(); };
     // Static markup only. Entity names and all remote strings use textContent.
+    // The card is a size container: below 500 px of card width, a phone in portrait, the inline live controls leave the
+    // video for a compact toolbar below it and the paused bar sits below the snapshot. Wider cards keep the overlay.
     this.shadowRoot!.innerHTML = `
       <style>
-        :host{display:block;min-width:0}*{box-sizing:border-box}ha-card{display:block;position:relative;overflow:hidden;border-radius:16px}button{font:inherit;cursor:pointer}
+        :host{display:block;min-width:0}*{box-sizing:border-box}ha-card{display:block;position:relative;overflow:hidden;border-radius:16px;container-type:inline-size}button{font:inherit;cursor:pointer}
         .preview{display:block;width:100%;border:0;padding:0;position:relative;color:var(--primary-text-color);background:var(--card-background-color,#18212b)}
         .preview:focus-visible,.close:focus-visible{outline:3px solid var(--primary-color,#03a9f4);outline-offset:-3px}
         .capability{padding:10px 16px;color:var(--secondary-text-color);font-size:12px;line-height:1.5}.capability:empty{display:none}
@@ -115,6 +117,7 @@ export class EufyViewerCard extends HTMLElement {
         .play{position:absolute;right:16px;bottom:16px;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:#0008;font-size:20px;color:white;pointer-events:none}.preview:disabled{cursor:default}.preview:disabled .play{display:none}
         .preview[hidden],.stage[hidden],.paused[hidden]{display:none}.stage.inline{position:relative;background:#10161e}.stage.inline img.live:not([src]){visibility:hidden}.stage.inline .bar,.paused{position:absolute;top:0;left:0;right:0;z-index:1;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:8px;background:linear-gradient(#000a,#0000)}
         .stage.inline #live-title,.stage.inline .live-status{display:none}.stage.inline .close,.paused .close{background:#000a;color:#fff}
+        @container (max-width:499px){.stage.inline:not([hidden]){display:flex;flex-direction:column}.stage.inline .bar{order:1}.stage.inline .bar,.paused{position:static;gap:4px;padding:6px 8px;background:var(--ha-card-background,var(--card-background-color,#fff))}.stage.inline .close,.paused .close{flex:1 1 auto;padding:10px 4px;color:inherit;background:var(--secondary-background-color,#eee)}}
         .meta{padding:16px}.name{font-weight:600;font-size:16px;line-height:24px}.status:empty{display:none}.status{font-size:13px;color:var(--secondary-text-color);margin-top:5px}
         dialog{border:0;border-radius:16px;padding:0;width:min(960px,94vw);max-width:94vw;background:var(--card-background-color,#fff);color:var(--primary-text-color,#111)}
         dialog::backdrop{background:#000b}.bar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;gap:16px}
