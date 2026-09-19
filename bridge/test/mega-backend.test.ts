@@ -13,7 +13,7 @@ import {
   type CameraCapabilities,
   type DiscoveryResult,
 } from '@keesmod/eufy-mega-client';
-import { MegaBackend, liveStreamsPerStation } from '../src/mega-backend.js';
+import { MegaBackend, liveStreamsPerStation, liveMaxSecondsMains } from '../src/mega-backend.js';
 import { Storage } from '../src/storage.js';
 import { backendName } from '../src/backend.js';
 import { MegaRecordings } from '../src/mega-recordings.js';
@@ -85,7 +85,7 @@ test('recording cancellation before the media handle arrives is counted and rele
   assert.equal(recordings.busy, false);
   assert.equal(recordings.metrics.cancelled, 1);
 });
-function fixture(limit?: number) {
+function fixture(limit?: number, mainsSeconds?: number) {
   const calls: string[] = [];
   const state = {
     id: 'BASE',
@@ -137,8 +137,9 @@ function fixture(limit?: number) {
       commandSent: true,
       state: { ...state, guardMode: mode, currentMode: mode },
     }),
-    startLive: async (id: string) => {
+    startLive: async (id: string, options?: { maxDurationMs?: number }) => {
       calls.push('start');
+      bounds.push(options?.maxDurationMs ?? null);
       let finish!: (value: { confirmed: boolean; reason: 'device' }) => void;
       const ended = new Promise<{ confirmed: boolean; reason: 'device' }>((resolve) => {
         finish = resolve;
@@ -175,6 +176,7 @@ function fixture(limit?: number) {
     return undefined;
   };
   storage.write = async () => {};
+  const bounds: (number | null)[] = [];
   const options: ClientOptions[] = [];
   const backend = new MegaBackend(
     storage,
@@ -186,9 +188,49 @@ function fixture(limit?: number) {
     },
     undefined,
     limit,
+    mainsSeconds,
   );
-  return { backend, client, calls, reads, storage, options };
+  return { backend, client, calls, reads, storage, options, bounds };
 }
+test('EUFY_LIVE_MAX_SECONDS_MAINS accepts 120 to 3600 seconds and defaults to 120', () => {
+  assert.equal(liveMaxSecondsMains(undefined), 120);
+  assert.equal(liveMaxSecondsMains(''), 120);
+  assert.equal(liveMaxSecondsMains(' 1800 '), 1800);
+  assert.equal(liveMaxSecondsMains('3600'), 3600);
+  for (const bad of ['119', '3601', '0120', '600.5', '1e3', 'long', '-600', '60'])
+    assert.throws(() => liveMaxSecondsMains(bad), /EUFY_LIVE_MAX_SECONDS_MAINS/, bad);
+  assert.throws(() => new MegaBackend(new Storage('/unused'), () => false, undefined, undefined, 1, 119), /120 to 3600/);
+  assert.throws(() => new MegaBackend(new Storage('/unused'), () => false, undefined, undefined, 1, 3601), /120 to 3600/);
+});
+test('the mains bound reaches the client as the ceiling and applies only to cameras without a battery value', async () => {
+  const mains: Device = { ...devices[1]!, id: 'MAINS', name: 'Mains', model: 'T8416', battery: null };
+  for (const seconds of [undefined, 1800]) {
+    const f = fixture(2, seconds);
+    f.client.discoverDevices = async () => ({ devices: [...devices, mains], relationships: [], issues: [] });
+    try {
+      await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+      assert.equal(f.options[0]?.liveUpperBoundMs, (seconds ?? 120) * 1000);
+      assert.equal(f.backend.liveMaxSecondsMains, seconds ?? 120);
+      assert.equal(f.backend.liveBoundMs('CAM'), 120000, 'a battery camera keeps 120 seconds');
+      assert.equal(f.backend.liveBoundMs('MAINS'), (seconds ?? 120) * 1000);
+      assert.equal(f.backend.liveBoundMs('BASE'), 120000);
+      assert.equal(f.backend.liveBoundMs('UNKNOWN'), 120000);
+      await f.backend.startLive('CAM');
+      await f.backend.startLive('MAINS', f.backend.liveBoundMs('MAINS'));
+      assert.deepEqual(f.bounds, [120000, (seconds ?? 120) * 1000]);
+      await f.backend.stopLive('MAINS');
+      await f.backend.stopLive('CAM');
+      // A caller may lower the bound but never raise it above the camera's own.
+      await f.backend.startLive('MAINS', 60000);
+      await f.backend.startLive('CAM', 3600000);
+      assert.deepEqual(f.bounds.slice(2), [60000, 120000]);
+      await f.backend.stopLive('MAINS');
+      await f.backend.stopLive('CAM');
+    } finally {
+      await f.backend.close();
+    }
+  }
+});
 test('EUFY_LIVE_MAX_STREAMS_PER_STATION accepts whole numbers from 1 to 4 and defaults to 1', () => {
   assert.equal(liveStreamsPerStation(undefined), 1);
   assert.equal(liveStreamsPerStation(''), 1);
@@ -633,7 +675,7 @@ for (const empty of [false,true])
       const rows=lines.map(line=>JSON.parse(line));
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
-      assert.equal(summary.software.library,'0.13.0');
+      assert.equal(summary.software.library,'0.14.0');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);

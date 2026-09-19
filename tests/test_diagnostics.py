@@ -58,7 +58,7 @@ def test_audio_evidence_is_bounded_and_contains_no_payload_or_identifiers():
             "admission": "PRIVATE",
             "bytes": -1,
             "chunks": 2**31,
-            "first_data_ms": 120001,
+            "first_data_ms": 3600001,
             "duration_ms": 2.5,
             "payload": "PRIVATE",
         }
@@ -248,6 +248,20 @@ def test_extended_audio_report_projects_header_timing_and_pipeline_only():
         "pipeline": [{"event": "media_audio_error", "elapsed_ms": 6001}],
     }
     assert audio_report(row) == row
+    # A raised session cap keeps rows of long sessions up to one hour.
+    long_row = {
+        **row,
+        "duration_ms": 1800000,
+        "pipeline": [
+            {"event": "media_audio_error", "elapsed_ms": 3600000},
+            {"event": "media_audio_error", "elapsed_ms": 3600001},
+        ],
+    }
+    assert audio_report(long_row)["duration_ms"] == 1800000
+    assert audio_report(long_row)["pipeline"] == [
+        {"event": "media_audio_error", "elapsed_ms": 3600000}
+    ]
+    assert "duration_ms" not in audio_report({**row, "duration_ms": 3600001})
     bad = audio_format_report(
         {
             "format_hint": "PRIVATE",

@@ -40,6 +40,24 @@ test("absolute cap wins over active acknowledgements", () => {
   for (let t = 0; t <= 120_000; t += 1000) { time(t); hub.frame("a", Buffer.from("frame")); hub.ack("a", p); hub.tick(); }
   assert.deepEqual(stops, ["a"]);
 });
+test("a per-camera bound from the control raises the cap, clamped to one hour", () => {
+  let now = 0; const stops: string[] = [];
+  const bounds: Record<string, number> = { mains: 600_000, huge: 9_000_000, low: 5_000 };
+  const hub = new StreamHub({ start: async () => {}, stop: async s => { stops.push(s); }, disposeMedia: () => {}, bound: s => bounds[s] ?? 120_000 }, () => now);
+  const peer = () => { const frames: Buffer[] = []; return { frames, bufferedAmount: 0, send: (f: Buffer) => { frames.push(f); }, close: () => {} }; };
+  const run = (serial: string, until: number) => {
+    now = 0; const p = peer(); hub.attach(serial, p);
+    for (let t = 0; t < until; t += 1000) { now = t; hub.frame(serial, Buffer.from("f")); hub.ack(serial, p); hub.tick(); }
+    now = until; hub.tick(); hub.stopped(serial);
+  };
+  run("mains", 599_000); assert.deepEqual(stops, []);
+  run("mains", 600_000); assert.deepEqual(stops, ["mains"]);
+  run("huge", 3_599_000); assert.deepEqual(stops, ["mains"]);
+  run("huge", 3_600_000); assert.deepEqual(stops, ["mains", "huge"]);
+  run("low", 119_000); assert.deepEqual(stops, ["mains", "huge"]);
+  run("low", 120_000); assert.deepEqual(stops, ["mains", "huge", "low"]);
+  run("other", 120_000); assert.deepEqual(stops, ["mains", "huge", "low", "other"]);
+});
 test("stop retries bounded and quarantine retained until physical stop event", () => {
   const { hub, time, peer, stops } = fixture(); const p = peer(); hub.attach("a", p); hub.detach("a", p);
   for (let t = 0; t < 30_000; t += 1000) { time(t); hub.tick(); }

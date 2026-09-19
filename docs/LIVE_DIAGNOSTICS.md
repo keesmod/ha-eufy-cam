@@ -179,7 +179,7 @@ report. This cached evidence does not require debug logging to be enabled. The
 JSON contains no audio payload, raw header bytes or raw encoder messages.
 Observations expire from the bounded history or disappear on bridge restart.
 
-Times are milliseconds since the bridge requested the stream, capped at 120000.
+Times are milliseconds since the bridge requested the stream, capped at 3600000.
 `first_data_after_metadata_ms` starts when the library returns its stream metadata.
 These are library stream consumption times, not raw network arrival times. The
 observer does not start or consume the stream independently of the existing player.

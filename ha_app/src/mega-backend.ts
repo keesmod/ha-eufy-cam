@@ -43,6 +43,19 @@ export function liveStreamsPerStation(value?: string): number {
   if (!limit) throw new Error('EUFY_LIVE_MAX_STREAMS_PER_STATION must be a whole number from 1 to 4');
   return limit;
 }
+/** The session cap for battery cameras and the default for every camera, 120 seconds. */
+export const LIVE_BOUND_DEFAULT_MS = 120000;
+/**
+ * Parse EUFY_LIVE_MAX_SECONDS_MAINS, a whole number of seconds from 120 to 3600
+ * for cameras the inventory reports without a battery value. Unset keeps 120.
+ */
+export function liveMaxSecondsMains(value?: string): number {
+  if (value === undefined || value.trim() === '') return 120;
+  const seconds = /^[1-9]\d{2,3}$/.test(value.trim()) ? Number(value.trim()) : 0;
+  if (seconds < 120 || seconds > 3600)
+    throw new Error('EUFY_LIVE_MAX_SECONDS_MAINS must be a whole number of seconds from 120 to 3600');
+  return seconds;
+}
 function discoveryDetail(issue: DiscoveryIssue): string | undefined {
   if (issue.code !== 'unsupported_device') return undefined;
   // Revalidate even library-sanitized values at this logging boundary. These
@@ -165,10 +178,14 @@ export class MegaBackend extends EventEmitter implements Backend {
     recordingMedia = new RecordingTranscoder(),
     /** Concurrent live cameras per HomeBase, forwarded to the client as its own limit. */
     readonly liveStreamsPerStation = 1,
+    /** Session cap in seconds for cameras without a battery value, 120 to 3600. */
+    readonly liveMaxSecondsMains = 120,
   ) {
     super();
     if (!Number.isInteger(liveStreamsPerStation) || liveStreamsPerStation < 1 || liveStreamsPerStation > 4)
       throw new Error('liveStreamsPerStation must be a whole number from 1 to 4');
+    if (!Number.isInteger(liveMaxSecondsMains) || liveMaxSecondsMains < 120 || liveMaxSecondsMains > 3600)
+      throw new Error('liveMaxSecondsMains must be a whole number of seconds from 120 to 3600');
     this.on('backend_fault', (code) => this.discoveryDiagnostics.fault(code));
     this.recordings = new MegaRecordings(
       () => this.client,
@@ -214,6 +231,7 @@ export class MegaBackend extends EventEmitter implements Backend {
       this.client = this.factory({
         diagnostics: (event) => this.discoveryDiagnostics.cloud(event),
         maxLiveStreamsPerStation: this.liveStreamsPerStation,
+        liveUpperBoundMs: this.liveMaxSecondsMains * 1000,
         credentials: {
           email: credentials.username,
           password: credentials.password,
@@ -486,9 +504,20 @@ export class MegaBackend extends EventEmitter implements Backend {
     for (const id of this.streams.keys()) if (this.devices.get(id)?.stationId === station) owned++;
     return owned < this.liveStreamsPerStation ? true : 'station_limit';
   }
-  async startLive(serial: string): Promise<void> {
+  /**
+   * Only a camera the inventory reports without a battery value may stream up
+   * to the configured bound. A camera with a battery keeps 120 seconds.
+   */
+  liveBoundMs(serial: string): number {
+    const device = this.devices.get(serial);
+    if (device?.kind !== 'camera' || device.battery !== null) return LIVE_BOUND_DEFAULT_MS;
+    return this.liveMaxSecondsMains * 1000;
+  }
+  async startLive(serial: string, maxDurationMs?: number): Promise<void> {
     if (!this.client || !this.hasCamera(serial) || this.streams.has(serial))
       throw new Error('Camera unavailable');
+    // The caller may lower the bound, never raise it above this camera's own.
+    const bound = Math.min(maxDurationMs ?? this.liveBoundMs(serial), this.liveBoundMs(serial));
     const client = this.client;
     const capability = (await client.getCameraCapabilities(serial)).live;
     if (this.closed || this.client !== client || this.streams.has(serial))
@@ -510,7 +539,7 @@ export class MegaBackend extends EventEmitter implements Backend {
     this.streams.set(serial, owned);
     owned.starting = (async () => {
       try {
-        const handle = await this.client!.startLive(serial, abort.signal);
+        const handle = await this.client!.startLive(serial, { signal: abort.signal, maxDurationMs: bound });
         owned.handle = handle;
         void handle.ended.then((result) => {
           owned.audio.finish('ended', result.confirmed);
