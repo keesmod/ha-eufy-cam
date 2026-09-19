@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.8.24 - 2026-09-19
+
+### Inline live controls below the video on narrow cards
+
+- On a card narrower than 500 px, about a phone in portrait, the inline live
+  controls (pause, stop, sound and close) leave the overlay on the video for a
+  compact toolbar directly below it, so the camera image stays fully visible.
+  The paused bar with resume and stop sits below the snapshot in the same way.
+  The card's own width decides through a CSS container query, not the screen,
+  so a narrow card in a multi-column desktop view gets the toolbar as well and
+  a wide card on a tablet keeps the overlay. Cards of 500 px and wider are
+  unchanged.
+- Layout only. The controls and their order, focus handling, status messages,
+  the popup dialog mode and the card editor are unchanged. There is no new
+  card option.
+
+### Evidence and limits
+
+Playwright covers a 360 px card with the four controls in one toolbar row
+below the video, the paused bar below the snapshot after a pause, the toolbar
+gone when the view closes, a 700 px card with the overlay on the video and
+the paused bar on the snapshot, the threshold at 499 and 500 px while a
+session stays open without a new lease, and the popup dialog at a narrow
+width. The change answers a report from a phone dashboard, and confirmation
+on that phone is still open.
+
+### Upgrade and rollback
+
+Integration-only release, the bridge stays at 0.8.21. Update the integration,
+restart Home Assistant and refresh the dashboard. In the companion app close
+and reopen the app if the card still shows the overlay on a narrow card. To
+roll back, restore the previous integration version from your backup and
+reload the dashboard.
+
 ## 0.8.23 - 2026-09-18
 
 ### Optional automatic live start for inline cards

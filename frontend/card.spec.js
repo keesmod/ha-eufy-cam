@@ -990,3 +990,116 @@ test('card editor offers automatic start only for the inline mode and stores fal
   expect(result.dutch).toEqual({ names: ['live_mode', 'live_autostart'], selectors: ['select', 'boolean'], data: { live_mode: 'inline', live_autostart: false }, labels: ['Livebeeld', 'Automatisch live starten'], helpers: [null, 'Alleen in de kaart. Start het livebeeld zonder tik zodra de weergave opent, tot de HomeBase-limiet. Elke kaart kan pauzeren, hervatten en stoppen.'] });
   expect(await page.evaluate(() => calls.length)).toBe(0);
 });
+
+// Narrow cards, about a phone in portrait: below 500 px of card width the inline live controls sit in a compact
+// toolbar below the video and the paused bar below the snapshot, decided by the card's own width through a CSS
+// container query. Wider cards keep the overlay on the video. Layout only: sessions, focus and messages are unchanged.
+const layout = page => page.evaluate(() => {
+  const rect = element => { const r = element.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), width: Math.round(r.width), height: Math.round(r.height) }; };
+  const root = card.shadowRoot, stage = card._stage, paused = card._pausedBar, preview = card._preview;
+  const media = card._video.hidden ? card._live : card._video;
+  const bar = root.querySelector('.stage .bar');
+  return { card: rect(root.querySelector('ha-card')), stage: stage.hidden ? null : rect(stage), media: stage.hidden ? null : rect(media), bar: stage.hidden ? null : rect(bar), buttons: stage.hidden ? [] : [...bar.querySelectorAll('button')].filter(button => !button.hidden).map(rect), paused: paused.hidden ? null : rect(paused), preview: preview.hidden ? null : rect(preview) };
+});
+
+test('a card narrower than 500 px shows its live controls in one toolbar row below the video and the paused bar below the snapshot', async ({ page }) => {
+  await page.evaluate(() => { document.body.style.cssText = 'margin:0;width:360px;font:14px sans-serif'; card._hass.states['camera.front'].attributes.viewer_webrtc = true; });
+  await attachAutostart(page);
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  await expect(page.locator('ha-card video.video')).toBeVisible();
+  let seen = await layout(page);
+  expect(seen.card.width).toBe(360);
+  // The video fills the card width at 16:9 and the toolbar starts where the video ends, inside the stage.
+  expect(seen.media).toMatchObject({ top: seen.stage.top, width: 360 });
+  expect(seen.media.height).toBeGreaterThanOrEqual(202);
+  expect(seen.bar.top).toBeGreaterThanOrEqual(seen.media.bottom);
+  expect(seen.bar.bottom).toBeLessThanOrEqual(seen.stage.bottom);
+  // Pause, stop, sound and close share one compact row.
+  expect(seen.buttons).toHaveLength(4);
+  expect(new Set(seen.buttons.map(button => button.top)).size).toBe(1);
+  expect(seen.bar.height).toBeLessThanOrEqual(56);
+  for (const name of ['Pause', 'Stop', 'Enable sound', 'Close live view']) await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
+  expect(await page.evaluate(() => card.shadowRoot.activeElement === card._stopButton)).toBe(true);
+  await expect(page.locator('.status')).toHaveText('Connecting…');
+  // Pause: the toolbar goes with the stage and the paused bar sits below the snapshot, which keeps its size.
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  seen = await layout(page);
+  expect(seen).toMatchObject({ stage: null, bar: null, buttons: [] });
+  expect(seen.paused.top).toBeGreaterThanOrEqual(seen.preview.bottom);
+  expect(seen.paused.height).toBeLessThanOrEqual(64);
+  expect(seen.preview.width).toBe(360);
+  expect(seen.preview.height).toBeGreaterThanOrEqual(202);
+  await expect(page.locator('ha-card .stage .bar')).toBeHidden();
+  expect(await page.evaluate(() => card.shadowRoot.activeElement === card._resumeButton)).toBe(true);
+  await expect(page.locator('.status')).toHaveText('Paused. Tap Resume to watch.');
+  // Resume: a fresh session with the toolbar below the video again.
+  await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(2);
+  seen = await layout(page);
+  expect(seen.paused).toBeNull();
+  expect(seen.bar.top).toBeGreaterThanOrEqual(seen.media.bottom);
+  // Close: the plain snapshot without any bar.
+  await page.getByRole('button', { name: 'Close live view', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(2);
+  seen = await layout(page);
+  expect(seen).toMatchObject({ stage: null, bar: null, paused: null });
+  expect(seen.preview.height).toBeGreaterThanOrEqual(202);
+  // The Dutch labels share the row as well.
+  await page.evaluate(() => { card.hass = { ...card._hass, language: 'nl' }; });
+  await page.getByRole('button', { name: 'Live bekijken' }).click();
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(3);
+  seen = await layout(page);
+  expect(seen.bar.top).toBeGreaterThanOrEqual(seen.media.bottom);
+  expect(seen.buttons).toHaveLength(4);
+  expect(new Set(seen.buttons.map(button => button.top)).size).toBe(1);
+});
+
+test('a card of 500 px or wider keeps the controls on the video, and crossing the threshold while live only moves them', async ({ page }) => {
+  await page.evaluate(() => { document.body.style.cssText = 'margin:0;width:700px;font:14px sans-serif'; card._hass.states['camera.front'].attributes.viewer_webrtc = true; });
+  await attachAutostart(page);
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  await expect(page.locator('ha-card video.video')).toBeVisible();
+  let seen = await layout(page);
+  expect(seen.card.width).toBe(700);
+  // The overlay lies on the top of the video and the stage is exactly as tall as the video.
+  expect(seen.bar.top).toBe(seen.media.top);
+  expect(seen.bar.bottom).toBeLessThan(seen.media.bottom);
+  expect(seen.stage.height).toBe(seen.media.height);
+  expect(seen.buttons).toHaveLength(4);
+  // The card's own width decides: 500 keeps the overlay, 499 moves the controls below the video, with no new session and no focus change.
+  for (const [width, below] of [[500, false], [499, true], [360, true], [520, false]]) {
+    await page.evaluate(width => { document.body.style.width = `${width}px`; }, width);
+    seen = await layout(page);
+    expect(seen.card.width, `${width}px`).toBe(width);
+    expect(seen.bar.top >= seen.media.bottom, `${width}px`).toBe(below);
+    expect(seen.bar.top === seen.media.top, `${width}px`).toBe(!below);
+  }
+  expect(await page.evaluate(() => ({ calls: calls.length, closes: closeCount, open: card._open, focused: card.shadowRoot.activeElement === card._stopButton }))).toEqual({ calls: 1, closes: 0, open: true, focused: true });
+  // The paused bar overlays the snapshot on a wide card and moves below it on a narrow one.
+  await page.evaluate(() => { document.body.style.width = '700px'; });
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  seen = await layout(page);
+  expect(seen.paused.top).toBe(seen.preview.top);
+  expect(seen.paused.bottom).toBeLessThan(seen.preview.bottom);
+  await page.evaluate(() => { document.body.style.width = '360px'; });
+  seen = await layout(page);
+  expect(seen.paused.top).toBeGreaterThanOrEqual(seen.preview.bottom);
+  expect(await page.evaluate(() => card.shadowRoot.activeElement === card._resumeButton)).toBe(true);
+});
+
+test('the popup dialog keeps its own bar above the video whatever the card width', async ({ page }) => {
+  await page.evaluate(() => { document.body.style.cssText = 'margin:0;width:360px;font:14px sans-serif'; });
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  await expect(page.locator('dialog:not(.record-dialog)')).toBeVisible();
+  const seen = await page.evaluate(() => {
+    const top = element => Math.round(element.getBoundingClientRect().top);
+    const bar = card.shadowRoot.querySelector('dialog .bar');
+    return { stage: getComputedStyle(card._stage).display, position: getComputedStyle(bar).position, bar: top(bar), media: top(card._live) };
+  });
+  expect(seen).toMatchObject({ stage: 'block', position: 'static' });
+  expect(seen.bar).toBeLessThan(seen.media);
+  await page.getByRole('button', { name: 'Close live view' }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+});

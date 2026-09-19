@@ -89,21 +89,23 @@ for a browser dashboard. See
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
 
-The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.23`.
+The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.24`.
 See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 </details>
 
 ## Upgrading
 
-The **0.8.23** integration adds the card option `live_mode: inline`, which
+The **0.8.24** integration moves the inline live controls to a compact toolbar
+below the video on cards narrower than 500 px, so a phone dashboard keeps the
+whole camera image. 0.8.23 added the card option `live_mode: inline`, which
 plays live video inside the card so several cameras can be live at once, and
 the optional `live_autostart: true` for inline cards, which starts them without
 a tap when the view opens with pause, resume and stop per card. The bridge stays
 at **0.8.21**, which lets several cameras on one HomeBase stream live at the
 same time through the optional option `live_max_streams_per_station` (default
 1, unchanged behaviour) and tells you when another camera on the HomeBase is
-live. Update the integration to **0.8.23** and the bridge to **0.8.21**, then
+live. Update the integration to **0.8.24** and the bridge to **0.8.21**, then
 refresh the dashboard. The bridge includes client **0.13.0**.
 See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
 for changes and any version-specific instructions.
