@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.8.27 - 2026-09-19
+
+### The live relay follows the bridge's session cap
+
+- Fix: the integration's live relay ended every session after 125 seconds, on
+  the JPEG path and on the WebRTC path, whatever the bridge's cap for the
+  camera. With `live_max_seconds_mains` set, a camera without a battery value
+  lost its Home Assistant viewer at about 125 seconds, the bridge saw
+  `no_viewers` and ended the session long before its own bound. Reported on
+  #94 with bridge 0.8.22 and integration 0.8.26 on a mains powered T8425
+  behind a HomeBase 3: two attempts ended at 125.0 seconds with `no_viewers`
+  and `session_end`, without `camera_timeout`, while `/v1/state` reported
+  `live_max_seconds_mains: 1800`.
+- The relay now bounds itself by the bridge's cap for that camera plus five
+  seconds: 125 seconds for a battery camera or a camera missing from the
+  inventory, and `live_max_seconds_mains` plus five seconds for a camera the
+  inventory reports without a battery value. The state's
+  `live_max_seconds_mains` is validated at the boundary as a whole number from
+  120 to 3600, and a bridge before 0.8.22 that does not report it keeps 120.
+  The bridge still ends the session at its cap and closes the socket. HA's
+  bound only catches a bridge socket that neither sends nor closes.
+- Nothing else changes: the 10-second lease, the 20-second startup timeout,
+  the card's no-restart rule and the per-HomeBase limit are unchanged. The
+  bridge stays at 0.8.22.
+
+### Upgrade and rollback
+
+Update the integration to 0.8.27 and restart Home Assistant, then refresh the
+dashboard. The bridge stays at 0.8.22. To roll back, restore integration
+0.8.26 from your backup.
+
 ## 0.8.26 - 2026-09-19
 
 ### Longer live sessions for mains powered cameras, candidate

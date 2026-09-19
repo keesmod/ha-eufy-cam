@@ -11,6 +11,7 @@ from typing import Any
 import aiohttp
 from yarl import URL
 
+from .const import LIVE_BOUND_DEFAULT_SECONDS, LIVE_BOUND_MAX_SECONDS
 from .recording_file import (
     CHUNK_BYTES,
     RECORDING_BYTES,
@@ -174,6 +175,19 @@ class BridgeState:
     migration: bool = False
     migration_error: str | None = None
     recording_playback: bool = False
+    live_max_seconds_mains: int = LIVE_BOUND_DEFAULT_SECONDS
+
+    def live_bound_seconds(self, serial: str) -> int:
+        """Mirror the bridge's cap for one camera.
+
+        Only a camera the inventory reports without a battery value may run to
+        the configured mains bound. A battery camera, or a camera that has left
+        the inventory, keeps the default.
+        """
+        camera = self.cameras.get(serial)
+        if camera is None or camera.battery is not None:
+            return LIVE_BOUND_DEFAULT_SECONDS
+        return self.live_max_seconds_mains
 
     @classmethod
     def parse(cls, data: Any) -> BridgeState:
@@ -298,6 +312,13 @@ class BridgeState:
             push_connected = metrics.get("push_connected")
             if push_connected is not None and type(push_connected) is not bool:
                 raise ValueError
+            # Bridges before 0.8.22 do not report the option and cap at 120 s.
+            mains = data.get("live_max_seconds_mains", LIVE_BOUND_DEFAULT_SECONDS)
+            if (
+                type(mains) is not int
+                or not LIVE_BOUND_DEFAULT_SECONDS <= mains <= LIVE_BOUND_MAX_SECONDS
+            ):
+                raise ValueError
             return cls(
                 bridge_id,
                 auth,
@@ -323,6 +344,7 @@ class BridgeState:
                 else None,
                 type(data.get("recording_playback")) is int
                 and data["recording_playback"] == 1,
+                mains,
             )
         except (KeyError, TypeError, ValueError) as err:
             raise BridgeError("Invalid bridge protocol") from err

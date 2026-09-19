@@ -14,7 +14,12 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 
 from .api import BridgeError
-from .const import DOMAIN, MAX_FRAME_BYTES, STATION_LIMIT_CLOSE_CODE
+from .const import (
+    DOMAIN,
+    LIVE_RELAY_SLACK_SECONDS,
+    MAX_FRAME_BYTES,
+    STATION_LIMIT_CLOSE_CODE,
+)
 from .coordinator import EufyCoordinator
 
 
@@ -67,9 +72,22 @@ class Viewer:
         if self.task and self.task is not asyncio.current_task():
             await asyncio.gather(self.task, return_exceptions=True)
 
+    def relay_timeout(self) -> int:
+        """Bound the relay by the bridge's cap for this camera plus slack.
+
+        The bridge ends the session at its cap and closes the socket. The slack
+        lets that close arrive first, so HA ends a relay itself only when the
+        bridge did not.
+        """
+        return (
+            self.coordinator.data.live_bound_seconds(self.serial)
+            + LIVE_RELAY_SLACK_SECONDS
+        )
+
     async def run(self) -> None:
         """Relay at most one unacknowledged frame. Never reconnect media."""
         ended = ended_event(None)
+        timeout = self.relay_timeout()
         try:
             async with await self.coordinator.api.websocket(
                 f"/v1/live/{self.serial}"
@@ -77,7 +95,7 @@ class Viewer:
                 self.socket = socket
                 if self.closed:
                     return
-                async with asyncio.timeout(125):
+                async with asyncio.timeout(timeout):
                     async for message in socket:
                         if message.type != aiohttp.WSMsgType.BINARY:
                             break

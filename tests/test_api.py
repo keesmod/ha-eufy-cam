@@ -336,3 +336,21 @@ def test_state_advertises_playback_extension_only_for_exact_version():
             ).recording_playback
             is supported
         )
+
+
+def test_state_reports_the_mains_live_bound_and_the_camera_rule():
+    """Older bridges cap at 120 s; only a camera without a battery may go longer."""
+    default = BridgeState.parse(STATE)
+    assert default.live_max_seconds_mains == 120
+    assert default.live_bound_seconds("CAM123") == 120
+    state = BridgeState.parse({**STATE, "live_max_seconds_mains": 1800})
+    assert state.live_max_seconds_mains == 1800
+    assert state.live_bound_seconds("CAM123") == 120
+    assert state.live_bound_seconds("UNKNOWN") == 120
+    mains = copy.deepcopy(STATE)
+    mains["cameras"][0]["battery"] = None
+    mains["live_max_seconds_mains"] = 1800
+    assert BridgeState.parse(mains).live_bound_seconds("CAM123") == 1800
+    for value in (119, 3601, True, "1800", 1800.0, None):
+        with pytest.raises(BridgeError):
+            BridgeState.parse({**STATE, "live_max_seconds_mains": value})
