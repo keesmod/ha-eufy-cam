@@ -41,7 +41,7 @@ live_mode: inline
 |---|---|---|
 | `entity` | a Eufy Viewer camera entity | Required. |
 | `name` | text | Optional title. The default is the entity's friendly name. |
-| `live_mode` | `dialog` (default) or `inline` | `dialog` opens the live view in a popup dialog that closes on Escape or a tap outside. `inline` plays the live view inside the card with its close and sound controls on the video, so several cards can be live at once. |
+| `live_mode` | `dialog` (default) or `inline` | `dialog` opens the live view in a popup dialog that closes on Escape or a tap outside. `inline` plays the live view inside the card with its controls on the video, or in a toolbar below it on a card narrower than 500 px, so several cards can be live at once. |
 | `live_autostart` | `true` or `false` (default) | Only with `live_mode: inline`. Starts the live view without a tap when the view opens, up to the bridge's `live_max_streams_per_station`, and adds pause, resume and stop controls to the card. See [automatic live start](#automatic-live-start). |
 
 An inline card follows the same rules as the dialog: one tap starts one live
@@ -52,6 +52,14 @@ disconnection or when the card scrolls out of view. Status messages appear
 below the camera name. A card refused by the HomeBase live limit shows that
 message there and returns to its snapshot. Nothing starts automatically unless
 the card has `live_autostart: true`.
+
+On a card narrower than 500 px, about a phone in portrait, the live controls
+sit in a compact toolbar directly below the video instead of on it, and the
+paused bar of an autostart card sits below the snapshot, so the camera image
+stays fully visible. The card's own width decides, not the screen: a narrow
+card in a multi-column desktop view gets the toolbar too, and a card of 500 px
+or wider keeps its controls on the video. The controls, their order and their
+meaning are the same in both layouts.
 
 #### Automatic live start
 
