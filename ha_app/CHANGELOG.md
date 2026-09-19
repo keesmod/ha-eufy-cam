@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.22 - 2026-09-19
+
+- Include client 0.14.0. Its per-start live bound and its free primary
+  session with `maxLiveStreamsPerStation` above 1 are the library side of
+  keesmod/eufy-mega-client#163.
+- Add the optional `live_max_seconds_mains` option (a whole number of seconds
+  from 120 to 3600, default 120). It raises the absolute live session cap only
+  for cameras the inventory reports without a battery value. Battery cameras
+  keep 120 seconds in every case. The bridge passes the bound per start to the
+  client, which sends the STOP at the bound, and the bridge's own watchdog uses
+  the same value. Candidate pending observation on mains powered cameras.
+- With `live_max_streams_per_station` above 1 the primary HomeBase session
+  stays free, so guard mode commands and snapshots work while cameras are
+  live. Recording playback still waits until no camera on that HomeBase is
+  live.
+- Live audio diagnostics keep their times up to 3600000 ms.
+
 ## 0.8.21 - 2026-09-18
 
 - Include client 0.13.0. Its `maxLiveStreamsPerStation` option lets further

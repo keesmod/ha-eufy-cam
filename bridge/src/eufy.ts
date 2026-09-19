@@ -76,12 +76,15 @@ export class Eufy extends EventEmitter {
   auth: AuthState = { state: 'unconfigured' };
   /** Configured concurrent live cameras per HomeBase, reported in state. */
   liveStreamsPerStation = 1;
+  /** Configured session cap in seconds for cameras without a battery value, reported in state. */
+  liveMaxSecondsMains = 120;
   readonly hub = new StreamHub({
     diagnostic: (serial, event) => this.diagnostics.mark(serial, event),
     admit: (serial) => {
       if (this.recordings.busy || !this.backend?.connected) return false;
       return this.backend.canStartLive(serial);
     },
+    bound: (serial) => this.backend?.liveBoundMs?.(serial) ?? 120_000,
     recover: (serial) => this.recoverStation(serial),
     start: async (serial) => {
       if (this.recordings.busy) throw new Error('Recording operation in progress');
@@ -89,7 +92,7 @@ export class Eufy extends EventEmitter {
       this.diagnostics.begin(serial);
       this.metrics.start_requests++;
       this.metrics.last_start_request = new Date().toISOString();
-      await this.backend.startLive(serial);
+      await this.backend.startLive(serial, this.backend.liveBoundMs?.(serial));
     },
     stop: async (serial) => {
       this.metrics.stop_requests++;

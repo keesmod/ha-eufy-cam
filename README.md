@@ -90,27 +90,24 @@ for a browser dashboard. See
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
 
-The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.25`.
+The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.26`.
 See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 </details>
 
 ## Upgrading
 
-The **0.8.25** integration keeps an inline card with `live_autostart: true`
-live while it is scrolled out of view, so a long dashboard no longer stops and
-restarts its cameras on every scroll. 0.8.24 moved the inline live controls to a
-compact toolbar below the video on cards narrower than 500 px, so a phone
-dashboard keeps the whole camera image. 0.8.23 added the card option
-`live_mode: inline`, which plays live video inside the card so several cameras
-can be live at once, and the optional `live_autostart: true` for inline cards,
-which starts them without a tap when the view opens with pause, resume and stop
-per card. The bridge stays at **0.8.21**, which lets several cameras on one
-HomeBase stream live at the same time through the optional option
-`live_max_streams_per_station` (default 1, unchanged behaviour) and tells you
-when another camera on the HomeBase is live. Update the integration to
-**0.8.25** and the bridge to **0.8.21**, then refresh the dashboard. The bridge
-includes client **0.13.0**.
+The **0.8.26** integration and bridge **0.8.22** bring client **0.14.0**: with
+`live_max_streams_per_station` above 1 the HomeBase's primary session now stays
+free, so guard mode commands and snapshots work while cameras are live, and the
+new bridge option `live_max_seconds_mains` (120 to 3600 seconds, default 120)
+raises the live session cap only for cameras without a battery value, as a
+candidate pending observation on mains powered cameras. Battery cameras keep
+two minutes. 0.8.25 keeps an inline card with `live_autostart: true` live while
+it is scrolled out of view, 0.8.24 moved the inline live controls below the
+video on narrow cards, and 0.8.23 added `live_mode: inline` and the optional
+`live_autostart: true`. Update the integration to **0.8.26** and the bridge to
+**0.8.22**, then refresh the dashboard.
 See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
 for changes and any version-specific instructions.
 
@@ -124,7 +121,7 @@ For installations already on 0.8.0 or newer:
 1. Close live viewers and recordings. Back up Home Assistant and the bridge's
    private data.
 2. Update **Eufy Security Viewer** in HACS and restart Home Assistant.
-3. If your bridge is older than 0.8.21, update **Eufy Security Viewer Bridge**
+3. If your bridge is older than 0.8.22, update **Eufy Security Viewer Bridge**
    through the HA app store, or follow the
    [Docker update steps](docs/DOCKER.md#update-the-docker-bridge).
 4. Reload your dashboard and check snapshots, live video, recordings and events.

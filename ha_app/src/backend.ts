@@ -123,7 +123,9 @@ export interface Backend extends EventEmitter {
   inventory(): CameraInfo[];
   hasCamera(serial: string): boolean;
   canStartLive(serial: string): LiveAdmission;
-  startLive(serial: string): Promise<void>;
+  startLive(serial: string, maxDurationMs?: number): Promise<void>;
+  /** Upper bound in milliseconds for one live session of this camera, 120000 unless the backend allows more. */
+  liveBoundMs?(serial: string): number;
   stopLive(serial: string): Promise<void>;
   recoverStation(serial: string): Promise<string[]>;
   close(): Promise<void>;

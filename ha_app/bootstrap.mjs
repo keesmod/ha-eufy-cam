@@ -16,6 +16,8 @@ process.env.EUFY_DIAGNOSTICS = options.diagnostics === true ? 'true' : 'false';
 if (typeof options.live_max_bitrate === 'string' && options.live_max_bitrate.trim()) process.env.EUFY_LIVE_MAX_BITRATE = options.live_max_bitrate.trim();
 // Optional concurrent live cameras per HomeBase, 1 to 4; the bridge validates and defaults to 1.
 if (Number.isInteger(options.live_max_streams_per_station)) process.env.EUFY_LIVE_MAX_STREAMS_PER_STATION = String(options.live_max_streams_per_station);
+// Optional session cap for cameras without a battery value, 120 to 3600 seconds; the bridge validates and defaults to 120.
+if (Number.isInteger(options.live_max_seconds_mains)) process.env.EUFY_LIVE_MAX_SECONDS_MAINS = String(options.live_max_seconds_mains);
 // Old Supervisor options may still contain legacy. Only the Mega migration
 // service starts, and its saved-inventory gate prevents importing old credentials.
 process.env.EUFY_BACKEND = options.backend === 'legacy' ? 'mega' : (options.backend ?? 'mega');

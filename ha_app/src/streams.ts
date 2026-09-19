@@ -15,6 +15,8 @@ export interface Peer {
 export interface Control {
   diagnostic?(serial: string, event: "frame_ack" | "viewer_timeout" | "camera_timeout" | "stream_failure" | "no_viewers"): void;
   admit?(serial: string): LiveAdmission;
+  /** Absolute session cap in milliseconds for this camera, 120000 unless the backend allows more. */
+  bound?(serial: string): number;
   start(serial: string): Promise<void>;
   recover?(serial: string): Promise<string[]>;
   stop(serial: string): Promise<void>;
@@ -25,6 +27,8 @@ interface CameraSession {
   viewers: Map<Peer, Viewer>;
   phase: "starting" | "playing" | "stopping";
   started: number;
+  /** Absolute cap for this session, clamped to 120 seconds up to one hour. */
+  cap: number;
   lastFrame: number;
   retries: number;
   nextStop: number;
@@ -50,7 +54,7 @@ export class StreamHub {
     }
     if (!camera) {
       const time = this.now();
-      camera = { viewers: new Map(), phase: "starting", started: time, lastFrame: time, retries: 0, nextStop: 0, startPending: true, recoveryAttempted: false };
+      camera = { viewers: new Map(), phase: "starting", started: time, cap: this.cap(serial), lastFrame: time, retries: 0, nextStop: 0, startPending: true, recoveryAttempted: false };
       this.cameras.set(serial, camera);
       // Insert owner BEFORE invoking start; even synchronous events see ownership.
       camera.viewers.set(peer, { peer, deadline: time + 20_000, outstanding: false });
@@ -60,6 +64,11 @@ export class StreamHub {
       camera.viewers.set(peer, { peer, deadline: this.now() + 10_000, outstanding: false });
     }
     return true;
+  }
+
+  private cap(serial: string): number {
+    const value = this.control.bound?.(serial);
+    return typeof value === "number" && Number.isFinite(value) ? Math.min(3_600_000, Math.max(120_000, Math.round(value))) : 120_000;
   }
 
   remaining(serial: string, peer: Peer): number {
@@ -158,7 +167,7 @@ export class StreamHub {
         if (time >= viewer.deadline) { this.control.diagnostic?.(serial, "viewer_timeout"); this.detach(serial, viewer.peer); }
       }
       if (!camera.viewers.size) continue;
-      if (time - camera.started >= 120_000 || time - camera.lastFrame >= (camera.phase === "starting" ? 20_000 : 10_000)) {
+      if (time - camera.started >= camera.cap || time - camera.lastFrame >= (camera.phase === "starting" ? 20_000 : 10_000)) {
         this.control.diagnostic?.(serial, "camera_timeout");
         this.end(serial, "Viewing time limit or stalled camera");
       }

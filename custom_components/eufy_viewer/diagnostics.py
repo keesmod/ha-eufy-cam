@@ -286,7 +286,7 @@ def audio_report(raw: Any) -> dict[str, Any]:
                 "last_data_age_ms",
                 "max_gap_ms",
             ),
-            (0, 120000),
+            (0, 3600000),
         ),
         "chunks": (0, 2147483647),
         "initial_buffered_bytes": (0, 2147483647),
@@ -323,7 +323,7 @@ def audio_report(raw: Any) -> dict[str, Any]:
             and isinstance(row.get("event"), str)
             and row["event"] in _AUDIO_PIPELINE_EVENTS
             and type(row.get("elapsed_ms")) is int
-            and 0 <= row["elapsed_ms"] <= 120000
+            and 0 <= row["elapsed_ms"] <= 3600000
         ]
     return result
 

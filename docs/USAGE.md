@@ -102,7 +102,7 @@ A normal HA camera card/more-info dialog shows snapshots only. Use the companion
 
 By default one camera per HomeBase streams live at a time. The bridge refuses a second camera on the same HomeBase while the first is live, and that card says that another camera on this HomeBase is live. Close the first live view, then start the other camera.
 
-From bridge 0.8.21 the optional app option `live_max_streams_per_station` (Docker: `EUFY_LIVE_MAX_STREAMS_PER_STATION`, a whole number from 1 to 4) raises that limit. The bundled client then opens one additional P2P session per further concurrent camera, with its own confirmed STOP and two-minute cap, while the HomeBase's primary session keeps control, snapshots and recordings. Recording playback and mode commands still wait until no camera on that HomeBase is live. Other values stop the bridge at startup.
+From bridge 0.8.21 the optional app option `live_max_streams_per_station` (Docker: `EUFY_LIVE_MAX_STREAMS_PER_STATION`, a whole number from 1 to 4) raises that limit. From bridge 0.8.22 with client 0.14.0 every live camera on such a HomeBase streams on its own P2P session, with its own confirmed STOP and cap, and the HomeBase's primary session stays free, so guard mode commands and snapshots work while cameras are live. Recording playback still waits until no camera on that HomeBase is live. Other values stop the bridge at startup.
 
 Three concurrent streams are verified through the bridge on one HomeBase 3 (T8030, firmware 3.8.7.4) with three eufyCam 3 (T8160) cameras. On 2026-09-19 three cameras streamed at the same time through the bridge's own viewer path (JPEG, each acknowledging every frame), staggered and simultaneous, all reaching the first frame with device-confirmed stops and no startup timeout, see [the test record](CONCURRENT_LIVE_2026-09-19.md). Two concurrent streams were verified earlier by the client each at full rate with audio and exercised on the bridge path on 2026-09-18, see [that record](CONCURRENT_LIVE_2026-09-18.md). Each concurrent camera adds an encoder pipeline on the bridge host (two ffmpeg processes per camera with software transcoding), and three streams saturated the CPU of a 2-core host, so **for a browser dashboard on a low-core host without hardware acceleration, 2 is the recommended value and 3 needs a GPU or ample CPU headroom**. For a dashboard with several live cards at once, set `live_mode: inline` on each card, and `live_autostart: true` to start them when the view opens, see [card options](#card-options). Each card is admitted or refused by the bridge on its own tap or automatic start, up to the limit. Two inline cards played two eufyCam 3 cameras of one HomeBase 3 at the same time in a browser on 2026-09-18 with device-confirmed stops, see [the test record](CONCURRENT_LIVE_2026-09-18.md#two-inline-cards-in-a-browser-2026-09-18). Later that day four autostart cards with the option at 3 played two cameras at the same time while the third admitted camera timed out at startup, which the 2026-09-19 bridge-path test traced to the WebRTC consumer path and host CPU headroom rather than the HomeBase or the bridge, so three concurrent WebRTC streams in a browser on a software-transcoding host remain unverified. Cameras on different HomeBases are admitted independently within the bridge's eight camera slots, but that combination has not been validated on hardware.
 
@@ -110,7 +110,7 @@ Clients without WebRTC or video-frame callback support, including the Home Assis
 
 WebRTC requires Home Assistant's **go2rtc integration** to be loaded and the browser to have a media route to HA (the managed service uses TCP port **18555**). A dashboard accessible through an HTTPS reverse proxy alone does not establish this media route. The viewer uses Home Assistant's existing [WebRTC ICE configuration](https://www.home-assistant.io/integrations/web_rtc/) for both live video and optional late audio. HA supplies configured STUN/TURN servers and any registered providers, with its default STUN servers when no custom servers are configured. STUN discovers possible routes but cannot relay media. A route blocked by NAT or firewall may require an existing TURN provider or routed LAN/VPN access. This integration does not configure a separate relay service. If HA's ICE provider fails, direct playback is still attempted and the existing video-only JPEG fallback remains available. Do not expose the bridge API to solve WebRTC connectivity. See [0.2 validation](VALIDATION_0.2.md).
 
-Sessions have a **two-minute absolute limit**, continuing requires another tap, also on a card with `live_autostart`. Normal close immediately issues stop. After a network partition or frozen page the bridge expires a viewer within **10 seconds**, plus its 250 ms watchdog tick. Startup without frames expires after 20 seconds. A bridge or host hard failure cannot deliver a stop command, camera firmware/P2P behavior in that case must be verified on the intended hardware. No software can promise instantaneous physical stop across a dead network.
+Sessions have a **two-minute absolute limit** for battery cameras and by default for every camera. From bridge 0.8.22 the app option `live_max_seconds_mains` (Docker: `EUFY_LIVE_MAX_SECONDS_MAINS`, a whole number of seconds from 120 to 3600, default 120) raises that limit only for cameras the inventory reports without a battery value, as a candidate pending observation on mains powered hardware. Continuing after the cap requires another tap, also on a card with `live_autostart`. Normal close immediately issues stop. After a network partition or frozen page the bridge expires a viewer within **10 seconds**, plus its 250 ms watchdog tick. Startup without frames expires after 20 seconds. A bridge or host hard failure cannot deliver a stop command, camera firmware/P2P behavior in that case must be verified on the intended hardware. No software can promise instantaneous physical stop across a dead network.
 
 ## Recovery and maintenance
 
@@ -170,8 +170,9 @@ and `audio_input` mean input bytes arrived, not that decoding succeeded.
 `media_reader` means a client requested the media stream, not that it played.
 `frame_ack` means the viewer acknowledged a delivered frame. `viewer_timeout`
 means that acknowledgement deadline expired. `camera_timeout` means the
-camera frame deadline or the two-minute maximum viewing duration expired, so a
-session that played for 120 s ends with `camera_timeout`, `stream_failure` and
+camera frame deadline or the maximum viewing duration expired (120 s, or the
+configured `live_max_seconds_mains` for a camera without a battery value), so a
+session that reaches the cap ends with `camera_timeout`, `stream_failure` and
 `session_end` by design. `stream_failure` is a general termination category. Encoder error, exit, invalid-data and
 decode-error categories narrow the failure without exposing raw FFmpeg text.
 
@@ -194,7 +195,7 @@ The bridge initiates fallback five seconds before the initial viewer deadline
 existing stream), or six seconds without a subsequent playback acknowledgement.
 These thresholds leave room to display JPEG within the existing 20/10-second
 viewer deadlines. Switching
-never extends those deadlines, starts another camera or resets the two-minute
+never extends those deadlines, starts another camera or resets the
 maximum session lifetime. Hidden or disconnected viewers still expire.
 
 Each viewer switches independently. Other viewers can continue using WebRTC.
