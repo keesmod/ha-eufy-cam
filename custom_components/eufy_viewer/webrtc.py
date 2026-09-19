@@ -355,6 +355,7 @@ class WebRTCViewer(Viewer):
     async def run(self) -> None:
         """Own a bridge lease until close; never reconnect or preload media."""
         ended = ended_event(None)
+        timeout = self.relay_timeout()
         try:
             async with await self.coordinator.api.websocket(
                 f"/v1/live/{self.serial}?transport=webrtc"
@@ -363,7 +364,7 @@ class WebRTCViewer(Viewer):
                 self.socket = socket
                 if self.closed:
                     return
-                async with asyncio.timeout(125):
+                async with asyncio.timeout(timeout):
                     async for message in socket:
                         if not self.connection.user.permissions.check_entity(
                             self.entity_id, POLICY_READ

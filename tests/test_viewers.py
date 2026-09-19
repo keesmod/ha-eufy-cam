@@ -1,6 +1,7 @@
 """Real HA WebSocket authorization and media-session teardown."""
 
 import asyncio
+from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -259,3 +260,56 @@ async def test_unsupported_live_is_rejected_before_any_bridge_socket(
         assert result["error"]["code"] == "capability_unavailable"
         assert "Standalone" in result["error"]["message"]
         opening.assert_not_called()
+
+
+async def test_relay_timeout_follows_the_bridge_cap_for_the_camera(
+    hass, hass_ws_client, viewer_setup
+):
+    """The relay bound is the bridge's cap for this camera plus five seconds."""
+    coordinator = viewer_setup.runtime_data
+    socket = MediaSocket()
+    with patch.object(coordinator.api, "websocket", return_value=socket):
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {"id": 1, "type": "eufy_viewer/watch", "entity_id": "camera.front_door"}
+        )
+        assert (await client.receive_json())["success"]
+        viewer = next(iter(hass.data[DOMAIN]["viewers"].values()))
+        # A battery camera keeps 120 s whatever the bridge option says.
+        assert viewer.relay_timeout() == 125
+        coordinator.data = replace(coordinator.data, live_max_seconds_mains=1800)
+        assert viewer.relay_timeout() == 125
+        # A camera without a battery value follows the configured mains bound.
+        mains = replace(coordinator.data.cameras["CAM123"], battery=None)
+        coordinator.data = replace(coordinator.data, cameras={"CAM123": mains})
+        assert viewer.relay_timeout() == 1805
+        # A camera that left the inventory falls back to the default.
+        coordinator.data = replace(coordinator.data, cameras={})
+        assert viewer.relay_timeout() == 125
+        await client.close()
+        await asyncio.wait_for(socket.closed.wait(), 1)
+
+
+async def test_relay_ends_at_its_own_bound_without_a_bridge_close(
+    hass, hass_ws_client, viewer_setup
+):
+    """A bridge socket that neither sends nor closes still ends at the bound."""
+    socket = MediaSocket()
+    with (
+        patch.object(viewer_setup.runtime_data.api, "websocket", return_value=socket),
+        patch(
+            "custom_components.eufy_viewer.viewers.Viewer.relay_timeout",
+            return_value=0.05,
+        ),
+    ):
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {"id": 1, "type": "eufy_viewer/watch", "entity_id": "camera.front_door"}
+        )
+        assert (await client.receive_json())["success"]
+        assert (await client.receive_json())["event"] == {"type": "ended"}
+        await asyncio.wait_for(socket.closed.wait(), 1)
+        assert not socket.acks
+        assert not hass.data[DOMAIN]["viewers"]
+        assert not viewer_setup.runtime_data.viewers
+        await client.close()

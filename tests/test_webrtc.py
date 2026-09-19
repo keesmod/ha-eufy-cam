@@ -998,3 +998,30 @@ async def test_custom_ha_stun_overrides_default_and_provider_removal(hass):
     assert [s.to_dict() for s in ice_configuration(hass)[0]] == [
         {"urls": ["stun:custom.invalid:3478"]}
     ]
+
+
+async def test_relay_ends_at_its_own_bound_without_a_bridge_close(
+    hass, hass_ws_client, rtc_setup
+):
+    """The WebRTC relay shares the per-camera bound of the JPEG relay."""
+    socket, _, session, _ = rtc_setup
+    with patch(
+        "custom_components.eufy_viewer.viewers.Viewer.relay_timeout",
+        return_value=0.05,
+    ):
+        client = await hass_ws_client(hass)
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "eufy_viewer/watch",
+                "entity_id": "camera.front_door",
+                "transport": "webrtc",
+            }
+        )
+        assert (await client.receive_json())["success"]
+        assert (await client.receive_json())["event"] == {"type": "ended"}
+        await asyncio.wait_for(socket.closed.wait(), 1)
+        await hass.async_block_till_done()
+    assert not socket.acks
+    assert not session.deleted
+    assert not hass.data[DOMAIN]["viewers"]
