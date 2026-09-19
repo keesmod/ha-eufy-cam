@@ -7,7 +7,7 @@ import type { Readable } from 'node:stream';
 const codecs = ['aac', 'aac-lc', 'aac-eld', 'none', 'unknown'] as const;
 type Codec = typeof codecs[number] | 'unavailable';
 const codec = (value: unknown): Codec => typeof value === 'string' && (codecs as readonly string[]).includes(value) ? value as Codec : 'unavailable';
-const elapsed = (value: number) => Math.min(120000, Math.max(0, Math.round(value)));
+const elapsed = (value: number) => Math.min(3600000, Math.max(0, Math.round(value)));
 export interface LiveAudioReport {
   attempt: number;
   age_ms?: number;

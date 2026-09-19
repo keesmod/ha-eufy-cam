@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.8.26 - 2026-09-19
+
+### Longer live sessions for mains powered cameras, candidate
+
+- Bridge 0.8.22 includes client 0.14.0. Its per-start live bound and its free
+  primary session are the library side of
+  [keesmod/eufy-mega-client#163](https://github.com/keesmod/eufy-mega-client/issues/163).
+- Add the optional app option `live_max_seconds_mains` (Docker:
+  `EUFY_LIVE_MAX_SECONDS_MAINS`, a whole number of seconds from 120 to 3600,
+  default 120). It raises the absolute live session cap only for cameras the
+  inventory reports without a battery value. Battery cameras keep the
+  120-second cap in every case, and the default keeps 120 seconds for every
+  camera. The bridge passes the bound per start to the client, the client
+  sends the STOP at the bound, and the bridge's own watchdog uses the same
+  value, so a session still ends without any help from the viewer.
+- With `live_max_streams_per_station` above 1 the client now keeps the
+  HomeBase's primary session free, so guard mode commands and snapshots work
+  while cameras are live. Recording playback still waits until no camera on
+  that HomeBase is live.
+- The 10-second viewer lease, the 20-second startup timeout and the card's
+  no-restart rule are unchanged. A session that reaches the cap still ends
+  with `camera_timeout`, `stream_failure` and `session_end` and needs a new
+  start. The bridge's state reports the configured value as
+  `live_max_seconds_mains`.
+- Diagnostics: the bridge's live audio report and the integration's filter
+  keep elapsed times up to 3600000 ms, so long sessions keep their rows.
+
+### Evidence and limits
+
+The library evidence is one T8030 HomeBase 3 (firmware 3.8.7.4) with one
+eufyCam 3 on the maintainer's bench: a ten-minute stream at a flat rate,
+control on the idle primary session while a stream ran on its own session,
+and a 180-second stream ended by the client's bound with a device-confirmed
+STOP, see the
+[library research note](https://github.com/keesmod/eufy-mega-client/blob/main/docs/research/LIVE_BOUND_2026-09-19.md).
+The bridge's hub and backend tests cover the per-camera cap, the pass-through
+of the bound and the battery rule. No mains powered camera has run through
+this bridge with a raised cap yet. That observation belongs to the reporter
+of #94 with three mains powered cameras: one camera for 30 to 60 minutes with
+`diagnostics: true`, the `stream_metrics` from `/v1/state` before and after,
+the integration's diagnostics download, GPU load and the final confirmed
+stop. Until then the option is a candidate and installations that leave it
+unset are unchanged.
+
+### Upgrade and rollback
+
+Update the bridge to 0.8.22 and the integration to 0.8.26, restart Home
+Assistant and refresh the dashboard. Leave `live_max_seconds_mains` unset
+unless you take part in the observation. To roll back, restore bridge 0.8.21
+and integration 0.8.25 from your backup. The bridge's private data is
+compatible in both directions.
+
 ## 0.8.25 - 2026-09-19
 
 ### Autostart cards stay live while scrolled out of view

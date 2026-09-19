@@ -106,7 +106,12 @@ test('reports are bounded, copied, sanitized and detach evicted observations', a
   assert.equal(snapshot.length, 8);
   assert.equal(new Set(snapshot.map(row => row.attempt)).size, 8);
   assert.equal(snapshot[0]!.first_data_codec, 'unavailable');
-  assert.equal(snapshot[0]!.duration_ms, 120000);
+  assert.equal(snapshot[0]!.duration_ms, 200000, 'a raised session cap keeps durations beyond two minutes');
+  let clock = 0;
+  const long = new LiveAudioDiagnostics(() => clock).begin('T8425');
+  clock = 3700000;
+  long.finish('ended', true);
+  assert.equal(long.snapshot().duration_ms, 3600000, 'times stay bounded to one hour');
   assert.ok(!JSON.stringify(snapshot).includes('PRIVATE'));
   assert.equal(streams[0]!.listenerCount('data'), 0);
   snapshot[0]!.bytes = 123;
