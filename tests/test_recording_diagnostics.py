@@ -165,6 +165,10 @@ def test_old_failed_cached_and_stale_bridge_evidence_is_explicit():
     safe = support_report(raw)
     assert safe["recording"]["attempts"] == [] and safe["live_audio"] == []
     assert safe["recording"]["omitted"] == 1
+    # The download widens the window by the bridge's live cap, audio rows follow.
+    assert support_report(raw, window_ms=2_700_000)["live_audio"] == [
+        {"attempt": 2, "age_ms": 10}
+    ]
     assert "PRIVATE" not in json.dumps(safe)
     assert (
         support_report({**base, "cache_age_ms": "PRIVATE"})["cache_age_ms"] == 2**31 - 1

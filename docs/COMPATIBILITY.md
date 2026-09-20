@@ -100,6 +100,26 @@ together with the GPU at about 7 percent, with an intermittent third-stream
 resolved. Reported, not independently reproduced. Source: comments on
 [issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
 
+## Dated 0.8.27 mains powered live session
+
+On 2026-09-19 an external tester ran one mains powered T8425 (firmware 1.6.4.6,
+reported without a battery value) behind a second HomeBase 3 (T8030 firmware
+3.8.5.2) with an NVIDIA T600, bridge 0.8.22 with client 0.14.0, integration
+0.8.27, `live_max_streams_per_station: 3` and `live_max_seconds_mains: 1800`,
+for one session in the bundled card from a Windows PC that stayed on the page.
+The session ended at 1800.156 s with `camera_timeout`, `stream_failure` and
+`session_end` and without a `no_viewers`, the stop was device-confirmed 27 ms
+after the stop request without a retry, two guard mode changes from Home
+Assistant applied during the session without interrupting it, the recovery
+counters did not change and nothing was quarantined, and the GPU returned to
+idle after the end. That verifies the raised cap, the free primary session for
+control and the confirmed stop on this hardware. The session switched from
+WebRTC to the JPEG fallback at 18.4 s (`fallback_playback_timeout`, no frame
+acknowledgement for 6 s with the page visible), so the 30 minutes ran on the
+JPEG transport and a long WebRTC session on this hardware is not verified.
+Reported, not independently reproduced. Source: comments on
+[issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
+
 ## Report your installation
 
 You do not need to be a developer or complete every check. There is no required

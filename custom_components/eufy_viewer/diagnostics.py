@@ -12,13 +12,16 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.loader import async_get_integration
 
 from .api import BridgeClient, BridgeError
-from .const import CONF_TOKEN, CONF_URL, DOMAIN
+from .const import CONF_TOKEN, CONF_URL, DOMAIN, LIVE_BOUND_DEFAULT_SECONDS
 from .coordinator import EufyConfigEntry
 from .diagnostic_assessment import assess
 from .live_diagnostics import LATE_AUDIO_END_REASONS, LATE_AUDIO_STAGES, browser_report
 from .recording_diagnostics import recording_report
 
 _CODE_FIELDS = {"outcome", "code", "reason", "relationship_reason"}
+# Live evidence stays downloadable for the bridge's session cap plus this grace,
+# so an attempt that ran to the cap is still in a download taken after its end.
+EVIDENCE_GRACE_SECONDS = 900
 _ENUMS = {
     "event": set(
         "summary device issue end cloud connection station_connection fault".split()
@@ -328,8 +331,14 @@ def audio_report(raw: Any) -> dict[str, Any]:
     return result
 
 
-def support_report(raw: Any) -> dict[str, Any]:
-    """Project known schema fields even if a bridge returns arbitrary input."""
+def support_report(
+    raw: Any, window_ms: int = EVIDENCE_GRACE_SECONDS * 1000
+) -> dict[str, Any]:
+    """Project known schema fields even if a bridge returns arbitrary input.
+
+    Live audio rows older than the window are left out. The default window is
+    the fifteen-minute grace alone, the download adds the bridge's live cap.
+    """
     if (
         not isinstance(raw, dict)
         or type(raw.get("schema")) is not int
@@ -378,11 +387,11 @@ def support_report(raw: Any) -> dict[str, Any]:
         result["live_audio"] = [
             audio_report(row)
             for row in raw["live_audio"][-8:]
-            if cache_age < 900000
+            if cache_age < window_ms
             and (
                 not isinstance(row, dict)
                 or type(row.get("age_ms")) is not int
-                or row["age_ms"] + cache_age < 900000
+                or row["age_ms"] + cache_age < window_ms
             )
         ]
     return result
@@ -467,6 +476,12 @@ async def async_get_config_entry_diagnostics(
         )
     )
     integration = await async_get_integration(hass, DOMAIN)
+    # The bridge's configured cap is the longest any camera on it may run.
+    window = (
+        coordinator.data.live_max_seconds_mains
+        if coordinator
+        else LIVE_BOUND_DEFAULT_SECONDS
+    ) + EVIDENCE_GRACE_SECONDS
     result: dict[str, Any] = {
         "protocol": 1,
         "report_schema": 1,
@@ -487,7 +502,7 @@ async def async_get_config_entry_diagnostics(
             and (
                 type(report.get("_created")) not in (int, float)
                 or not math.isfinite(report["_created"])
-                or monotonic() - report["_created"] < 900
+                or monotonic() - report["_created"] < window
             )
         ],
         "active_viewers": len(coordinator.viewers) if coordinator else 0,
@@ -506,7 +521,7 @@ async def async_get_config_entry_diagnostics(
     try:
         async with asyncio.timeout(10):
             raw = await api.request("GET", "/v1/diagnostics")
-        result["support"] = support_report(raw)
+        result["support"] = support_report(raw, window * 1000)
     except BridgeError, TimeoutError:
         result["support"] = {"status": "unavailable"}
     result["assessment"] = assess(result)
