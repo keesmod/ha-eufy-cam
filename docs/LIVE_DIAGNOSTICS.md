@@ -11,6 +11,11 @@ No bridge restart, session reset or repeated login is needed to collect this
 report. The card must have loaded the updated integration resource.
 
 The report keeps the last eight WebRTC attempts per integration in memory.
+The download includes an attempt for the bridge's configured live session cap
+plus fifteen minutes after the attempt started (integration 0.8.28 and bridge
+0.8.23, fifteen minutes in total before that), so a session that ran to the
+cap can still be downloaded for fifteen minutes after its end. The bridge's
+live audio rows follow the same window.
 Each attempt accepts at most one browser sample at each of five stages: five
 seconds after readiness, the first acknowledged presented frame, one second
 after unmuted playback is available, fifteen seconds after readiness, and fallback.

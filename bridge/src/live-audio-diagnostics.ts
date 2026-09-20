@@ -138,6 +138,7 @@ export class LiveAudioDiagnostics {
     if (this.rows.length > 8) this.rows.shift()!.finish('closed');
     return row;
   }
-  report(): LiveAudioReport[] { return this.rows.map(row => row.snapshot()).filter(row => row.age_ms! < 900000); }
+  /** Rows younger than the window, fifteen minutes unless the caller adds the live session cap. */
+  report(windowMs = 900_000): LiveAudioReport[] { return this.rows.map(row => row.snapshot()).filter(row => row.age_ms! < windowMs); }
   close(): void { for (const row of this.rows) row.finish('closed'); }
 }
