@@ -174,4 +174,8 @@ diagnostics download: all three cameras are mains powered, seven of the last
 eight attempts carry no card report, and the discovery events hold eight HomeBase
 disconnect and reconnect pairs between 08:04 and 08:58 UTC after the start-up
 connection, each reconnecting within about a second, in a list capped at 22
-events. Source: the tester's comments on issue #94.
+events. A second download of the same day, after a bridge restart at 19:03 UTC
+and the 30-minute session of integration 0.8.27, held four pairs that all match
+the bridge's four completed recoveries and none during the session, see the
+0.8.27 mains powered session in [COMPATIBILITY.md](COMPATIBILITY.md). Source:
+the tester's comments on issue #94.

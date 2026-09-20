@@ -117,6 +117,20 @@ control and the confirmed stop on this hardware. The session switched from
 WebRTC to the JPEG fallback at 18.4 s (`fallback_playback_timeout`, no frame
 acknowledgement for 6 s with the page visible), so the 30 minutes ran on the
 JPEG transport and a long WebRTC session on this hardware is not verified.
+
+The tester's redacted diagnostics download of that run, taken about three
+minutes after the end, holds no `station_connection` event between the start of
+the session at 20:37:11 UTC and its end at 21:07:12 UTC, so the HomeBase
+connection stayed up for the whole session. After the bridge start at 19:03 UTC
+the download holds exactly four HomeBase disconnect and reconnect pairs, all
+between 19:55:33 and 19:56:36 UTC during the rapid and concurrent attempts
+before the run, each reconnecting within 1.3 s, and the bridge counted four
+completed recoveries before and after the run. A completed recovery closes the
+station session after the confirmed STOP and reconnects it by design, so those
+four pairs are the four recoveries and that download holds no HomeBase
+reconnect the bridge does not explain. Seven of the eight pairs in the morning
+download recorded in the [2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md)
+remain without a bridge explanation.
 Reported, not independently reproduced. Source: comments on
 [issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
 
