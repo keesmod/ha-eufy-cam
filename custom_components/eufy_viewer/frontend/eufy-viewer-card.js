@@ -1,4 +1,4 @@
-const EUFY_VIEWER_CARD_VERSION = "0.8.27";
+const EUFY_VIEWER_CARD_VERSION = "0.8.28";
 "use strict";
 const recordingModeKey = 'eufy-viewer.recording-mode';
 let recordingMemoryMode = 'auto';

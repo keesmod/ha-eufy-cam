@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.8.28 - 2026-09-20
+
+### Diagnostics keep a long live session, and the mains cap is verified
+
+- Fix: the integration's diagnostics download dropped a live playback report
+  fifteen minutes after its attempt started, and the bridge left a live audio
+  row out of its support report after the same fifteen minutes. With
+  `live_max_seconds_mains` at 1800 a session that ran to its cap was already
+  gone from a download taken right after its end, which the reporter of #94
+  found on 2026-09-19: `live_playback: []` and
+  `recent_live_playback_not_recorded` after a 30-minute session. Bridge 0.8.23
+  and integration 0.8.28 keep both for the bridge's configured cap plus
+  fifteen minutes, so a session at any cap stays downloadable for fifteen
+  minutes after its end. The last eight attempts, the 3600000 ms elapsed time
+  bounds and everything else in the download are unchanged. A bridge before
+  0.8.22 that reports no cap keeps 120 seconds plus fifteen minutes.
+- The 0.8.26 candidate option `live_max_seconds_mains` is verified on mains
+  powered hardware. On 2026-09-19 the reporter of #94 ran one mains powered
+  T8425 (firmware 1.6.4.6, no battery value) behind a T8030 HomeBase 3
+  (firmware 3.8.5.2) with an NVIDIA T600, bridge 0.8.22, integration 0.8.27
+  and `live_max_seconds_mains: 1800` for one session: it ended at 1800.156 s
+  with `camera_timeout`, `stream_failure` and `session_end`, the stop was
+  device-confirmed 27 ms after the stop request without a retry, two guard
+  mode changes from Home Assistant applied during the session without
+  interrupting it, no recovery and nothing quarantined, and the GPU returned
+  to idle. The session switched to the JPEG fallback at 18.4 s
+  (`fallback_playback_timeout`), so a long WebRTC session on that hardware is
+  not verified. See [compatibility](docs/COMPATIBILITY.md).
+- Nothing else changes: the caps, the 10-second lease, the 20-second startup
+  timeout, the card's no-restart rule and the per-HomeBase limit are the same.
+
+### Upgrade and rollback
+
+Update the bridge to 0.8.23 and the integration to 0.8.28, restart Home
+Assistant and refresh the dashboard. The bridge's private data is compatible in
+both directions. To roll back, restore bridge 0.8.22 and integration 0.8.27
+from your backup.
+
 ## 0.8.27 - 2026-09-19
 
 ### The live relay follows the bridge's session cap

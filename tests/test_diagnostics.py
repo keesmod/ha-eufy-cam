@@ -2,12 +2,14 @@
 
 import json
 from pathlib import Path
+from time import monotonic
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.eufy_viewer.api import BridgeError
+from custom_components.eufy_viewer.api import BridgeError, BridgeState
 from custom_components.eufy_viewer.const import DOMAIN
 from custom_components.eufy_viewer.diagnostics import (
     _fields,
@@ -17,6 +19,7 @@ from custom_components.eufy_viewer.diagnostics import (
     support_report,
 )
 
+from .conftest import STATE
 from .test_config_flow import DATA
 
 STAMP = "2026-09-11T12:00:00.000Z"
@@ -348,4 +351,56 @@ async def test_timeout_and_future_codes_reach_failed_setup_download(hass):
     ):
         result = await async_get_config_entry_diagnostics(hass, entry)
     assert result["support"]["recent_events"] == events
+    assert "PRIVATE" not in json.dumps(result)
+
+
+async def test_download_keeps_live_evidence_for_the_cap_plus_fifteen_minutes(hass):
+    """A session that ran to a raised cap is still in a download after its end."""
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="PRIVATE", data=DATA)
+    entry.add_to_hass(hass)
+    now = monotonic()
+    reports = [
+        {"_created": now - 2800, "acks": 1},
+        {"_created": now - 1700, "acks": 2},
+        {"_created": now - 800, "acks": 3},
+    ]
+    support = {
+        "schema": 2,
+        "generated_at": STAMP,
+        "last_discovery": [],
+        "recent_events": [],
+        "live_audio": [
+            {"attempt": 1, "age_ms": 2_800_000},
+            {"attempt": 2, "age_ms": 1_700_000},
+            {"attempt": 3, "age_ms": 800_000},
+        ],
+    }
+
+    def runtime(state: BridgeState) -> SimpleNamespace:
+        return SimpleNamespace(
+            api=SimpleNamespace(request=AsyncMock(return_value=support)),
+            data=state,
+            live_diagnostics=reports,
+            viewers={},
+            last_update_success=True,
+            recording_diagnostics=SimpleNamespace(
+                report=lambda: {"schema": 1, "attempts": [], "expired": 0}
+            ),
+        )
+
+    # With the bridge cap at 1800 s the window is 2700 s for playback and audio.
+    entry.runtime_data = runtime(
+        BridgeState.parse({**STATE, "live_max_seconds_mains": 1800})
+    )
+    result = await async_get_config_entry_diagnostics(hass, entry)
+    assert [live["acks"] for live in result["live_playback"]] == [2, 3]
+    assert [row["attempt"] for row in result["support"]["live_audio"]] == [2, 3]
+    assert "recent_live_playback_not_recorded" not in result["assessment"].get(
+        "missing_evidence", []
+    )
+    # A bridge at the default cap keeps the fifteen-minute window plus 120 s.
+    entry.runtime_data = runtime(BridgeState.parse(STATE))
+    result = await async_get_config_entry_diagnostics(hass, entry)
+    assert [live["acks"] for live in result["live_playback"]] == [3]
+    assert [row["attempt"] for row in result["support"]["live_audio"]] == [3]
     assert "PRIVATE" not in json.dumps(result)

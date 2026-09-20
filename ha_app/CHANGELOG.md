@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.23 - 2026-09-20
+
+- The support report keeps a live audio row for the configured live session
+  cap plus fifteen minutes instead of fifteen minutes from the attempt's
+  start, so a session that ran to a raised `live_max_seconds_mains` is still
+  in a diagnostics download taken after its end. Nothing else changes.
+
 ## 0.8.22 - 2026-09-19
 
 - Include client 0.14.0. Its per-start live bound and its free primary

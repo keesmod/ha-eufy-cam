@@ -142,3 +142,14 @@ test('continuity and pipeline evidence survive close with bounded privacy and no
   const bad = d.begin('PRIVATE', { firmware: 'PRIVATE', owner_model:'PRIVATE', owner_firmware:'PRIVATE' });
   assert.ok(!JSON.stringify(bad.snapshot()).includes('PRIVATE')); stream.destroy();
 });
+
+test('the report keeps a row for fifteen minutes by default and for the live cap plus fifteen minutes when asked', () => {
+  let now = 0;
+  const reports = new LiveAudioDiagnostics(() => now);
+  reports.begin('T8425');
+  now = 899_999; assert.equal(reports.report().length, 1);
+  now = 900_000; assert.equal(reports.report().length, 0);
+  // A session that ran to a 1800-second cap is still in a report taken after its end.
+  now = 1_800_000 + 600_000; assert.equal(reports.report(1_800_000 + 900_000).length, 1);
+  now = 2_700_000; assert.equal(reports.report(2_700_000).length, 0);
+});
