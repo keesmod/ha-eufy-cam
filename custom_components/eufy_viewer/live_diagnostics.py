@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import voluptuous as vol
@@ -65,7 +66,10 @@ NUMBERS = {
         "video_buffer_delay_ms audio_buffer_delay_ms "
         "video_buffer_target_delay_ms audio_buffer_target_delay_ms "
         "video_buffer_min_delay_ms audio_buffer_min_delay_ms "
-        "video_buffer_emitted audio_buffer_emitted".split(),
+        "video_buffer_emitted audio_buffer_emitted "
+        "video_freezes video_freeze_ms video_pauses video_pause_ms "
+        "video_decode_ms video_processing_ms video_assembled "
+        "video_assembly_ms".split(),
         (0, 2**53 - 1),
     ),
     "audio_volume_percent": (0, 100),
@@ -81,8 +85,12 @@ NUMBERS = {
     "audio_lost": (-(2**53 - 1), 2**53 - 1),
 }
 BOOLEANS = set(
-    "offer answer muted paused audio_energy stats_available audio_negotiated".split()
+    "offer answer muted paused audio_energy stats_available audio_negotiated "
+    "video_decoder_power_efficient".split()
 )
+# The browser's decoder name is a short product string such as FFmpeg or
+# ExternalDecoder, never an identifier. Anything outside this set is dropped.
+STRINGS = {"video_decoder": re.compile(r"[A-Za-z0-9 ._()/:,-]{1,64}")}
 
 
 # Counts and fixed categories remain useful when ICE has no selected pair.
@@ -124,6 +132,10 @@ def browser_report(raw: Any) -> dict[str, Any]:
     for key in BOOLEANS:
         if type(raw.get(key)) is bool:
             result[key] = raw[key]
+    for key, pattern in STRINGS.items():
+        value = raw.get(key)
+        if isinstance(value, str) and pattern.fullmatch(value):
+            result[key] = value
     return result
 
 
@@ -139,6 +151,10 @@ def browser_report(raw: Any) -> dict[str, Any]:
                 for key, (low, high) in NUMBERS.items()
             },
             **{vol.Optional(key): bool for key in BOOLEANS},
+            **{
+                vol.Optional(key): vol.All(str, vol.Match(rf"\A{pattern.pattern}\Z"))
+                for key, pattern in STRINGS.items()
+            },
         },
     }
 )

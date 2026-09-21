@@ -665,6 +665,14 @@ export class EufyViewerCard extends HTMLElement {
               count("video_decoded", stat.framesDecoded); count("video_dropped", stat.framesDropped);
               count("video_received", stat.framesReceived); count("video_keyframes", stat.keyFramesDecoded);
               count("video_nack", stat.nackCount); count("video_pli", stat.pliCount); count("video_fir", stat.firCount);
+              // Decoder identity and freeze evidence for a leg that drops to the fallback without packet loss (#106).
+              count("video_freezes", stat.freezeCount); count("video_pauses", stat.pauseCount); count("video_assembled", stat.framesAssembledFromMultiplePackets);
+              for (const [key, value] of Object.entries({ freeze_ms: stat.totalFreezesDuration, pause_ms: stat.totalPausesDuration, decode_ms: stat.totalDecodeTime, processing_ms: stat.totalProcessingDelay, assembly_ms: stat.totalAssemblyTime })) {
+                if (typeof value === "number" && Number.isFinite(value) && value >= 0) count(`video_${key}`, Math.round(value * 1000));
+              }
+              // A product name such as FFmpeg or ExternalDecoder, never an identifier. Anything else is left out.
+              if (typeof stat.decoderImplementation === "string" && /^[A-Za-z0-9 ._()/:,-]{1,64}$/.test(stat.decoderImplementation)) report.video_decoder = stat.decoderImplementation;
+              if (typeof stat.powerEfficientDecoder === "boolean") report.video_decoder_power_efficient = stat.powerEfficientDecoder;
             }
             else {
               const codec = stats.get(stat.codecId);
