@@ -134,6 +134,47 @@ remain without a bridge explanation.
 Reported, not independently reproduced. Source: comments on
 [issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
 
+## Dated 0.8.28 mains powered live session
+
+On 2026-09-20 the same external tester ran the mains powered T8425 (firmware
+1.6.4.6) behind the second HomeBase 3 (T8030 firmware 3.8.5.2) with the NVIDIA
+T600 again, now with bridge 0.8.23 and client 0.14.0, integration 0.8.28, Home
+Assistant 2026.9.3 on Home Assistant OS 18.2 in a VM,
+`live_max_seconds_mains: 1800`, `live_max_streams_per_station: 3`,
+`live_acceleration: nvidia` and diagnostics on, for one session in the bundled
+card from Google Chrome 153 on Windows with the page visible, one camera and no
+guard mode change. The session started at 18:48:56 UTC, reached `frame_ack` at
+2.3 s and ended at 1800.219 s with `camera_timeout`, `stream_failure` and
+`session_end`. The bridge's audio row holds the device-confirmed stop, the
+stream ended and destroyed, and AAC arriving until 1800.157 s. No
+`station_connection` event occurred after the bridge's start-up connection at
+18:39:42 UTC. The redacted diagnostics download, taken 11 s after the end,
+holds the attempt's playback report and the bridge's audio row, which is the
+0.8.28 retention fix working after an 1800-second session.
+
+The session switched from WebRTC to the JPEG fallback at 54.6 s
+(`fallback_playback_timeout`). The tester's Home Assistant core log holds two
+go2rtc warnings with `error="unexpected EOF"` for the bridge's media URL at
+20:49:51.024 local time, which is 18:49:51.024 UTC. On the bridge's own clock
+the fallback event is at 18:49:51.02 UTC, the same moment. The bridge's fallback
+revokes the media grant and destroys both HTTP readers of that grant, the
+MPEG-TS video and the late audio AAC (`bridge/src/media.ts`, `revoke`), so
+go2rtc logs one EOF per reader. The two warnings are the effect of the fallback
+and not its cause. The card's four samples in the download locate the break on
+the browser's receive side, with the numbers in the
+[2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md): packets and frames
+kept arriving without a lost packet or a NACK, but the average wait per frame
+in the browser's jitter buffer grew from 54 ms between 2 and 7 s to 635 ms
+between 7 and 17 s and 914 ms between 17 and 55 s against a target of about
+45 ms, 68 frames were dropped, the browser sent eight keyframe requests that
+go2rtc cannot pass to an HTTP source, and at the fallback 29 frames had left
+the jitter buffer without being decoded. The 1800-second cap, the confirmed
+stop and the free primary session hold on this hardware. A long WebRTC session
+on it remains unverified, and whether the H.264 stream from the T600 or the
+decoder and timing of that PC's browser breaks the leg is not decided by this
+download. Reported, not independently reproduced. Source: comments on
+[issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
+
 ## Report your installation
 
 You do not need to be a developer or complete every check. There is no required
