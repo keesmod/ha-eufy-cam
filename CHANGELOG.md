@@ -16,7 +16,11 @@
   `video_decode_ms`, `video_processing_ms`, `video_assembled` and
   `video_assembly_ms`, durations in whole milliseconds. Missing values stay
   absent and the integration accepts only these bounded scalars, as for the
-  existing fields. See [live diagnostics](docs/LIVE_DIAGNOSTICS.md).
+  existing fields. `video_decoder` and `video_decoder_power_efficient` stay
+  absent on a dashboard page: the WebRTC statistics specification withholds
+  both unless the page itself has captured a microphone or camera, verified
+  on the maintainer's bench with Chromium 152. See
+  [live diagnostics](docs/LIVE_DIAGNOSTICS.md).
 - Why: the 2026-09-20 run on #94 (integration 0.8.28, bridge 0.8.23, NVIDIA
   T600, Google Chrome 153 on Windows) reached the 1800-second cap but dropped
   to the JPEG fallback at 54.6 s with zero packet loss, a jitter-buffer wait

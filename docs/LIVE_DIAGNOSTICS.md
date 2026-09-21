@@ -294,3 +294,22 @@ samples gives the average over that interval. A `video_freeze_ms` that grows
 between samples while `video_lost` and `video_nack` stay at zero places the
 stall after the packets arrived. A `video_decoder` that differs between the
 samples of one attempt is a decoder change inside the browser.
+
+`video_decoder` and `video_decoder_power_efficient` exist only when the browser
+is allowed to expose hardware capabilities. The WebRTC statistics
+specification makes both members absent unless the page's context capturing
+state is true, that is the page itself has captured a microphone or camera,
+because the decoder name is a fingerprinting vector. A Home Assistant
+dashboard page does not capture, so a normal download carries the counters
+and not the decoder name, and `chrome://webrtc-internals`, which shows the
+native statistics, stays the place to read it. Verified on the maintainer's
+bench on 2026-09-21 with integration 0.8.29 and bridge 0.8.23: two popup
+attempts on a T8160 with software transcoding from Chromium 152 on macOS
+carry `video_freezes`, `video_freeze_ms`, `video_pauses`, `video_pause_ms`,
+`video_decode_ms`, `video_processing_ms`, `video_assembled` and
+`video_assembly_ms` in all three samples of each attempt (for example 6
+freezes of 1800 ms in total, 468 ms of decode time and 36126 ms of processing
+delay over 224 decoded frames at 18.7 s), no `video_decoder`, camera and
+microphone permission denied for the origin, and the live peer's inbound video
+statistics row held no `decoderImplementation` member. Both attempts ended
+with `no_viewers` and a device-confirmed stop.
