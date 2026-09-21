@@ -219,10 +219,11 @@ frames emitted since the previous sample:
   0.8.20 showed the same kind of growth, 48 to 238 ms in four seconds with
   zero loss, see [live diagnostics](LIVE_DIAGNOSTICS.md).
 
-The P2P session, the bridge's encoder, the bridge's HTTP source and go2rtc's
-input ran for the whole 1800 s: the JPEG frames and the AAC prove the first
-three, and go2rtc logged its `unexpected EOF` only at the moment the bridge
-revoked the grant on fallback, see the 0.8.28 session in
+The P2P session ran for the whole 1800 s, the JPEG frames behind the ticks and
+the AAC row prove it. Until the fallback the encoder, the bridge's HTTP source
+and go2rtc's input were delivering, 15.7 MB of video reached the browser by
+54.6 s, and go2rtc logged its `unexpected EOF` only at the moment the bridge
+revoked the grant, see the 0.8.28 session in
 [COMPATIBILITY.md](COMPATIBILITY.md). The WebRTC leg degraded in the browser's
 receive path from about 7 s on, in episodes that held frames far beyond the
 target, dropped them and asked for keyframes, until one episode passed 6 s
