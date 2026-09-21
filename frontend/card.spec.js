@@ -289,16 +289,34 @@ test('playback report distinguishes frame loss, decode progress and negotiated a
     card._rtc = {
       connectionState:'connected', iceConnectionState:'connected', localDescription:{sdp:'PRIVATE'},remoteDescription:{sdp:'PRIVATE'},
       getTransceivers:()=>[{receiver:{track:{kind:'audio',id:'PRIVATE'}},currentDirection:'inactive'}],
-      getStats:async()=>new Map([['video',{type:'inbound-rtp',kind:'video',packetsReceived:500,packetsLost:-2,framesReceived:8,framesDecoded:2,nackCount:7,pliCount:4,jitter:0.012,jitterBufferDelay:0.125,jitterBufferTargetDelay:0.075,jitterBufferMinimumDelay:0.025,jitterBufferEmittedCount:2,address:'PRIVATE'}]]),
+      getStats:async()=>new Map([['video',{type:'inbound-rtp',kind:'video',packetsReceived:500,packetsLost:-2,framesReceived:8,framesDecoded:2,nackCount:7,pliCount:4,jitter:0.012,jitterBufferDelay:0.125,jitterBufferTargetDelay:0.075,jitterBufferMinimumDelay:0.025,jitterBufferEmittedCount:2,address:'PRIVATE',decoderImplementation:'ExternalDecoder (D3D11VideoDecoder)',powerEfficientDecoder:true,freezeCount:3,totalFreezesDuration:7.2,pauseCount:1,totalPausesDuration:0.5,totalDecodeTime:1.234,totalProcessingDelay:2.5,framesAssembledFromMultiplePackets:6,totalAssemblyTime:0.05}]]),
       close(){},
     };
     await card._reportLive('startup');
     return acks.find(m=>m.type==='eufy_viewer/live_diagnostics').report;
   });
-  expect(report).toMatchObject({video_packets:500,video_lost:-2,video_received:8,video_decoded:2,video_nack:7,video_pli:4,video_jitter_ms:12,video_buffer_delay_ms:125,video_buffer_target_delay_ms:75,video_buffer_min_delay_ms:25,video_buffer_emitted:2,audio_negotiated:false});
+  expect(report).toMatchObject({video_packets:500,video_lost:-2,video_received:8,video_decoded:2,video_nack:7,video_pli:4,video_jitter_ms:12,video_buffer_delay_ms:125,video_buffer_target_delay_ms:75,video_buffer_min_delay_ms:25,video_buffer_emitted:2,audio_negotiated:false,video_decoder:'ExternalDecoder (D3D11VideoDecoder)',video_decoder_power_efficient:true,video_freezes:3,video_freeze_ms:7200,video_pauses:1,video_pause_ms:500,video_decode_ms:1234,video_processing_ms:2500,video_assembled:6,video_assembly_ms:50});
   expect(report.audio_packets).toBeUndefined();
   expect(JSON.stringify(report)).not.toContain('PRIVATE');
   expect(await page.evaluate(()=>acks.some(m=>m.type==='eufy_viewer/ack'))).toBe(false);
+});
+
+test('decoder names outside the fixed character set and unusable freeze counters are left out', async ({ page }) => {
+  const report = await page.evaluate(async () => {
+    card._open = true; card._rtcSubscription = 9;
+    card._playback = {enabled:true,reports:new Set(),start:performance.now(),ticks:0,sent:0,accepted:0,painted:0};
+    card._rtc = {
+      connectionState:'connected', iceConnectionState:'connected', localDescription:{sdp:'PRIVATE'},remoteDescription:{sdp:'PRIVATE'},
+      getTransceivers:()=>[],
+      getStats:async()=>new Map([['video',{type:'inbound-rtp',kind:'video',framesDecoded:4,decoderImplementation:'PRIVATE\n<script>',powerEfficientDecoder:'yes',freezeCount:-1,totalFreezesDuration:NaN,totalDecodeTime:'PRIVATE',pauseCount:1.5}]]),
+      close(){},
+    };
+    await card._reportLive('startup');
+    return acks.find(m=>m.type==='eufy_viewer/live_diagnostics').report;
+  });
+  expect(report.video_decoded).toBe(4);
+  for (const key of ['video_decoder','video_decoder_power_efficient','video_freezes','video_freeze_ms','video_decode_ms','video_pauses']) expect(report[key]).toBeUndefined();
+  expect(JSON.stringify(report)).not.toContain('PRIVATE');
 });
 
 test('audio diagnostics retain negotiated format and track state without codec IDs or SDP', async ({ page }) => {
