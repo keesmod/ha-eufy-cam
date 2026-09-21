@@ -179,3 +179,57 @@ and the 30-minute session of integration 0.8.27, held four pairs that all match
 the bridge's four completed recoveries and none during the session, see the
 0.8.27 mains powered session in [COMPATIBILITY.md](COMPATIBILITY.md). Source:
 the tester's comments on issue #94.
+
+### The 0.8.28 session of 2026-09-20 (reported)
+
+Same tester, HomeBase and T8425, now bridge 0.8.23 with client 0.14.0,
+integration 0.8.28, NVIDIA transcoding, `live_max_seconds_mains: 1800`, Google
+Chrome 153 on Windows, one camera, page visible, no guard mode change. Bridge
+pipeline: `frame_ack` 2285 ms, `fallback_playback_timeout` 54626 ms,
+`camera_timeout` 1800218 ms, `stream_failure` and `session_end` 1800219 ms.
+Audio row: 28111 AAC chunks, last data at 1800157 ms, largest gap 627 ms, stop
+confirmed. The card's four samples of the WebRTC leg, cumulative `getStats`
+inbound video counters, with the jitter buffer wait per frame computed over the
+frames emitted since the previous sample:
+
+| Sample | Elapsed | Frames received / decoded / dropped | Painted | Keyframes | PLI | Lost / NACK | Wait per frame | Target |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `playing` | 2.3 s | 7 / 3 / 0 | 1 | 1 | 0 | 0 / 0 | 6 ms over 3 frames | 12 ms |
+| `startup` | 6.8 s | 63 / 63 / 0 | 58 | 3 | 0 | 0 / 0 | 54 ms over 60 frames | 47 ms |
+| `audio_check` | 16.8 s | 172 / 155 / 0 | 148 | 6 | 1 | 0 / 0 | 635 ms over 92 frames | 42 ms |
+| `fallback` | 54.6 s | 645 / 552 / 68 | 540 | 20 | 8 | 0 / 0 | 914 ms over 426 frames | 48 ms |
+
+- Connection and ICE were `connected` at every sample, host to host over UDP.
+  RTP jitter 5 to 43 ms. 15.7 MB of video by 54.6 s, 2.5 Mbit/s over the last
+  interval under the 4M cap. The last painted frame was 6009 ms before the
+  fallback sample, at about 48.6 s. Ticks 306, acknowledgements 305.
+- At the first three samples every frame that left the jitter buffer was
+  decoded. At the fallback sample 581 frames had left the buffer and 552 were
+  decoded.
+- The frames arrived at 11 to 12.5 per second and the 20 keyframes match the
+  encoder's `-g 30`, one every 2.6 s. A PLI from the browser cannot reach an
+  HTTP MPEG-TS source through go2rtc, so after a break in decoding the browser
+  waits for the encoder's next periodic keyframe.
+- The same PC's short attempt 40 s earlier was healthy at 6.3 s: 67 frames
+  received and decoded, 36 ms per frame against a 52 ms target, no PLI, then
+  `no_viewers` at 11.3 s.
+- The maintainer's bench samples of 2026-09-14 with software transcoding show
+  45 to 57 ms per frame at 7 s against a target of 64 to 78 ms, no dropped
+  frame and no PLI. The 0.8.11 report that led to the arrival-time stamps of
+  0.8.20 showed the same kind of growth, 48 to 238 ms in four seconds with
+  zero loss, see [live diagnostics](LIVE_DIAGNOSTICS.md).
+
+The P2P session, the bridge's encoder, the bridge's HTTP source and go2rtc's
+input ran for the whole 1800 s: the JPEG frames and the AAC prove the first
+three, and go2rtc logged its `unexpected EOF` only at the moment the bridge
+revoked the grant on fallback, see the 0.8.28 session in
+[COMPATIBILITY.md](COMPATIBILITY.md). The WebRTC leg degraded in the browser's
+receive path from about 7 s on, in episodes that held frames far beyond the
+target, dropped them and asked for keyframes, until one episode passed 6 s
+without a painted frame. The four samples cannot separate an H.264 stream from
+the T600 that the browser's decoder rejects intermittently from decoding or
+timing on that PC. One attempt with software transcoding, one attempt in the
+same browser with hardware video decoding off, and the `decoderImplementation`,
+`freezeCount` and `totalFreezesDuration` values of `chrome://webrtc-internals`
+are the discriminators, see #94. Source: the tester's comment and redacted
+download on issue #94.
