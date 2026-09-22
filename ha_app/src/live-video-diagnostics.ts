@@ -1,0 +1,175 @@
+/** Observe the live video path without starting or changing media flow. */
+import { diagnosticEvents, type DiagnosticEvent } from './diagnostics.js';
+import { randomInt } from 'node:crypto';
+import type { Readable } from 'node:stream';
+
+const elapsed = (value: number) => Math.min(3600000, Math.max(0, Math.round(value)));
+const bounded = (value: number) => Math.min(2147483647, Math.max(0, value));
+export type LiveVideoReaderKind = 'video' | 'audio';
+export type LiveVideoReaderEvent = 'attached' | 'backpressure' | 'closed' | 'revoked';
+const readerEvents: readonly LiveVideoReaderEvent[] = ['attached', 'backpressure', 'closed', 'revoked'];
+/** What the media relay tells the row of one live session. Every call is bounded and never throws. */
+export interface LiveVideoObserver {
+  encoder(mode: 'software' | 'nvidia'): void;
+  output(bytes: number): void;
+  reader(kind: LiveVideoReaderKind, event: LiveVideoReaderEvent): void;
+}
+/** Chunk continuity of one point in the chain: the P2P input, the encoder output or the JPEG frames. */
+export interface LiveVideoStageReport {
+  chunks: number;
+  bytes: number;
+  first_data_ms?: number;
+  last_data_ms?: number;
+  last_data_age_ms?: number;
+  max_gap_ms?: number;
+}
+/** HTTP readers of one grant kind: attached, destroyed by the bridge for backpressure or at a revoke, or closed by the client. */
+export interface LiveVideoReaderReport {
+  attached: number;
+  backpressure: number;
+  closed: number;
+  revoked: number;
+  last_destroy_ms?: number;
+}
+export interface LiveVideoEncoderReport {
+  mode: 'software' | 'nvidia' | 'unavailable';
+  exits: number;
+  software_fallback_ms?: number;
+}
+export interface LiveVideoReport {
+  attempt: number;
+  audio_attempt?: number;
+  age_ms?: number;
+  model: string;
+  state: 'starting' | 'streaming' | 'ended' | 'failed' | 'closed';
+  codec?: 'h264' | 'hevc';
+  encoder: LiveVideoEncoderReport;
+  input: LiveVideoStageReport;
+  output: LiveVideoStageReport;
+  jpeg: LiveVideoStageReport;
+  readers: LiveVideoReaderReport;
+  audio_readers: LiveVideoReaderReport;
+  pipeline?: { event: DiagnosticEvent; elapsed_ms: number }[];
+  duration_ms: number;
+}
+class Stage {
+  readonly report: LiveVideoStageReport = { chunks: 0, bytes: 0 };
+  private lastAt?: number;
+  constructor(private readonly started: number, private readonly now: () => number) {}
+  observe(bytes: number): void {
+    const now = this.now();
+    if (!this.report.chunks) this.report.first_data_ms = elapsed(now - this.started);
+    if (this.lastAt !== undefined) this.report.max_gap_ms = Math.max(this.report.max_gap_ms ?? 0, elapsed(now - this.lastAt));
+    this.lastAt = now;
+    this.report.last_data_ms = elapsed(now - this.started);
+    this.report.chunks = bounded(this.report.chunks + 1);
+    this.report.bytes = bounded(this.report.bytes + bounded(bytes));
+  }
+  snapshot(closed: boolean): LiveVideoStageReport {
+    return { ...this.report, ...(this.lastAt !== undefined && !closed ? { last_data_age_ms: elapsed(this.now() - this.lastAt) } : {}) };
+  }
+  /** The age at the session's end says how long before the end this point stopped. */
+  finish(): void { if (this.lastAt !== undefined) this.report.last_data_age_ms = elapsed(this.now() - this.lastAt); }
+}
+class Readers {
+  readonly report: LiveVideoReaderReport = { attached: 0, backpressure: 0, closed: 0, revoked: 0 };
+  constructor(private readonly started: number, private readonly now: () => number) {}
+  observe(event: LiveVideoReaderEvent): void {
+    this.report[event] = bounded(this.report[event] + 1);
+    if (event === 'backpressure' || event === 'revoked') this.report.last_destroy_ms = elapsed(this.now() - this.started);
+  }
+}
+export class LiveVideoObservation implements LiveVideoObserver {
+  readonly report: LiveVideoReport;
+  private readonly started: number;
+  private closed = false;
+  private stream?: Readable;
+  private readonly stages: Record<'input' | 'output' | 'jpeg', Stage>;
+  private readonly readerCounts: Record<LiveVideoReaderKind, Readers>;
+  constructor(model: string, private readonly now: () => number) {
+    this.started = now();
+    this.stages = { input: new Stage(this.started, now), output: new Stage(this.started, now), jpeg: new Stage(this.started, now) };
+    this.readerCounts = { video: new Readers(this.started, now), audio: new Readers(this.started, now) };
+    this.report = {
+      attempt: randomInt(1, 2 ** 48), model: /^T[A-Z0-9]{4}$/.test(model) ? model : 'unavailable', state: 'starting',
+      encoder: { mode: 'unavailable', exits: 0 },
+      input: this.stages.input.report, output: this.stages.output.report, jpeg: this.stages.jpeg.report,
+      readers: this.readerCounts.video.report, audio_readers: this.readerCounts.audio.report, duration_ms: 0,
+    };
+  }
+  /** The audio row's attempt, so HA can put both bridge rows next to its live_playback row. */
+  correlate(audioAttempt: unknown): void {
+    if (!this.closed && typeof audioAttempt === 'number' && Number.isInteger(audioAttempt) && audioAttempt >= 1 && audioAttempt < 2 ** 48) this.report.audio_attempt = audioAttempt;
+  }
+  attach(stream: Readable, codec: unknown): void {
+    if (this.closed || this.stream) return;
+    this.stream = stream;
+    this.report.state = 'streaming';
+    if (codec === 'h264' || codec === 'hevc') this.report.codec = codec;
+    // EventEmitter.prependListener does not put a Readable into flowing mode.
+    // The existing encoder and JPEG consumers alone decide when data flows.
+    stream.prependListener('data', this.observeInput);
+  }
+  private readonly observeInput = (chunk: unknown) => {
+    if (this.closed || !Buffer.isBuffer(chunk) || chunk.length === 0) return;
+    this.stages.input.observe(chunk.length);
+  };
+  encoder(mode: 'software' | 'nvidia'): void {
+    if (!this.closed && (mode === 'software' || mode === 'nvidia')) this.report.encoder.mode = mode;
+  }
+  output(bytes: number): void { if (!this.closed && typeof bytes === 'number' && bytes > 0) this.stages.output.observe(bytes); }
+  jpeg(bytes: number): void { if (!this.closed && typeof bytes === 'number' && bytes > 0) this.stages.jpeg.observe(bytes); }
+  reader(kind: LiveVideoReaderKind, event: LiveVideoReaderEvent): void {
+    if (this.closed || !readerEvents.includes(event)) return;
+    const counts = kind === 'video' ? this.readerCounts.video : kind === 'audio' ? this.readerCounts.audio : undefined;
+    counts?.observe(event);
+  }
+  mark(event: DiagnosticEvent): void {
+    if (this.closed || !diagnosticEvents.includes(event)) return;
+    if (event === 'media_encoder_exit') this.report.encoder.exits = bounded(this.report.encoder.exits + 1);
+    if (event === 'media_active_nvidia') this.report.encoder.mode = 'nvidia';
+    if (event === 'media_active_software') this.report.encoder.mode = 'software';
+    if (event === 'media_software_fallback') {
+      this.report.encoder.mode = 'software';
+      this.report.encoder.software_fallback_ms ??= elapsed(this.now() - this.started);
+    }
+    const rows = this.report.pipeline ??= [];
+    if (rows.length < 48 && !rows.some(row => row.event === event)) rows.push({ event, elapsed_ms: elapsed(this.now() - this.started) });
+  }
+  snapshot(): LiveVideoReport {
+    return {
+      ...this.report,
+      age_ms: Math.max(0, Math.round(this.now() - this.started)),
+      encoder: { ...this.report.encoder },
+      input: this.stages.input.snapshot(this.closed),
+      output: this.stages.output.snapshot(this.closed),
+      jpeg: this.stages.jpeg.snapshot(this.closed),
+      readers: { ...this.report.readers },
+      audio_readers: { ...this.report.audio_readers },
+      duration_ms: this.closed ? this.report.duration_ms : elapsed(this.now() - this.started),
+      ...(this.report.pipeline ? { pipeline: this.report.pipeline.map(row => ({ ...row })) } : {}),
+    };
+  }
+  finish(state: 'ended' | 'failed' | 'closed'): void {
+    if (this.closed) return;
+    this.report.duration_ms = elapsed(this.now() - this.started);
+    for (const stage of Object.values(this.stages)) stage.finish();
+    this.report.state = state;
+    this.closed = true;
+    this.stream?.off('data', this.observeInput);
+    this.stream = undefined;
+  }
+}
+export class LiveVideoDiagnostics {
+  private rows: LiveVideoObservation[] = [];
+  constructor(private readonly now = () => performance.now()) {}
+  begin(model: string): LiveVideoObservation {
+    const row = new LiveVideoObservation(model, this.now);
+    this.rows.push(row);
+    if (this.rows.length > 8) this.rows.shift()!.finish('closed');
+    return row;
+  }
+  /** Rows younger than the window, fifteen minutes unless the caller adds the live session cap. */
+  report(windowMs = 900_000): LiveVideoReport[] { return this.rows.map(row => row.snapshot()).filter(row => row.age_ms! < windowMs); }
+  close(): void { for (const row of this.rows) row.finish('closed'); }
+}

@@ -41,16 +41,22 @@ an older cached card, direct JPEG selection, failure before readiness, or a
 closed connection before the report arrived. Do not infer one of these without
 other evidence.
 
-A `fallback` sample has no relay row when the bridge initiated the fallback.
-HA switches the viewer to JPEG when the bridge's `fallback` message arrives,
-and `record_browser_report` in `custom_components/eufy_viewer/webrtc.py` then
-skips the go2rtc sample, so the go2rtc counters at that moment are known only
-when an earlier sample fell inside the gap, as in the 20.8 s attempt of
-2026-09-22 in the [2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md).
+Since integration 0.8.31 a `fallback` has a relay row of its own. When the
+bridge's `fallback` message arrives, HA samples go2rtc's counters for the
+video stream and the late audio stream before it switches the viewer to JPEG
+and before cleanup deletes the streams, and stores the row with trigger
+`fallback`. Its `source_h264_packets` against the last browser sample says
+whether go2rtc's input had stopped, and its Opus counters whether the late
+audio kept flowing. A relay that does not answer within the one-second
+timeout leaves no row and never delays the switch. Before 0.8.31 the switch
+came first and `record_browser_report` in
+`custom_components/eufy_viewer/webrtc.py` skipped the sample, so the go2rtc
+counters at a bridge-initiated fallback were known only when an earlier
+sample fell inside the gap, as in the 20.8 s attempt of 2026-09-22 in the
+[2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md). The bridge's own
+row for such an attempt is [the bridge video row](#the-bridge-video-row-bridge-0824).
 Bridge rows disappear on a bridge restart, so download before restarting the
-bridge for an option change. [Issue #112](https://github.com/keesmod/ha-eufy-cam/issues/112)
-adds a go2rtc sample at the bridge's fallback message and a bridge video row
-per attempt.
+bridge for an option change.
 
 For example, an installed answer with no packets and unconnected ICE points to
 the media route. Packets without decoded video require checking loss, complete frames and decoding. Decoded video
@@ -324,3 +330,52 @@ delay over 224 decoded frames at 18.7 s), no `video_decoder`, camera and
 microphone permission denied for the origin, and the live peer's inbound video
 statistics row held no `decoderImplementation` member. Both attempts ended
 with `no_viewers` and a device-confirmed stop.
+
+## The bridge video row, bridge 0.8.24
+
+Bridge 0.8.24 keeps one row per live session in `support.live_video`, next
+to the audio row of `support.live_audio`. The row has its own random
+`attempt` below 2^48 and carries the audio row's attempt as `audio_attempt`,
+which is also the `audio_attempt` of HA's `live_playback` row, so one
+download places the three rows of one attempt side by side. Integration
+0.8.31 projects the row with an allowlist and bounds. An older bridge sends
+no rows and an older integration drops them.
+
+| Field | Meaning |
+| --- | --- |
+| `model`, `codec`, `state` | Camera model, `h264` or `hevc`, and `starting`, `streaming`, `ended`, `failed` or `closed` |
+| `input`, `output`, `jpeg` | The P2P video readable from the library, the live encoder's MPEG-TS output and the JPEG frames of the fallback decoder, each with `chunks`, `bytes`, `first_data_ms`, `last_data_ms`, `last_data_age_ms` and `max_gap_ms` |
+| `encoder` | `mode` is `software` or `nvidia`, `exits` counts encoder process exits, and `software_fallback_ms` is the hardware to software transition |
+| `readers`, `audio_readers` | The grant's MPEG-TS and AAC readers: `attached`, `backpressure` (destroyed by the bridge because more than 1 000 000 bytes of video or 256 000 bytes of audio were queued for it), `closed` (closed by the client or its connection), `revoked` (destroyed at a grant revoke, an audio stop or the session's end) and `last_destroy_ms` |
+| `pipeline` | The session's named events with their elapsed time, each at most once and at most 48, as in the audio row |
+| `duration_ms`, `age_ms` | The session's length and the row's age at the download |
+
+Times are milliseconds since the bridge requested the stream, capped at
+3600000. `last_data_age_ms` is the time since the last chunk at the moment
+of the download while the session streams, and is frozen at the session's
+end, so for a finished row it says how long before the end that point
+stopped. A missing `first_data_ms` means that point never received data, not
+zero. The observation listens on the existing streams and callbacks. It never
+starts, pauses or consumes a stream on its own and it changes neither the
+fallback timing nor the encoder.
+
+Read the row from the source forward. If `input.last_data_age_ms` at the end
+covers the gap that produced the fallback, the P2P video from the HomeBase
+stopped. If the input kept flowing and `output` stopped, the live encoder
+stalled, and `encoder.exits` says whether its process ended. If the output
+kept flowing and `readers.backpressure` rose, the bridge dropped go2rtc's
+reader because go2rtc stopped reading. If the output kept flowing with the
+reader attached, the stall is in go2rtc's input or later, and the `fallback`
+relay row places it against go2rtc's counters. The `jpeg` point follows the
+input through a separate decoder with its own buffering, so it dates the
+input less precisely than `input` itself. `assessment.findings` adds a
+`video_stall` finding for a finished row whose input, output or JPEG frames
+stopped more than 6 s before the end, naming each point with its age.
+
+Bridge rows live in the bridge's memory: the last eight sessions, each kept
+for the configured live cap plus fifteen minutes, and a bridge restart drops
+them all. Download before restarting the bridge for an option change. The
+row contains no URLs, serials, encoder text or media bytes. Local tests cover
+the counters against real FFmpeg output, the gap measurement, the frozen age
+at the end, the reader classification, the retention, the bounds and the
+privacy of the row, and the integration's fallback sample.

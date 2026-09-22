@@ -59,6 +59,7 @@ export interface SupportReport {
   recording?: ReturnType<import("./recording-diagnostics.js").RecordingDiagnostics["report"]>;
   software?: ReturnType<typeof diagnosticSoftware>;
   live_audio?: import("./live-audio-diagnostics.js").LiveAudioReport[];
+  live_video?: import("./live-video-diagnostics.js").LiveVideoReport[];
   schema: 2;
   generated_at: string;
   last_discovery: Record<string, unknown>[];

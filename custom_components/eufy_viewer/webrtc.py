@@ -101,27 +101,35 @@ class WebRTCViewer(Viewer):
             return False
         self.browser_triggers.add(trigger)
         self.playback_evidence["browser"].append(browser_report(report))
-        if self.registered and not self.jpeg and not self.fallback_requested:
-            # This request runs independently of frame acknowledgements. Do not
-            # hold cleanup for a slow or unavailable diagnostic endpoint.
-            row: dict[str, Any] = {"trigger": trigger}
-            try:
-                async with asyncio.timeout(1):
-                    row.update(await self._relay_stats(self.name))
-            except aiohttp.ClientError, TimeoutError, ValueError:
-                return True
-            # AAC never travels in the video stream: late audio has its own
-            # go2rtc stream, whose codec counters are added to the same row.
-            audio = self.audio
-            if audio and audio.registered and not audio.closed:
-                with suppress(aiohttp.ClientError, TimeoutError, ValueError):
-                    async with asyncio.timeout(1):
-                        stats = await self._relay_stats(audio.name)
-                    row["audio_late"] = True
-                    for key, value in stats.items():
-                        row[key] = row.get(key, 0) + value
-            self.playback_evidence["relay"].append(row)
+        if not self.jpeg and not self.fallback_requested:
+            await self._relay_sample(trigger)
         return True
+
+    async def _relay_sample(self, trigger: str) -> None:
+        """One go2rtc row for this viewer's video stream and its late audio stream.
+
+        The request runs independently of frame acknowledgements. Its one
+        second timeouts never hold cleanup for a slow or unavailable endpoint.
+        """
+        if not self.registered:
+            return
+        row: dict[str, Any] = {"trigger": trigger}
+        try:
+            async with asyncio.timeout(1):
+                row.update(await self._relay_stats(self.name))
+        except aiohttp.ClientError, TimeoutError, ValueError:
+            return
+        # AAC never travels in the video stream: late audio has its own
+        # go2rtc stream, whose codec counters are added to the same row.
+        audio = self.audio
+        if audio and audio.registered and not audio.closed:
+            with suppress(aiohttp.ClientError, TimeoutError, ValueError):
+                async with asyncio.timeout(1):
+                    stats = await self._relay_stats(audio.name)
+                row["audio_late"] = True
+                for key, value in stats.items():
+                    row[key] = row.get(key, 0) + value
+        self.playback_evidence["relay"].append(row)
 
     async def _relay_stats(self, name: str) -> dict[str, int]:
         """Codec packet totals of one of this viewer's own go2rtc streams."""
@@ -419,6 +427,11 @@ class WebRTCViewer(Viewer):
                             reason = data.get("reason")
                             if self.jpeg or reason not in FALLBACK_REASONS:
                                 raise BridgeError("Invalid fallback control")
+                            # go2rtc still holds this viewer's streams here, so
+                            # their counters say whether its input had stopped
+                            # before the switch. The switch waits at most the
+                            # sample's one second timeouts.
+                            await self._relay_sample("fallback")
                             self.playback_evidence["fallback"] = reason
                             self.jpeg = True
                             self.ack_command = "ack:jpeg"

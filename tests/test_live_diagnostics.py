@@ -367,3 +367,151 @@ def test_decoder_identity_and_freeze_counters_are_bounded():
     assert browser_report({"video_decoder": "PRIVATE\n"}) == {}
     assert browser_report({"video_decoder": "<script>"}) == {}
     assert browser_report({"video_decoder": ""}) == {}
+
+
+def _text(payload):
+    return SimpleNamespace(type=aiohttp.WSMsgType.TEXT, data=json.dumps(payload))
+
+
+async def test_bridge_fallback_samples_go2rtc_before_the_switch_to_jpeg(
+    hass, hass_ws_client, rtc_setup
+):
+    """The fallback row says whether go2rtc's input had stopped, with late audio."""
+    from .test_webrtc import audio_ready
+
+    socket, _, session, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client, late_audio=True)
+    await audio_ready(client, socket)
+    streams = {
+        viewer.name: {
+            "producers": [
+                {"receivers": [{"codec": {"codec_name": "H264"}, "packets": 204}]}
+            ],
+            "consumers": [
+                {"senders": [{"codec": {"codec_name": "H264"}, "packets": 204}]}
+            ],
+        },
+        viewer.name + "_audio": {
+            "producers": [
+                {"receivers": [{"codec": {"codec_name": "AAC"}, "packets": 966}]}
+            ],
+            "consumers": [
+                {"senders": [{"codec": {"codec_name": "OPUS"}, "packets": 966}]}
+            ],
+        },
+    }
+    deleted_at_sample = []
+
+    def get(_url, params):
+        deleted_at_sample.append(len(session.deleted))
+        return ReportResponse(json.dumps(streams[params["src"]]).encode())
+
+    session.get = Mock(side_effect=get)
+    for trigger in ("playing", "startup", "unmuted", "audio_check"):
+        assert await viewer.record_browser_report({"trigger": trigger})
+    assert len(viewer.playback_evidence["relay"]) == 4
+    await socket.queue.put(_text({"type": "fallback", "reason": "playback_timeout"}))
+    assert (await client.receive_json())["event"] == {"type": "fallback"}
+    assert viewer.jpeg
+    expected = {
+        "trigger": "fallback",
+        "source_h264_packets": 204,
+        "output_h264_packets": 204,
+        "audio_late": True,
+        "source_aac_packets": 966,
+        "output_opus_packets": 966,
+    }
+    assert viewer.playback_evidence["relay"][-1] == expected
+    assert session.get.call_count == 10
+    # Both streams still existed in go2rtc when they were sampled.
+    assert deleted_at_sample == [0] * 10
+    # The card's own fallback sample adds a browser row and no second relay row.
+    assert await viewer.record_browser_report({"trigger": "fallback", "painted": 198})
+    assert session.get.call_count == 10
+    assert len(viewer.playback_evidence["relay"]) == 5
+    await socket.queue.put(
+        SimpleNamespace(type=aiohttp.WSMsgType.BINARY, data=b"\xff\xd8\xff\xd9")
+    )
+    assert (await client.receive_json())["event"]["type"] == "frame"
+    with patch.object(
+        viewer.coordinator.api,
+        "request",
+        AsyncMock(
+            return_value={"schema": 2, "last_discovery": [], "recent_events": []}
+        ),
+    ):
+        download = await async_get_config_entry_diagnostics(
+            hass, viewer.coordinator.entry
+        )
+    live = download["live_playback"][0]
+    assert live["fallback"] == "playback_timeout"
+    assert [row["trigger"] for row in live["relay"]] == [
+        "playing",
+        "startup",
+        "unmuted",
+        "audio_check",
+        "fallback",
+    ]
+    assert live["relay"][-1] == expected
+    assert live["browser"][-1]["trigger"] == "fallback"
+    await client.close()
+    await hass.async_block_till_done()
+    assert len(session.deleted) == 2
+
+
+async def test_ha_requested_fallback_still_samples_go2rtc_at_the_bridge_message(
+    hass, hass_ws_client, rtc_setup
+):
+    socket, _, session, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client)
+    await ready(client, socket)
+    data = json.dumps(
+        {
+            "producers": [
+                {"receivers": [{"codec": {"codec_name": "H264"}, "packets": 9}]}
+            ]
+        }
+    ).encode()
+    session.get = Mock(return_value=ReportResponse(data))
+    viewer.fallback_supported = True
+    assert await viewer.fallback("playback_error")
+    assert socket.acks == ["fallback:playback_error"]
+    # A browser sample after the request no longer samples go2rtc.
+    assert await viewer.record_browser_report({"trigger": "startup"})
+    session.get.assert_not_called()
+    await socket.queue.put(_text({"type": "fallback", "reason": "playback_error"}))
+    assert (await client.receive_json())["event"] == {"type": "fallback"}
+    assert viewer.playback_evidence["relay"] == [
+        {"trigger": "fallback", "source_h264_packets": 9}
+    ]
+    await client.close()
+    await hass.async_block_till_done()
+
+
+@pytest.mark.parametrize("failure", ["http", "timeout", "before_ready"])
+async def test_unavailable_go2rtc_at_the_fallback_never_delays_the_jpeg_switch(
+    hass, hass_ws_client, rtc_setup, failure
+):
+    socket, rest, session, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client)
+    response = ReportResponse(b"{}")
+    session.get = Mock(return_value=response)
+    if failure == "http":
+        session.get.side_effect = aiohttp.ClientError()
+    elif failure == "timeout":
+        response.content.readexactly = AsyncMock(side_effect=TimeoutError())
+    if failure != "before_ready":
+        await ready(client, socket)
+    await socket.queue.put(_text({"type": "fallback", "reason": "startup_timeout"}))
+    assert (await client.receive_json())["event"] == {"type": "fallback"}
+    await socket.queue.put(SimpleNamespace(type=aiohttp.WSMsgType.BINARY, data=b"jpeg"))
+    assert (await client.receive_json())["event"]["type"] == "frame"
+    assert viewer.jpeg and not viewer.closed
+    assert viewer.playback_evidence["relay"] == []
+    if failure == "before_ready":
+        session.get.assert_not_called()
+        rest.streams.add.assert_not_awaited()
+    else:
+        assert session.get.call_count == 1
+    await client.close()
+    await hass.async_block_till_done()
