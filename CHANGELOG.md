@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.8.31 - 2026-09-22
+
+### The diagnostics download locates where a stalled live video stopped
+
+- Bridge 0.8.24 adds `support.live_video` to its support report: one row per
+  live session with its own `attempt` and the audio row's attempt as
+  `audio_attempt`, so a download shows the bridge's video row, its audio row
+  and HA's `live_playback` row of the same attempt side by side. The row
+  counts chunks and bytes with first and last data times, the last data age
+  and the largest gap for the P2P video input, the live encoder's MPEG-TS
+  output and the JPEG frames, records the encoder mode (`software` or
+  `nvidia`) with its exits and the hardware to software transition, and
+  counts the grant's video and audio readers as attached, destroyed for
+  backpressure, closed by the client and revoked, with the time of the last
+  destroy. At the session's end each point's last data age is frozen, so it
+  says how long before the end that point stopped. Fixed categories and
+  bounded scalars only, no URLs, serials or encoder text. The row is kept
+  like the audio row, the bridge's configured cap plus fifteen minutes, and
+  a bridge restart drops it.
+- The integration projects that row with an allowlist and bounds like
+  `live_audio`, and the download's `assessment` gains a `video_stall` finding
+  when the P2P input, the encoder output or the JPEG frames stopped more
+  than 6 s before the session's end, naming each point with its age so the
+  earliest one places the stall.
+- When the bridge's `fallback` message arrives, the integration samples the
+  go2rtc counters of the video stream and the late audio stream before it
+  switches the viewer to JPEG and stores the row with trigger `fallback`.
+  Before this, that sample was skipped because the switch came first, so a
+  bridge-initiated fallback had no go2rtc row. The sample keeps its one
+  second timeouts and a failure never delays the switch.
+- Why: the 2026-09-22 attempts on #94 reproduced `fallback_playback_timeout`
+  with the browser's hardware decoding off and NVIDIA transcoding, and with
+  hardware decoding on and software transcoding. In the attempt that fell
+  back at 20.8 s the download proved that the video stopped before go2rtc's
+  WebRTC sender, and could not say whether the P2P video, the bridge's
+  encoder, the grant's HTTP reader or go2rtc's input stopped. The next
+  download can. Refs #112, #94.
+- Nothing else changes: the fallback timing, the encoder arguments, the
+  go2rtc registration, the card and every existing download field are the
+  same.
+
+### Upgrade and rollback
+
+Update the integration to 0.8.31 in HACS and the bridge add-on to 0.8.24,
+restart Home Assistant and refresh the dashboard. To roll back, restore
+integration 0.8.30 and bridge 0.8.23 from your backups. A 0.8.31 integration
+with a 0.8.23 bridge still works and shows no `live_video` rows.
+
 ## 0.8.30 - 2026-09-22
 
 ### The card shows each camera's battery level

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.24 - 2026-09-22
+
+- The support report gains `support.live_video`, one bounded row per live
+  session next to the audio row, with the audio row's attempt as
+  `audio_attempt`: chunks, bytes, first and last data times, the last data
+  age and the largest gap for the P2P video input, the live encoder's
+  MPEG-TS output and the JPEG frames, the encoder mode with its exits and the
+  hardware to software transition, and the grant's video and audio readers
+  as counts of attached, destroyed for backpressure, closed by the client and
+  revoked with the time of the last destroy. The last data age at the
+  session's end says how long before the end each point stopped, so a
+  download after a `playback_timeout` fallback locates the stall. The row
+  observes the existing streams and never changes media flow, the fallback
+  timing or the encoder. Retained like the audio row, the configured cap
+  plus fifteen minutes, and dropped by a bridge restart. Refs #112, #94.
+
 ## 0.8.23 - 2026-09-20
 
 - The support report keeps a live audio row for the configured live session

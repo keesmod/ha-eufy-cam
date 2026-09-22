@@ -187,7 +187,8 @@ connection loss/recovery when that path changes. Synthetic diagnostics tests mus
 not open live camera streams or access production accounts.
 
 Existing coverage lives in `bridge/test/discovery-diagnostics.test.ts`,
-`bridge/test/mega-backend.test.ts`, `bridge/test/server.test.ts`, and
-`tests/test_diagnostics.py`. Follow [diagnostic release checks](RELEASING.md#diagnostic-release-checks)
+`bridge/test/live-video-diagnostics.test.ts`, `bridge/test/mega-backend.test.ts`,
+`bridge/test/server.test.ts`, `tests/test_diagnostics.py` and
+`tests/test_live_diagnostics.py`. Follow [diagnostic release checks](RELEASING.md#diagnostic-release-checks)
 when shipping a change. Markdown and issue-form wording changes alone need no
 runtime version bump, deployment or live-device test.

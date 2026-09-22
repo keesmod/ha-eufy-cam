@@ -3,6 +3,10 @@
 After a playback problem, download diagnostics before restarting Home Assistant
 or the bridge. Recent recording attempts remain available for fifteen minutes.
 The last eight attempts are retained, so collect after the affected attempt.
+A bridge restart drops the bridge's rows: `support.live_audio`,
+`support.live_video`, `support.recording` and `recent_events` start again at
+the restart, so download before restarting the bridge for an option change.
+An HA restart drops `live_playback` and `recording_playback`.
 
 An administrator can use **Download diagnostics** after a live-view error or in
 the recording player after a preparation or playback error. The button downloads
@@ -27,6 +31,7 @@ information. Review that wrapper and the report before sharing the JSON.
 | `support.software` | Bridge package, installed client library and Node versions at collection |
 | `support.last_discovery`, `support.recent_events` | Existing discovery and owner-connection observations |
 | `support.live_audio`, `live_playback` | Existing source, late-audio, browser and ICE observations |
+| `support.live_video` | The bridge's video row per live attempt since bridge 0.8.24, see [live diagnostics](LIVE_DIAGNOSTICS.md#the-bridge-video-row-bridge-0824) |
 | `support.recording` | Bridge recording observations, optional schema `1` within support schema `2` |
 | `recording_playback` | HA preparation, response and file-release observations, schema `1` |
 | `assessment.findings` | Observed stages with the supporting report section and attempt reference |

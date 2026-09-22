@@ -2,6 +2,7 @@
 import { StreamDiagnostics } from './diagnostics.js';
 import { LiveTranscoder, defaultLiveRateControl, type LiveAcceleration, type LiveRateControl } from './live-transcoder.js';
 import { LateAudio } from './late-audio.js';
+import type { LiveVideoObserver, LiveVideoReaderKind } from './live-video-diagnostics.js';
 import type { Readable } from 'node:stream';
 import type { ServerResponse } from 'node:http';
 import { randomBytes } from 'node:crypto';
@@ -24,6 +25,9 @@ export class MediaRelay {
   lateAudioSupported(serial: string): boolean { return this.lateAudio.get(serial)?.ready === true; }
   private grants = new Map<string, string>();
   private grantReaders = new Map<string, Set<ServerResponse>>();
+  /** Per-session observers of output chunks and reader counts. Observation never changes media flow. */
+  private observers = new Map<string, LiveVideoObserver>();
+  private bridgeDestroyed = new WeakSet<ServerResponse>();
   private startup = new Map<string, { chunks: Buffer[]; bytes: number; timer?: ReturnType<typeof setTimeout> }>();
   constructor(private readonly failed: (serial: string) => void, private readonly diagnostics = new StreamDiagnostics(),
     private readonly audioAvailable: (serial: string) => void = () => {}) {}
@@ -31,9 +35,18 @@ export class MediaRelay {
     const key = randomBytes(32).toString('hex'); this.grants.set(key, serial); return key;
   }
   revoke(key: string): void {
+    const serial = this.grants.get(key);
     this.grants.delete(key);
-    for (const reader of this.grantReaders.get(key) ?? []) reader.destroy();
+    for (const reader of this.grantReaders.get(key) ?? []) this.destroyReader(serial, this.readers.get(serial ?? '')?.has(reader) ? 'video' : 'audio', reader, 'revoked');
     this.grantReaders.delete(key);
+  }
+  /** A destroy by the bridge is counted once, so its later close event is not a client close. */
+  private destroyReader(serial: string | undefined, kind: LiveVideoReaderKind, reader: ServerResponse, event: 'backpressure' | 'revoked'): void {
+    if (!this.bridgeDestroyed.has(reader)) {
+      this.bridgeDestroyed.add(reader);
+      if (serial) this.observers.get(serial)?.reader(kind, event);
+    }
+    reader.destroy();
   }
   serve(key: string, response: ServerResponse): boolean {
     const serial = this.grants.get(key);
@@ -44,8 +57,9 @@ export class MediaRelay {
     const owned = this.grantReaders.get(key) ?? new Set<ServerResponse>();
     this.grantReaders.set(key, owned); owned.add(response);
     this.diagnostics.mark(serial, 'media_reader');
+    this.observers.get(serial)?.reader('video', 'attached');
     response.writeHead(200, { 'Content-Type': 'video/mp2t', 'Cache-Control': 'no-store' });
-    response.on('close', () => { readers.delete(response); owned.delete(response); });
+    response.on('close', () => { readers.delete(response); owned.delete(response); if (!this.bridgeDestroyed.has(response)) this.observers.get(serial)?.reader('video', 'closed'); });
     // Signaling can still take longer than the first encode. Replay a bounded
     // initial prefix so new readers receive its MPEG-TS headers and keyframe.
     for (const chunk of this.startup.get(serial)?.chunks ?? []) response.write(chunk);
@@ -59,8 +73,9 @@ export class MediaRelay {
     this.audioReaders.set(serial, readers); readers.add(response);
     const owned = this.grantReaders.get(key) ?? new Set<ServerResponse>();
     this.grantReaders.set(key, owned); owned.add(response);
+    this.observers.get(serial)?.reader('audio', 'attached');
     response.writeHead(200, { 'Content-Type': 'audio/aac', 'Cache-Control': 'no-store' });
-    response.on('close', () => { readers.delete(response); owned.delete(response); });
+    response.on('close', () => { readers.delete(response); owned.delete(response); if (!this.bridgeDestroyed.has(response)) this.observers.get(serial)?.reader('audio', 'closed'); });
     // Every delivery is a complete frame. New readers need no replay cache.
     return true;
   }
@@ -69,8 +84,9 @@ export class MediaRelay {
    * it within its startup deadline or not, is framed and forwarded whenever
    * its first complete ADTS frame arrives, 40 ms or 5 s after video.
    */
-  start(serial: string, codec: 'h264' | 'hevc', video: Readable, audio: Readable, fps = 15): void {
+  start(serial: string, codec: 'h264' | 'hevc', video: Readable, audio: Readable, fps = 15, observer?: LiveVideoObserver): void {
     if (this.encoders.has(serial)) throw new Error('Duplicate media encoder');
+    if (observer) this.observers.set(serial, observer);
     const startup = { chunks: [] as Buffer[], bytes: 0, timer: undefined as ReturnType<typeof setTimeout> | undefined };
     this.startup.set(serial, startup);
     this.lateAudio.set(serial, new LateAudio(audio, () => {
@@ -78,16 +94,19 @@ export class MediaRelay {
       this.audioAvailable(serial);
     }, frame => {
       for (const reader of this.audioReaders.get(serial) ?? []) {
-        if (reader.writableLength + frame.length > 256_000) reader.destroy();
+        if (reader.writableLength + frame.length > 256_000) this.destroyReader(serial, 'audio', reader, 'backpressure');
         else reader.write(frame);
       }
     }, () => {
-      for (const reader of this.audioReaders.get(serial) ?? []) reader.destroy();
+      for (const reader of this.audioReaders.get(serial) ?? []) this.destroyReader(serial, 'audio', reader, 'revoked');
     }));
+    const mode = this.hardwareFailed ? 'software' : this.acceleration;
+    observer?.encoder(mode);
     const encoder = new LiveTranscoder(serial, codec, video, fps,
-      this.hardwareFailed ? 'software' : this.acceleration, this.diagnostics, (chunk) => {
+      mode, this.diagnostics, (chunk) => {
       if (this.encoders.get(serial) !== encoder) return;
       this.diagnostics.mark(serial, 'media_output');
+      observer?.output(chunk.length);
       if (this.startup.get(serial) === startup) {
         if (!startup.timer) {
           startup.timer = setTimeout(() => this.clearStartup(serial), 2000);
@@ -98,7 +117,7 @@ export class MediaRelay {
       }
       for (const reader of this.readers.get(serial) ?? []) {
         // A slow consumer is disconnected instead of holding the camera pipeline.
-        if (reader.writableLength > 1_000_000) reader.destroy();
+        if (reader.writableLength > 1_000_000) this.destroyReader(serial, 'video', reader, 'backpressure');
         else reader.write(chunk);
       }
     }, () => { if (this.encoders.get(serial) === encoder) this.failed(serial); },
@@ -111,7 +130,7 @@ export class MediaRelay {
     const audio = this.lateAudio.get(serial);
     if (!audio) return;
     audio.stop(); this.lateAudio.delete(serial);
-    for (const reader of this.audioReaders.get(serial) ?? []) reader.destroy();
+    for (const reader of this.audioReaders.get(serial) ?? []) this.destroyReader(serial, 'audio', reader, 'revoked');
     this.audioReaders.delete(serial);
   }
   private clearStartup(serial: string): void {
@@ -125,8 +144,9 @@ export class MediaRelay {
     this.stopAudio(serial);
     this.clearStartup(serial);
     process?.stop();
-    for (const reader of this.readers.get(serial) ?? []) reader.destroy();
+    for (const reader of this.readers.get(serial) ?? []) this.destroyReader(serial, 'video', reader, 'revoked');
     this.readers.delete(serial);
     for (const [key, camera] of this.grants) if (camera === serial) this.revoke(key);
+    this.observers.delete(serial);
   }
 }

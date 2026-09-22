@@ -319,15 +319,85 @@ def audio_report(raw: Any) -> dict[str, Any]:
     if isinstance(raw.get("format"), dict):
         result["format"] = audio_format_report(raw["format"])
     if isinstance(raw.get("pipeline"), list):
-        result["pipeline"] = [
-            {"event": row["event"], "elapsed_ms": row["elapsed_ms"]}
-            for row in raw["pipeline"][:48]
-            if isinstance(row, dict)
-            and isinstance(row.get("event"), str)
-            and row["event"] in _AUDIO_PIPELINE_EVENTS
-            and type(row.get("elapsed_ms")) is int
-            and 0 <= row["elapsed_ms"] <= 3600000
-        ]
+        result["pipeline"] = _pipeline(raw["pipeline"])
+    return result
+
+
+def _pipeline(rows: list[Any]) -> list[dict[str, Any]]:
+    return [
+        {"event": row["event"], "elapsed_ms": row["elapsed_ms"]}
+        for row in rows[:48]
+        if isinstance(row, dict)
+        and isinstance(row.get("event"), str)
+        and row["event"] in _AUDIO_PIPELINE_EVENTS
+        and type(row.get("elapsed_ms")) is int
+        and 0 <= row["elapsed_ms"] <= 3600000
+    ]
+
+
+def _bounded(raw: Any, bounds: dict[str, tuple[int, int]]) -> dict[str, int]:
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        key: value
+        for key, (low, high) in bounds.items()
+        if type(value := raw.get(key)) is int and low <= value <= high
+    }
+
+
+_VIDEO_STAGE_BOUNDS = {
+    "chunks": (0, 2**31 - 1),
+    "bytes": (0, 2**31 - 1),
+    **dict.fromkeys(
+        ("first_data_ms", "last_data_ms", "last_data_age_ms", "max_gap_ms"),
+        (0, 3600000),
+    ),
+}
+_VIDEO_READER_BOUNDS = {
+    **dict.fromkeys(("attached", "backpressure", "closed", "revoked"), (0, 2**31 - 1)),
+    "last_destroy_ms": (0, 3600000),
+}
+
+
+def video_report(raw: Any) -> dict[str, Any]:
+    """Preserve the bridge's video path counters, never encoder text or payloads."""
+    if not isinstance(raw, dict):
+        return {}
+    result: dict[str, Any] = {}
+    enums = {
+        "state": {"starting", "streaming", "ended", "failed", "closed"},
+        "codec": {"h264", "hevc"},
+    }
+    numbers = {
+        "attempt": (1, 2**48 - 1),
+        "audio_attempt": (1, 2**48 - 1),
+        "age_ms": (0, 2**31 - 1),
+        "duration_ms": (0, 3600000),
+    }
+    for key, allowed in enums.items():
+        value = raw.get(key)
+        if isinstance(value, str) and value in allowed:
+            result[key] = value
+    result.update(_bounded(raw, numbers))
+    if "model" in raw:
+        result["model"] = _fields({"model": raw["model"]})["model"]
+    encoder = raw.get("encoder")
+    if isinstance(encoder, dict):
+        safe: dict[str, Any] = _bounded(
+            encoder, {"exits": (0, 2**31 - 1), "software_fallback_ms": (0, 3600000)}
+        )
+        mode = encoder.get("mode")
+        if isinstance(mode, str) and mode in {"software", "nvidia", "unavailable"}:
+            safe["mode"] = mode
+        result["encoder"] = safe
+    for stage in ("input", "output", "jpeg"):
+        if isinstance(raw.get(stage), dict):
+            result[stage] = _bounded(raw[stage], _VIDEO_STAGE_BOUNDS)
+    for readers in ("readers", "audio_readers"):
+        if isinstance(raw.get(readers), dict):
+            result[readers] = _bounded(raw[readers], _VIDEO_READER_BOUNDS)
+    if isinstance(raw.get("pipeline"), list):
+        result["pipeline"] = _pipeline(raw["pipeline"])
     return result
 
 
@@ -393,6 +463,16 @@ def support_report(
                 or type(row.get("age_ms")) is not int
                 or row["age_ms"] + cache_age < window_ms
             )
+        ]
+    if isinstance(raw.get("live_video"), list):
+        # The bridge takes these rows from its own history at download time,
+        # so their ages are current even when the rest of the report is cached.
+        result["live_video"] = [
+            video_report(row)
+            for row in raw["live_video"][-8:]
+            if not isinstance(row, dict)
+            or type(row.get("age_ms")) is not int
+            or row["age_ms"] < window_ms
         ]
     return result
 

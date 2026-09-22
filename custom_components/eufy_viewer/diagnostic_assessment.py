@@ -94,6 +94,29 @@ def assess(report: dict[str, Any]) -> dict[str, Any]:
                 "support.live_audio.stop_confirmed",
                 attempt,
             )
+    for row in support.get("live_video", []):
+        if row.get("state") not in {"ended", "failed", "closed"}:
+            continue
+        stopped = [
+            f"{label} {age} ms"
+            for stage, label in (
+                ("input", "the P2P video input"),
+                ("output", "the encoder output"),
+                ("jpeg", "the JPEG frames"),
+            )
+            if type(age := row.get(stage, {}).get("last_data_age_ms")) is int
+            and age > 6000
+        ]
+        if stopped:
+            add(
+                "video_stall",
+                "Before the session's end " + ", ".join(stopped) + " had stopped. "
+                "The earliest point in the chain from the P2P input through the "
+                "encoder output to the JPEG frames locates the stall, and a later "
+                "point that kept flowing clears the points before it.",
+                "support.live_video",
+                row.get("attempt"),
+            )
     lives = report.get("live_playback", [])
     if not lives:
         missing.add("recent_live_playback_not_recorded")
