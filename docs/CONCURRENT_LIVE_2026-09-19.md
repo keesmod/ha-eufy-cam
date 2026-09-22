@@ -324,6 +324,24 @@ frames emitted by the jitter buffer against 523 decoded at the fallback:
   acknowledgement, so its JPEG decoder emitted at least one frame after
   15.1 s, which does not date the P2P input because of that decoder's own
   buffering.
+- The tester's Home Assistant core log holds one go2rtc `unexpected EOF` for
+  the bridge's media URL in the window of attempt A, at 13:08:52.454 local
+  time, 11:08:52.454 UTC, which is the bridge's fallback at 11:08:52.48 UTC on
+  its own clock, and none between 11:08:46 and 11:08:52. The bridge destroys a
+  grant's HTTP reader only for backpressure or a revoke
+  (`bridge/src/media.ts`, `destroyReader`), and an exit of the live encoder
+  after its first output ends the session and revokes the grant
+  (`bridge/src/live-transcoder.ts`, `hardwareFailure` and `fail`, then
+  `Video encoder failed` in `bridge/src/eufy.ts`), so before that fallback the
+  bridge neither cut go2rtc's reader nor lost its encoder process. What
+  remains for attempt A is the P2P video input stopping while the audio
+  continued, an encoder process that ran without emitting, or go2rtc's input
+  reading without emitting frames, which the `live_video` row of #114
+  separates in the next download. The same logger holds 12 warnings between
+  10:57:53 and 11:16:19 UTC, the last at attempt D's fallback, two per cut and
+  the rest from the session's end of attempt C and from attempts before
+  11:07:56 UTC that are no longer among the download's eight rows, which the
+  log's timestamps would confirm.
 - Attempts B and D both end in a gap of more than 6 s without a painted frame,
   from 44.9 s and 48.2 s. Whether video was still arriving in that gap is not
   in the download, no sample falls inside it and the fallback sample has no

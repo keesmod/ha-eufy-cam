@@ -207,13 +207,18 @@ the browser's video counters were unchanged, 204 frames, 4157 RTP packets and
 4785975 bytes, while the late audio peer had received 179 further Opus packets
 at its normal rate. So go2rtc's video input delivered nothing for at least the
 two seconds before that sample and no video reached the browser for 5.75 s,
-with the audio of the same camera and P2P session flowing. In the two attempts
+with the audio of the same camera and P2P session flowing. The tester's
+Home Assistant core log holds one go2rtc `unexpected EOF` in that attempt's
+window, at the fallback moment, and none before it, so the bridge neither cut
+go2rtc's reader nor lost its encoder process before the fallback, see the
+test record. In the two attempts
 that switched after 50 s the download cannot say whether video was still
 arriving during the final gap of more than 6 s, because the fallback sample
 carries no go2rtc row when the bridge initiated the fallback and the bridge's
 rows are gone. Every sample is in the
 [2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md). A bridge video row per
-attempt and a go2rtc sample at the fallback are the next step, see
+attempt and a go2rtc sample at the fallback are in bridge 0.8.24 and
+integration 0.8.31 (#114, unreleased on 2026-09-22), see
 [issue #112](https://github.com/keesmod/ha-eufy-cam/issues/112). The
 1800-second cap, the confirmed stop and the free primary session are not
 touched by this run. Reported, not independently reproduced. Source: comments
