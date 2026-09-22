@@ -142,6 +142,10 @@ async def test_only_owner_can_report_and_reports_never_ack(
     unmuted = {"trigger": "unmuted", "muted": False, "audio_energy": True}
     await client.send_json({**msg, "id": 4, "report": unmuted})
     assert (await client.receive_json())["result"]["accepted"]
+    await client.send_json(
+        {**msg, "id": 5, "report": {"trigger": "fallback", "video_decoder": "x" * 65}}
+    )
+    assert not (await client.receive_json())["success"]
     assert await viewer.record_browser_report(
         {"trigger": "fallback", "video_packets": 0}
     )
@@ -331,3 +335,35 @@ def test_extended_media_counters_keep_absence_and_signed_rtp_loss():
         "video_buffer_delay_ms": 125,
         "audio_negotiated": False,
     }
+
+
+def test_decoder_identity_and_freeze_counters_are_bounded():
+    """The decoder name is a short product string and durations are whole ms."""
+    sample = {
+        "video_decoder": "ExternalDecoder (D3D11VideoDecoder)",
+        "video_decoder_power_efficient": True,
+        "video_freezes": 3,
+        "video_freeze_ms": 7200,
+        "video_pauses": 0,
+        "video_pause_ms": 0,
+        "video_decode_ms": 1234,
+        "video_processing_ms": 2500,
+        "video_assembled": 6,
+        "video_assembly_ms": 50,
+    }
+    assert browser_report(sample) == sample
+    assert (
+        browser_report(
+            {
+                "video_decoder": "x" * 65,
+                "video_decoder_power_efficient": "true",
+                "video_freezes": -1,
+                "video_freeze_ms": 1.5,
+                "video_decode_ms": None,
+            }
+        )
+        == {}
+    )
+    assert browser_report({"video_decoder": "PRIVATE\n"}) == {}
+    assert browser_report({"video_decoder": "<script>"}) == {}
+    assert browser_report({"video_decoder": ""}) == {}

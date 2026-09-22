@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.8.29 - 2026-09-21
+
+### Live playback samples name the browser's decoder and count its freezes
+
+- The card's browser samples in the integration's diagnostics download add the
+  browser's decoder name (`video_decoder`, a product string such as `FFmpeg`
+  or `ExternalDecoder`, kept only within 64 characters of a fixed character
+  set), whether the browser calls that decoder power efficient
+  (`video_decoder_power_efficient`), and the inbound video counters
+  `freezeCount`, `totalFreezesDuration`, `pauseCount`, `totalPausesDuration`,
+  `totalDecodeTime`, `totalProcessingDelay`,
+  `framesAssembledFromMultiplePackets` and `totalAssemblyTime` as
+  `video_freezes`, `video_freeze_ms`, `video_pauses`, `video_pause_ms`,
+  `video_decode_ms`, `video_processing_ms`, `video_assembled` and
+  `video_assembly_ms`, durations in whole milliseconds. Missing values stay
+  absent and the integration accepts only these bounded scalars, as for the
+  existing fields. `video_decoder` and `video_decoder_power_efficient` stay
+  absent on a dashboard page: the WebRTC statistics specification withholds
+  both unless the page itself has captured a microphone or camera, verified
+  on the maintainer's bench with Chromium 152. See
+  [live diagnostics](docs/LIVE_DIAGNOSTICS.md).
+- Why: the 2026-09-20 run on #94 (integration 0.8.28, bridge 0.8.23, NVIDIA
+  T600, Google Chrome 153 on Windows) reached the 1800-second cap but dropped
+  to the JPEG fallback at 54.6 s with zero packet loss, a jitter-buffer wait
+  per frame growing from 54 ms to 914 ms, 68 dropped frames and eight PLI.
+  The four samples could not tell an H.264 stream the browser's decoder
+  rejects from decoding or timing on the PC. With these fields the next
+  download can. Refs #94, #106.
+- Nothing else changes: the five sample stages, the last eight attempts, the
+  retention window, the bridge and the card's playback behaviour are the same.
+
+### Upgrade and rollback
+
+Update the integration to 0.8.29 in HACS, restart Home Assistant and refresh
+the dashboard. The bridge stays at 0.8.23. To roll back, restore integration
+0.8.28 from your backup.
+
 ## 0.8.28 - 2026-09-20
 
 ### Diagnostics keep a long live session, and the mains cap is verified

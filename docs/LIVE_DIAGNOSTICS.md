@@ -265,3 +265,51 @@ Regression tests use real AAC starting six seconds after video. They verify
 decoded audio, advancing video, one camera start and stop, and video continuity
 when the audio answer is lost. Exact T8134 playback still needs reporter evidence.
 The report's external ICE connection failure is a separate acceptance gap.
+
+## Decoder identity and freeze counters, 0.8.29
+
+The 2026-09-20 run on [issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94)
+reached the 1800-second cap on an NVIDIA T600 but dropped to the JPEG fallback
+at 54.6 s with zero packet loss, a jitter-buffer wait per frame growing from
+54 ms to 914 ms, 68 dropped frames and eight PLI, see the
+[2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md). Those samples could
+not tell an H.264 stream the browser's decoder rejects from decoding or timing
+on the PC. Card and integration 0.8.29 add the following scalar evidence to
+every browser sample, from the inbound video `getStats` row. Missing fields
+still mean unavailable, and an older integration's allowlist drops them.
+
+| Evidence | Meaning |
+| --- | --- |
+| `video_decoder` | The browser's `decoderImplementation`, a product name such as `FFmpeg` or `ExternalDecoder`, kept only when it is 1 to 64 characters of letters, digits, spaces and `. _ ( ) / : , -` |
+| `video_decoder_power_efficient` | The browser's `powerEfficientDecoder`, true for a hardware decoder |
+| `video_freezes`, `video_freeze_ms` | `freezeCount` and `totalFreezesDuration` in whole milliseconds, the presentation stalls the browser itself counted |
+| `video_pauses`, `video_pause_ms` | `pauseCount` and `totalPausesDuration` in whole milliseconds |
+| `video_decode_ms` | `totalDecodeTime` in whole milliseconds, summed over decoded frames |
+| `video_processing_ms` | `totalProcessingDelay` in whole milliseconds, from the first packet of a frame to its decoded output |
+| `video_assembled`, `video_assembly_ms` | `framesAssembledFromMultiplePackets` and `totalAssemblyTime` in whole milliseconds |
+
+Dividing `video_decode_ms` or `video_processing_ms` by `video_decoded` gives
+the average per decoded frame for a sample, and the difference between two
+samples gives the average over that interval. A `video_freeze_ms` that grows
+between samples while `video_lost` and `video_nack` stay at zero places the
+stall after the packets arrived. A `video_decoder` that differs between the
+samples of one attempt is a decoder change inside the browser.
+
+`video_decoder` and `video_decoder_power_efficient` exist only when the browser
+is allowed to expose hardware capabilities. The WebRTC statistics
+specification makes both members absent unless the page's context capturing
+state is true, that is the page itself has captured a microphone or camera,
+because the decoder name is a fingerprinting vector. A Home Assistant
+dashboard page does not capture, so a normal download carries the counters
+and not the decoder name, and `chrome://webrtc-internals`, which shows the
+native statistics, stays the place to read it. Verified on the maintainer's
+bench on 2026-09-21 with integration 0.8.29 and bridge 0.8.23: two popup
+attempts on a T8160 with software transcoding from Chromium 152 on macOS
+carry `video_freezes`, `video_freeze_ms`, `video_pauses`, `video_pause_ms`,
+`video_decode_ms`, `video_processing_ms`, `video_assembled` and
+`video_assembly_ms` in all three samples of each attempt (for example 6
+freezes of 1800 ms in total, 468 ms of decode time and 36126 ms of processing
+delay over 224 decoded frames at 18.7 s), no `video_decoder`, camera and
+microphone permission denied for the origin, and the live peer's inbound video
+statistics row held no `decoderImplementation` member. Both attempts ended
+with `no_viewers` and a device-confirmed stop.
