@@ -23,7 +23,7 @@ On the tested HB3, increasing the SDK's existing query limit retrieved 105 datab
 - By default one camera per HomeBase is live at a time. A second camera on the same HomeBase is refused until the first live view has stopped, and its card says that another camera on this HomeBase is live. The bridge option `live_max_streams_per_station` raises that limit, see [live cameras per HomeBase](#live-cameras-per-homebase).
 - The bridge independently expires silent viewers and stops the camera after the last viewer leaves.
 - HomeBase alarm and Guard Mode entities with station-confirmed commands and push status.
-- Push discovery and battery sensors, stable registry IDs, clean unload, English/Dutch UI and allowlisted diagnostics.
+- Push discovery and battery sensors, stable registry IDs, clean unload, English/Dutch UI and allowlisted diagnostics. The card shows the battery level next to the camera name, see [battery level](#battery-level).
 - No cloud polling timer: the pinned Eufy client is configured with `pollingIntervalMinutes: 0`. Login, push-triggered refreshes, token renewal and the library's local station communication still occur.
 
 ### Card options
@@ -89,6 +89,17 @@ two-minute cap, and a stop on close, page hide, navigation, card removal and
 disconnection, each confirmed by the bridge. Scrolling the card out of view is
 the one exception: an autostart card stays live. The visual editor shows the
 switch for inline cards, and the default is stored as an absent key.
+
+#### Battery level
+
+A camera that reports a battery value shows it next to its name on the card:
+a battery icon whose fill width follows the percentage and whose colour
+follows the Home Assistant theme, green from 50 percent, amber from 20 to 49
+and red below 20, with the percentage as text and an accessible label. The
+value is the camera entity's `battery` attribute, the same figure as the
+camera's battery sensor, delivered by push. The card never requests it and
+the display starts nothing. A camera without a battery value, such as a mains
+powered camera, shows nothing there, and an unavailable camera hides it.
 
 ### Honest snapshot and streaming limits
 

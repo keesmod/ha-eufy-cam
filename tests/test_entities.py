@@ -236,5 +236,9 @@ async def test_capability_attributes_and_unsupported_snapshot(hass):
     camera.hass = hass
     assert camera.unique_id == "CAM123_camera"
     assert camera.extra_state_attributes["capabilities"] == info.capabilities
+    assert camera.extra_state_attributes["battery"] == 72
     assert await camera.async_camera_image() is None
     api.snapshot.assert_not_called()
+    mains = {**STATE, "cameras": [{**STATE["cameras"][0], "battery": None}]}
+    coordinator.async_set_updated_data(BridgeState.parse(mains))
+    assert "battery" not in camera.extra_state_attributes
