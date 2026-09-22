@@ -41,6 +41,17 @@ an older cached card, direct JPEG selection, failure before readiness, or a
 closed connection before the report arrived. Do not infer one of these without
 other evidence.
 
+A `fallback` sample has no relay row when the bridge initiated the fallback.
+HA switches the viewer to JPEG when the bridge's `fallback` message arrives,
+and `record_browser_report` in `custom_components/eufy_viewer/webrtc.py` then
+skips the go2rtc sample, so the go2rtc counters at that moment are known only
+when an earlier sample fell inside the gap, as in the 20.8 s attempt of
+2026-09-22 in the [2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md).
+Bridge rows disappear on a bridge restart, so download before restarting the
+bridge for an option change. [Issue #112](https://github.com/keesmod/ha-eufy-cam/issues/112)
+adds a go2rtc sample at the bridge's fallback message and a bridge video row
+per attempt.
+
 For example, an installed answer with no packets and unconnected ICE points to
 the media route. Packets without decoded video require checking loss, complete frames and decoding. Decoded video
 with no advancing frame callbacks points to presentation. Advancing callbacks
