@@ -1325,3 +1325,37 @@ test('the popup dialog keeps its own bar above the video whatever the card width
   await page.getByRole('button', { name: 'Close live view' }).click();
   await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
 });
+
+test('the battery level shows an icon whose fill and colour follow the level, updates with the state and hides without a value or while unavailable', async ({ page }) => {
+  const show = level => page.evaluate(level => {
+    card.hass = { ...card._hass, states: { 'camera.front': { state: 'idle', attributes: { viewer_card: true, ...(level === undefined ? {} : { battery: level }) } } } };
+  }, level);
+  await expect(page.locator('.battery')).toBeHidden();
+  await show(86);
+  await expect(page.locator('.battery')).toBeVisible();
+  await expect(page.locator('.battery-level')).toHaveText('86%');
+  await expect(page.locator('.battery')).toHaveClass(/high/);
+  await expect(page.locator('.battery')).toHaveAttribute('aria-label', 'Battery 86%');
+  expect(await page.locator('.battery-fill').getAttribute('width')).toBe('16');
+  await show(35);
+  await expect(page.locator('.battery')).toHaveClass(/medium/);
+  expect(await page.locator('.battery-fill').getAttribute('width')).toBe('7');
+  await show(12);
+  await expect(page.locator('.battery')).toHaveClass(/low/);
+  await expect(page.locator('.battery')).not.toHaveClass(/medium/);
+  await expect(page.locator('.battery-level')).toHaveText('12%');
+  expect(await page.locator('.battery-fill').getAttribute('width')).toBe('2');
+  await show(0);
+  await expect(page.locator('.battery-level')).toHaveText('0%');
+  expect(await page.locator('.battery-fill').getAttribute('width')).toBe('0');
+  await show('72');
+  await expect(page.locator('.battery')).toBeHidden();
+  await show(undefined);
+  await expect(page.locator('.battery')).toBeHidden();
+  await page.evaluate(() => { card.hass = { ...card._hass, language: 'nl', states: { 'camera.front': { state: 'unavailable', attributes: { viewer_card: true, battery: 40 } } } }; });
+  await expect(page.locator('.battery')).toBeHidden();
+  await page.evaluate(() => { card.hass = { ...card._hass, states: { 'camera.front': { state: 'idle', attributes: { viewer_card: true, battery: 40 } } } }; });
+  await expect(page.locator('.battery')).toHaveAttribute('aria-label', 'Batterij 40%');
+  await expect(page.locator('.battery-level')).toHaveText('40%');
+  expect(await page.evaluate(() => calls.length)).toBe(0);
+});

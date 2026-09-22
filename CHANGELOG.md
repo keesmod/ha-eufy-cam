@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.8.30 - 2026-09-22
+
+### The card shows each camera's battery level
+
+- The camera entity gains a `battery` attribute: the percentage the bridge
+  inventory reports and the camera's battery sensor already shows. A camera
+  without a battery value gets no attribute, as it gets no battery sensor.
+- The viewer card shows that level next to the camera name: a battery icon
+  whose fill width follows the percentage and whose colour follows the theme,
+  green from 50 percent, amber from 20 to 49 and red below 20, with the
+  percentage as text and an accessible label in English or Dutch. The card
+  hides it for a camera without a value and while the camera is unavailable.
+  The display reads the pushed state only, it starts no live session and
+  fetches nothing.
+- Why: the maintainer asked on 2026-09-22 to see the battery per camera on the
+  card without opening the device page. Refs #110.
+- Nothing else changes: the live view, the recordings, the events card and the
+  bridge are the same.
+
+### Upgrade and rollback
+
+Update the integration to 0.8.30 in HACS, restart Home Assistant and refresh
+the dashboard. The bridge stays at 0.8.23. To roll back, restore integration
+0.8.29 from your backup.
+
 ## 0.8.29 - 2026-09-21
 
 ### Live playback samples name the browser's decoder and count its freezes

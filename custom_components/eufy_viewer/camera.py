@@ -47,7 +47,7 @@ class EufyCamera(EufyEntity, Camera):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Expose receive time honestly, without inventing capture time."""
-        return {
+        attributes: dict[str, Any] = {
             "snapshot_received_at": self.info.snapshot_received_at
             if self.info
             else None,
@@ -56,6 +56,11 @@ class EufyCamera(EufyEntity, Camera):
             "viewer_webrtc": self.coordinator.data.webrtc,
             "viewer_late_audio": self.coordinator.data.webrtc,
         }
+        # The card shows the pushed level next to the camera name. A camera
+        # without a battery value gets no key, as it gets no battery sensor.
+        if self.info and self.info.battery is not None:
+            attributes["battery"] = self.info.battery
+        return attributes
 
     async def async_camera_image(
         self, width: int | None = None, height: int | None = None
