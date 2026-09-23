@@ -379,3 +379,13 @@ row contains no URLs, serials, encoder text or media bytes. Local tests cover
 the counters against real FFmpeg output, the gap measurement, the frozen age
 at the end, the reader classification, the retention, the bounds and the
 privacy of the row, and the integration's fallback sample.
+
+The first field row, on 2026-09-23 from the external tester of issue #94 with
+NVIDIA transcoding on a T8425, read exactly as the paragraph above describes:
+the input and the JPEG frames flowed to the session's end, the encoder output
+stopped 21268 ms before it with the process alive, no stderr and no
+backpressure, and the relay row at the fallback equalled the browser's frame
+count. That places the stall inside the encoder process, which the row cannot
+split further; issue #116 adds FFmpeg's progress counters for that. The
+numbers are in the
+[2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md).
