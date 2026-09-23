@@ -218,11 +218,41 @@ carries no go2rtc row when the bridge initiated the fallback and the bridge's
 rows are gone. Every sample is in the
 [2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md). A bridge video row per
 attempt and a go2rtc sample at the fallback are in bridge 0.8.24 and
-integration 0.8.31 (#114, unreleased on 2026-09-22), see
-[issue #112](https://github.com/keesmod/ha-eufy-cam/issues/112). The
-1800-second cap, the confirmed stop and the free primary session are not
-touched by this run. Reported, not independently reproduced. Source: comments
-on [issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
+integration 0.8.31 (#114, released in v0.8.31 on 2026-09-23), see
+[issue #112](https://github.com/keesmod/ha-eufy-cam/issues/112) and the next
+section. The 1800-second cap, the confirmed stop and the free primary session
+are not touched by this run. Reported, not independently reproduced. Source:
+comments on [issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
+
+## Dated 0.8.31 attempt with the bridge video row
+
+On 2026-09-23 the same external tester ran the mains powered T8425 (firmware
+1.6.4.6) behind the second HomeBase 3 (T8030 firmware 3.8.5.2) with bridge
+0.8.24 and client 0.14.0, integration 0.8.31, Home Assistant 2026.9.3, Google
+Chrome on Windows with the browser's hardware video decoding disabled and
+`live_acceleration: nvidia`, diagnostics on, one camera, and downloaded 25 s
+after the session's end without a restart or an option change. The attempt
+switched from WebRTC to the JPEG fallback (`fallback_playback_timeout`) at
+51.1 s. The bridge video row of #114 locates the stop in the bridge's live
+encoder process: the P2P video from the HomeBase flowed to the session's end
+(973 chunks, the last 66 ms before the end, no gap above 399 ms) and the JPEG
+decoder produced frames from the same bytes to the end, while the encoder's
+MPEG-TS output stopped at 45.1 s and did not resume in the 21 s to the end,
+with the process alive, silent on stderr at error level, and go2rtc's reader
+attached without backpressure until the fallback revoked it 6.0 s after the
+last chunk. The go2rtc sample at the fallback equals the frames the browser
+received, so nothing after the encoder held a frame back. Because the input
+count and the JPEG decoder sit on the stream piped into the encoder's stdin,
+the encoder kept reading its input, and the stop is inside FFmpeg: the CUDA
+HEVC decoder, the VFR sync or the NVENC encoder and the muxer, which the row
+cannot separate.
+[Issue #116](https://github.com/keesmod/ha-eufy-cam/issues/116) adds FFmpeg's
+progress counters to the row for that. Not yet covered on 0.8.31:
+`live_acceleration: software`. Every number is in the
+[2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md). The 1800-second cap,
+the confirmed stop and the free primary session are not touched by this run.
+Reported, not independently reproduced. Source: comments on
+[issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
 
 ## Report your installation
 
