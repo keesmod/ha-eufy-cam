@@ -1,5 +1,6 @@
 /** Observe the live video path without starting or changing media flow. */
 import { diagnosticEvents, type DiagnosticEvent } from './diagnostics.js';
+import type { LiveEncoderProgress } from './live-transcoder.js';
 import { randomInt } from 'node:crypto';
 import type { Readable } from 'node:stream';
 
@@ -12,8 +13,10 @@ const readerEvents: readonly LiveVideoReaderEvent[] = ['attached', 'backpressure
 export interface LiveVideoObserver {
   encoder(mode: 'software' | 'nvidia'): void;
   output(bytes: number): void;
+  progress(value: LiveEncoderProgress): void;
   reader(kind: LiveVideoReaderKind, event: LiveVideoReaderEvent): void;
 }
+const progressCounters = ['frames', 'dropped', 'duplicated', 'out_time_ms', 'bytes'] as const;
 /** Chunk continuity of one point in the chain: the P2P input, the encoder output or the JPEG frames. */
 export interface LiveVideoStageReport {
   chunks: number;
@@ -31,10 +34,22 @@ export interface LiveVideoReaderReport {
   revoked: number;
   last_destroy_ms?: number;
 }
-export interface LiveVideoEncoderReport {
+/**
+ * The live encoder process. `stderr_chunks` counts its stderr data events at
+ * -loglevel error. The counters are those of FFmpeg's latest progress block
+ * from the current process, `last_frame_ms` and `last_drop_ms` the times of
+ * the blocks in which `frames` and `dropped` last rose, and the block's age
+ * is frozen at the session's end like the three points.
+ */
+export interface LiveVideoEncoderReport extends LiveEncoderProgress {
   mode: 'software' | 'nvidia' | 'unavailable';
   exits: number;
+  stderr_chunks: number;
   software_fallback_ms?: number;
+  last_progress_ms?: number;
+  last_progress_age_ms?: number;
+  last_frame_ms?: number;
+  last_drop_ms?: number;
 }
 export interface LiveVideoReport {
   attempt: number;
@@ -86,13 +101,16 @@ export class LiveVideoObservation implements LiveVideoObserver {
   private stream?: Readable;
   private readonly stages: Record<'input' | 'output' | 'jpeg', Stage>;
   private readonly readerCounts: Record<LiveVideoReaderKind, Readers>;
+  /** When the latest progress block arrived, and the counts the next block of the same process is compared with. */
+  private progressAt?: number;
+  private progressSeen = { frames: 0, dropped: 0 };
   constructor(model: string, private readonly now: () => number) {
     this.started = now();
     this.stages = { input: new Stage(this.started, now), output: new Stage(this.started, now), jpeg: new Stage(this.started, now) };
     this.readerCounts = { video: new Readers(this.started, now), audio: new Readers(this.started, now) };
     this.report = {
       attempt: randomInt(1, 2 ** 48), model: /^T[A-Z0-9]{4}$/.test(model) ? model : 'unavailable', state: 'starting',
-      encoder: { mode: 'unavailable', exits: 0 },
+      encoder: { mode: 'unavailable', exits: 0, stderr_chunks: 0 },
       input: this.stages.input.report, output: this.stages.output.report, jpeg: this.stages.jpeg.report,
       readers: this.readerCounts.video.report, audio_readers: this.readerCounts.audio.report, duration_ms: 0,
     };
@@ -118,6 +136,26 @@ export class LiveVideoObservation implements LiveVideoObserver {
     if (!this.closed && (mode === 'software' || mode === 'nvidia')) this.report.encoder.mode = mode;
   }
   output(bytes: number): void { if (!this.closed && typeof bytes === 'number' && bytes > 0) this.stages.output.observe(bytes); }
+  progress(value: LiveEncoderProgress): void {
+    if (this.closed || typeof value !== 'object' || value === null) return;
+    const now = this.now(), at = elapsed(now - this.started), encoder = this.report.encoder;
+    for (const key of progressCounters) {
+      const count = value[key];
+      if (typeof count === 'number' && Number.isInteger(count) && count >= 0) encoder[key] = bounded(count);
+    }
+    // A rise against the previous block of the same process dates the last frame and the last drop.
+    if ((encoder.frames ?? 0) > this.progressSeen.frames) encoder.last_frame_ms = at;
+    if ((encoder.dropped ?? 0) > this.progressSeen.dropped) encoder.last_drop_ms = at;
+    this.progressSeen = { frames: encoder.frames ?? 0, dropped: encoder.dropped ?? 0 };
+    encoder.last_progress_ms = at;
+    this.progressAt = now;
+  }
+  /** A replacement encoder process counts from zero, so the row keeps only its counters. */
+  private resetProgress(): void {
+    for (const key of [...progressCounters, 'last_progress_ms', 'last_frame_ms', 'last_drop_ms'] as const) delete this.report.encoder[key];
+    this.progressAt = undefined;
+    this.progressSeen = { frames: 0, dropped: 0 };
+  }
   jpeg(bytes: number): void { if (!this.closed && typeof bytes === 'number' && bytes > 0) this.stages.jpeg.observe(bytes); }
   reader(kind: LiveVideoReaderKind, event: LiveVideoReaderEvent): void {
     if (this.closed || !readerEvents.includes(event)) return;
@@ -127,11 +165,13 @@ export class LiveVideoObservation implements LiveVideoObserver {
   mark(event: DiagnosticEvent): void {
     if (this.closed || !diagnosticEvents.includes(event)) return;
     if (event === 'media_encoder_exit') this.report.encoder.exits = bounded(this.report.encoder.exits + 1);
+    if (event === 'media_encoder_stderr') this.report.encoder.stderr_chunks = bounded(this.report.encoder.stderr_chunks + 1);
     if (event === 'media_active_nvidia') this.report.encoder.mode = 'nvidia';
     if (event === 'media_active_software') this.report.encoder.mode = 'software';
     if (event === 'media_software_fallback') {
       this.report.encoder.mode = 'software';
       this.report.encoder.software_fallback_ms ??= elapsed(this.now() - this.started);
+      this.resetProgress();
     }
     const rows = this.report.pipeline ??= [];
     if (rows.length < 48 && !rows.some(row => row.event === event)) rows.push({ event, elapsed_ms: elapsed(this.now() - this.started) });
@@ -140,7 +180,7 @@ export class LiveVideoObservation implements LiveVideoObserver {
     return {
       ...this.report,
       age_ms: Math.max(0, Math.round(this.now() - this.started)),
-      encoder: { ...this.report.encoder },
+      encoder: { ...this.report.encoder, ...(this.progressAt !== undefined && !this.closed ? { last_progress_age_ms: elapsed(this.now() - this.progressAt) } : {}) },
       input: this.stages.input.snapshot(this.closed),
       output: this.stages.output.snapshot(this.closed),
       jpeg: this.stages.jpeg.snapshot(this.closed),
@@ -154,6 +194,7 @@ export class LiveVideoObservation implements LiveVideoObserver {
     if (this.closed) return;
     this.report.duration_ms = elapsed(this.now() - this.started);
     for (const stage of Object.values(this.stages)) stage.finish();
+    if (this.progressAt !== undefined) this.report.encoder.last_progress_age_ms = elapsed(this.now() - this.progressAt);
     this.report.state = state;
     this.closed = true;
     this.stream?.off('data', this.observeInput);

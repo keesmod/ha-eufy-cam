@@ -31,7 +31,7 @@ information. Review that wrapper and the report before sharing the JSON.
 | `support.software` | Bridge package, installed client library and Node versions at collection |
 | `support.last_discovery`, `support.recent_events` | Existing discovery and owner-connection observations |
 | `support.live_audio`, `live_playback` | Existing source, late-audio, browser and ICE observations |
-| `support.live_video` | The bridge's video row per live attempt since bridge 0.8.24, see [live diagnostics](LIVE_DIAGNOSTICS.md#the-bridge-video-row-bridge-0824) |
+| `support.live_video` | The bridge's video row per live attempt since bridge 0.8.24, see [live diagnostics](LIVE_DIAGNOSTICS.md#the-bridge-video-row-bridge-0824), with the live encoder's FFmpeg progress counters since bridge 0.8.25, see [FFmpeg's progress counters](LIVE_DIAGNOSTICS.md#ffmpegs-progress-counters-bridge-0825) |
 | `support.recording` | Bridge recording observations, optional schema `1` within support schema `2` |
 | `recording_playback` | HA preparation, response and file-release observations, schema `1` |
 | `assessment.findings` | Observed stages with the supporting report section and attempt reference |

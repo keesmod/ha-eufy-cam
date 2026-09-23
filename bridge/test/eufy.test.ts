@@ -105,12 +105,31 @@ test('shared bridge converts real media, keeps video through audio failure and r
     assert.equal(bridge.hub.ack('CAM123', peer), true);
     await next;
     assert.equal(bridge.hub.active, 1, 'JPEG frames keep flowing after the audio failure');
+    // FFmpeg reports once a second once its output starts. The viewer keeps
+    // acknowledging frames until the row carries a block with encoded frames.
+    const keepViewing = () => bridge.hub.ack('CAM123', peer);
+    frames.on('frame', keepViewing); keepViewing();
+    const reported = AbortSignal.timeout(10_000);
+    while (!(bridge.supportReport().live_video![0]!.encoder.frames! > 0)) {
+      assert.equal(reported.aborted, false, 'No progress block with frames within 10 seconds');
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    frames.off('frame', keepViewing);
+    const progressed = bridge.supportReport().live_video![0]!.encoder;
+    for (const key of ['frames', 'dropped', 'duplicated', 'out_time_ms', 'bytes', 'last_progress_ms', 'last_progress_age_ms', 'last_frame_ms'] as const)
+      assert.equal(typeof progressed[key], 'number', key);
+    assert.ok(progressed.last_frame_ms! <= progressed.last_progress_ms!);
+    assert.equal(typeof progressed.stderr_chunks, 'number');
     bridge.hub.close();
     assert.ok(calls.includes('stop:CAM123'));
     const [ended] = bridge.supportReport().live_video!;
     assert.equal(ended!.state, 'ended'); assert.ok(ended!.duration_ms > 0);
     assert.equal(typeof ended!.input.last_data_age_ms, 'number', 'The input age at the session end is frozen');
     assert.equal(typeof ended!.jpeg.last_data_age_ms, 'number');
+    assert.ok(ended!.encoder.frames! >= progressed.frames!, 'The counters of the last block before the end');
+    assert.equal(typeof ended!.encoder.last_progress_age_ms, 'number');
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.deepEqual(bridge.supportReport().live_video![0]!.encoder, ended!.encoder, 'FFmpeg\'s counters and their age are frozen at the end');
     const events = ended!.pipeline!.map(row => row.event);
     for (const event of ['start', 'h264', 'video_input', 'jpeg_frame', 'frame_ack', 'audio_late', 'session_end']) assert.ok(events.includes(event as never), event);
     // The paced 8 fps fixture may end before the MPEG-TS encoder's first packet. The

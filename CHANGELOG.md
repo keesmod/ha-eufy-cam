@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.8.32 - 2026-09-23
+
+### The diagnostics download names the stage inside FFmpeg where the live encoder stopped
+
+- Bridge 0.8.25 starts the live encoder with `-progress pipe:3 -stats_period 1`
+  and reads FFmpeg's progress blocks from that fourth pipe, which it always
+  drains. The `encoder` object of the `support.live_video` row gains the
+  counters of the latest block: `frames` (with the FFmpeg 5.1 of the bridge
+  images, the frames the video sync handed to the encoder), `dropped` and
+  `duplicated` (the sync's drops and duplicates), and `out_time_ms` and
+  `bytes` (the muxer's output time and bytes). `last_progress_ms` dates that
+  block, `last_progress_age_ms` is frozen at the session's end like the ages
+  of the three points, and `last_frame_ms` and `last_drop_ms` date the blocks
+  in which `frames` and `dropped` last rose. `stderr_chunks` counts the
+  encoder's stderr data events. Whole numbers of five FFmpeg keys only,
+  capped, and no FFmpeg text, URLs or serials.
+- The integration projects the new fields with the existing allowlist and
+  bounds. When the encoder output stopped while the input flowed and FFmpeg
+  kept reporting, the `video_stall` finding names the stage inside FFmpeg:
+  `frames` still rising means the encoder or the muxer emitted nothing,
+  `dropped` rising while `frames` stopped means the video sync dropped the
+  frames, and neither rising means the decoder delivered no frames.
+  Otherwise the finding is unchanged.
+- Why: the first bridge video row of a fallback, from the tester of #94 on
+  2026-09-23 with NVIDIA transcoding, placed the stall inside the live
+  encoder process, which read its input for 21 s while it emitted nothing and
+  stayed silent on stderr at error level. The next download says whether the
+  decoder, the sync or the encoder stopped. Refs #116, #94.
+- Nothing else changes: media flow, the fallback timing, every other encoder
+  argument, the JPEG path, the card and every existing download field are the
+  same.
+
+### Upgrade and rollback
+
+Update the integration to 0.8.32 in HACS and the bridge add-on to 0.8.25,
+restart Home Assistant and refresh the dashboard. To roll back, restore
+integration 0.8.31 and bridge 0.8.24 from your backups. A 0.8.32 integration
+with a 0.8.24 bridge still works, and its `live_video` rows carry no progress
+counters.
+
 ## 0.8.31 - 2026-09-22
 
 ### The diagnostics download locates where a stalled live video stopped
