@@ -381,3 +381,114 @@ frames emitted by the jitter buffer against 523 decoded at the fallback:
   no bridge event.
 
 Source: the tester's comment and redacted download on issue #94.
+
+### The 0.8.31 attempt of 2026-09-23 with the bridge video row (reported)
+
+Same tester, HomeBase and T8425, bridge 0.8.24 with client 0.14.0, integration
+0.8.31, Home Assistant 2026.9.3, Google Chrome on Windows with the browser's
+hardware video decoding disabled, `live_acceleration: nvidia`, one camera,
+diagnostics on, no restart and no option change between the attempt and the
+download. One redacted download 24.9 s after the session's end holds the first
+bridge video row of a fallback (#114), next to its audio row and HA's
+`live_playback` row of the same attempt, `audio_attempt` 234874200826295 in
+all three, and the first relay row with trigger `fallback`. Times are UTC on
+the bridge's clock, the download's `generated_at` of 10:04:42.175 minus the
+row's `age_ms`: the bridge requested the stream at 10:03:10.886 and the
+elapsed times below count from that moment. The attempt switched from WebRTC
+to the JPEG fallback (`fallback_playback_timeout`) at 51.130 s.
+
+The bridge video row, `support.live_video` attempt 76510626341049, HEVC from
+the camera, encoder `nvidia` with 0 exits and no software fallback:
+
+| Elapsed | Event |
+| --- | --- |
+| 1.383 s | `hevc`, `audio_supported` |
+| 1.393 s | `audio_input`, `audio_late` |
+| 1.470 s | `video_input`, the first P2P video chunk |
+| 1.499 s | `media_reader`, go2rtc's reader attached |
+| 1.736 s | `jpeg_frame`, the first JPEG frame |
+| 1.953 s | `media_active_nvidia` and `media_output`, the first MPEG-TS chunk |
+| 2.026 s | `frame_ack` |
+| 45.116 s | the last MPEG-TS chunk from the encoder |
+| 51.130 s | `fallback_playback_timeout`, the video reader revoked at 51.129 s and the audio reader at 51.130 s |
+| 66.318 s | the last P2P video chunk |
+| 66.339 s | the last JPEG frame |
+| 66.383 s | `no_viewers` and `session_end`, the tester closed the view |
+
+The three points of the row, each with its last data age frozen at the
+session's end:
+
+| Point | Chunks | Bytes | First | Last | Age at the end | Largest gap |
+| --- | --- | --- | --- | --- | --- | --- |
+| `input`, P2P video from the HomeBase | 973 | 5446637 | 1.470 s | 66.318 s | 66 ms | 399 ms |
+| `output`, the encoder's MPEG-TS | 676 | 21771528 | 1.953 s | 45.116 s | 21268 ms | 1373 ms |
+| `jpeg`, frames of the fallback decoder | 517 | 35493464 | 1.736 s | 66.339 s | 45 ms | 461 ms |
+
+Readers: video `attached` 1, `backpressure` 0, `closed` 0, `revoked` 1 with
+`last_destroy_ms` 51129; audio the same with 51130. The audio row of the same
+attempt: 1025 AAC chunks, 196741 bytes, last data 52 ms before the end, largest
+gap 310 ms, stop confirmed. `assessment.findings` holds the `video_stall`
+finding: before the session's end the encoder output had stopped 21268 ms.
+
+The browser and go2rtc samples of the same attempt, HA's `live_playback` row
+with `fallback: playback_timeout`, 284 ticks and 283 acknowledgements, the
+elapsed time on the browser's clock from the card's start:
+
+| Sample | Elapsed | Frames received / decoded / dropped | Painted | Keyframes | PLI | Lost / NACK | Freezes | Wait per frame | Target | Decode per frame | go2rtc H.264 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `playing` | 2.0 s | 10 / 1 / 0 | 1 | 1 | 0 | 0 / 0 | 0 | 6 ms over 1 frame | 13 ms | 8.0 ms | 10 / 10 |
+| `startup` | 6.4 s | 53 / 46 / 0 | 38 | 2 | 0 | 0 / 0 | 2 of 1660 ms | 139 ms over 45 frames | 60 ms | 3.4 ms | 53 / 53 |
+| `audio_check` | 16.4 s | 202 / 193 / 8 | 183 | 7 | 0 | 0 / 0 | 3 of 2273 ms | 454 ms over 147 frames | 90 ms | 3.6 ms | 202 / 202 |
+| `fallback` | 51.2 s | 630 / 620 / 10 | 608 | 21 | 1 | 0 / 0 | 4 of 2540 ms | 231 ms over 427 frames | 72 ms | 3.5 ms | 630 / 630 |
+
+The last painted frame was 6.066 s before the fallback sample, at 45.13 s on
+the browser's clock, with 15565295 bytes of video by 51.2 s. The audio peer had
+received 2492 Opus packets, 49 to 50 per second in every interval to the
+fallback.
+
+- The row locates the stop in the bridge's live encoder process. The P2P
+  video from the HomeBase never stopped: 973 chunks to 66 ms before the end
+  with no gap above 399 ms, 0.67 Mbit/s of HEVC. The bridge's JPEG decoder,
+  fed from the same Readable, turned those bytes into frames to the end, 517 at
+  its 8 per second with no gap above 461 ms. The live encoder's MPEG-TS output,
+  4.0 Mbit/s at its CBR cap until then, stopped at 45.116 s and did not resume
+  in the 21.3 s to the end. The encoder process did not exit (`exits` 0 and
+  no `media_encoder_exit`), wrote nothing to its stderr at `-loglevel error`
+  (no `media_encoder_stderr`, which `bridge/src/diagnostics.ts` marks on any
+  stderr data), and go2rtc's reader stayed attached with no backpressure until
+  the fallback revoked it. The relay row at the fallback says go2rtc had
+  received 630 H.264 packets and sent 630, the 630 frames the browser had
+  received, so nothing after the encoder held a frame back. 6.014 s after the
+  last output chunk the bridge's playback timeout fired the fallback, as
+  designed.
+- The encoder kept reading its input. The input observer is a prepended `data`
+  listener on the Readable that `bridge/src/live-transcoder.ts` pipes into the
+  encoder's stdin (`this.video.pipe(input)`) and that `bridge/src/eufy.ts`
+  pipes into the JPEG decoder's stdin. Node pauses a piped Readable as soon as
+  one destination stops draining, and no `data` event fires while it is
+  paused, so a blocked encoder would have frozen the input count and the JPEG
+  frames within about a second. Both ran to the end: FFmpeg consumed 21 s of
+  HEVC while emitting nothing.
+- What the row cannot say. Inside that process three things fit, and all three
+  are silent at `-loglevel error`: the CUDA HEVC decoder delivering no frames,
+  for example while waiting for a keyframe after a stream hiccup, the VFR sync
+  dropping every wall-clock stamped frame (FFmpeg logs sync drops at verbose
+  level only), or the NVENC encoder or the MPEG-TS muxer accepting frames
+  without emitting. Issue #116 adds FFmpeg's own progress counters to the row
+  to separate them.
+- Not yet covered on 0.8.31: `live_acceleration: software`. Attempt D of
+  2026-09-22 with software transcoding also ended in a gap longer than 6 s, but
+  without a bridge row, so whether the software encoder stops in the same place
+  is open. One software attempt with a download before any restart answers it
+  without code.
+- The browser side repeats 2026-09-22: connected host to host over UDP, zero
+  packets lost, zero NACK, 3.4 to 3.6 ms of decode time per frame with the
+  FFmpeg software decoder, 2.5 s of freezes in total and one PLI when the
+  frames stopped. It describes a browser waiting for frames, not one rejecting
+  them.
+- Three rows without media at 09:54:35, T8416, T8425 and T8417 for 5 to 7 s
+  each, ending in `no_viewers` with no offer in HA, are dashboard starts ten
+  minutes before the attempt, not test attempts, and are not analysed.
+
+Reported, not independently reproduced. Source: the tester's comment and
+redacted download on issue #94.
