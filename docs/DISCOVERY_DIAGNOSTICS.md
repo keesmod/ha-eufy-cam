@@ -72,12 +72,22 @@ The report covers the public library discovery result. A cloud request failure
 with `inventory_available=false` does not prove that the account has no devices.
 Ignored non-security rows and data omitted by Eufy are outside this report.
 
-The C30 mapping is already `T8224` with device type `95`. Discovery also depends
-on the values Eufy actually returns and the received owner relationship. The
-report helps distinguish discovery rejection, parent problems and setup failure.
-An unexpected model/type pair does not by itself identify the missing physical
-camera. [Issue #40](https://github.com/keesmod/ha-eufy-cam/issues/40) needs the
-reporter's evidence before its cause or a C30 fix can be established.
+The client maps the C30 as `T8224` with device type `95`, following the pinned
+catalogue. Discovery requires that exact model/type pair, the values Eufy
+actually returns and the received owner relationship. The report helps
+distinguish discovery rejection, parent problems and setup failure.
+
+On 2026-09-23 the reporter of
+[issue #40](https://github.com/keesmod/ha-eufy-cam/issues/40#issuecomment-5801839459)
+shared the report from bridge 0.8.25 with client 0.14.0. Their C30 arrives as
+`model=T8224` with `device_type=96`, firmware 3.4.9.2, `parent_status=present`
+and a T8030 owner on firmware 3.8.5.2. Discovery rejects it with
+`unsupported_device` because type 96 belongs to `T8223` (C31) in the catalogue.
+The summary reports `outcome=accepted`, six cameras, one station and three issues.
+This is reported, not independently reproduced. Admitting the exact received
+tuple is tracked in
+[eufy-mega-client#183](https://github.com/keesmod/eufy-mega-client/issues/183).
+The other two issue rows were not shared.
 
 `ref`, `owner_ref` and `device_ref` are anonymous references within a report.
 `inventory_row` is a separate zero-based source position. Use the `report` number
