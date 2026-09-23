@@ -539,7 +539,7 @@ for (const empty of [false, true])
       { device_model: 'T9999', device_type: 95 },
       { device_model: 'T9999', device_type: 95 },
       { device_model: 'T9999', device_type: 96 },
-      { device_model: 'T8224', device_type: 96 },
+      { device_model: 'T8224', device_type: 97 },
       { device_model: 'T8224PRIVATE_SERIAL', device_type: 95 },
       { device_model: 'T8224\nPRIVATE_TOKEN', device_type: 95 },
       { device_model: 'T8224\n', device_type: 95 },
@@ -569,6 +569,13 @@ for (const empty of [false, true])
           device_model: 'T8224',
           device_type: 95,
         },
+        // The C30 pair reported on #40, admitted since client 0.18.1.
+        {
+          ...rows[0]!,
+          device_sn: 'CAM_REPORTED',
+          device_model: 'T8224',
+          device_type: 96,
+        },
       );
     // Exercise the installed library's public discovery API. Only the cloud
     // boundary is synthetic, with no network, authentication or device commands.
@@ -592,12 +599,12 @@ for (const empty of [false, true])
       assert.deepEqual(faults, [
         ['unsupported_device', 'device_model=T9999 device_type=95'],
         ['unsupported_device', 'device_model=T9999 device_type=96'],
-        ['unsupported_device', 'device_model=T8224 device_type=96'],
+        ['unsupported_device', 'device_model=T8224 device_type=97'],
         ['unsupported_device', 'device_model=unavailable device_type=95'],
         ['unsupported_device', 'device_model=T9999 device_type=unavailable'],
         ['invalid_device_relationship'],
       ]);
-      assert.equal(f.backend.inventory().length, empty ? 0 : 1);
+      assert.equal(f.backend.inventory().length, empty ? 0 : 2);
       assert.equal(f.backend.stations.inventory().length, empty ? 0 : 1);
       assert.deepEqual(f.calls, []);
       assert.doesNotMatch(JSON.stringify(faults), /PRIVATE|192\.0\.2\.1/);
@@ -675,7 +682,7 @@ for (const empty of [false,true])
       const rows=lines.map(line=>JSON.parse(line));
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
-      assert.equal(summary.software.library,'0.14.0');
+      assert.equal(summary.software.library,'0.18.1');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);

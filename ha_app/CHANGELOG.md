@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.26 - 2026-09-23
+
+- Include client 0.18.1. Discovery admits a Video Doorbell C30 that Eufy
+  reports as `T8224` with device type `96`, as reported on #40, with the same
+  handling as a C30 with type `95`. Earlier versions rejected it as
+  `unsupported_device`. Client 0.15.0 to 0.18.0 only add mower modules, and
+  the camera modules are unchanged. Refs #40.
+
 ## 0.8.25 - 2026-09-23
 
 - The live encoder writes FFmpeg's progress to a fourth pipe

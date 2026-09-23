@@ -90,13 +90,15 @@ for a browser dashboard. See
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
 
-The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.32`.
+The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.33`.
 See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 </details>
 
 ## Upgrading
 
+The **0.8.33** integration and bridge **0.8.26** include client **0.18.1**,
+which discovers a Video Doorbell C30 that Eufy reports with device type 96.
 The **0.8.32** integration and bridge **0.8.25** add FFmpeg's progress
 counters from the live encoder to the bridge video row, so a download after
 a stalled encoder says whether its decoder, its video sync or the encoder
@@ -120,8 +122,8 @@ default 120) raises the live session cap only for cameras without a battery
 value. Battery cameras keep two minutes. 0.8.25 keeps an inline card with `live_autostart: true` live while
 it is scrolled out of view, 0.8.24 moved the inline live controls below the
 video on narrow cards, and 0.8.23 added `live_mode: inline` and the optional
-`live_autostart: true`. Update the integration to **0.8.32** and the bridge to
-**0.8.25**, then refresh the dashboard.
+`live_autostart: true`. Update the integration to **0.8.33** and the bridge to
+**0.8.26**, then refresh the dashboard.
 See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
 for changes and any version-specific instructions.
 

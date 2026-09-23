@@ -73,7 +73,8 @@ with `inventory_available=false` does not prove that the account has no devices.
 Ignored non-security rows and data omitted by Eufy are outside this report.
 
 The client maps the C30 as `T8224` with device type `95`, following the pinned
-catalogue. Discovery requires that exact model/type pair, the values Eufy
+catalogue, and since client 0.18.1 also admits the reported type `96`.
+Discovery requires one of those exact model/type pairs, the values Eufy
 actually returns and the received owner relationship. The report helps
 distinguish discovery rejection, parent problems and setup failure.
 
@@ -84,10 +85,11 @@ shared the report from bridge 0.8.25 with client 0.14.0. Their C30 arrives as
 and a T8030 owner on firmware 3.8.5.2. Discovery rejects it with
 `unsupported_device` because type 96 belongs to `T8223` (C31) in the catalogue.
 The summary reports `outcome=accepted`, six cameras, one station and three issues.
-This is reported, not independently reproduced. Admitting the exact received
-tuple is tracked in
-[eufy-mega-client#183](https://github.com/keesmod/eufy-mega-client/issues/183).
-The other two issue rows were not shared.
+This is reported, not independently reproduced. Client 0.18.1, included in
+bridge 0.8.26, admits exactly this pair with the C30 policy
+([eufy-mega-client#183](https://github.com/keesmod/eufy-mega-client/issues/183)).
+The reporter has not yet confirmed the C30 on that bridge. The other two issue
+rows were not shared.
 
 `ref`, `owner_ref` and `device_ref` are anonymous references within a report.
 `inventory_row` is a separate zero-based source position. Use the `report` number
