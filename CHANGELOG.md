@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.8.33 - 2026-09-23
+
+### A Video Doorbell C30 reported with device type 96 is discovered
+
+- Bridge 0.8.26 includes client 0.18.1. Discovery now admits a C30 that Eufy
+  reports as model `T8224` with device type `96`, the pair in the discovery
+  report on #40. It gets the same battery doorbell handling, HomeBase 3
+  topology and snapshot, live and recording policy as a C30 with type `95`.
+  Earlier bridges rejected it with
+  `Eufy backend: unsupported_device device_model=T8224 device_type=96`. Only
+  this exact pair is added, and every other unsupported pair is still
+  rejected. Refs #40, keesmod/eufy-mega-client#183.
+- The pair is a reported inventory value, not independently reproduced, and
+  no C30 was tested with this release. Discovery, state, events and media of
+  the reported C30 still need the reporter's confirmation.
+- Nothing else changes: client 0.15.0 to 0.18.0 only add mower modules, and
+  the camera modules, camera identifiers and persisted sessions are the same.
+  The integration and the card only change their version.
+
+### Upgrade and rollback
+
+Update the bridge add-on to 0.8.26 and the integration to 0.8.33 in HACS,
+restart Home Assistant and refresh the dashboard. To roll back, restore bridge
+0.8.25 and integration 0.8.32 from your backups. Integration 0.8.32 also works
+with bridge 0.8.26.
+
 ## 0.8.32 - 2026-09-23
 
 ### The diagnostics download names the stage inside FFmpeg where the live encoder stopped
