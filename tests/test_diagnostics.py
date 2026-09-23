@@ -418,7 +418,19 @@ def test_video_evidence_is_bounded_and_contains_no_identifiers_or_encoder_text()
         "state": "ended",
         "codec": "h264",
         "duration_ms": 20828,
-        "encoder": {"mode": "nvidia", "exits": 1},
+        "encoder": {
+            "mode": "nvidia",
+            "exits": 1,
+            "stderr_chunks": 0,
+            "frames": 210,
+            "dropped": 0,
+            "duplicated": 0,
+            "out_time_ms": 13800,
+            "bytes": 4785975,
+            "last_progress_ms": 20500,
+            "last_progress_age_ms": 328,
+            "last_frame_ms": 15400,
+        },
         "input": {
             "chunks": 300,
             "bytes": 4785975,
@@ -466,7 +478,23 @@ def test_video_evidence_is_bounded_and_contains_no_identifiers_or_encoder_text()
             "state": "PRIVATE",
             "codec": "PRIVATE",
             "duration_ms": 3600001,
-            "encoder": {"mode": "PRIVATE", "exits": -1, "software_fallback_ms": 2.5},
+            "encoder": {
+                "mode": "PRIVATE",
+                "exits": -1,
+                "software_fallback_ms": 2.5,
+                "stderr_chunks": True,
+                "frames": -1,
+                "dropped": "PRIVATE",
+                "duplicated": 1.5,
+                "out_time_ms": 2**31,
+                "bytes": None,
+                "speed": 1,
+                "stderr": "PRIVATE",
+                "last_progress_ms": 3600001,
+                "last_progress_age_ms": -1,
+                "last_frame_ms": "PRIVATE",
+                "last_drop_ms": 3600001,
+            },
             "input": {"chunks": 2**31, "bytes": "PRIVATE", "last_data_age_ms": -1},
             "output": "PRIVATE",
             "jpeg": {"path": "PRIVATE", "first_data_ms": 3600001},
@@ -526,3 +554,79 @@ def test_video_evidence_is_bounded_and_contains_no_identifiers_or_encoder_text()
     ):
         assessment = assess({"support": {**result, "live_video": [quiet]}})
         assert not [f for f in assessment["findings"] if f["stage"] == "video_stall"]
+
+
+def test_video_stall_names_the_ffmpeg_stage_only_when_its_counters_cover_the_stop():
+    from custom_components.eufy_viewer.diagnostic_assessment import assess
+    from custom_components.eufy_viewer.diagnostics import video_report
+
+    # The shape of the 2026-09-23 field row: the encoder output stopped at
+    # 45116 ms while the input and the JPEG frames flowed to the end.
+    field = {
+        "attempt": 76510626341049,
+        "model": "T8425",
+        "state": "ended",
+        "codec": "hevc",
+        "duration_ms": 66384,
+        "encoder": {"mode": "nvidia", "exits": 0, "stderr_chunks": 0},
+        "input": {"chunks": 973, "last_data_ms": 66318, "last_data_age_ms": 66},
+        "output": {"chunks": 676, "last_data_ms": 45116, "last_data_age_ms": 21268},
+        "jpeg": {"chunks": 517, "last_data_ms": 66339, "last_data_age_ms": 45},
+    }
+    progress = {
+        "frames": 646,
+        "dropped": 0,
+        "duplicated": 0,
+        "out_time_ms": 43100,
+        "bytes": 21771528,
+        "last_progress_ms": 66100,
+        "last_progress_age_ms": 284,
+        "last_frame_ms": 45300,
+    }
+
+    def observation(encoder, **points):
+        raw = {**field, **points, "encoder": {**field["encoder"], **encoder}}
+        findings = assess({"support": {"live_video": [video_report(raw)]}})["findings"]
+        stalls = [f for f in findings if f["stage"] == "video_stall"]
+        assert len(stalls) == 1
+        assert stalls[0]["attempt"] == 76510626341049
+        return stalls[0]["observation"]
+
+    # An older bridge sends no counters, and the finding stays as it was.
+    plain = observation({})
+    assert plain == (
+        "Before the session's end the encoder output 21268 ms had stopped. "
+        "The earliest point in the chain from the P2P input through the encoder "
+        "output to the JPEG frames locates the stall, and a later point that kept "
+        "flowing clears the points before it."
+    )
+    # Frames stopped with the output, no drops, FFmpeg kept reporting.
+    assert observation(progress) == plain + (
+        " Neither FFmpeg's frame count nor its drop count rose in the 20984 ms "
+        "it kept reporting after the last output chunk while the input flowed, "
+        "so the decoder delivered no frames."
+    )
+    # Frames stopped and the drop count kept rising.
+    assert observation({**progress, "dropped": 300, "last_drop_ms": 66100}) == (
+        plain + " FFmpeg's frame count stopped with the output while its drop "
+        "count kept rising for 20984 ms after the last output chunk, so the video "
+        "sync dropped the frames."
+    )
+    # Frames kept rising without output, with or without drops.
+    for dropped in ({}, {"dropped": 9, "last_drop_ms": 66100}):
+        assert observation({**progress, **dropped, "last_frame_ms": 66100}) == (
+            plain + " FFmpeg's frame count kept rising for 20984 ms after the "
+            "last output chunk while the input flowed, so the encoder or the "
+            "muxer emitted nothing."
+        )
+    # A rise within two one-second reports of the last chunk can predate it.
+    late = {**progress, "last_frame_ms": 47116, "dropped": 2, "last_drop_ms": 47116}
+    assert observation(late).endswith("so the decoder delivered no frames.")
+    # Without counters that cover the stop, the finding stays as it is:
+    # FFmpeg's reports stopped with the output, or the input stopped with it.
+    assert observation({**progress, "last_progress_ms": 51116}) == plain
+    stopped_input = {"last_data_ms": 51116, "last_data_age_ms": 15268}
+    both = observation(progress, input=stopped_input)
+    assert both == observation({}, input=stopped_input)
+    assert "the P2P video input 15268 ms, the encoder output 21268 ms" in both
+    assert "FFmpeg" not in both

@@ -25,7 +25,7 @@ export class MediaRelay {
   lateAudioSupported(serial: string): boolean { return this.lateAudio.get(serial)?.ready === true; }
   private grants = new Map<string, string>();
   private grantReaders = new Map<string, Set<ServerResponse>>();
-  /** Per-session observers of output chunks and reader counts. Observation never changes media flow. */
+  /** Per-session observers of output chunks, encoder progress and reader counts. Observation never changes media flow. */
   private observers = new Map<string, LiveVideoObserver>();
   private bridgeDestroyed = new WeakSet<ServerResponse>();
   private startup = new Map<string, { chunks: Buffer[]; bytes: number; timer?: ReturnType<typeof setTimeout> }>();
@@ -121,7 +121,8 @@ export class MediaRelay {
         else reader.write(chunk);
       }
     }, () => { if (this.encoders.get(serial) === encoder) this.failed(serial); },
-      () => { this.hardwareFailed = true; }, undefined, undefined, undefined, this.rateControl);
+      () => { this.hardwareFailed = true; }, undefined, undefined, undefined, this.rateControl,
+      value => { if (this.encoders.get(serial) === encoder) observer?.progress(value); });
     this.encoders.set(serial, encoder);
     encoder.start();
   }

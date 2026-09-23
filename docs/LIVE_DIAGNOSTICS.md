@@ -345,7 +345,9 @@ no rows and an older integration drops them.
 | --- | --- |
 | `model`, `codec`, `state` | Camera model, `h264` or `hevc`, and `starting`, `streaming`, `ended`, `failed` or `closed` |
 | `input`, `output`, `jpeg` | The P2P video readable from the library, the live encoder's MPEG-TS output and the JPEG frames of the fallback decoder, each with `chunks`, `bytes`, `first_data_ms`, `last_data_ms`, `last_data_age_ms` and `max_gap_ms` |
-| `encoder` | `mode` is `software` or `nvidia`, `exits` counts encoder process exits, and `software_fallback_ms` is the hardware to software transition |
+| `encoder` | `mode` is `software` or `nvidia`, `exits` counts encoder process exits, `stderr_chunks` counts data events on the encoder's stderr at `-loglevel error` (since bridge 0.8.25), and `software_fallback_ms` is the hardware to software transition |
+| `encoder`: `frames`, `dropped`, `duplicated`, `out_time_ms`, `bytes` | FFmpeg's own counters from the live encoder's latest progress block since bridge 0.8.25, see [FFmpeg's progress counters](#ffmpegs-progress-counters-bridge-0825) |
+| `encoder`: `last_progress_ms`, `last_progress_age_ms`, `last_frame_ms`, `last_drop_ms` | When the latest progress block arrived and its age, and the blocks in which `frames` and `dropped` last rose |
 | `readers`, `audio_readers` | The grant's MPEG-TS and AAC readers: `attached`, `backpressure` (destroyed by the bridge because more than 1 000 000 bytes of video or 256 000 bytes of audio were queued for it), `closed` (closed by the client or its connection), `revoked` (destroyed at a grant revoke, an audio stop or the session's end) and `last_destroy_ms` |
 | `pipeline` | The session's named events with their elapsed time, each at most once and at most 48, as in the audio row |
 | `duration_ms`, `age_ms` | The session's length and the row's age at the download |
@@ -362,7 +364,8 @@ fallback timing nor the encoder.
 Read the row from the source forward. If `input.last_data_age_ms` at the end
 covers the gap that produced the fallback, the P2P video from the HomeBase
 stopped. If the input kept flowing and `output` stopped, the live encoder
-stalled, and `encoder.exits` says whether its process ended. If the output
+stalled, `encoder.exits` says whether its process ended, and since bridge
+0.8.25 FFmpeg's counters say which stage inside it stopped. If the output
 kept flowing and `readers.backpressure` rose, the bridge dropped go2rtc's
 reader because go2rtc stopped reading. If the output kept flowing with the
 reader attached, the stall is in go2rtc's input or later, and the `fallback`
@@ -385,7 +388,61 @@ NVIDIA transcoding on a T8425, read exactly as the paragraph above describes:
 the input and the JPEG frames flowed to the session's end, the encoder output
 stopped 21268 ms before it with the process alive, no stderr and no
 backpressure, and the relay row at the fallback equalled the browser's frame
-count. That places the stall inside the encoder process, which the row cannot
-split further; issue #116 adds FFmpeg's progress counters for that. The
-numbers are in the
+count. That places the stall inside the encoder process, which a bridge
+0.8.24 row cannot split further. Bridge 0.8.25 adds FFmpeg's progress
+counters for that, see the next section. The numbers are in the
 [2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md).
+
+## FFmpeg's progress counters, bridge 0.8.25
+
+Bridge 0.8.25 starts the live encoder with `-progress pipe:3 -stats_period 1`.
+Once its output is set up, FFmpeg writes a block of key=value lines to a
+fourth pipe about once a second, also while it emits no output, and the row
+keeps the counters of the latest block in `encoder`. The bridge always drains that pipe,
+keeps only whole numbers of the five keys below, caps them at 2^31 - 1 and
+drops every other line, so no FFmpeg text enters the row. Integration 0.8.32
+projects the fields with the same allowlist and bounds. Media flow, the
+fallback timing and every other encoder argument are unchanged.
+
+| Field | FFmpeg key | Meaning with the FFmpeg 5.1 of the bridge images |
+| --- | --- | --- |
+| `frames` | `frame` | Frames the video sync handed to the encoder |
+| `dropped` | `drop_frames` | Frames the video sync dropped, which FFmpeg logs at verbose level only |
+| `duplicated` | `dup_frames` | Frames the sync duplicated, zero with the encoder's `-fps_mode vfr` |
+| `out_time_ms` | `out_time_us` | The time of the last packet the muxer wrote, on the wall-clock stamps, in milliseconds |
+| `bytes` | `total_size` | Bytes the MPEG-TS muxer wrote, including its not yet flushed buffer |
+
+`last_progress_ms` is when the latest block arrived, and `last_frame_ms` and
+`last_drop_ms` are when a block showed `frames` or `dropped` higher than the
+block before it, in milliseconds since the bridge requested the stream.
+`last_progress_age_ms` is frozen at the session's end like the ages of the
+three points, so for a finished row it says how long before the end FFmpeg
+last reported. A missing field means FFmpeg has not reported it, not zero.
+After a hardware to software fallback the counters are those of the
+replacement process.
+
+The Docker and app images install Debian Bookworm's FFmpeg 5.1, where
+`frame` counts the frames handed to the encoder. FFmpeg 6.1 and later count
+the packets the muxer wrote instead, so with a newer FFmpeg a stop of
+`frames` covers the encoder as well as the decoder.
+
+When the encoder output stopped more than 6 s before the end, the input
+flowed more than 6 s past that stop and FFmpeg kept reporting more than 6 s
+past it, the `video_stall` finding names the stage inside FFmpeg:
+
+- `frames` rose more than 2 s after the last output chunk: frames reached
+  the encoder, and the encoder or the muxer emitted nothing. `bytes` against
+  `output.bytes` shows whether the muxer wrote them.
+- `frames` stopped and `dropped` rose more than 2 s after the last output
+  chunk: the video sync dropped the frames, which happens when their
+  wall-clock stamps fall behind the last output.
+- Neither rose: the decoder delivered no frames.
+
+Otherwise the finding stays as it was. The 2 s margin covers two one-second
+blocks, because the first block after the last chunk can still count frames
+from before it. Local tests cover the parser against split, overlong and
+non-numeric lines, the drained pipe and the replaced or stopped process, real
+FFmpeg blocks during a paced encode, the frozen age at the end, the software
+fallback, the projection and the three findings. The field row with these
+counters comes from the next NVIDIA attempt on
+[issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).

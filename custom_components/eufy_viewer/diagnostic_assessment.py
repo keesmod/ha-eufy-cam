@@ -7,6 +7,52 @@ from typing import Any
 
 from .live_diagnostics import LATE_AUDIO_STAGES
 
+# FFmpeg reports its progress once a second, so a counter that rose within
+# two reports after the last output chunk can still date from before it.
+_PROGRESS_SLACK_MS = 2000
+
+
+def _encoder_stage(row: dict[str, Any]) -> str:
+    """Name the FFmpeg stage when its progress counters cover an output stop.
+
+    That needs an encoder output that stopped more than 6 s before the end, an
+    input that flowed more than 6 s past that stop and FFmpeg's progress blocks
+    over the same span. Otherwise the counters cannot name a stage.
+    """
+    encoder, output, source = (
+        row.get(key, {}) for key in ("encoder", "output", "input")
+    )
+    stopped, age = output.get("last_data_ms"), output.get("last_data_age_ms")
+    flowed, reported = source.get("last_data_ms"), encoder.get("last_progress_ms")
+    if not (
+        type(stopped) is int
+        and type(age) is int
+        and age > 6000
+        and type(flowed) is int
+        and flowed - stopped > 6000
+        and type(reported) is int
+        and reported - stopped > 6000
+    ):
+        return ""
+    frame, drop = encoder.get("last_frame_ms"), encoder.get("last_drop_ms")
+    if type(frame) is int and frame - stopped > _PROGRESS_SLACK_MS:
+        return (
+            f" FFmpeg's frame count kept rising for {frame - stopped} ms after the "
+            "last output chunk while the input flowed, so the encoder or the "
+            "muxer emitted nothing."
+        )
+    if type(drop) is int and drop - stopped > _PROGRESS_SLACK_MS:
+        return (
+            " FFmpeg's frame count stopped with the output while its drop count "
+            f"kept rising for {drop - stopped} ms after the last output chunk, "
+            "so the video sync dropped the frames."
+        )
+    return (
+        " Neither FFmpeg's frame count nor its drop count rose in the "
+        f"{reported - stopped} ms it kept reporting after the last output chunk "
+        "while the input flowed, so the decoder delivered no frames."
+    )
+
 
 def assess(report: dict[str, Any]) -> dict[str, Any]:
     """Only inspect the projected report. Findings never contain upstream text."""
@@ -113,7 +159,8 @@ def assess(report: dict[str, Any]) -> dict[str, Any]:
                 "Before the session's end " + ", ".join(stopped) + " had stopped. "
                 "The earliest point in the chain from the P2P input through the "
                 "encoder output to the JPEG frames locates the stall, and a later "
-                "point that kept flowing clears the points before it.",
+                "point that kept flowing clears the points before it."
+                + _encoder_stage(row),
                 "support.live_video",
                 row.get("attempt"),
             )
