@@ -357,6 +357,20 @@ _VIDEO_READER_BOUNDS = {
     **dict.fromkeys(("attached", "backpressure", "closed", "revoked"), (0, 2**31 - 1)),
     "last_destroy_ms": (0, 3600000),
 }
+# The encoder process and FFmpeg's progress counters from its latest block.
+_VIDEO_ENCODER_BOUNDS = {
+    **dict.fromkeys(
+        "exits stderr_chunks frames dropped duplicated out_time_ms bytes".split(),
+        (0, 2**31 - 1),
+    ),
+    **dict.fromkeys(
+        (
+            "software_fallback_ms last_progress_ms last_progress_age_ms "
+            "last_frame_ms last_drop_ms"
+        ).split(),
+        (0, 3600000),
+    ),
+}
 
 
 def video_report(raw: Any) -> dict[str, Any]:
@@ -383,9 +397,7 @@ def video_report(raw: Any) -> dict[str, Any]:
         result["model"] = _fields({"model": raw["model"]})["model"]
     encoder = raw.get("encoder")
     if isinstance(encoder, dict):
-        safe: dict[str, Any] = _bounded(
-            encoder, {"exits": (0, 2**31 - 1), "software_fallback_ms": (0, 3600000)}
-        )
+        safe: dict[str, Any] = _bounded(encoder, _VIDEO_ENCODER_BOUNDS)
         mode = encoder.get("mode")
         if isinstance(mode, str) and mode in {"software", "nvidia", "unavailable"}:
             safe["mode"] = mode

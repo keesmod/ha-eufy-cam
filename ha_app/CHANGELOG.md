@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.25 - 2026-09-23
+
+- The live encoder writes FFmpeg's progress to a fourth pipe
+  (`-progress pipe:3 -stats_period 1`), which the bridge always drains. The
+  `encoder` object of the `support.live_video` row gains the counters of the
+  latest block, `frames`, `dropped`, `duplicated`, `out_time_ms` and `bytes`,
+  with the time of that block, its age frozen at the session's end, the times
+  at which `frames` and `dropped` last rose, and `stderr_chunks` for the
+  encoder's stderr data events. Whole numbers of five FFmpeg keys only,
+  capped, and no FFmpeg text. Media flow, the fallback timing and every other
+  encoder argument are unchanged. Refs #116, #94.
+
 ## 0.8.24 - 2026-09-22
 
 - The support report gains `support.live_video`, one bounded row per live

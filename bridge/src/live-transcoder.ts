@@ -32,7 +32,10 @@ export function liveRateControl(value?: string): LiveRateControl {
  */
 const wallclockStamp = "setpts='(time(0)-RTCSTART/1000000)/TB'";
 export function liveArgs(codec: 'h264' | 'hevc', fps: number, mode: LiveAcceleration, rate: LiveRateControl = defaultLiveRateControl): string[] {
-  const args = ['-hide_banner', '-loglevel', 'error', '-threads', '1', '-probesize', '32768', '-analyzeduration', '100000'];
+  // FFmpeg writes a key=value progress block to fd 3 once a second. Its
+  // stderr stays silent at -loglevel error, so these counters are the only
+  // view inside the process.
+  const args = ['-hide_banner', '-loglevel', 'error', '-progress', 'pipe:3', '-stats_period', '1', '-threads', '1', '-probesize', '32768', '-analyzeduration', '100000'];
   // Let FFmpeg transfer decoded frames to RAM for the existing software scaler.
   // This needs NVDEC/NVENC, but does not require scale_cuda or libnpp.
   if (mode === 'nvidia') args.push('-hwaccel', 'cuda');
@@ -52,8 +55,47 @@ export function liveArgs(codec: 'h264' | 'hevc', fps: number, mode: LiveAccelera
   args.push('-mpegts_flags', '+resend_headers', '-muxdelay', '0', '-muxpreload', '0', '-f', 'mpegts', 'pipe:1');
   return args;
 }
+/**
+ * FFmpeg's -progress counters that the live row keeps, from one block. With
+ * the Debian Bookworm FFmpeg 5.1 of the bridge images `frame` counts the
+ * frames the video sync handed to the encoder, from 6.1 the packets the muxer
+ * wrote. `drop_frames` counts frames the sync dropped, `total_size` the bytes
+ * the muxer wrote.
+ */
+export interface LiveEncoderProgress { frames?: number; dropped?: number; duplicated?: number; out_time_ms?: number; bytes?: number }
+const progressKeys = new Map<string, keyof LiveEncoderProgress>([['frame', 'frames'], ['drop_frames', 'dropped'], ['dup_frames', 'duplicated'], ['out_time_us', 'out_time_ms'], ['total_size', 'bytes']]);
+const progressLineBytes = 64;
+/**
+ * Bounded reader of FFmpeg's -progress output. Only whole numbers of the
+ * allowlisted keys are kept, capped, and a line longer than any of those
+ * pairs is dropped whole, so no FFmpeg text survives. A block is handed on at
+ * its progress=continue or progress=end line, also when all its values were
+ * N/A, because the block itself shows that FFmpeg still reports.
+ */
+export function liveProgressParser(emit: (progress: LiveEncoderProgress) => void): (chunk: Buffer) => void {
+  let line = '', overlong = false, block: LiveEncoderProgress = {};
+  const complete = (text: string) => {
+    if (/^progress=(?:continue|end)\r?$/.test(text)) { emit(block); block = {}; return; }
+    const pair = /^([a-z_]{1,11})=(\d{1,15})\r?$/.exec(text);
+    const key = pair ? progressKeys.get(pair[1]!) : undefined;
+    if (!pair || !key) return;
+    const value = Number(pair[2]);
+    block[key] = Math.min(2147483647, key === 'out_time_ms' ? Math.round(value / 1000) : value);
+  };
+  return chunk => {
+    // latin1 maps each byte to one character, so the bound counts bytes.
+    const text = chunk.toString('latin1');
+    let start = 0;
+    for (let end = text.indexOf('\n'); end !== -1; end = text.indexOf('\n', start)) {
+      if (!overlong && line.length + end - start <= progressLineBytes) complete(line + text.slice(start, end));
+      line = ''; overlong = false; start = end + 1;
+    }
+    if (overlong || line.length + text.length - start > progressLineBytes) { line = ''; overlong = true; }
+    else line += text.slice(start);
+  };
+}
 export type TranscoderSpawn = (args: string[]) => ChildProcess;
-const launch: TranscoderSpawn = args => spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+const launch: TranscoderSpawn = args => spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] });
 export class LiveTranscoder {
   private process?: ChildProcess;
   private stopped = false;
@@ -78,6 +120,7 @@ export class LiveTranscoder {
     private readonly startupMs = 5000,
     private readonly maxReplayBytes = 8 * 1024 * 1024,
     private readonly rate: LiveRateControl = defaultLiveRateControl,
+    private readonly progress: (value: LiveEncoderProgress) => void = () => {},
   ) {}
   start(): void {
     if (this.mode === 'nvidia') {
@@ -128,6 +171,13 @@ export class LiveTranscoder {
       }
       this.output(chunk);
     });
+    // Always drained: a full progress pipe would block FFmpeg's reporting
+    // loop. A spawn without a fourth pipe simply reports no progress.
+    const pipe = process.stdio[3] as Readable | null | undefined;
+    pipe?.on('error', () => {});
+    pipe?.on('data', liveProgressParser(value => {
+      if (!this.stopped && !this.transitioning && this.process === process) this.progress(value);
+    }));
   }
   private hardwareFailure(event: 'media_hardware_failed' | 'media_hardware_timeout'): void {
     if (this.stopped || this.transitioning) return;

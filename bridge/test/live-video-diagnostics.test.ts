@@ -75,7 +75,7 @@ test('output, JPEG, readers, encoder mode and exits are counted with bounded fix
   assert.equal(age_ms, 6000);
   assert.deepEqual(report, {
     model: 'T8425', state: 'starting', audio_attempt: 77, duration_ms: 6000,
-    encoder: { mode: 'software', exits: 3, software_fallback_ms: 4100 },
+    encoder: { mode: 'software', exits: 3, stderr_chunks: 100, software_fallback_ms: 4100 },
     input: { chunks: 0, bytes: 0 },
     output: { chunks: 2, bytes: 1880, first_data_ms: 4600, last_data_ms: 4700, last_data_age_ms: 1300, max_gap_ms: 100 },
     jpeg: { chunks: 1, bytes: 30000, first_data_ms: 4700, last_data_ms: 4700, last_data_age_ms: 1300 },
@@ -98,6 +98,52 @@ test('output, JPEG, readers, encoder mode and exits are counted with bounded fix
   assert.equal(row.snapshot().output.chunks, 2); assert.equal(row.snapshot().readers.attached, 2);
   assert.equal(row.snapshot().encoder.mode, 'software'); assert.equal(row.snapshot().audio_attempt, 77);
   assert.equal(row.snapshot().pipeline!.length, 6);
+});
+
+test('encoder progress keeps the latest counters, dates the last rise of frames and drops, and freezes its age at the end', () => {
+  let now = 0;
+  const row = new LiveVideoDiagnostics(() => now).begin('T8425');
+  assert.deepEqual(row.snapshot().encoder, { mode: 'unavailable', exits: 0, stderr_chunks: 0 }, 'No block yet means no counters, never zero');
+  now = 2000; row.progress({ frames: 10, dropped: 0, duplicated: 0, out_time_ms: 600, bytes: 50000 });
+  now = 3000; row.progress({ frames: 25, dropped: 0, duplicated: 0, out_time_ms: 1600, bytes: 150000 });
+  // The frames stop while the sync drops what arrives.
+  now = 4000; row.progress({ frames: 25, dropped: 3, duplicated: 0, out_time_ms: 1600, bytes: 150000 });
+  now = 5000; row.progress({ frames: 25, dropped: 18, duplicated: 0, out_time_ms: 1600, bytes: 150000 });
+  now = 5400;
+  assert.deepEqual(row.snapshot().encoder, {
+    mode: 'unavailable', exits: 0, stderr_chunks: 0, frames: 25, dropped: 18, duplicated: 0, out_time_ms: 1600, bytes: 150000,
+    last_progress_ms: 5000, last_progress_age_ms: 400, last_frame_ms: 3000, last_drop_ms: 5000,
+  });
+  // A block of N/A values keeps the counters and still dates the report.
+  now = 6000; row.progress({});
+  // Only whole numbers from zero enter the row, capped like every counter.
+  row.progress({ frames: -1, dropped: 1.5, duplicated: Number.NaN, out_time_ms: 'PRIVATE' as never, bytes: 2 ** 40 });
+  row.progress(null as never); row.progress('PRIVATE' as never);
+  now = 7000;
+  assert.deepEqual(row.snapshot().encoder, {
+    mode: 'unavailable', exits: 0, stderr_chunks: 0, frames: 25, dropped: 18, duplicated: 0, out_time_ms: 1600, bytes: 2147483647,
+    last_progress_ms: 6000, last_progress_age_ms: 1000, last_frame_ms: 3000, last_drop_ms: 5000,
+  });
+  now = 9000; row.finish('ended');
+  assert.equal(row.snapshot().encoder.last_progress_age_ms, 3000, 'The age at the end says how long before the end FFmpeg last reported');
+  now = 20000; row.progress({ frames: 99, dropped: 99 });
+  assert.deepEqual(row.snapshot().encoder, {
+    mode: 'unavailable', exits: 0, stderr_chunks: 0, frames: 25, dropped: 18, duplicated: 0, out_time_ms: 1600, bytes: 2147483647,
+    last_progress_ms: 6000, last_progress_age_ms: 3000, last_frame_ms: 3000, last_drop_ms: 5000,
+  }, 'Frozen after the end');
+  assert.ok(!JSON.stringify(row.snapshot()).includes('PRIVATE'));
+});
+
+test('a software fallback keeps only the counters of the replacement encoder process', () => {
+  let now = 0;
+  const row = new LiveVideoDiagnostics(() => now).begin('T8425');
+  row.encoder('nvidia');
+  now = 1000; row.progress({ frames: 40, dropped: 2, duplicated: 0, out_time_ms: 900, bytes: 9000 });
+  now = 4000; row.mark('media_software_fallback');
+  assert.deepEqual(row.snapshot().encoder, { mode: 'software', exits: 0, stderr_chunks: 0, software_fallback_ms: 4000 });
+  now = 5000; row.progress({ frames: 5, dropped: 0 });
+  assert.deepEqual(row.snapshot().encoder, { mode: 'software', exits: 0, stderr_chunks: 0, software_fallback_ms: 4000, frames: 5, dropped: 0, last_progress_ms: 5000, last_progress_age_ms: 0, last_frame_ms: 5000 },
+    'The replacement counts from zero, so its first frames are a rise and no drop is dated');
 });
 
 test('reports are bounded, sanitized, capped at one hour and detach evicted observations', async () => {
