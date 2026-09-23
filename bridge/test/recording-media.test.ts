@@ -42,6 +42,14 @@ function fixture(overrides = {}, mode: 'nvidia' | 'software' = 'nvidia', detail 
   return { core: media, media: buffered(media), children, commands, events, abort, run };
 }
 function complete(child: Process, value = 'complete-mp4') { child.stdout.write(value); child.emit('close', 0); }
+// A replacement starts only after the previous process closes and its output is inspected.
+async function launched(children: Process[], count: number, ms = 5000) {
+  const deadline = performance.now() + ms;
+  while (children.length < count) {
+    assert.ok(performance.now() < deadline, `process ${count} was not launched within ${ms} ms`);
+    await tick();
+  }
+}
 
 test('recording acceleration is independently opt-in and validated', () => {
   assert.equal(recordingAcceleration(), 'software'); assert.equal(recordingAcceleration('nvidia'), 'nvidia');
@@ -69,7 +77,7 @@ test('hardware success returns complete output and anonymous diagnostics', async
 test('failure discards partial hardware output and reuses both tracks once after close', async () => {
   const f = fixture(); const result = f.run();
   f.children[0]!.stdout.write('discard-me'); f.children[0]!.emit('error', new Error('private driver details'));
-  assert.equal(f.children.length, 1); await tick(); assert.equal(f.children[0]!.killed, true);
+  assert.equal(f.children.length, 1); await launched(f.children, 2); assert.equal(f.children[0]!.killed, true);
   assert.equal(f.children.length, 2); assert.ok(f.commands[1]!.includes('libx264'));
   assert.equal(readFileSync(f.commands[1]![f.commands[1]!.indexOf('-i') + 1]!, 'utf8'), 'original-video');
   assert.equal(readFileSync(f.commands[1]![f.commands[1]!.lastIndexOf('-i') + 1]!, 'utf8'), 'original-audio');
@@ -79,7 +87,7 @@ test('failure discards partial hardware output and reuses both tracks once after
 });
 test('hardware deadline falls back within the shared conversion deadline', async () => {
   const f = fixture({ hardwareMs: 10 }); const result = f.run();
-  await new Promise(resolve => setTimeout(resolve, 25));
+  await launched(f.children, 2);
   assert.equal(f.children.length, 2); complete(f.children[1]!); await result;
   assert.ok(f.events.some(e => e.event === 'recording_hardware_timeout'));
 });
@@ -152,8 +160,8 @@ test('bridge fallback converts one completed transfer while retaining recording 
   const recordings = new MegaRecordings(() => client as any, () => [{ id: 'CAM', stationId: 'BASE', kind: 'camera' }] as any, () => false, undefined, f.core);
   const rows = await recordings.list('CAM', '2026-09-13', f.abort.signal);
   const result = recordings.video('CAM', rows.recordings[0]!.id, f.abort.signal, async () => {});
-  while (!f.children.length) await tick();
-  assert.ok(recordings.busy); f.children[0]!.emit('error', new Error('missing GPU')); await tick();
+  await launched(f.children, 1);
+  assert.ok(recordings.busy); f.children[0]!.emit('error', new Error('missing GPU')); await launched(f.children, 2);
   assert.ok(recordings.busy); assert.equal(downloads, 1); assert.equal(f.children.length, 2);
   complete(f.children[1]!); await result;
   assert.equal(downloads, 1); assert.equal(cancellations, 1); assert.equal(recordings.busy, false);
@@ -175,7 +183,7 @@ test('Auto resolves each codec with configured acceleration and browser support'
 test('result describes actual software fallback belongs only to the failed request', async () => {
   const f = fixture();
   const result = f.media.muxResult(metadata, Buffer.from('v'), Buffer.from('a'), f.abort.signal, 'auto', true);
-  f.children[0]!.emit('error', new Error('GPU failed')); await tick(); complete(f.children[1]!);
+  f.children[0]!.emit('error', new Error('GPU failed')); await launched(f.children, 2); complete(f.children[1]!);
   assert.deepEqual((await result).media, { source: 'hevc', output: 'h264', processing: 'software', fallback: true });
   const next = f.media.muxResult(metadata, Buffer.from('v'), Buffer.alloc(0), f.abort.signal, 'auto', true);
   complete(f.children[2]!); assert.equal((await next).media.fallback, false);
@@ -193,7 +201,7 @@ test('hardware failure reports bounded categories and exit details without priva
   child.emit('error', new Error('private-input-error'));
   child.stderr.write('\nNo decoder surfaces left');
   child.emit('close', 1, null);
-  await tick(); complete(f.children[1]!); await result;
+  await launched(f.children, 2); complete(f.children[1]!); await result;
   const failed = f.events.find(e => e.event === 'recording_hardware_failed');
   assert.deepEqual(failed.failure, { reason: 'process', output_bytes: 7, encoded_frames: 0,
     exit_code: 1, signal: null, ffmpeg: ['memory', 'nvenc_open_session', 'decode'] });
@@ -207,7 +215,7 @@ test('FFmpeg classification handles large writes and isolates attempts', async (
   const f = fixture(); const result = f.run();
   f.children[0]!.stderr.write('x'.repeat(2040) + 'Cannot load libcuda.so.1' + 'private'.repeat(10000));
   f.children[0]!.emit('close', 1, 'SIGSEGV');
-  await tick();
+  await launched(f.children, 2);
   // Software stderr cannot change the completed NVIDIA failure record.
   f.children[1]!.stderr.write('Error while decoding'); complete(f.children[1]!); await result;
   const failure = f.events.find(e => e.failure).failure;
@@ -219,7 +227,7 @@ test('unclassified errors remain explicit and unsafe exit values are never logge
   const f = fixture(); const result = f.run();
   f.children[0]!.stderr.write('https://private.example/recording?token=secret');
   f.children[0]!.emit('close', 'secret', 'secret');
-  await tick(); complete(f.children[1]!); await result;
+  await launched(f.children, 2); complete(f.children[1]!); await result;
   const failure = f.events.find(e => e.failure).failure;
   assert.deepEqual(failure.ffmpeg, ['unclassified']);
   assert.equal(failure.exit_code, null); assert.equal(failure.signal, 'other');
@@ -228,7 +236,7 @@ test('unclassified errors remain explicit and unsafe exit values are never logge
 
 test('deadline and cleanup failure have distinct diagnostic reasons', async () => {
   const f = fixture({ hardwareMs: 10 }); const result = f.run();
-  await new Promise(resolve => setTimeout(resolve, 25)); complete(f.children[1]!); await result;
+  await launched(f.children, 2); complete(f.children[1]!); await result;
   const failure = f.events.find(e => e.event === 'recording_hardware_timeout').failure;
   assert.equal(failure.reason, 'timeout'); assert.equal(failure.timeout_ms, 10);
   assert.equal(failure.output_bytes, 0); assert.deepEqual(failure.ffmpeg, []);
@@ -248,7 +256,7 @@ test('recording hardware warnings are always logged while successful playback re
   const { logRecordingDiagnostic } = await import('../src/recording-media.js');
   const warnings: string[] = [], infos: string[] = [];
   const f = fixture(); const result = f.run(); f.children[0]!.emit('close', 1, null);
-  await tick(); complete(f.children[1]!); await result;
+  await launched(f.children, 2); complete(f.children[1]!); await result;
   for (const event of f.events) logRecordingDiagnostic(event, false, line => warnings.push(line), line => infos.push(line));
   assert.equal(warnings.length, 1); assert.equal(infos.length, 0);
   assert.equal(JSON.parse(warnings[0]!).event, 'recording_hardware_failed');
@@ -276,7 +284,7 @@ test('repeated frame counts and stderr cannot keep a stalled GPU alive', async (
     f.children[0]!.stderr.write('frame=9999\n');
   }, 5);
   try {
-    await new Promise(resolve => setTimeout(resolve, 70));
+    await launched(f.children, 2);
     assert.equal(f.children.length, 2); complete(f.children[1]!); await result;
     const failure = f.events.find(e => e.failure).failure;
     assert.equal(failure.timeout_scope, 'hardware_progress'); assert.equal(failure.encoded_frames, 1);
@@ -332,7 +340,7 @@ test('unknown FFmpeg failures expose a scrubbed excerpt only with explicit diagn
     const f = fixture({}, 'nvidia', enabled); const result = f.run();
     f.children[0]!.stderr.write('Unexpected driver response 731\npassword="do-not-share" token=');
     f.children[0]!.stderr.write('secret-value https://camera.example/private\n/home/user/recording.hevc 192.168.1.99 user@example.com T8425123456789012\n');
-    f.children[0]!.emit('close', 1, null); await tick(); complete(f.children[1]!); await result;
+    f.children[0]!.emit('close', 1, null); await launched(f.children, 2); complete(f.children[1]!); await result;
     const failure = f.events.find(e => e.failure).failure;
     assert.deepEqual(failure.ffmpeg, ['unclassified']);
     if (enabled) {
@@ -345,7 +353,7 @@ test('unknown FFmpeg failures expose a scrubbed excerpt only with explicit diagn
 test('error excerpts omit truncated partial lines and stay bounded', async () => {
   const f = fixture({}, 'nvidia', true); const result = f.run();
   f.children[0]!.stderr.write('token=' + 'secret'.repeat(10000) + '\nUseful unknown failure 731\n' + 'x '.repeat(1500));
-  f.children[0]!.emit('close', 1, null); await tick(); complete(f.children[1]!); await result;
+  f.children[0]!.emit('close', 1, null); await launched(f.children, 2); complete(f.children[1]!); await result;
   const detail = f.events.find(e => e.failure).failure.ffmpeg_detail;
   assert.ok(detail.includes('Useful unknown failure 731')); assert.ok(!detail.includes('secret'));
   assert.ok(detail.length <= 2025);
@@ -354,7 +362,7 @@ test('error excerpts omit truncated partial lines and stay bounded', async () =>
 test('known errors, success and cancellation never emit an error excerpt', async () => {
   const f = fixture({}, 'nvidia', true); const result = f.run();
   f.children[0]!.stderr.write('CUDA_ERROR_OUT_OF_MEMORY private text');
-  f.children[0]!.emit('close', 1, null); await tick(); complete(f.children[1]!); await result;
+  f.children[0]!.emit('close', 1, null); await launched(f.children, 2); complete(f.children[1]!); await result;
   assert.ok(f.events.every(e => !e.failure?.ffmpeg_detail));
   const good = fixture({}, 'nvidia', true); const completed = good.run();
   good.children[0]!.stderr.write('unexpected private text'); complete(good.children[0]!); await completed;
@@ -367,7 +375,7 @@ test('known errors, success and cancellation never emit an error excerpt', async
 test('support excerpts scrub terminal escapes, bearer values and Windows paths', async () => {
   const f = fixture({}, 'nvidia', true); const result = f.run();
   f.children[0]!.stderr.write('Unexpected response 731\n\u001b[31mAuthorization: Bearer confidential\u001b[0m\nC:\\Users\\private\\clip.hevc fe80::1234:abcd serial=T8425123456789012\n');
-  f.children[0]!.emit('close', 1, null); await tick(); complete(f.children[1]!); await result;
+  f.children[0]!.emit('close', 1, null); await launched(f.children, 2); complete(f.children[1]!); await result;
   const detail = f.events.find(e => e.failure).failure.ffmpeg_detail;
   for (const secret of ['confidential', '\u001b', 'private', 'fe80::', 'T8425123456789012']) assert.ok(!detail.includes(secret), secret);
   assert.ok(detail.includes('Unexpected response 731'));
