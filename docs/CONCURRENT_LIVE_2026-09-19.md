@@ -234,3 +234,150 @@ same browser with hardware video decoding off, and the `decoderImplementation`,
 `freezeCount` and `totalFreezesDuration` values of `chrome://webrtc-internals`
 are the discriminators, see #94. Source: the tester's comment and redacted
 download on issue #94.
+
+### The 0.8.29 attempts of 2026-09-22 with the decoder and the encoder swapped (reported)
+
+Same tester, HomeBase and T8425, bridge 0.8.23 with client 0.14.0, integration
+0.8.29, Home Assistant 2026.9.3 on Home Assistant OS 18.3 in a VM,
+`live_max_streams_per_station: 3`, diagnostics on, Google Chrome 153 on
+Windows, one camera, page visible, no guard mode change. The two discriminating
+attempts of the 2026-09-20 analysis, both reproducing the fallback: first with
+the browser's hardware video decoding disabled in `chrome://flags` and
+`live_acceleration: nvidia`, where the tester read
+`decoderImplementation=FFmpeg`, `powerEfficientDecoder=false`, `codec=H264` and
+`profile-level-id=42001f` in `chrome://webrtc-internals`, then with hardware
+decoding restored and `live_acceleration: software`, the bridge recreated for
+the option and the value verified in the running container, and recreated
+again to restore `nvidia` after the test. One redacted download 56 s after that
+last bridge start holds eight attempt rows. Times are UTC on the bridge's
+clock, the download's `generated_at` of 11:17:51 minus each row's `age_ms`.
+Per interval, the wait per frame is the jitter buffer delay over the frames
+emitted since the previous sample, the decode time is `video_decode_ms` over
+the frames decoded since the previous sample, and the freezes are cumulative.
+The go2rtc column is `source_h264_packets` / `output_h264_packets` of the
+relay row taken with the sample.
+
+| Attempt | Start | Browser decoder | Bridge encoder | Outcome |
+| --- | --- | --- | --- | --- |
+| A | 11:08:31.6 | FFmpeg software, read by the tester | NVIDIA, tester's report | `fallback_playback_timeout` at 20.828 s |
+| B | 11:09:36.0 | FFmpeg software | NVIDIA | `fallback_playback_timeout` at 50.904 s |
+| C | 11:12:53.2 | hardware, restored | software, tester's report | no fallback, three samples to 16.6 s, 176 ticks and 176 acknowledgements, end not in the download |
+| D | 11:15:25.5 | hardware | software | `fallback_playback_timeout` at 54.201 s |
+
+Attempt A, last painted frame at 15.07 s, 4157 video packets and 4785975 bytes
+at both of the last two samples, audio packets 787 at 17.2 s and 966 at 20.8 s:
+
+| Sample | Elapsed | Frames received / decoded / dropped | Painted | Keyframes | PLI | Lost / NACK | Freezes | Wait per frame | Target | Decode per frame | go2rtc H.264 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `playing` | 3.2 s | 9 / 3 / 0 | 1 | 1 | 0 | 0 / 0 | 0 | 10 ms over 4 frames | 50 ms | 5.7 ms | 11 / 11 |
+| `startup` | 7.2 s | 89 / 88 / 0 | 82 | 3 | 0 | 0 / 0 | 0 | 40 ms over 84 frames | 39 ms | 3.3 ms | 89 / 89 |
+| `audio_check` | 17.2 s | 204 / 204 / 0 | 198 | 7 | 0 | 0 / 0 | 1 of 235 ms | 66 ms over 116 frames | 64 ms | 3.3 ms | 204 / 204 |
+| `fallback` | 20.8 s | 204 / 204 / 0 | 198 | 7 | 1 | 0 / 0 | 1 of 235 ms | no frame | | | no row |
+
+Attempt B, last painted frame at 44.9 s, 15.5 MB of video by 50.9 s:
+
+| Sample | Elapsed | Frames received / decoded / dropped | Painted | Keyframes | PLI | Lost / NACK | Freezes | Wait per frame | Target | Decode per frame | go2rtc H.264 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `playing` | 2.0 s | 7 / 1 / 0 | 1 | 1 | 0 | 0 / 0 | 0 | 7 ms over 2 frames | 12 ms | 8.0 ms | 7 / 7 |
+| `startup` | 6.1 s | 45 / 39 / 0 | 35 | 2 | 0 | 0 / 0 | 2 of 1715 ms | 148 ms over 38 frames | 40 ms | 3.6 ms | 45 / 45 |
+| `audio_check` | 16.1 s | 194 / 187 / 5 | 181 | 7 | 0 | 0 / 0 | 3 of 2222 ms | 398 ms over 147 frames | 80 ms | 3.3 ms | 195 / 195 |
+| `fallback` | 50.9 s | 621 / 615 / 6 | 608 | 21 | 1 | 0 / 0 | 4 of 2533 ms | 199 ms over 428 frames | 65 ms | 3.5 ms | no row |
+
+Attempt C, no fallback sample:
+
+| Sample | Elapsed | Frames received / decoded / dropped | Painted | Keyframes | PLI | Lost / NACK | Freezes | Wait per frame | Target | Decode per frame | go2rtc H.264 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `playing` | 2.3 s | 12 / 10 / 1 | 1 | 0 | 0 | 0 / 0 | 0 | 13 ms over 12 frames | 20 ms | 29.4 ms | 12 / 12 |
+| `startup` | 6.6 s | 65 / 60 / 1 | 50 | 2 | 0 | 0 / 0 | 3 of 1269 ms | 276 ms over 49 frames | 87 ms | 0.9 ms | 65 / 65 |
+| `audio_check` | 16.6 s | 215 / 213 / 1 | 202 | 7 | 0 | 0 / 0 | 3 of 1269 ms | 208 ms over 153 frames | 75 ms | 0.6 ms | 215 / 215 |
+
+Attempt D, last painted frame at 48.2 s, 16.7 MB of video by 54.2 s, 553
+frames emitted by the jitter buffer against 523 decoded at the fallback:
+
+| Sample | Elapsed | Frames received / decoded / dropped | Painted | Keyframes | PLI | Lost / NACK | Freezes | Wait per frame | Target | Decode per frame | go2rtc H.264 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `playing` | 2.9 s | 4 / 3 / 0 | 1 | 1 | 0 | 0 / 0 | 0 | 3 ms over 3 frames | 24 ms | 16.3 ms | 4 / 4 |
+| `startup` | 7.5 s | 60 / 60 / 0 | 59 | 2 | 0 | 0 / 0 | 1 of 297 ms | 32 ms over 57 frames | 39 ms | 0.6 ms | 60 / 60 |
+| `audio_check` | 17.5 s | 180 / 161 / 2 | 152 | 6 | 1 | 0 / 0 | 2 of 3635 ms | 700 ms over 101 frames | 75 ms | 0.7 ms | 180 / 180 |
+| `fallback` | 54.2 s | 634 / 523 / 83 | 511 | 20 | 10 | 0 / 0 | 7 of 7302 ms | 914 ms over 392 frames | 92 ms | 0.6 ms | no row |
+
+- Connection and ICE were `connected` at every sample of every attempt, host
+  to host over UDP, zero packets lost and zero NACK, RTP jitter 2 to 75 ms.
+- The decode time per frame sorts the attempts on its own: 3.3 to 3.6 ms in A
+  and B, the FFmpeg software decoder the tester read, and 0.6 to 0.9 ms after
+  the first frame in C and D, a hardware decoder. Neither the T600 nor the
+  Windows hardware decoder is needed for the fallback. The encoder mode of each
+  attempt is the tester's report, because the bridge's rows are gone, see the
+  last point.
+- In attempt A the video stopped before the browser. At 17.2 s, 2.1 s after
+  the last painted frame, go2rtc had received 204 H.264 packets from the
+  bridge's stream and sent 204, and the browser had received and decoded 204
+  frames. At 20.8 s the browser's video counters were unchanged, 204 frames,
+  4157 RTP packets and 4785975 bytes, and the audio peer had received 179 more
+  Opus packets, 49 per second as in every earlier interval. So go2rtc's video
+  input delivered nothing for at least the two seconds before the 17.2 s
+  sample and no video packet reached the browser for 5.75 s, while the late
+  audio of the same camera and P2P session kept flowing. That fallback
+  happened upstream of go2rtc's WebRTC sender, in the P2P video from the
+  HomeBase, in the bridge's encoder or the HTTP reader of its output, or in
+  go2rtc's input. The bridge sent one more tick after the 95th
+  acknowledgement, so its JPEG decoder emitted at least one frame after
+  15.1 s, which does not date the P2P input because of that decoder's own
+  buffering.
+- The tester's Home Assistant core log holds one go2rtc `unexpected EOF` for
+  the bridge's media URL in the window of attempt A, at 13:08:52.454 local
+  time, 11:08:52.454 UTC, which is the bridge's fallback at 11:08:52.48 UTC on
+  its own clock, and none between 11:08:46 and 11:08:52. The bridge destroys a
+  grant's HTTP reader only for backpressure or a revoke
+  (`bridge/src/media.ts`, `destroyReader`), and an exit of the live encoder
+  after its first output ends the session and revokes the grant
+  (`bridge/src/live-transcoder.ts`, `hardwareFailure` and `fail`, then
+  `Video encoder failed` in `bridge/src/eufy.ts`), so before that fallback the
+  bridge neither cut go2rtc's reader nor lost its encoder process. What
+  remains for attempt A is the P2P video input stopping while the audio
+  continued, an encoder process that ran without emitting, or go2rtc's input
+  reading without emitting frames, which the `live_video` row of #114
+  separates in the next download. The same logger holds 12 warnings between
+  10:57:53 and 11:16:19 UTC, the last at attempt D's fallback, two per cut and
+  the rest from the session's end of attempt C and from attempts before
+  11:07:56 UTC that are no longer among the download's eight rows, which the
+  log's timestamps would confirm.
+- Attempts B and D both end in a gap of more than 6 s without a painted frame,
+  from 44.9 s and 48.2 s. Whether video was still arriving in that gap is not
+  in the download, no sample falls inside it and the fallback sample has no
+  go2rtc row. D repeats the 2026-09-20 signature almost exactly with the
+  hardware decoder, 700 and 914 ms of wait per frame against 75 to 92 ms,
+  83 dropped frames, 10 PLI and 30 frames that left the jitter buffer without
+  being decoded. B, with the software decoder, decoded 615 of 621 frames with
+  6 dropped and one PLI, so the drops and keyframe requests belong to the
+  hardware decoder path and are not the cause of the fallback, and it still
+  held frames 148 to 398 ms against 40 to 80 ms before its gap.
+- Attempt C, hardware decoder and software transcoding, held frames 208 to
+  276 ms with three freezes of 1269 ms in total in the first 6.6 s, no drop
+  after the first frame and no PLI, and ended without a fallback for a reason
+  the download does not carry.
+- The maintainer's bench with integration 0.8.29 on 2026-09-21, Chromium 152
+  on macOS, software transcoding, one T8160, showed 6 freezes of 1800 ms in
+  total and 161 ms of processing delay per decoded frame at 18.7 s and no
+  fallback, see [live diagnostics](LIVE_DIAGNOSTICS.md). Freezes and waits of
+  this order occur on the bench too. What the bench has never shown is the gap
+  of more than 6 s.
+- Four rows without a browser sample, at 11:07:56 offered without an answer,
+  at 11:07:59 without an offer and ending in `startup_timeout`, at 11:13:17
+  without an offer and at 11:13:22 without an offer and ending in
+  `startup_timeout`, are starts around the browser relaunch and the bridge
+  recreation, not test attempts, and are not analysed.
+- Two limits of this download, both addressed by #112. The fallback sample has
+  no go2rtc row when the bridge initiated the fallback, because HA switches
+  the viewer to JPEG when the bridge's `fallback` message arrives and
+  `record_browser_report` in `custom_components/eufy_viewer/webrtc.py` then
+  skips the relay sample. And the bridge's own rows for all four attempts were
+  dropped by the two bridge recreations, `support.live_audio` is empty and
+  `recent_events` starts at the last bridge start at 11:16:55 UTC, so nothing
+  in the download says whether the encoder kept emitting or the P2P video kept
+  arriving. The bridge also records no per-attempt video evidence at all, and
+  `camera_timeout` in `bridge/src/streams.ts` fires only after 10 s without a
+  JPEG frame, so a video stall of 6 to 10 s produces exactly this fallback and
+  no bridge event.
+
+Source: the tester's comment and redacted download on issue #94.

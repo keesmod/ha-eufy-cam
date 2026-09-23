@@ -175,6 +175,55 @@ decoder and timing of that PC's browser breaks the leg is not decided by this
 download. Reported, not independently reproduced. Source: comments on
 [issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
 
+## Dated 0.8.29 attempts with the decoder and the encoder swapped
+
+On 2026-09-22 the same external tester ran the mains powered T8425 (firmware
+1.6.4.6) behind the second HomeBase 3 (T8030 firmware 3.8.5.2) with bridge
+0.8.23 and client 0.14.0, integration 0.8.29, Home Assistant 2026.9.3 on Home
+Assistant OS 18.3 in a VM, `live_max_streams_per_station: 3`, diagnostics on,
+one camera, no guard mode change, from Google Chrome 153 on Windows with the
+page visible, in the two discriminating configurations asked for on issue #94.
+First with the browser's hardware video decoding disabled in `chrome://flags`
+and `live_acceleration: nvidia`, where the tester read
+`decoderImplementation=FFmpeg` and `powerEfficientDecoder=false` in
+`chrome://webrtc-internals`: two attempts switched from WebRTC to the JPEG
+fallback (`fallback_playback_timeout`) at 20.8 s and 50.9 s. Then with
+hardware decoding restored and `live_acceleration: software`, the bridge
+recreated for the option and the value verified in the running container: one
+attempt switched at 54.2 s and one ran at least 16.6 s without a fallback and
+ended for a reason the download does not carry. Neither the NVIDIA T600 nor
+the Windows hardware decoder is needed for the fallback on this installation.
+The download confirms the decoder swap by itself, 3.3 to 3.6 ms of decode time
+per decoded frame in the two attempts with hardware decoding off and 0.6 to
+0.9 ms in the two with it on. The encoder setting is the tester's report,
+because the two bridge recreations dropped the bridge's own rows for all four
+attempts.
+
+In the attempt that switched at 20.8 s the video stopped before the browser.
+At the card's sample 2.1 s after the last painted frame go2rtc had received
+204 H.264 packets from the bridge's stream and sent 204, equal to the frames
+the browser had received and decoded, and at the fallback sample 3.6 s later
+the browser's video counters were unchanged, 204 frames, 4157 RTP packets and
+4785975 bytes, while the late audio peer had received 179 further Opus packets
+at its normal rate. So go2rtc's video input delivered nothing for at least the
+two seconds before that sample and no video reached the browser for 5.75 s,
+with the audio of the same camera and P2P session flowing. The tester's
+Home Assistant core log holds one go2rtc `unexpected EOF` in that attempt's
+window, at the fallback moment, and none before it, so the bridge neither cut
+go2rtc's reader nor lost its encoder process before the fallback, see the
+test record. In the two attempts
+that switched after 50 s the download cannot say whether video was still
+arriving during the final gap of more than 6 s, because the fallback sample
+carries no go2rtc row when the bridge initiated the fallback and the bridge's
+rows are gone. Every sample is in the
+[2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md). A bridge video row per
+attempt and a go2rtc sample at the fallback are in bridge 0.8.24 and
+integration 0.8.31 (#114, unreleased on 2026-09-22), see
+[issue #112](https://github.com/keesmod/ha-eufy-cam/issues/112). The
+1800-second cap, the confirmed stop and the free primary session are not
+touched by this run. Reported, not independently reproduced. Source: comments
+on [issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
+
 ## Report your installation
 
 You do not need to be a developer or complete every check. There is no required

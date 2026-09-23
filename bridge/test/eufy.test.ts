@@ -37,6 +37,7 @@ test('shared bridge converts real media, keeps video through audio failure and r
   const backend = fixtureBackend();
   const diagnosticEvents: string[] = [];
   backend.recordAudioEvent = (_serial, event) => { diagnosticEvents.push(event); };
+  backend.audioAttempt = () => 4242;
   backend.startLive = async serial => { calls.push(`start:${serial}`); };
   backend.stopLive = async serial => { calls.push(`stop:${serial}`); };
   const bridge = new Eufy(storage, 'mega', false, () => backend);
@@ -73,6 +74,11 @@ test('shared bridge converts real media, keeps video through audio failure and r
     assert.equal(bridge.media.active('CAM123'), true);
     assert.equal(bridge.media.lateAudioSupported('CAM123'), false);
     const [jpeg] = await frame;
+    const streaming = bridge.supportReport().live_video!;
+    assert.equal(streaming.length, 1, 'One video row per live session');
+    assert.equal(streaming[0]!.state, 'streaming'); assert.equal(streaming[0]!.codec, 'h264');
+    assert.equal(streaming[0]!.encoder.mode, 'software'); assert.equal(streaming[0]!.audio_attempt, 4242);
+    assert.ok(streaming[0]!.input.chunks > 0, 'P2P input chunks are counted'); assert.ok(streaming[0]!.jpeg.chunks > 0, 'JPEG frames are counted');
     assert.ok(diagnosticEvents.includes('audio_absent'), 'Classification is still observed');
     assert.ok(diagnosticEvents.includes('video_input'));
     clearTimeout(deadline);
@@ -101,6 +107,16 @@ test('shared bridge converts real media, keeps video through audio failure and r
     assert.equal(bridge.hub.active, 1, 'JPEG frames keep flowing after the audio failure');
     bridge.hub.close();
     assert.ok(calls.includes('stop:CAM123'));
+    const [ended] = bridge.supportReport().live_video!;
+    assert.equal(ended!.state, 'ended'); assert.ok(ended!.duration_ms > 0);
+    assert.equal(typeof ended!.input.last_data_age_ms, 'number', 'The input age at the session end is frozen');
+    assert.equal(typeof ended!.jpeg.last_data_age_ms, 'number');
+    const events = ended!.pipeline!.map(row => row.event);
+    for (const event of ['start', 'h264', 'video_input', 'jpeg_frame', 'frame_ack', 'audio_late', 'session_end']) assert.ok(events.includes(event as never), event);
+    // The paced 8 fps fixture may end before the MPEG-TS encoder's first packet. The
+    // output counter and its pipeline mark come from the same callback either way.
+    assert.equal(events.includes('media_output' as never), ended!.output.chunks > 0, 'MPEG-TS output chunks follow the media_output mark');
+    assert.ok(!JSON.stringify(ended).includes('CAM123'), 'No camera identifier in the row');
     assert.equal(bridge.metrics.start_requests, 1);
     assert.equal(bridge.metrics.started_events, 1);
     assert.ok(bridge.metrics.frames > 0);

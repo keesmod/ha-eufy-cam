@@ -34,6 +34,10 @@ class Session:
     def __init__(self):
         self.deleted = []
 
+    def get(self, url, **kwargs):
+        # The relay is unavailable unless a test installs its own reports.
+        raise aiohttp.ClientError()
+
     def delete(self, url, **kwargs):
         self.deleted.append((url, kwargs))
         return DeleteResponse()

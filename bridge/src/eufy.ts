@@ -6,6 +6,7 @@ import { JpegFramer } from './jpeg.js';
 import { StreamHub } from './streams.js';
 import { StreamDiagnostics } from './diagnostics.js';
 import { MediaRelay } from './media.js';
+import { LiveVideoDiagnostics, type LiveVideoObservation } from './live-video-diagnostics.js';
 import { Storage } from './storage.js';
 import { MegaBackend } from './mega-backend.js';
 import { migrationInventory, MigrationError, parseMigrationInventory } from './migration.js';
@@ -40,7 +41,13 @@ export class Eufy extends EventEmitter {
   private encoders = new Map<string, ChildProcessWithoutNullStreams>();
   private livePictures = new Map<string, Picture>();
   readonly pictures = new Map<string, Picture>();
-  readonly diagnostics = new StreamDiagnostics(undefined, undefined, (serial, event) => this.backend?.recordAudioEvent?.(serial, event));
+  /** One bounded row per live session for the video path, kept next to the backend's audio rows. */
+  readonly liveVideo = new LiveVideoDiagnostics();
+  private readonly liveVideoRows = new Map<string, LiveVideoObservation>();
+  readonly diagnostics = new StreamDiagnostics(undefined, undefined, (serial, event) => {
+    this.liveVideoRows.get(serial)?.mark(event);
+    this.backend?.recordAudioEvent?.(serial, event);
+  });
   readonly media = new MediaRelay((serial) => this.hub.end(serial, 'Video encoder failed'), this.diagnostics,
     serial => this.emit('audio-ready', serial));
   private readonly unavailableRecordings: BackendRecordings = {
@@ -89,10 +96,20 @@ export class Eufy extends EventEmitter {
     start: async (serial) => {
       if (this.recordings.busy) throw new Error('Recording operation in progress');
       if (!this.backend?.connected) throw new Error('Disconnected');
+      // The row exists before the session's first mark, so it carries start.
+      const row = this.liveVideo.begin(this.backend.inventory().find(camera => camera.serial === serial)?.model ?? '');
+      this.liveVideoRows.get(serial)?.finish('closed');
+      this.liveVideoRows.set(serial, row);
       this.diagnostics.begin(serial);
       this.metrics.start_requests++;
       this.metrics.last_start_request = new Date().toISOString();
-      await this.backend.startLive(serial, this.backend.liveBoundMs?.(serial));
+      try {
+        await this.backend.startLive(serial, this.backend.liveBoundMs?.(serial));
+      } catch (error) {
+        row.finish('failed');
+        throw error;
+      }
+      row.correlate(this.backend?.audioAttempt?.(serial));
     },
     stop: async (serial) => {
       this.metrics.stop_requests++;
@@ -102,6 +119,9 @@ export class Eufy extends EventEmitter {
     disposeMedia: (serial) => {
       this.diagnostics.finish(serial);
       this.media.stop(serial);
+      const row = this.liveVideoRows.get(serial);
+      this.liveVideoRows.delete(serial);
+      row?.finish('ended');
       const picture = this.livePictures.get(serial);
       if (picture) {
         this.pictures.set(serial, picture);
@@ -310,13 +330,16 @@ export class Eufy extends EventEmitter {
           return;
         }
         this.diagnostics.mark(serial, codec);
+        const row = this.liveVideoRows.get(serial);
+        row?.correlate(this.backend?.audioAttempt?.(serial));
+        row?.attach(video, codec);
         // The library's startup classification is observation only. It no
         // longer selects a pipeline: audio always travels through the late
         // audio reader, and audio_late marks its first complete frame.
         this.diagnostics.mark(serial, audioSupported ? 'audio_supported' : 'audio_absent');
         video.once('data', () => this.diagnostics.mark(serial, 'video_input'));
         audio.once('data', () => this.diagnostics.mark(serial, 'audio_input'));
-        this.media.start(serial, codec, video, audio, fps);
+        this.media.start(serial, codec, video, audio, fps, row);
         const encoder = spawn(
           'ffmpeg',
           [
@@ -351,6 +374,7 @@ export class Eufy extends EventEmitter {
         this.encoders.set(serial, encoder);
         const framer = new JpegFramer((frame) => {
           this.diagnostics.mark(serial, 'jpeg_frame');
+          row?.jpeg(frame.length);
           this.metrics.frames++;
           this.livePictures.set(serial, {
             data: frame,
@@ -387,7 +411,7 @@ export class Eufy extends EventEmitter {
   supportReport(): SupportReport {
     const setup = this.setupDiagnostics.report();
     const report = this.backend?.supportReport?.() ?? this.failedSupportReport ?? setup;
-    return {...report, cache_age_ms: report === this.failedSupportReport ? Math.max(0, Math.round(performance.now() - this.failedSupportAt)) : 0, software: diagnosticSoftware(), generated_at:setup.generated_at, recent_events:
+    return {...report, live_video: this.liveVideo.report(this.liveMaxSecondsMains * 1000 + 900_000), cache_age_ms: report === this.failedSupportReport ? Math.max(0, Math.round(performance.now() - this.failedSupportAt)) : 0, software: diagnosticSoftware(), generated_at:setup.generated_at, recent_events:
       report === setup ? setup.recent_events : [...report.recent_events, ...setup.recent_events]
         .sort((a,b) => String(a.timestamp).localeCompare(String(b.timestamp))).slice(-100)};
   }
@@ -410,6 +434,7 @@ export class Eufy extends EventEmitter {
     this.hub.close();
     await delay(1500);
     await this.backend?.close();
+    this.liveVideo.close();
     await this.storage.flush();
   }
 }

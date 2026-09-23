@@ -404,3 +404,125 @@ async def test_download_keeps_live_evidence_for_the_cap_plus_fifteen_minutes(has
     assert [live["acks"] for live in result["live_playback"]] == [3]
     assert [row["attempt"] for row in result["support"]["live_audio"]] == [3]
     assert "PRIVATE" not in json.dumps(result)
+
+
+def test_video_evidence_is_bounded_and_contains_no_identifiers_or_encoder_text():
+    from custom_components.eufy_viewer.diagnostic_assessment import assess
+    from custom_components.eufy_viewer.diagnostics import video_report
+
+    row = {
+        "attempt": 123,
+        "audio_attempt": 456,
+        "age_ms": 30000,
+        "model": "T8425",
+        "state": "ended",
+        "codec": "h264",
+        "duration_ms": 20828,
+        "encoder": {"mode": "nvidia", "exits": 1},
+        "input": {
+            "chunks": 300,
+            "bytes": 4785975,
+            "first_data_ms": 900,
+            "last_data_ms": 14900,
+            "last_data_age_ms": 5928,
+            "max_gap_ms": 210,
+        },
+        "output": {
+            "chunks": 2500,
+            "bytes": 4785975,
+            "first_data_ms": 1100,
+            "last_data_ms": 15000,
+            "last_data_age_ms": 5828,
+            "max_gap_ms": 200,
+        },
+        "jpeg": {"chunks": 0, "bytes": 0},
+        "readers": {
+            "attached": 1,
+            "backpressure": 0,
+            "closed": 0,
+            "revoked": 1,
+            "last_destroy_ms": 20828,
+        },
+        "audio_readers": {"attached": 1, "backpressure": 0, "closed": 0, "revoked": 1},
+        "pipeline": [
+            {"event": "media_active_nvidia", "elapsed_ms": 1100},
+            {"event": "fallback_playback_timeout", "elapsed_ms": 20828},
+        ],
+    }
+    result = support_report(
+        {
+            "schema": 2,
+            "last_discovery": [],
+            "recent_events": [],
+            "live_video": [{**row, "stderr": "PRIVATE", "serial": "PRIVATE"}] * 10,
+        }
+    )
+    assert result["live_video"] == [row] * 8
+    invalid = video_report(
+        {
+            "attempt": True,
+            "audio_attempt": 2**48,
+            "model": "T8425\nPRIVATE",
+            "state": "PRIVATE",
+            "codec": "PRIVATE",
+            "duration_ms": 3600001,
+            "encoder": {"mode": "PRIVATE", "exits": -1, "software_fallback_ms": 2.5},
+            "input": {"chunks": 2**31, "bytes": "PRIVATE", "last_data_age_ms": -1},
+            "output": "PRIVATE",
+            "jpeg": {"path": "PRIVATE", "first_data_ms": 3600001},
+            "readers": {"attached": True, "last_destroy_ms": 3600001},
+            "audio_readers": [],
+            "pipeline": [{"event": "PRIVATE", "elapsed_ms": 1}, None],
+        }
+    )
+    assert "PRIVATE" not in json.dumps(invalid)
+    assert invalid == {
+        "model": "unavailable",
+        "encoder": {},
+        "input": {},
+        "jpeg": {},
+        "readers": {},
+        "pipeline": [],
+    }
+    assert video_report(None) == {}
+    # A row's own age decides its retention, even when the report is cached.
+    kept = support_report(
+        {
+            "schema": 2,
+            "last_discovery": [],
+            "recent_events": [],
+            "cache_age_ms": 800_000,
+            "live_video": [
+                {"attempt": 1, "age_ms": 899_999},
+                {"attempt": 2, "age_ms": 900_000},
+                {"attempt": 3},
+            ],
+        }
+    )
+    assert [r.get("attempt") for r in kept["live_video"]] == [1, 3]
+    # A finished row whose input stopped more than 6 s before its end is a finding.
+    assessment = assess({"support": {**result, "live_video": [row]}})
+    stalls = [f for f in assessment["findings"] if f["stage"] == "video_stall"]
+    assert stalls == []
+    stalled = {
+        **row,
+        "input": {**row["input"], "last_data_age_ms": 8123},
+        "output": {**row["output"], "last_data_age_ms": 7900},
+        "jpeg": {"chunks": 5, "bytes": 5, "last_data_age_ms": 6001},
+    }
+    assessment = assess({"support": {**result, "live_video": [stalled]}})
+    stalls = [f for f in assessment["findings"] if f["stage"] == "video_stall"]
+    assert len(stalls) == 1
+    assert stalls[0]["attempt"] == 123
+    assert stalls[0]["evidence"] == "support.live_video"
+    assert (
+        "the P2P video input 8123 ms, the encoder output 7900 ms, the JPEG frames "
+        "6001 ms had stopped" in stalls[0]["observation"]
+    )
+    # A session still streaming or one that stopped within 6 s adds no finding.
+    for quiet in (
+        {**stalled, "state": "streaming"},
+        {**stalled, "input": {"last_data_age_ms": 6000}, "output": {}, "jpeg": {}},
+    ):
+        assessment = assess({"support": {**result, "live_video": [quiet]}})
+        assert not [f for f in assessment["findings"] if f["stage"] == "video_stall"]
