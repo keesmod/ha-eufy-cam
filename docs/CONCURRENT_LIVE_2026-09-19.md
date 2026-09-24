@@ -492,3 +492,147 @@ fallback.
 
 Reported, not independently reproduced. Source: the tester's comment and
 redacted download on issue #94.
+
+### The 0.8.33 attempt of 2026-09-24 with FFmpeg's counters (reported)
+
+Same tester, HomeBase and T8425 (firmware 1.6.4.6), bridge 0.8.26 with client
+0.18.1, integration 0.8.33, Home Assistant 2026.9.3, Google Chrome on Windows
+with the browser's hardware video decoding disabled, `live_acceleration:
+nvidia` on the T600, one camera, diagnostics on, no restart and no option
+change between the attempt and the download. One redacted download 4.5 s
+after the session's end holds the first bridge video row with FFmpeg's
+progress counters (#116, #118) after a fallback, next to its audio row and
+HA's `live_playback` row of the same attempt, `audio_attempt` 20840570930025
+in all three. Times are UTC on the bridge's clock, the download's
+`generated_at` of 07:38:36.322 minus the row's `age_ms`: the bridge requested
+the stream at 07:37:19.406 and the elapsed times below count from that moment.
+The attempt switched from WebRTC to the JPEG fallback
+(`fallback_playback_timeout`) at 52.847 s.
+
+The bridge video row, `support.live_video` attempt 205400944465486, HEVC from
+the camera, encoder `nvidia` with 0 exits, 0 stderr chunks and no software
+fallback:
+
+| Elapsed | Event |
+| --- | --- |
+| 1.435 s | `hevc`, `audio_supported` |
+| 1.443 s | `audio_input`, `audio_late` |
+| 1.454 s | `video_input`, the first P2P video chunk |
+| 1.534 s | `media_reader`, go2rtc's reader attached |
+| 1.666 s | `jpeg_frame`, the first JPEG frame |
+| 2.068 s | `media_active_nvidia` and `media_output`, the first MPEG-TS chunk |
+| 2.160 s | `frame_ack` |
+| 46.969 s | the last MPEG-TS chunk from the encoder |
+| 47.359 s | the last progress block in which `frames` rose |
+| 52.847 s | `fallback_playback_timeout`, the video and audio readers revoked |
+| 71.860 s | the last progress block, `dropped` still rising |
+| 72.337 s | the last JPEG frame |
+| 72.398 s | the last P2P video chunk |
+| 72.431 s | `no_viewers` and `session_end`, the tester closed the view |
+
+The three points of the row, each with its last data age frozen at the
+session's end:
+
+| Point | Chunks | Bytes | First | Last | Age at the end | Largest gap |
+| --- | --- | --- | --- | --- | --- | --- |
+| `input`, P2P video from the HomeBase | 1064 | 7372559 | 1.454 s | 72.398 s | 34 ms | 716 ms |
+| `output`, the encoder's MPEG-TS | 659 | 21432376 | 2.068 s | 46.969 s | 25463 ms | 3455 ms |
+| `jpeg`, frames of the fallback decoder | 566 | 48741710 | 1.666 s | 72.337 s | 95 ms | 714 ms |
+
+FFmpeg's counters from the last progress block, 572 ms before the end:
+`frames` 625, `dropped` 429, `duplicated` 0, `out_time_ms` 40899, `bytes`
+21432376, `last_frame_ms` 47359, `last_drop_ms` 71860. Readers: video and
+audio each `attached` 1, `backpressure` 0, `closed` 0, `revoked` 1 with
+`last_destroy_ms` 52847. The audio row of the same attempt: 1117 AAC chunks,
+214507 bytes, last data 73 ms before the end, largest gap 881 ms, stop
+confirmed. `assessment.findings` holds the `video_stall` finding with the sync
+case: FFmpeg's frame count stopped with the output while its drop count kept
+rising for 24891 ms after the last output chunk.
+
+The browser and go2rtc samples of the same attempt, HA's `live_playback` row
+with `fallback: playback_timeout`, 255 ticks and 254 acknowledgements, the
+elapsed time on the browser's clock from the card's start:
+
+| Sample | Elapsed | Frames received / decoded / dropped | Painted | Keyframes | PLI | Lost / NACK | Freezes | Wait per frame | Target | Decode per frame | go2rtc H.264 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `playing` | 2.2 s | 9 / 2 / 0 | 1 | 1 | 0 | 0 / 0 | 0 | 11 ms over 3 frames | 12 ms | 6.0 ms | 10 / 10 |
+| `startup` | 6.5 s | 56 / 55 / 1 | 47 | 2 | 0 | 0 / 0 | 3 of 875 ms | 70 ms over 55 frames | 42 ms | 3.3 ms | 56 / 56 |
+| `audio_check` | 16.5 s | 172 / 128 / 11 | 119 | 5 | 1 | 0 / 0 | 6 of 5634 ms | 376 ms over 128 frames | 61 ms | 3.6 ms | 172 / 172 |
+| `fallback` | 53.0 s | 622 / 547 / 75 | 526 | 20 | 2 | 0 / 0 | 14 of 9454 ms | 756 ms over 547 frames | 92 ms | 3.6 ms | 622 / 622 |
+
+The last painted frame was 6.012 s before the fallback sample, at 47.0 s on
+the browser's clock. At the `startup` sample the last painted frame was
+1.103 s old, from 5.37 s. The audio peer had received 2521 Opus packets, about
+50 per second from the `startup` sample to the fallback. Connection and ICE
+were `connected` host to host over UDP at every sample.
+
+- The counters name the stage: the video sync dropped every frame. From 47 s
+  the P2P video and the JPEG frames kept flowing to the end and FFmpeg kept
+  reporting to 0.6 s before it, while its frame count stood still at 625 from
+  the block at 47.359 s and its drop count rose to 429 until the last block.
+  625 frames encoded and 429 dropped against 1064 P2P video chunks, so after
+  47 s the decoded frames kept reaching the sync and were dropped there. With
+  Debian Bookworm's FFmpeg 5.1 of the bridge images `frame` counts the frames
+  the sync handed to the encoder. The three frames between those 625 and the
+  622 H.264 packets go2rtc received were in flight: FFmpeg 5.1's NVENC wrapper
+  hands out a packet only while three frames are queued, so it keeps two, and
+  the MPEG-TS muxer omits the length of video packets by default, so a reader
+  completes the last one only when the next one starts. The bridge's playback
+  timeout (`bridge/src/server.ts`, 6 s after the card's last acknowledgement)
+  switched the viewer to JPEG 5.9 s after the last output chunk, as designed.
+- Why the sync dropped them. `liveArgs` in `bridge/src/live-transcoder.ts`
+  stamps each decoded frame with the wall clock since `RTCSTART`
+  (`setpts='(time(0)-RTCSTART/1000000)/TB'`). FFmpeg 5.1's `setpts` sets
+  `RTCSTART` whenever the filter graph is configured, and FFmpeg configures the
+  graph again whenever a decoded frame's size or pixel format differs from the
+  previous frame's, or its hardware frames context or display matrix changes.
+  After such a rebuild the stamps start again near 0 while the sync's output
+  clock continues from the old stamps, and with `-fps_mode vfr` the sync drops
+  every frame more than one frame duration behind that clock until the new
+  stamps catch up, which takes as long as the previous graph had run. None of
+  it is logged at `-loglevel error` and the process stays alive. The FFmpeg
+  source lines, at tag n5.1.9, are in
+  [issue #122](https://github.com/keesmod/ha-eufy-cam/issues/122).
+- The row also holds the short form of the same event. The output's largest
+  gap, 3455 ms, lies early in the session: at the `startup` sample the last
+  painted frame was 1.1 s old, and by `audio_check` the browser had counted
+  three more freezes of 4759 ms in total. The output recovered from it.
+  `out_time_ms` ended at 40899 after 44.9 s of output, about 4 s behind, and
+  429 drops are about 50 more than the 25 s after 47.4 s account for at the
+  input's 15 chunks per second. A rebuild about 3.5 s after the first one
+  costs 3.5 s of frames and recovers before the playback timeout. The rebuild
+  at 47 s would have needed about 41 s. After the early episode the frames
+  continued the old stamps while arriving 3.5 s later, which may account for
+  part of the browser's wait of 756 ms per frame and its 75 dropped frames,
+  against 231 ms and 10 on 2026-09-23. That part is not established.
+- Local reproduction of the mechanism by the maintainer, FFmpeg 9.0.1 on
+  macOS, the unchanged `liveArgs` in software mode, synthetic HEVC elementary
+  streams at 15 fps paced in real time:
+
+  | Stream | Stamp | Frames encoded / dropped | Output |
+  | --- | --- | --- | --- |
+  | 2560x1440 for 12 s, then 1920x1080 for 25 s | `RTCSTART` | 384 / 171 | stopped at 11.51 s for 11.52 s, then resumed with `out_time` 11.5 s behind the wall clock |
+  | 2560x1440 for 12 s, 1280x720 for 8 s, 2560x1440 full range for 8 s | `RTCSTART` | 180 / 241 | stopped at 11.53 s and never resumed, the second rebuild restarted the clock during the drops |
+  | the first stream | origin fixed at spawn | 555 / 0 | continuous, largest gap 0.19 s |
+  | the second stream | origin fixed at spawn | 420 / 0 | continuous, largest gap 0.16 s, 1920x1080 yuv420p throughout |
+
+  With the fixed origin the output keeps one size and pixel format, because
+  FFmpeg's autoscale holds the encoder's input across a rebuild. The same
+  logic is in the FFmpeg 5.1 source, and #122 carries the fix with a check on
+  5.1.
+- What changes in the T8425's stream at those two moments, the frame size,
+  the pixel format such as the full-range flag, or a display matrix, is not in
+  the download. The bridge's JPEG decoder scales to at most 960 pixels wide
+  (`bridge/src/eufy.ts`), so a change between two 16:9 sizes does not show
+  there either. The fix does not depend on it, and because the cause lies
+  before the encoder it also fits the software transcoding attempt of
+  2026-09-22 that fell back.
+- The earlier fallbacks of this camera, from 20.8 s to 54.2 s, fit the same
+  cause, but only the 0.8.31 row shows the encoder stop and none has the
+  counters, so the cause is shown for this attempt only.
+- The browser side repeats 2026-09-23: zero packets lost, zero NACK and 3.3
+  to 3.6 ms of decode time per frame with the FFmpeg software decoder.
+
+Reported, not independently reproduced, apart from the local reproduction of
+the mechanism. Source: the tester's comment and redacted download on issue
+#94.

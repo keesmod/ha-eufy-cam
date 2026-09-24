@@ -246,12 +246,43 @@ count and the JPEG decoder sit on the stream piped into the encoder's stdin,
 the encoder kept reading its input, and the stop is inside FFmpeg: the CUDA
 HEVC decoder, the VFR sync or the NVENC encoder and the muxer, which the row
 cannot separate.
-[Issue #116](https://github.com/keesmod/ha-eufy-cam/issues/116) adds FFmpeg's
-progress counters to the row for that. Not yet covered on 0.8.31:
+[Issue #116](https://github.com/keesmod/ha-eufy-cam/issues/116) added FFmpeg's
+progress counters to the row for that (#118, released in v0.8.32 on
+2026-09-23), see the next section. Not yet covered on 0.8.31:
 `live_acceleration: software`. Every number is in the
 [2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md). The 1800-second cap,
 the confirmed stop and the free primary session are not touched by this run.
 Reported, not independently reproduced. Source: comments on
+[issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
+
+## Dated 0.8.33 attempt with FFmpeg's counters
+
+On 2026-09-24 the same external tester ran the T8425 (firmware 1.6.4.6) behind
+the second HomeBase 3 with bridge 0.8.26 and client 0.18.1, integration 0.8.33,
+Home Assistant 2026.9.3, Google Chrome on Windows with the browser's hardware
+video decoding disabled and `live_acceleration: nvidia`, one camera,
+diagnostics on, and downloaded 4.5 s after the session's end without a restart
+or an option change. The attempt switched from WebRTC to the JPEG fallback
+(`fallback_playback_timeout`) at 52.8 s. FFmpeg's progress counters name the
+stage: the video sync dropped every frame. From 47.0 s the P2P video and the
+JPEG frames kept flowing to the end, while the encoder's frame count stood
+still at 625 and its drop count rose to 429 until 0.6 s before the end, with
+the process alive and silent. The cause is the origin of the encoder's
+wall-clock stamps. `liveArgs` stamps each decoded frame with the time since
+`setpts`'s `RTCSTART`, which FFmpeg sets again whenever it rebuilds the filter
+graph, and it rebuilds the graph when a decoded frame's size or pixel format
+changes. After a rebuild the stamps restart near 0 and the VFR sync drops every
+frame until they catch up with the old clock, which takes as long as the
+previous graph had run. The same row shows an earlier rebuild after about
+3.5 s that cost 3.5 s of frames and recovered. A local reproduction with a
+mid-stream size change gives the same counters, and a stamp origin fixed when
+the bridge starts the encoder plays through without a drop.
+[Issue #122](https://github.com/keesmod/ha-eufy-cam/issues/122) carries that
+fix. Which parameter of the T8425's stream changes is not in the download.
+Every number is in the [2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md).
+The 1800-second cap, the confirmed stop and the free primary session are not
+touched by this run. Reported, not independently reproduced, apart from the
+local reproduction of the mechanism. Source: comments on
 [issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
 
 ## Report your installation
