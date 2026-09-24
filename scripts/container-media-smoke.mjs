@@ -82,3 +82,41 @@ for (const codec of ['h264', 'hevc']) {
   }
 
 }
+// A mid-stream change of the frame size makes FFmpeg rebuild its filter graph.
+// Paced in real time, the live encoder keeps its clock and every frame with the
+// FFmpeg of this image (#122).
+{
+  const units = size => {
+    const bytes = ffmpeg(['-f', 'lavfi', '-i', `testsrc=size=${size}:rate=15`, '-t', '2', '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-g', '30', '-x264-params', 'aud=1', '-f', 'h264', 'pipe:1']);
+    const starts = [];
+    for (let i = 0; i + 4 < bytes.length; i++) if (bytes[i] === 0 && bytes[i + 1] === 0 && bytes[i + 2] === 1 && (bytes[i + 3] & 0x1f) === 9) starts.push(bytes[i - 1] === 0 ? i - 1 : i);
+    return starts.map((start, k) => bytes.subarray(start, starts[k + 1] ?? bytes.length));
+  };
+  const frames = [...units('320x180'), ...units('480x270')];
+  assert.equal(frames.length, 60);
+  const video = new PassThrough(), chunks = [], progress = [];
+  let ended;
+  const done = new Promise(resolve => { ended = resolve; });
+  const session = new LiveTranscoder('synthetic', 'h264', video, 15, 'software', new StreamDiagnostics(), chunk => chunks.push(chunk), () => ended(), () => {},
+    undefined, undefined, undefined, undefined, value => progress.push(value));
+  const timer = setTimeout(() => { session.stop(); ended(); }, 15000);
+  try {
+    session.start();
+    const started = performance.now();
+    for (let sent = 0; sent < frames.length; sent += 3) {
+      await new Promise(resolve => setTimeout(resolve, Math.max(0, started + (sent + 3) * 200 / 3 - performance.now())));
+      video.write(Buffer.concat(frames.slice(sent, sent + 3)));
+    }
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    const last = progress.at(-1);
+    assert.equal(last.dropped, 0, 'The video sync drops nothing after the size change');
+    assert.ok(last.frames >= 55, `frames rose to ${last.frames}`);
+    video.end(); await done;
+    const probe = spawnSync('ffprobe', ['-v', 'error', '-f', 'mpegts', '-show_entries', 'frame=width,height', '-of', 'json', 'pipe:0'], { input: Buffer.concat(chunks), timeout: 5000 });
+    assert.equal(probe.status, 0);
+    const sizes = JSON.parse(probe.stdout).frames.map(frame => `${frame.width}x${frame.height}`);
+    assert.ok(sizes.length >= 55, `decoded ${sizes.length} frames`);
+    assert.deepEqual([...new Set(sizes)], ['320x180'], 'One output size across the change');
+    console.log(`live size change: ${last.frames} frames, ${last.dropped} dropped, one output size`);
+  } finally { clearTimeout(timer); session.stop(); video.destroy(); }
+}

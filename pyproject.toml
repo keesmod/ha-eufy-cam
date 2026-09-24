@@ -1,6 +1,6 @@
 [project]
 name = "eufy-security-viewer"
-version = "0.8.33"
+version = "0.8.34"
 requires-python = ">=3.14.2"
 dependencies = []
 

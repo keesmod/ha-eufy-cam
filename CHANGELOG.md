@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.8.34 - 2026-09-24
+
+### Live video keeps running when a camera changes its frame size mid-stream
+
+- Bridge 0.8.27 stamps the live encoder's frames with the wall clock since the
+  bridge started the encoder process instead of FFmpeg's `RTCSTART`. FFmpeg
+  sets `RTCSTART` again whenever it rebuilds its filter graph, which it does
+  when a decoded frame's size or pixel format changes mid-stream. The stamps
+  then restarted near zero and the video sync dropped every frame until they
+  caught up, which took as long as the stream had run before, so the card
+  switched to the JPEG fallback after 6 s. The diagnostics download on #94
+  showed this on a T8425 at 47 s: FFmpeg's frame count stood still while its
+  drop count rose. Refs #94, #122.
+- The encoder keeps one output size and pixel format across such a change.
+  The other encoder arguments, the fallback timing, the JPEG path and the
+  diagnostics fields are unchanged. The integration and the card only change
+  their version.
+- Tests feed a stream that changes its frame size mid-stream in real time
+  through the live encoder, with the FFmpeg of the test runner and, in the
+  container smoke test, with the Debian Bookworm FFmpeg 5.1 of the bridge
+  images. The fix is not yet confirmed on the reporter's T8425.
+
+### Upgrade and rollback
+
+Update the bridge add-on or Docker image to 0.8.27 and the integration to
+0.8.34 in HACS, restart Home Assistant and refresh the dashboard. To roll
+back, restore bridge 0.8.26 and integration 0.8.33 from your backups.
+Integration 0.8.33 also works with bridge 0.8.27.
+
 ## 0.8.33 - 2026-09-23
 
 ### A Video Doorbell C30 reported with device type 96 is discovered
