@@ -453,7 +453,7 @@ fell behind because FFmpeg rebuilt the filter graph mid-stream, which it does
 when a decoded frame's size or pixel format changes. `setpts` then sets
 `RTCSTART` again, the stamps restart near 0, and the sync drops every frame
 until they catch up with the old clock, which takes as long as the previous
-graph had run.
-[Issue #122](https://github.com/keesmod/ha-eufy-cam/issues/122) fixes the
-origin of the stamps. The numbers are in the
-[2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md).
+graph had run. Bridge 0.8.27 stamps from the moment it starts the encoder
+process instead, so a rebuild keeps the clock and the sync drops nothing
+([issue #122](https://github.com/keesmod/ha-eufy-cam/issues/122)). The numbers
+are in the [2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md).

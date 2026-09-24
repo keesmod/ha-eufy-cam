@@ -29,9 +29,17 @@ export function liveRateControl(value?: string): LiveRateControl {
  * decoded frame is stamped with the wall clock in the filter graph instead,
  * which FFmpeg 5.1 and 6 treat alike. VFR sync in the muxer's 90 kHz time
  * base keeps DTS strictly increasing when several frames arrive in one read.
+ *
+ * The stamps count from `origin`, the wall-clock time in milliseconds at which
+ * the bridge starts the process, not from setpts's RTCSTART. FFmpeg sets
+ * RTCSTART again whenever it rebuilds the filter graph, which it does when a
+ * decoded frame's size or pixel format changes mid-stream. The stamps would
+ * then restart near zero and the VFR sync would drop every frame until they
+ * caught up with the output, as long as the graph had run before (#94, #122).
+ * FFmpeg's autoscale keeps the encoder's input size and format across a rebuild.
  */
-const wallclockStamp = "setpts='(time(0)-RTCSTART/1000000)/TB'";
-export function liveArgs(codec: 'h264' | 'hevc', fps: number, mode: LiveAcceleration, rate: LiveRateControl = defaultLiveRateControl): string[] {
+export function liveArgs(codec: 'h264' | 'hevc', fps: number, mode: LiveAcceleration, rate: LiveRateControl = defaultLiveRateControl, origin = Date.now()): string[] {
+  const wallclockStamp = `setpts='(time(0)-${(origin / 1000).toFixed(3)})/TB'`;
   // FFmpeg writes a key=value progress block to fd 3 once a second. Its
   // stderr stays silent at -loglevel error, so these counters are the only
   // view inside the process.
@@ -148,7 +156,7 @@ export class LiveTranscoder {
   }
   private startProcess(): void {
     if (this.stopped) return;
-    const process = this.spawnProcess(liveArgs(this.codec, this.fps, this.mode, this.rate));
+    const process = this.spawnProcess(liveArgs(this.codec, this.fps, this.mode, this.rate, Date.now()));
     this.process = process;
     this.diagnostics.encoder(this.serial, 'media', process);
     const failure = () => {
