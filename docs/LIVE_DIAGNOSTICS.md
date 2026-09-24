@@ -443,6 +443,17 @@ blocks, because the first block after the last chunk can still count frames
 from before it. Local tests cover the parser against split, overlong and
 non-numeric lines, the drained pipe and the replaced or stopped process, real
 FFmpeg blocks during a paced encode, the frozen age at the end, the software
-fallback, the projection and the three findings. The field row with these
-counters comes from the next NVIDIA attempt on
-[issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
+fallback, the projection and the three findings.
+
+The first field row with these counters, on 2026-09-24 from the external
+tester of [issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94) with
+NVIDIA transcoding on a T8425, gave the sync case: `frames` stood still at 625
+from 47.4 s while `dropped` rose to 429 until 0.6 s before the end. The stamps
+fell behind because FFmpeg rebuilt the filter graph mid-stream, which it does
+when a decoded frame's size or pixel format changes. `setpts` then sets
+`RTCSTART` again, the stamps restart near 0, and the sync drops every frame
+until they catch up with the old clock, which takes as long as the previous
+graph had run.
+[Issue #122](https://github.com/keesmod/ha-eufy-cam/issues/122) fixes the
+origin of the stamps. The numbers are in the
+[2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md).
