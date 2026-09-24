@@ -107,16 +107,16 @@ for (const codec of ['h264', 'hevc']) {
       await new Promise(resolve => setTimeout(resolve, Math.max(0, started + (sent + 3) * 200 / 3 - performance.now())));
       video.write(Buffer.concat(frames.slice(sent, sent + 3)));
     }
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    const last = progress.at(-1);
-    assert.equal(last.dropped, 0, 'The video sync drops nothing after the size change');
-    assert.ok(last.frames >= 55, `frames rose to ${last.frames}`);
+    // FFmpeg 5.1 reports only while input arrives, so the complete output
+    // after the end of the input carries the frame count.
     video.end(); await done;
+    assert.ok(progress.some(block => block.frames > 30), 'A progress block after the size change');
+    assert.deepEqual(progress.map(block => block.dropped ?? 0).filter(Boolean), [], 'The video sync drops nothing after the size change');
     const probe = spawnSync('ffprobe', ['-v', 'error', '-f', 'mpegts', '-show_entries', 'frame=width,height', '-of', 'json', 'pipe:0'], { input: Buffer.concat(chunks), timeout: 5000 });
     assert.equal(probe.status, 0);
     const sizes = JSON.parse(probe.stdout).frames.map(frame => `${frame.width}x${frame.height}`);
     assert.ok(sizes.length >= 55, `decoded ${sizes.length} frames`);
     assert.deepEqual([...new Set(sizes)], ['320x180'], 'One output size across the change');
-    console.log(`live size change: ${last.frames} frames, ${last.dropped} dropped, one output size`);
+    console.log(`live size change: ${sizes.length} frames decoded, 0 dropped in ${progress.length} progress blocks, one output size`);
   } finally { clearTimeout(timer); session.stop(); video.destroy(); }
 }

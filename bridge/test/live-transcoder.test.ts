@@ -323,11 +323,11 @@ test('real FFmpeg keeps its clock and every frame across a mid-stream change of 
       await new Promise(resolve => setTimeout(resolve, Math.max(0, started + (sent + 3) * 200 / 3 - performance.now())));
       video.write(Buffer.concat(frames.slice(sent, sent + 3)));
     }
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    const last = progress.at(-1)!;
-    assert.equal(last.dropped, 0, 'the video sync drops nothing after the change');
-    assert.ok(last.frames! >= 55, `frames rose to ${last.frames}`);
+    // FFmpeg 6.1 and older report only while input arrives, so the complete
+    // output after the end of the input carries the frame count.
     video.end(); await done;
+    assert.ok(progress.some(block => block.frames! > 30), 'a progress block after the change');
+    assert.deepEqual(progress.map(block => block.dropped ?? 0).filter(Boolean), [], 'the video sync drops nothing after the change');
     const { spawnSync } = await import('node:child_process');
     const probe = spawnSync('ffprobe', ['-v', 'error', '-f', 'mpegts', '-show_entries', 'frame=width,height', '-of', 'json', 'pipe:0'], { input: Buffer.concat(output) });
     assert.equal(probe.status, 0, probe.stderr.toString());
