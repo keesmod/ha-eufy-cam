@@ -31,9 +31,9 @@ function fixture(mode: 'nvidia' | 'software' = 'nvidia', timeout = 5000, max = 8
 /** The bridge's own spawn: FFmpeg's progress goes to a fourth pipe, which the caller drains. */
 const liveSpawn = (args: string[]) => spawn('ffmpeg', args, { stdio: ['pipe', 'pipe', 'pipe', 'pipe'] });
 /** A synthetic H.264 stream split into access units at its AUD NAL units. No captured camera video. */
-async function accessUnits(seconds: number): Promise<Buffer[]> {
+async function accessUnits(seconds: number, size = '320x180'): Promise<Buffer[]> {
   const { spawnSync } = await import('node:child_process');
-  const fixture = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=320x180:rate=15', '-t', String(seconds), '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-g', '30', '-x264-params', 'aud=1', '-f', 'h264', 'pipe:1']);
+  const fixture = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', `testsrc=size=${size}:rate=15`, '-t', String(seconds), '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-g', '30', '-x264-params', 'aud=1', '-f', 'h264', 'pipe:1']);
   assert.equal(fixture.status, 0, fixture.stderr.toString());
   const starts: number[] = [];
   for (let i = 0; i + 4 < fixture.stdout.length; i++) {
@@ -58,7 +58,7 @@ test('bitrate cap accepts k/M suffixes, derives half as VBV window and rejects a
     assert.throws(() => liveRateControl(bad), /EUFY_LIVE_MAX_BITRATE/, bad);
 });
 test('software command is video-only, rate bounded and wall-clock stamped', () => {
-  assert.deepEqual(liveArgs('h264', 15, 'software'), ['-hide_banner', '-loglevel', 'error', '-progress', 'pipe:3', '-stats_period', '1', '-threads', '1', '-probesize', '32768', '-analyzeduration', '100000', '-framerate', '15', '-f', 'h264', '-i', 'pipe:0', '-map', '0:v:0', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '26', '-maxrate', '4000000', '-bufsize', '2000000', '-pix_fmt', 'yuv420p', '-vf', "setpts='(time(0)-RTCSTART/1000000)/TB',scale='min(1920,iw)':-2", '-threads', '1', '-g', '30', '-fps_mode', 'vfr', '-enc_time_base', '1:90000', '-mpegts_flags', '+resend_headers', '-muxdelay', '0', '-muxpreload', '0', '-f', 'mpegts', 'pipe:1']);
+  assert.deepEqual(liveArgs('h264', 15, 'software', undefined, 1790000000123), ['-hide_banner', '-loglevel', 'error', '-progress', 'pipe:3', '-stats_period', '1', '-threads', '1', '-probesize', '32768', '-analyzeduration', '100000', '-framerate', '15', '-f', 'h264', '-i', 'pipe:0', '-map', '0:v:0', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '26', '-maxrate', '4000000', '-bufsize', '2000000', '-pix_fmt', 'yuv420p', '-vf', "setpts='(time(0)-1790000000.123)/TB',scale='min(1920,iw)':-2", '-threads', '1', '-g', '30', '-fps_mode', 'vfr', '-enc_time_base', '1:90000', '-mpegts_flags', '+resend_headers', '-muxdelay', '0', '-muxpreload', '0', '-f', 'mpegts', 'pipe:1']);
   for (const codec of ['h264', 'hevc'] as const) for (const mode of ['software', 'nvidia'] as const) {
     const args = liveArgs(codec, 15, mode, liveRateControl('2500k'));
     // No second input, no audio stream and no audio encoder anywhere. Fd 3
@@ -71,7 +71,9 @@ test('software command is video-only, rate bounded and wall-clock stamped', () =
     assert.ok(!args.includes('-use_wallclock_as_timestamps'), 'discarded by FFmpeg 6 for raw elementary streams');
     assert.ok(args.includes('-fps_mode') && args.includes('vfr'));
     assert.ok(args.includes('-enc_time_base') && args.includes('1:90000'));
-    assert.match(args[args.indexOf('-vf') + 1]!, /^setpts='\(time\(0\)-RTCSTART\/1000000\)\/TB',scale=/);
+    // Stamped from the spawn time, not RTCSTART, which a filter graph rebuild resets.
+    assert.match(args[args.indexOf('-vf') + 1]!, /^setpts='\(time\(0\)-\d{10}\.\d{3}\)\/TB',scale=/);
+    assert.ok(!args.join(' ').includes('RTCSTART'));
     assert.equal(args[args.indexOf('-maxrate') + 1], '2500000');
     assert.equal(args[args.indexOf('-bufsize') + 1], mode === 'software' ? '1250000' : '625000');
   }
@@ -82,10 +84,10 @@ test('software command is video-only, rate bounded and wall-clock stamped', () =
 });
 test('NVIDIA uses input CUDA decode with host scaling and low latency H264 encode', () => {
   for (const codec of ['h264', 'hevc'] as const) {
-    const args = liveArgs(codec, 15, 'nvidia');
+    const args = liveArgs(codec, 15, 'nvidia', undefined, 1790000000123);
     assert.ok(args.indexOf('-hwaccel') < args.indexOf('-i'));
     assert.ok(args.includes('h264_nvenc')); assert.ok(args.includes('ull'));
-    assert.ok(args.includes("setpts='(time(0)-RTCSTART/1000000)/TB',scale='min(1920,iw)':-2"));
+    assert.ok(args.includes("setpts='(time(0)-1790000000.123)/TB',scale='min(1920,iw)':-2"));
     assert.ok(!args.includes('libx264')); assert.ok(!args.includes('scale_cuda'));
     assert.deepEqual(args.slice(args.indexOf('-rc'), args.indexOf('-rc') + 8), ['-rc', 'cbr', '-b:v', '4000000', '-maxrate', '4000000', '-bufsize', '1000000']);
   }
@@ -105,6 +107,16 @@ test('failed hardware replays the initial video once to software without ending 
   assert.ok(!JSON.stringify(f.events).includes('private'));
   f.children[1].emit('error', new Error('software failure')); f.children[1].emit('exit', 1);
   assert.equal(f.failures(), 1); assert.equal(f.children.length, 2); f.session.stop();
+});
+test('each encoder process stamps from its own spawn time', async () => {
+  const origin = (args: string[]) => Math.round(Number(/^setpts='\(time\(0\)-(\d+\.\d{3})\)\/TB',/.exec(args[args.indexOf('-vf') + 1]!)![1]) * 1000);
+  const before = Date.now(); const f = fixture();
+  assert.ok(origin(f.commands[0]!) >= before && origin(f.commands[0]!) <= Date.now());
+  f.video.write('headers'); await tick();
+  f.children[0].emit('error', new Error('failure')); f.children[0].emit('exit', 1); await tick();
+  assert.equal(f.commands.length, 2);
+  assert.ok(origin(f.commands[1]!) >= origin(f.commands[0]!) && origin(f.commands[1]!) <= Date.now(), 'the software replacement gets its own origin');
+  f.session.stop();
 });
 test('silent hardware startup falls back once within its deadline', async () => {
   const f = fixture('nvidia', 15); f.video.write('headers');
@@ -291,5 +303,36 @@ test('real FFmpeg reports rising frames, bytes and output time once a second on 
     assert.ok(last.frames! > progress[0]!.frames! && last.frames! <= 60, `frames rose to ${last.frames}`);
     assert.ok(last.bytes! > 188 && last.bytes! <= Buffer.concat(output).length + 65536, `muxer bytes ${last.bytes}`);
     assert.ok(last.out_time_ms! > 1000 && last.out_time_ms! < 6000, `output time ${last.out_time_ms} ms`);
+  } finally { session.stop(); video.destroy(); }
+});
+test('real FFmpeg keeps its clock and every frame across a mid-stream change of the frame size', { timeout: 20000 }, async () => {
+  // A new size makes FFmpeg rebuild its filter graph, which resets setpts's
+  // RTCSTART. Stamps from RTCSTART restarted near zero there, and the VFR sync
+  // dropped every frame until they caught up again (#94, #122).
+  const frames = [...await accessUnits(2), ...await accessUnits(2, '480x270')];
+  assert.equal(frames.length, 60);
+  const video = new PassThrough(); const output: Buffer[] = []; const progress: LiveEncoderProgress[] = [];
+  let ended!: () => void; const done = new Promise<void>(resolve => { ended = resolve; });
+  const session = new LiveTranscoder('synthetic', 'h264', video, 15, 'software', new StreamDiagnostics(), chunk => output.push(chunk),
+    () => ended(), () => {}, undefined, undefined, undefined, undefined, value => progress.push(value));
+  session.start();
+  try {
+    // Real time, 15 frames a second: the change comes 2 s after the first frame.
+    const started = performance.now();
+    for (let sent = 0; sent < frames.length; sent += 3) {
+      await new Promise(resolve => setTimeout(resolve, Math.max(0, started + (sent + 3) * 200 / 3 - performance.now())));
+      video.write(Buffer.concat(frames.slice(sent, sent + 3)));
+    }
+    // FFmpeg 6.1 and older report only while input arrives, so the complete
+    // output after the end of the input carries the frame count.
+    video.end(); await done;
+    assert.ok(progress.some(block => block.frames! > 30), 'a progress block after the change');
+    assert.deepEqual(progress.map(block => block.dropped ?? 0).filter(Boolean), [], 'the video sync drops nothing after the change');
+    const { spawnSync } = await import('node:child_process');
+    const probe = spawnSync('ffprobe', ['-v', 'error', '-f', 'mpegts', '-show_entries', 'frame=width,height', '-of', 'json', 'pipe:0'], { input: Buffer.concat(output) });
+    assert.equal(probe.status, 0, probe.stderr.toString());
+    const sizes = (JSON.parse(probe.stdout.toString()).frames as { width: number; height: number }[]).map(frame => `${frame.width}x${frame.height}`);
+    assert.ok(sizes.length >= 55, `decoded ${sizes.length} frames`);
+    assert.deepEqual([...new Set(sizes)], ['320x180'], 'the encoder keeps one output size across the change');
   } finally { session.stop(); video.destroy(); }
 });

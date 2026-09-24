@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.27 - 2026-09-24
+
+- The live encoder stamps frames with the wall clock since the bridge started
+  it, not with FFmpeg's `RTCSTART`, which FFmpeg sets again when it rebuilds
+  its filter graph after a mid-stream change of the frame size or pixel
+  format. The video sync then dropped every frame until the stamps caught up,
+  and the card switched to the JPEG fallback after 6 s. The output keeps one
+  size and pixel format across such a change. Refs #94, #122.
+
 ## 0.8.26 - 2026-09-23
 
 - Include client 0.18.1. Discovery admits a Video Doorbell C30 that Eufy
