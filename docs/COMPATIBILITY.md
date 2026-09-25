@@ -277,13 +277,47 @@ previous graph had run. The same row shows an earlier rebuild after about
 3.5 s that cost 3.5 s of frames and recovered. A local reproduction with a
 mid-stream size change gives the same counters, and a stamp origin fixed when
 the bridge starts the encoder plays through without a drop.
-[Issue #122](https://github.com/keesmod/ha-eufy-cam/issues/122) carries that
-fix. Which parameter of the T8425's stream changes is not in the download.
+[Issue #122](https://github.com/keesmod/ha-eufy-cam/issues/122) carried that
+fix (#124, released in v0.8.34 on 2026-09-24), see the next section. Which
+parameter of the T8425's stream changes is not in the download.
 Every number is in the [2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md).
 The 1800-second cap, the confirmed stop and the free primary session are not
 touched by this run. Reported, not independently reproduced, apart from the
 local reproduction of the mechanism. Source: comments on
 [issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
+
+## Dated 0.8.34 attempt with the stamp fix
+
+On 2026-09-24 the same external tester ran the T8425 (firmware 1.6.4.6) behind
+the second HomeBase 3 (T8030 firmware 3.8.5.2) with bridge 0.8.27 and client
+0.18.1, integration 0.8.34, Home Assistant 2026.9.3, Google Chrome on Windows
+with the browser's hardware video decoding disabled and `live_acceleration:
+nvidia` on the T600, one camera, diagnostics on, and downloaded 4.4 s after
+the session's end without a restart or an option change. The attempt played
+on WebRTC for 187.6 s until the tester closed the view, without a fallback,
+and the bridge video row holds no trace of the sync stall that #122 fixed:
+the video sync handed 2790 frames to the encoder and dropped none against
+2791 P2P video chunks, and the encoder's output flowed to 10 ms before the end
+with no gap above 1306 ms, against 1297 ms in the P2P input. The seven dated
+fallbacks of this camera recorded here since 2026-09-19 came between 18.4 s
+and 54.6 s. Whether the camera's stream changed its frame size or pixel
+format during these 187.6 s is not in the download, so this attempt is a run
+far past every earlier stall with nothing dropped, not a rebuild observed and
+survived. A WebRTC session up to the 1800-second cap on this hardware remains
+unverified.
+
+Before that attempt the same download holds three starts of this camera in
+which the HomeBase sent no stream within 14.7, 10.8 and 20.2 s, the third
+ending in `fallback_startup_timeout`, although the camera's own P2P session
+worked and the HomeBase acknowledged the STOP after each. The client does not
+record the HomeBase's answer to the start command, so the download cannot say
+whether the HomeBase refused the start or accepted it and sent nothing.
+[eufy-mega-client issue #187](https://github.com/keesmod/eufy-mega-client/issues/187)
+adds that report to the client. Every number is in the
+[2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md). The 1800-second cap
+and the free primary session are not touched by this run, and the stop at its
+end was device-confirmed. Reported, not independently reproduced. Source:
+comments on [issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
 
 ## Report your installation
 

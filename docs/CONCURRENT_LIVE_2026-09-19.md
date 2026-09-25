@@ -636,3 +636,158 @@ were `connected` host to host over UDP at every sample.
 Reported, not independently reproduced, apart from the local reproduction of
 the mechanism. Source: the tester's comment and redacted download on issue
 #94.
+
+### The 0.8.34 attempt of 2026-09-24 with the stamp fix (reported)
+
+Same tester, HomeBase and T8425 (firmware 1.6.4.6), bridge 0.8.27 with client
+0.18.1, integration 0.8.34, Home Assistant 2026.9.3, Google Chrome on Windows
+with the browser's hardware video decoding disabled, `live_acceleration:
+nvidia` on the T600, one camera, diagnostics on, no restart and no option
+change between the attempt and the download. This is the field check that
+#122 asked for after the stamp fix (#124, released in v0.8.34): the tester let
+the live view run for a little over three minutes and then closed it. One
+redacted download 4.4 s after the session's end holds the attempt's bridge
+video row, its audio row and HA's `live_playback` row, `audio_attempt`
+8205685772019 in all three. Times are UTC on the bridge's clock, the
+download's `generated_at` of 14:44:31.490 minus the row's `age_ms`: the bridge
+requested the stream at 14:41:19.474 and the elapsed times below count from
+that moment. The attempt did not fall back.
+
+The bridge video row, `support.live_video` attempt 263082665176971, HEVC from
+the camera, encoder `nvidia` with 0 exits, 0 stderr chunks and no software
+fallback:
+
+| Elapsed | Event |
+| --- | --- |
+| 1.037 s | `hevc`, `audio_supported`, the bridge starts the live encoder |
+| 1.044 s | `audio_input`, `audio_late` |
+| 1.071 s | `video_input`, the first P2P video chunk |
+| 1.137 s | `media_reader`, go2rtc's reader attached |
+| 1.319 s | `jpeg_frame`, the first JPEG frame |
+| 1.541 s | `media_active_nvidia`, with `media_output` at 1.542 s, the first MPEG-TS chunk |
+| 1.671 s | `frame_ack` |
+| 187.591 s | the last P2P video chunk |
+| 187.592 s | the last JPEG frame |
+| 187.604 s | the last MPEG-TS chunk and the last progress block, in which `frames` rose |
+| 187.612 s | `no_viewers` and `session_end`, the tester closed the view |
+
+The three points of the row, each with its last data age frozen at the
+session's end:
+
+| Point | Chunks | Bytes | First | Last | Age at the end | Largest gap |
+| --- | --- | --- | --- | --- | --- | --- |
+| `input`, P2P video from the HomeBase | 2791 | 24021124 | 1.071 s | 187.591 s | 23 ms | 1297 ms |
+| `output`, the encoder's MPEG-TS | 2970 | 95903312 | 1.542 s | 187.604 s | 10 ms | 1306 ms |
+| `jpeg`, frames of the fallback decoder | 1487 | 132037191 | 1.319 s | 187.592 s | 22 ms | 1339 ms |
+
+FFmpeg's counters from the last progress block, `last_progress_age_ms` 9:
+`frames` 2790, `dropped` 0, `duplicated` 0, `out_time_ms` 186416, `bytes`
+95903312, `last_frame_ms` 187604, and no `last_drop_ms` because `dropped`
+never rose. Readers: video and audio each `attached` 1, `backpressure` 0,
+`closed` 1, `revoked` 0. The audio row of the same attempt: AAC in ADTS at
+16 kHz mono, 2915 chunks, 559741 bytes, last data 144 ms before the end,
+largest gap 1758 ms, stream ended and destroyed, stop confirmed.
+`assessment.findings` holds no `video_stall` finding, only three audio
+findings for this attempt.
+
+The browser and go2rtc samples of the same attempt, HA's `live_playback` row
+without a `fallback`, 1248 ticks and 1247 acknowledgements, the elapsed time
+on the browser's clock from the card's start:
+
+| Sample | Elapsed | Frames received / decoded / dropped | Painted | Keyframes | PLI | Lost / NACK | Freezes | Wait per frame | Target | Decode per frame | go2rtc H.264 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `playing` | 1.7 s | 6 / 1 / 0 | 1 | 1 | 0 | 0 / 0 | 0 | 11 ms over 2 frames | 12.5 ms | 9.0 ms | 6 / 6 |
+| `startup` | 6.1 s | 68 / 65 / 1 | 62 | 3 | 0 | 0 / 0 | 2 of 729 ms | 120 ms over 65 frames | 96 ms | 3.6 ms | 68 / 68 |
+| `audio_check` | 16.1 s | 219 / 216 / 1 | 213 | 8 | 0 | 0 / 0 | 2 of 729 ms | 95 ms over 216 frames | 87 ms | 3.5 ms | 219 / 219 |
+
+The card takes no further sample unless it falls back, so the browser's
+counters after 16.1 s are not in the download. The late audio peer had
+received 720 Opus packets by 16.1 s.
+
+- The row holds no trace of the stall that #122 fixed. FFmpeg's video sync
+  handed 2790 frames to the encoder and dropped none against 2791 P2P video
+  chunks. The encoder's output flowed from 1.542 s to 10 ms before the end
+  with no gap above 1306 ms, the order of the largest gaps in the input
+  (1297 ms) and the JPEG frames (1339 ms). On 0.8.33 the output stopped at
+  46.969 s while `dropped` rose to 429, and on 0.8.31 it stopped at 45.116 s.
+- `out_time_ms` ended at 186416, 151 ms short of the 186567 ms from the
+  encoder's start at 1.037 s to its last chunk, where the 0.8.33 row ended
+  about 4 s behind its 44.9 s of output. With the origin fixed at the spawn a
+  rebuild can no longer set the stamps back, so this agrees with `dropped` 0
+  but does not show whether a rebuild happened.
+- The seven dated fallbacks of this camera recorded here since 2026-09-19 came
+  between 18.4 s and 54.6 s: 18.4 s on 0.8.27, 54.6 s on 0.8.28, 20.8, 50.9
+  and 54.2 s on 0.8.29, 51.1 s on 0.8.31 and 52.8 s on 0.8.33. This attempt
+  ran 187.6 s, more than three times the latest of them. Whether the T8425's
+  stream changed its frame size or pixel format during it is not in the
+  download, as on 0.8.33, so the evidence is a run far past every earlier
+  stall with nothing dropped, not a rebuild observed and survived.
+- At 16.1 s the browser had waited 95 ms per frame, dropped one frame and sent
+  no PLI, against 376 ms, 11 dropped frames and one PLI at the same sample on
+  0.8.33. That fits the 0.8.33 note that its early rebuild episode may account
+  for part of the browser's wait, but one attempt does not establish it. The
+  browser side otherwise repeats the earlier attempts: connected host to host
+  over UDP, zero packets lost, zero NACK and 3.5 to 3.6 ms of decode time per
+  frame with the FFmpeg software decoder.
+- go2rtc closed its video reader when the view closed. The bridge destroyed no
+  reader and revoked no grant, because no fallback happened.
+- The 1800-second cap and the free primary session are not touched by this
+  run, and the stop at its end was device-confirmed. A WebRTC session up to
+  the cap on this hardware remains unverified.
+
+Three starts without media before the attempt. The download holds three
+earlier rows of this camera after the bridge's start-up connection at
+14:28:45 UTC that the tester's comment does not mention:
+
+| Start (UTC) | Duration | Bridge events | HA row |
+| --- | --- | --- | --- |
+| 14:32:57.341 | 14.728 s | `start`, `no_viewers` at 14.727 s | no offer |
+| 14:39:15.924 | 10.787 s | `start`, `no_viewers` at 10.786 s | no offer |
+| 14:39:29.516 | 20.189 s | `start`, `fallback_startup_timeout` at 14.999 s, `viewer_timeout` at 20.188 s, `no_viewers` at 20.189 s | no offer, `fallback: startup_timeout` |
+
+None of the three has an input chunk, a codec or an encoder mode, and each
+audio row ends as `failed` with no data, 0.6, 0.6 and 0.4 s after its viewer
+left.
+
+- The HomeBase sent no stream metadata in any of them. `client.startLive` had
+  not resolved when the viewer left, while the three recorded attempts on this
+  camera that played received it 1.0 to 1.4 s after the request (`hevc` at
+  1.383 s on 0.8.31, 1.435 s on 0.8.33 and 1.037 s here). The first two ended
+  when the view was closed before the bridge's 15 s startup fallback. The
+  third switched at 15.0 s to a JPEG fallback that had no frame to show, and
+  ended at the 20 s that `StreamHub` in `bridge/src/streams.ts` gives a first
+  viewer to acknowledge a frame. HA's rows hold no WebRTC offer, as expected
+  without the bridge's `ready` message.
+- The camera's P2P session and its command channel worked in all three. With
+  `live_max_streams_per_station: 3` the client opens a separate session per
+  start (`openExtraLive` in `src/device-transport.ts` of client 0.18.1). When
+  the caller cancels after START was issued, the client confirms a STOP on
+  that session and emits `live-stop` with `confirmed: true` only if the
+  HomeBase answered `CMD_STOP_REALTIME_MEDIA` with return code 0. The bridge
+  admitted the third start 2.8 s after the second ended, which
+  `StreamHub.attach` allows only after `stopped`. `stopped` follows either
+  that confirmed `live-stop` or a completed recovery, which starts 9 s after
+  the end at the earliest and closes and reconnects the station session. The
+  download holds no station reconnect after the start-up connection, so no
+  recovery ran after any of the three and each STOP was confirmed. The audio
+  rows end when the cancelled start returned from the client, after that
+  confirmation. So each START went out on a working session and the HomeBase
+  acknowledged the STOP, but it sent no stream.
+- Why is not in the download. The P2P library receives the HomeBase's result
+  for `CMD_START_REALTIME_MEDIA` and, when no data follows it within 5 s, ends
+  the stream and sends STOP by itself (`waitForStreamData` in the client's
+  vendored `vendor/src/p2p/session.ts`). The client's start waits only for the
+  stream's metadata and records neither that result nor that end, so whether
+  the HomeBase refused the start, accepted it and sent nothing, or never
+  answered it is open.
+  [eufy-mega-client issue #187](https://github.com/keesmod/eufy-mega-client/issues/187)
+  adds that report to the client. A bridge row can carry it after a client
+  release.
+- The 0.8.31 download of 2026-09-23 also held starts without media, the
+  dashboard starts of all three cameras at 09:54:35 for 5 to 7 s, followed by
+  one station reconnect from 09:54:49 to 09:54:51 UTC that fits a recovery 9 s
+  after the T8425's end. The three here are single starts of one camera, up to
+  20 s long, and none needed a recovery.
+
+Reported, not independently reproduced. Source: the tester's comment and
+redacted download on issue #94.
