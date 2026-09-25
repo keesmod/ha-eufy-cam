@@ -137,9 +137,10 @@ function fixture(limit?: number, mainsSeconds?: number) {
       commandSent: true,
       state: { ...state, guardMode: mode, currentMode: mode },
     }),
-    startLive: async (id: string, options?: { maxDurationMs?: number }) => {
+    startLive: async (id: string, options?: { maxDurationMs?: number; onProgress?: (progress: { stage: string; elapsedMs: number }) => void }) => {
       calls.push('start');
       bounds.push(options?.maxDurationMs ?? null);
+      options?.onProgress?.({ stage: 'metadata', elapsedMs: 12 });
       let finish!: (value: { confirmed: boolean; reason: 'device' }) => void;
       const ended = new Promise<{ confirmed: boolean; reason: 'device' }>((resolve) => {
         finish = resolve;
@@ -229,6 +230,18 @@ test('the mains bound reaches the client as the ceiling and applies only to came
     } finally {
       await f.backend.close();
     }
+  }
+});
+test('the library\'s live start stages reach the caller unchanged', async () => {
+  const f = fixture();
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    const seen: unknown[] = [];
+    await f.backend.startLive('CAM', undefined, progress => seen.push(progress));
+    assert.deepEqual(seen, [{ stage: 'metadata', elapsedMs: 12 }]);
+    await f.backend.stopLive('CAM');
+  } finally {
+    await f.backend.close();
   }
 });
 test('EUFY_LIVE_MAX_STREAMS_PER_STATION accepts whole numbers from 1 to 4 and defaults to 1', () => {
@@ -682,7 +695,7 @@ for (const empty of [false,true])
       const rows=lines.map(line=>JSON.parse(line));
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
-      assert.equal(summary.software.library,'0.18.1');
+      assert.equal(summary.software.library,'0.21.0');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);

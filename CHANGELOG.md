@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.8.35 - 2026-09-25
+
+### A live start without video says how far it got
+
+- Bridge 0.8.28 includes client 0.21.0 and adds a `start` object to every
+  live video row in the diagnostics download: when the camera's P2P session
+  was ready, when START went out, when the station answered it and with which
+  return code, when the P2P library gave the stream up without media, and when
+  the stream's metadata arrived. The three T8425 starts on #94 that got no
+  stream could not say whether the HomeBase refused START, accepted it and
+  sent nothing, or never answered. Refs #94 and
+  keesmod/eufy-mega-client#187.
+- Integration 0.8.35 keeps these fields in the download, and its assessment
+  gains a `live_start` finding for a finished session without P2P video that
+  names the furthest stage.
+- Client 0.21.0 also carries client 0.19.0 and 0.20.0, which change only the
+  mower side. Live media, the fallback timing, the encoder and the card are
+  unchanged apart from the card's version.
+
+### Upgrade and rollback
+
+Update the bridge add-on or Docker image to 0.8.28 and the integration to
+0.8.35 in HACS, restart Home Assistant and refresh the dashboard. To roll
+back, restore bridge 0.8.27 and integration 0.8.34 from your backups.
+Integration 0.8.34 also works with bridge 0.8.28 but leaves the `start` fields
+out of the download.
+
 ## 0.8.34 - 2026-09-24
 
 ### Live video keeps running when a camera changes its frame size mid-stream

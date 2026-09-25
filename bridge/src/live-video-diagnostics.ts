@@ -51,6 +51,29 @@ export interface LiveVideoEncoderReport extends LiveEncoderProgress {
   last_frame_ms?: number;
   last_drop_ms?: number;
 }
+/**
+ * How far the library's live start got, in milliseconds since the bridge
+ * requested the stream: the camera's P2P session ready, START issued, the
+ * station's answer with its numeric `return_code`, the library ending the
+ * stream without media, and the stream's metadata. Each is kept once. The
+ * object exists from the row's start, so an empty one means no stage yet.
+ */
+export interface LiveVideoStartReport {
+  session_ready_ms?: number;
+  issued_ms?: number;
+  result_ms?: number;
+  return_code?: number;
+  no_data_end_ms?: number;
+  metadata_ms?: number;
+}
+const startStages = {
+  session_ready: 'session_ready_ms',
+  start_issued: 'issued_ms',
+  start_result: 'result_ms',
+  no_data_end: 'no_data_end_ms',
+  metadata: 'metadata_ms',
+} as const;
+const int32 = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= -2147483648 && value <= 2147483647;
 export interface LiveVideoReport {
   attempt: number;
   audio_attempt?: number;
@@ -64,6 +87,7 @@ export interface LiveVideoReport {
   jpeg: LiveVideoStageReport;
   readers: LiveVideoReaderReport;
   audio_readers: LiveVideoReaderReport;
+  start: LiveVideoStartReport;
   pipeline?: { event: DiagnosticEvent; elapsed_ms: number }[];
   duration_ms: number;
 }
@@ -112,8 +136,19 @@ export class LiveVideoObservation implements LiveVideoObserver {
       attempt: randomInt(1, 2 ** 48), model: /^T[A-Z0-9]{4}$/.test(model) ? model : 'unavailable', state: 'starting',
       encoder: { mode: 'unavailable', exits: 0, stderr_chunks: 0 },
       input: this.stages.input.report, output: this.stages.output.report, jpeg: this.stages.jpeg.report,
-      readers: this.readerCounts.video.report, audio_readers: this.readerCounts.audio.report, duration_ms: 0,
+      readers: this.readerCounts.video.report, audio_readers: this.readerCounts.audio.report, start: {}, duration_ms: 0,
     };
+  }
+  /** One stage of the library's live start, timed on the bridge's clock. Anything else is ignored. */
+  startStage(progress: unknown): void {
+    if (this.closed || typeof progress !== 'object' || progress === null) return;
+    const { stage, returnCode } = progress as { stage?: unknown; returnCode?: unknown };
+    if (typeof stage !== 'string' || !Object.hasOwn(startStages, stage)) return;
+    const start = this.report.start;
+    const key = startStages[stage as keyof typeof startStages];
+    if (start[key] !== undefined) return;
+    start[key] = elapsed(this.now() - this.started);
+    if (stage === 'start_result' && int32(returnCode)) start.return_code = returnCode;
   }
   /** The audio row's attempt, so HA can put both bridge rows next to its live_playback row. */
   correlate(audioAttempt: unknown): void {
@@ -186,6 +221,7 @@ export class LiveVideoObservation implements LiveVideoObserver {
       jpeg: this.stages.jpeg.snapshot(this.closed),
       readers: { ...this.report.readers },
       audio_readers: { ...this.report.audio_readers },
+      start: { ...this.report.start },
       duration_ms: this.closed ? this.report.duration_ms : elapsed(this.now() - this.started),
       ...(this.report.pipeline ? { pipeline: this.report.pipeline.map(row => ({ ...row })) } : {}),
     };

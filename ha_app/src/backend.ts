@@ -3,6 +3,7 @@ import type { DiagnosticEvent } from './diagnostics.js';
 import type { EventEmitter } from 'node:events';
 import type { Readable } from 'node:stream';
 import type { LiveAdmission } from './streams.js';
+import type { LiveStartProgress } from '@keesmod/eufy-mega-client';
 
 export interface Credentials {
   username: string;
@@ -123,7 +124,8 @@ export interface Backend extends EventEmitter {
   inventory(): CameraInfo[];
   hasCamera(serial: string): boolean;
   canStartLive(serial: string): LiveAdmission;
-  startLive(serial: string, maxDurationMs?: number): Promise<void>;
+  /** `onProgress` receives the library's start stages for the camera's live video row. */
+  startLive(serial: string, maxDurationMs?: number, onProgress?: (progress: LiveStartProgress) => void): Promise<void>;
   /** Upper bound in milliseconds for one live session of this camera, 120000 unless the backend allows more. */
   liveBoundMs?(serial: string): number;
   stopLive(serial: string): Promise<void>;

@@ -104,7 +104,7 @@ export class Eufy extends EventEmitter {
       this.metrics.start_requests++;
       this.metrics.last_start_request = new Date().toISOString();
       try {
-        await this.backend.startLive(serial, this.backend.liveBoundMs?.(serial));
+        await this.backend.startLive(serial, this.backend.liveBoundMs?.(serial), progress => row.startStage(progress));
       } catch (error) {
         row.finish('failed');
         throw error;
