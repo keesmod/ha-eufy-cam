@@ -81,6 +81,7 @@ test('output, JPEG, readers, encoder mode and exits are counted with bounded fix
     jpeg: { chunks: 1, bytes: 30000, first_data_ms: 4700, last_data_ms: 4700, last_data_age_ms: 1300 },
     readers: { attached: 2, backpressure: 1, closed: 1, revoked: 0, last_destroy_ms: 5000 },
     audio_readers: { attached: 1, backpressure: 0, closed: 0, revoked: 1, last_destroy_ms: 5200 },
+    start: {},
     pipeline: [
       { event: 'start', elapsed_ms: 100 }, { event: 'media_hardware_timeout', elapsed_ms: 4000 },
       { event: 'media_encoder_exit', elapsed_ms: 4000 }, { event: 'media_software_fallback', elapsed_ms: 4100 },
@@ -144,6 +145,30 @@ test('a software fallback keeps only the counters of the replacement encoder pro
   now = 5000; row.progress({ frames: 5, dropped: 0 });
   assert.deepEqual(row.snapshot().encoder, { mode: 'software', exits: 0, stderr_chunks: 0, software_fallback_ms: 4000, frames: 5, dropped: 0, last_progress_ms: 5000, last_progress_age_ms: 0, last_frame_ms: 5000 },
     'The replacement counts from zero, so its first frames are a rise and no drop is dated');
+});
+
+test('the library\'s start stages are timed on the bridge clock, kept once, bounded and frozen at the end', () => {
+  let now = 0;
+  const row = new LiveVideoDiagnostics(() => now).begin('T8425');
+  assert.deepEqual(row.snapshot().start, {}, 'No stage yet leaves the start object empty');
+  now = 180; row.startStage({ stage: 'session_ready', elapsedMs: 170 });
+  now = 190; row.startStage({ stage: 'start_issued', elapsedMs: 180 });
+  now = 400; row.startStage({ stage: 'start_result', elapsedMs: 390, returnCode: -133 });
+  now = 450; row.startStage({ stage: 'start_result', elapsedMs: 440, returnCode: 0 });
+  for (const junk of [null, 'metadata', { stage: 'unknown' }, { stage: 'toString' }, { stage: 7 }]) row.startStage(junk);
+  now = 5400; row.startStage({ stage: 'no_data_end', elapsedMs: 5390 });
+  assert.deepEqual(row.snapshot().start, { session_ready_ms: 180, issued_ms: 190, result_ms: 400, return_code: -133, no_data_end_ms: 5400 },
+    'Only the first answer counts, and the bridge clock times every stage');
+  const copy = row.snapshot().start!;
+  copy.issued_ms = 1;
+  assert.equal(row.snapshot().start!.issued_ms, 190, 'A snapshot is a copy');
+  const other = new LiveVideoDiagnostics(() => now).begin('T8425');
+  other.startStage({ stage: 'start_result', returnCode: 2 ** 40 });
+  other.startStage({ stage: 'metadata' });
+  assert.deepEqual(other.snapshot().start, { result_ms: 0, metadata_ms: 0 }, 'An unbounded return code is omitted');
+  now = 12000; row.finish('ended');
+  row.startStage({ stage: 'metadata' });
+  assert.equal(row.snapshot().start!.metadata_ms, undefined, 'Stages after the end are ignored');
 });
 
 test('reports are bounded, sanitized, capped at one hour and detach evicted observations', async () => {

@@ -556,6 +556,95 @@ def test_video_evidence_is_bounded_and_contains_no_identifiers_or_encoder_text()
         assert not [f for f in assessment["findings"] if f["stage"] == "video_stall"]
 
 
+def test_live_start_stages_are_bounded_and_explain_a_start_without_video():
+    from custom_components.eufy_viewer.diagnostic_assessment import assess
+    from custom_components.eufy_viewer.diagnostics import video_report
+
+    projected = video_report(
+        {
+            "state": "ended",
+            "start": {
+                "session_ready_ms": 180,
+                "issued_ms": 190,
+                "result_ms": True,
+                "return_code": -(2**31) - 1,
+                "no_data_end_ms": 3600001,
+                "metadata_ms": "PRIVATE",
+                "serial": "PRIVATE",
+            },
+        }
+    )
+    assert projected["start"] == {"session_ready_ms": 180, "issued_ms": 190}
+    assert video_report({"start": {"return_code": -133}})["start"] == {
+        "return_code": -133
+    }
+    assert "start" not in video_report({"start": "PRIVATE"})
+
+    # The shape of the three T8425 starts of 2026-09-24: no P2P video at all.
+    quiet = {
+        "attempt": 36787778134067,
+        "model": "T8425",
+        "state": "ended",
+        "duration_ms": 20189,
+        "input": {"chunks": 0, "bytes": 0},
+        "output": {"chunks": 0, "bytes": 0},
+        "jpeg": {"chunks": 0, "bytes": 0},
+    }
+
+    def observation(start, **row):
+        raw = {**quiet, **row, "start": start}
+        findings = assess({"support": {"live_video": [video_report(raw)]}})["findings"]
+        starts = [f for f in findings if f["stage"] == "live_start"]
+        assert len(starts) == 1
+        assert starts[0]["attempt"] == 36787778134067
+        assert starts[0]["evidence"] == "support.live_video.start"
+        prefix = "No P2P video reached the bridge. "
+        assert starts[0]["observation"].startswith(prefix)
+        return starts[0]["observation"].removeprefix(prefix)
+
+    assert observation({}) == (
+        "The camera's P2P session did not become ready before the session "
+        "ended, so no START went out."
+    )
+    assert observation({}, state="failed") == (
+        "The start failed before the camera's P2P session was ready."
+    )
+    assert observation({"session_ready_ms": 180}) == (
+        "The camera's P2P session was ready at 180 ms, but no START followed."
+    )
+    issued = {"session_ready_ms": 180, "issued_ms": 190}
+    assert observation(issued) == (
+        "START went out at 190 ms and the station did not answer it."
+    )
+    assert observation({**issued, "no_data_end_ms": 20190}) == (
+        "START went out at 190 ms and the station did not answer it, and the "
+        "P2P library ended the stream at 20190 ms."
+    )
+    answered = {**issued, "result_ms": 400}
+    assert observation({**answered, "return_code": -133}) == (
+        "The station refused START with return code -133 at 400 ms."
+    )
+    assert observation({**answered, "return_code": 0, "no_data_end_ms": 5400}) == (
+        "The station answered START with return code 0 at 400 ms and sent no "
+        "stream, and the P2P library ended the stream at 5400 ms."
+    )
+    assert observation(answered) == (
+        "The station answered START at 400 ms and sent no stream."
+    )
+    assert observation({**answered, "return_code": 0, "metadata_ms": 1037}) == (
+        "The stream's metadata arrived at 1037 ms, but no P2P video chunk "
+        "reached the bridge."
+    )
+    # Video that arrived, a session still starting and an older bridge add none.
+    for row in (
+        {**quiet, "input": {"chunks": 2791}, "start": answered},
+        {**quiet, "state": "starting", "start": {}},
+        quiet,
+    ):
+        findings = assess({"support": {"live_video": [video_report(row)]}})
+        assert not [f for f in findings["findings"] if f["stage"] == "live_start"]
+
+
 def test_video_stall_names_the_ffmpeg_stage_only_when_its_counters_cover_the_stop():
     from custom_components.eufy_viewer.diagnostic_assessment import assess
     from custom_components.eufy_viewer.diagnostics import video_report

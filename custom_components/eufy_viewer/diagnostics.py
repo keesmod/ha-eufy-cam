@@ -373,6 +373,17 @@ _VIDEO_ENCODER_BOUNDS = {
 }
 
 
+# How far the library's live start got, on the bridge's clock, and the
+# station's numeric answer to START. Bridge 0.8.28 sends it for every row.
+_VIDEO_START_BOUNDS = {
+    **dict.fromkeys(
+        "session_ready_ms issued_ms result_ms no_data_end_ms metadata_ms".split(),
+        (0, 3600000),
+    ),
+    "return_code": (-(2**31), 2**31 - 1),
+}
+
+
 def video_report(raw: Any) -> dict[str, Any]:
     """Preserve the bridge's video path counters, never encoder text or payloads."""
     if not isinstance(raw, dict):
@@ -408,6 +419,8 @@ def video_report(raw: Any) -> dict[str, Any]:
     for readers in ("readers", "audio_readers"):
         if isinstance(raw.get(readers), dict):
             result[readers] = _bounded(raw[readers], _VIDEO_READER_BOUNDS)
+    if isinstance(raw.get("start"), dict):
+        result["start"] = _bounded(raw["start"], _VIDEO_START_BOUNDS)
     if isinstance(raw.get("pipeline"), list):
         result["pipeline"] = _pipeline(raw["pipeline"])
     return result

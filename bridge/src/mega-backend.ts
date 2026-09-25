@@ -10,6 +10,7 @@ import {
   type DiscoveryResult,
   type StationState,
   type LiveStream,
+  type LiveStartProgress,
   type AuthState as MegaAuth,
 } from '@keesmod/eufy-mega-client';
 import { Storage } from './storage.js';
@@ -513,7 +514,7 @@ export class MegaBackend extends EventEmitter implements Backend {
     if (device?.kind !== 'camera' || device.battery !== null) return LIVE_BOUND_DEFAULT_MS;
     return this.liveMaxSecondsMains * 1000;
   }
-  async startLive(serial: string, maxDurationMs?: number): Promise<void> {
+  async startLive(serial: string, maxDurationMs?: number, onProgress?: (progress: LiveStartProgress) => void): Promise<void> {
     if (!this.client || !this.hasCamera(serial) || this.streams.has(serial))
       throw new Error('Camera unavailable');
     // The caller may lower the bound, never raise it above this camera's own.
@@ -539,7 +540,7 @@ export class MegaBackend extends EventEmitter implements Backend {
     this.streams.set(serial, owned);
     owned.starting = (async () => {
       try {
-        const handle = await this.client!.startLive(serial, { signal: abort.signal, maxDurationMs: bound });
+        const handle = await this.client!.startLive(serial, { signal: abort.signal, maxDurationMs: bound, onProgress });
         owned.handle = handle;
         void handle.ended.then((result) => {
           owned.audio.finish('ended', result.confirmed);

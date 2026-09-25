@@ -213,6 +213,35 @@ test('shutdown cancels pending automatic restore retry', async t => {
   assert.equal(initialize.mock.callCount(), 1);
 });
 
+test('a start without media keeps the library\'s start stages in the camera\'s live video row', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'eufy-viewer-test-'));
+  const backend = fixtureBackend();
+  // The HomeBase answers START and sends no stream, so no live-start follows.
+  backend.startLive = async (_serial, _bound, onProgress) => {
+    for (const stage of ['session_ready', 'start_issued'] as const) onProgress?.({ stage, elapsedMs: 1 });
+    onProgress?.({ stage: 'start_result', elapsedMs: 2, returnCode: 0 });
+    onProgress?.({ stage: 'no_data_end', elapsedMs: 3 });
+  };
+  const bridge = new Eufy(new Storage(directory), 'mega', false, () => backend);
+  try {
+    await bridge.login({ username: 'test@example.invalid', password: 'fixture-only', country: 'NL' });
+    const peer = { bufferedAmount: 0, send: () => {}, close: () => {} };
+    bridge.hub.attach('CAM1', peer);
+    await new Promise(resolve => setImmediate(resolve));
+    const [row] = bridge.supportReport().live_video!;
+    assert.equal(row!.input.chunks, 0);
+    assert.deepEqual(Object.keys(row!.start!), ['session_ready_ms', 'issued_ms', 'result_ms', 'return_code', 'no_data_end_ms']);
+    assert.equal(row!.start!.return_code, 0);
+    bridge.hub.detach('CAM1', peer);
+    const [ended] = bridge.supportReport().live_video!;
+    assert.equal(ended!.state, 'ended');
+    assert.deepEqual(ended!.start, row!.start, 'The stages stay with the finished row');
+    bridge.hub.stopped('CAM1');
+  } finally {
+    await bridge.close(); await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('refusing reauthentication during a viewer leaves the connected session intact', async () => {
   const bridge = new Eufy(new Storage('/unused'));
   bridge.auth = { state: 'connected' };
