@@ -781,8 +781,16 @@ left.
   the HomeBase refused the start, accepted it and sent nothing, or never
   answered it is open.
   [eufy-mega-client issue #187](https://github.com/keesmod/eufy-mega-client/issues/187)
-  adds that report to the client. A bridge row can carry it after a client
-  release.
+  added that report in client 0.21.0, and bridge 0.8.28 with integration
+  0.8.35 carry it in each row's `start` object, released as v0.8.35 on
+  2026-09-25, see
+  [live start stages](LIVE_DIAGNOSTICS.md#live-start-stages-bridge-0828).
+- Asked on #94, the tester reported on 2026-09-25 that nothing else had the
+  T8425 open live during the three starts, neither the eufy app nor another
+  integration, and that as far as he knows Eufy Viewer was the only client
+  requesting the stream. A competing live view does not explain them. The
+  next start without media on v0.8.35 will say whether the HomeBase refused
+  START, accepted it and sent nothing, or never answered.
 - The 0.8.31 download of 2026-09-23 also held starts without media, the
   dashboard starts of all three cameras at 09:54:35 for 5 to 7 s, followed by
   one station reconnect from 09:54:49 to 09:54:51 UTC that fits a recovery 9 s
