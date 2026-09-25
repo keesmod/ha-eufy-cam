@@ -457,3 +457,9 @@ graph had run. Bridge 0.8.27 stamps from the moment it starts the encoder
 process instead, so a rebuild keeps the clock and the sync drops nothing
 ([issue #122](https://github.com/keesmod/ha-eufy-cam/issues/122)). The numbers
 are in the [2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md).
+
+The same tester's next NVIDIA attempt on the T8425, with bridge 0.8.27 on
+2026-09-24, played 187.6 s on WebRTC until the view was closed: `frames` rose
+to 2790 in the last block, `dropped` stayed 0 and the output flowed to 10 ms
+before the end with no gap above 1306 ms. The row cannot show whether a
+rebuild happened during that attempt. The numbers are in the same record.
