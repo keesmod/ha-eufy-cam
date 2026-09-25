@@ -309,11 +309,16 @@ unverified.
 Before that attempt the same download holds three starts of this camera in
 which the HomeBase sent no stream within 14.7, 10.8 and 20.2 s, the third
 ending in `fallback_startup_timeout`, although the camera's own P2P session
-worked and the HomeBase acknowledged the STOP after each. The client does not
-record the HomeBase's answer to the start command, so the download cannot say
-whether the HomeBase refused the start or accepted it and sent nothing.
+worked and the HomeBase acknowledged the STOP after each. The tester reports
+that nothing else had the camera open live during those starts, neither the
+eufy app nor another integration. Client 0.18.1 did not record the HomeBase's
+answer to the start command, so the download cannot say whether the HomeBase
+refused the start or accepted it and sent nothing.
 [eufy-mega-client issue #187](https://github.com/keesmod/eufy-mega-client/issues/187)
-adds that report to the client. Every number is in the
+added that report in client 0.21.0, which bridge 0.8.28 and integration 0.8.35
+carry in the download, released as v0.8.35 on 2026-09-25, see
+[live start stages](LIVE_DIAGNOSTICS.md#live-start-stages-bridge-0828). Every
+number is in the
 [2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md). The 1800-second cap
 and the free primary session are not touched by this run, and the stop at its
 end was device-confirmed. Reported, not independently reproduced. Source:
