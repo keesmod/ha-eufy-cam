@@ -54,6 +54,54 @@ def _encoder_stage(row: dict[str, Any]) -> str:
     )
 
 
+def _start_observation(start: dict[str, Any], failed: bool) -> str:
+    """Say how far a live start without P2P video got, from its start stages."""
+    ready, issued, answered, code, ended, metadata = (
+        start.get(key)
+        for key in (
+            "session_ready_ms",
+            "issued_ms",
+            "result_ms",
+            "return_code",
+            "no_data_end_ms",
+            "metadata_ms",
+        )
+    )
+    given_up = (
+        f", and the P2P library ended the stream at {ended} ms"
+        if type(ended) is int
+        else ""
+    )
+    if type(metadata) is int:
+        return (
+            f"The stream's metadata arrived at {metadata} ms, but no P2P video "
+            "chunk reached the bridge."
+        )
+    if type(answered) is int and type(code) is int and code != 0:
+        return f"The station refused START with return code {code} at {answered} ms."
+    if type(answered) is int:
+        accepted = " with return code 0" if code == 0 else ""
+        return (
+            f"The station answered START{accepted} at {answered} ms and sent no "
+            f"stream{given_up}."
+        )
+    if type(issued) is int:
+        return (
+            f"START went out at {issued} ms and the station did not answer "
+            f"it{given_up}."
+        )
+    if type(ready) is int:
+        return (
+            f"The camera's P2P session was ready at {ready} ms, but no START followed."
+        )
+    if failed:
+        return "The start failed before the camera's P2P session was ready."
+    return (
+        "The camera's P2P session did not become ready before the session "
+        "ended, so no START went out."
+    )
+
+
 def assess(report: dict[str, Any]) -> dict[str, Any]:
     """Only inspect the projected report. Findings never contain upstream text."""
     findings: list[dict[str, Any]] = []
@@ -162,6 +210,15 @@ def assess(report: dict[str, Any]) -> dict[str, Any]:
                 "point that kept flowing clears the points before it."
                 + _encoder_stage(row),
                 "support.live_video",
+                row.get("attempt"),
+            )
+        start = row.get("start")
+        if isinstance(start, dict) and not row.get("input", {}).get("chunks"):
+            add(
+                "live_start",
+                "No P2P video reached the bridge. "
+                + _start_observation(start, row.get("state") == "failed"),
+                "support.live_video.start",
                 row.get("attempt"),
             )
     lives = report.get("live_playback", [])

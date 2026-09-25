@@ -463,3 +463,40 @@ The same tester's next NVIDIA attempt on the T8425, with bridge 0.8.27 on
 to 2790 in the last block, `dropped` stayed 0 and the output flowed to 10 ms
 before the end with no gap above 1306 ms. The row cannot show whether a
 rebuild happened during that attempt. The numbers are in the same record.
+
+## Live start stages, bridge 0.8.28
+
+Bridge 0.8.28 with client 0.21.0 adds a `start` object to every
+`support.live_video` row. It says how far the library's live start got, in
+milliseconds since the bridge requested the stream, on the bridge's clock like
+the rest of the row:
+
+| Field | Stage |
+| --- | --- |
+| `session_ready_ms` | The camera's P2P session is connected and encrypted. With `live_max_streams_per_station` above 1 this is the camera's own session |
+| `issued_ms` | START was handed to that session |
+| `result_ms` and `return_code` | The station answered START, with its numeric return code, 0 for success |
+| `no_data_end_ms` | The P2P library ended the stream because no media followed, 5 s after the station's answer or 20 s after START without one |
+| `metadata_ms` | The stream's metadata arrived, just before `hevc` or `h264` |
+
+The object exists from the row's first moment, so an empty object means no
+stage yet, and a row without it comes from an older bridge. Each field is kept
+once, only the first answer to START counts, and a return code outside a
+32-bit integer is omitted. Integration 0.8.35 projects the fields with the
+same bounds. Media flow, the fallback timing and every other row field are
+unchanged.
+
+When a finished row received no P2P video, the `live_start` finding in
+`assessment` names how far the start got: the session never became ready,
+START went out without an answer, the station refused START with its return
+code, or the station answered and sent no stream, each with its time and, when
+it happened, the moment the P2P library gave the stream up.
+
+On 2026-09-24 the tester of
+[issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94) had three T8425
+starts in which the HomeBase sent no stream within 10.8 to 20.2 s although
+the camera's P2P session answered commands. The client then dropped the
+station's answer to START
+([eufy-mega-client issue #187](https://github.com/keesmod/eufy-mega-client/issues/187)),
+so those rows could not say which of these it was. The numbers are in the
+[2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md).

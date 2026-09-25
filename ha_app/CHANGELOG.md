@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.28 - 2026-09-25
+
+- Include client 0.21.0. Every live video row in the diagnostics carries a
+  `start` object with the library's start stages: the camera's P2P session
+  ready, START issued, the station's answer with its return code, the P2P
+  library giving the stream up without media, and the stream's metadata. A
+  start without video then says how far it got. Refs #94.
+
 ## 0.8.27 - 2026-09-24
 
 - The live encoder stamps frames with the wall clock since the bridge started
