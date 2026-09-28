@@ -712,6 +712,8 @@ test('a failed station connect records the last stage the library reported', asy
     options.push(value);
     value?.onProgress?.({stage:'lookup',elapsedMs:0,inventoryAddress:false});
     value?.onProgress?.({stage:'station_found',elapsedMs:40});
+    // A stage a newer library might add does not replace the last known one.
+    value?.onProgress?.({stage:'future_stage',elapsedMs:50});
     throw new EufyError('device_request_timeout');
   };
   try {

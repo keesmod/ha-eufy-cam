@@ -100,7 +100,7 @@ See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 The **0.8.37** integration and bridge **0.8.29** include client **0.26.0**,
 which discovers eufyCam 2C cameras reported as `T8113-Z`, recognizes the
 Floodlight Cam 2K `T8424` as a standalone camera, also looks for the HomeBase
-by broadcast on every network interface of the host, and records how far a
+by broadcast on every external IPv4 interface of the host, and records how far a
 failed HomeBase connection got.
 The **0.8.36** integration puts the inline live controls in the compact
 toolbar below the video at every card width, so they no longer cover the

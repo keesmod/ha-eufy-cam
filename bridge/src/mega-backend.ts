@@ -18,6 +18,7 @@ import { Storage } from './storage.js';
 import { migrationInventory, verifyInventory, type MigrationInventory } from './migration.js';
 import {
   DiscoveryDiagnostics,
+  connectionStages as knownConnectionStages,
   diagnosticCode,
   diagnosticModel,
   type StationConnectionDetail,
@@ -72,6 +73,8 @@ function connectionStages(): {
   return {
     detail,
     onProgress: (progress) => {
+      // A stage a newer library adds keeps the last known one.
+      if (!knownConnectionStages.has(progress.stage)) return;
       detail.stage = progress.stage;
       if (typeof progress.inventoryAddress === 'boolean')
         detail.inventoryAddress = progress.inventoryAddress;

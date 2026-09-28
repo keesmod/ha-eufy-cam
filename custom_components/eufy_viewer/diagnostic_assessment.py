@@ -103,10 +103,6 @@ def _start_observation(start: dict[str, Any], failed: bool) -> str:
 
 
 _CONNECTION_STAGES = {
-    "none": (
-        "Owner connection was not established. It failed before the bridge "
-        "looked for the HomeBase on the LAN."
-    ),
     "lookup": (
         "Owner connection was not established. No HomeBase answered the local "
         "lookup{target}. The bridge host did not reach the HomeBase on its LAN."
@@ -119,10 +115,10 @@ _CONNECTION_STAGES = {
         "Owner connection was not established. The HomeBase opened the P2P "
         "session but the command key was not established."
     ),
-    "encryption_ready": (
-        "Owner connection was established, and the attempt still ended with an error."
-    ),
 }
+# Only a connection that ran out of time says where the HomeBase stopped
+# answering. Other failures, such as a concurrent attempt, keep the generic text.
+_CONNECTION_TIMEOUTS = {"device_request_timeout", "device_disconnected"}
 
 
 def _connection_stage(row: dict[str, Any]) -> str:
@@ -130,11 +126,42 @@ def _connection_stage(row: dict[str, Any]) -> str:
     target = (
         " at its inventory LAN address or by broadcast"
         if address is True
-        else ", and the inventory had no LAN address, so only broadcasts were sent"
+        else ", and the inventory had no LAN address for it"
         if address is False
         else ""
     )
     return _CONNECTION_STAGES[row["stage"]].format(target=target)
+
+
+def _failed_connection(support: dict[str, Any], discovery: list[Any]) -> Any:
+    """The latest timed-out connect of a HomeBase that failed in the current report."""
+    reports = [r.get("report") for r in discovery if type(r.get("report")) is int]
+    if not reports:
+        return None
+    current = max(reports)
+    failing = {
+        r.get("ref")
+        for r in discovery
+        if r.get("report") == current
+        and r.get("station_status") in {"error", "disconnected"}
+    } | {
+        r.get("owner_ref")
+        for r in discovery
+        if r.get("report") == current
+        and r.get("owner_status") in {"error", "disconnected"}
+    }
+    failed = [
+        r
+        for r in support.get("recent_events", [])
+        if r.get("event") == "station_connection"
+        and r.get("phase") == "connect"
+        and r.get("status") == "error"
+        and r.get("report") == current
+        and r.get("device_ref") in failing
+        and r.get("reason") in _CONNECTION_TIMEOUTS
+        and r.get("stage") in _CONNECTION_STAGES
+    ]
+    return failed[-1] if failed else None
 
 
 def assess(report: dict[str, Any]) -> dict[str, Any]:
@@ -175,18 +202,11 @@ def assess(report: dict[str, Any]) -> dict[str, Any]:
         or r.get("station_status") in {"error", "disconnected"}
         for r in discovery
     ):
-        failed = [
-            r
-            for r in support.get("recent_events", [])
-            if r.get("event") == "station_connection"
-            and r.get("phase") == "connect"
-            and r.get("status") == "error"
-            and r.get("stage") in _CONNECTION_STAGES
-        ]
+        failed = _failed_connection(support, discovery)
         if failed:
             add(
                 "owner_connection",
-                _connection_stage(failed[-1]),
+                _connection_stage(failed),
                 "support.recent_events.station_connection",
             )
         else:

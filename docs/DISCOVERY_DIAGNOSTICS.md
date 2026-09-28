@@ -141,15 +141,22 @@ how far the attempt got, and the download's assessment names it:
 | `station_found` | The HomeBase answered the lookup but did not complete the P2P handshake |
 | `session_open` | The P2P session opened but the command key was not established |
 
-The same client version changes the lookup itself. The first lookup still goes to
-the LAN address from the inventory. When that stays silent for a second, or there
-is none, the retries also go to the broadcast address of every network interface
-of the bridge host, so a stale address or a Docker host whose first interface is
-a container bridge still finds the HomeBase. Only the HomeBase's own answer ends
-the lookup. `lookup` with `inventory_address=false` on a Docker host therefore
-points at broadcasts that do not reach the HomeBase's LAN, for example a
-different subnet or a network that blocks UDP broadcasts on port 32108. This
-follows [issue #130](https://github.com/keesmod/ha-eufy-cam/issues/130), where a
+The assessment uses the stage of the latest failed `connect` of a HomeBase that
+failed in the current report, and only when that attempt ran out of time
+(`device_request_timeout` or `device_disconnected`). Otherwise it keeps the
+generic text.
+
+The same client version changes the lookup itself. The first lookup still goes
+to the LAN address from the inventory. When that stays silent for a second, the
+retries also go to the broadcast address of every external IPv4 interface of
+the bridge host, at most 16. Without an inventory address, or an address the
+HomeBase last completed a handshake from, the first lookup already broadcasts.
+A stale address or a Docker host whose first interface is a container bridge
+therefore still finds the HomeBase. Only the HomeBase's own answer ends the
+lookup. `lookup` after all of that points at a HomeBase the bridge host cannot
+reach on its LAN, for example from a different subnet or on a network that
+blocks UDP broadcasts on port 32108. This follows
+[issue #130](https://github.com/keesmod/ha-eufy-cam/issues/130), where a
 HomeBase 3 on firmware 3.8.7.4 behind a Docker host ended every connection in
 `device_request_timeout`. The maintainer's HomeBase 3 on the same firmware
 connects, so the firmware alone does not explain that report.

@@ -10,9 +10,11 @@
   device type 8, with the same HomeBase 3 handling, snapshots, live view and
   recordings as `T8113`. The reporter on #129 saw exactly this working with a
   local patch, which is no longer needed. Other suffixes stay unsupported.
-- The Floodlight Cam 2K `T8424` with type 39 is recognized as a standalone
-  camera: `relationship=standalone` with `standalone_transport_unverified`
-  instead of `unsupported_device`. It still has no media, because standalone
+- The Floodlight Cam 2K `T8424` with type 39 is recognized. As its own
+  station, as on #129, it reports `relationship=standalone` with
+  `standalone_transport_unverified` instead of `unsupported_device`. Under a
+  HomeBase 3 parent it reports `unsupported_station`, because the HomeBase
+  only stores its video. It still has no media, because standalone
   cameras have no connection route yet
   ([eufy-mega-client#142](https://github.com/keesmod/eufy-mega-client/issues/142)).
 - The discovery report, the live diagnostics and the HA download keep a model
@@ -21,17 +23,20 @@
 ### HomeBase lookup on every network interface
 
 - The bridge still asks the HomeBase's LAN address from Eufy's inventory first.
-  When that stays silent for a second, or there is none, the retries also go to
-  the broadcast address of every network interface of the host. Only the
-  HomeBase's own answer ends the lookup. Earlier, a stale inventory address or
-  a Docker host whose first interface is a container bridge ended every
-  connection in `device_request_timeout`, as reported on #130. The cause on
-  that installation is not confirmed.
+  When that stays silent for a second, the retries also go to the broadcast
+  address of every external IPv4 interface of the host, at most 16. Without an
+  inventory address, or an address the HomeBase last completed a handshake
+  from, the first lookup already broadcasts. Only the HomeBase's own answer
+  ends the lookup. Earlier, a stale inventory address or a Docker host whose
+  first interface is a container bridge could end every connection in
+  `device_request_timeout`, the failure reported on #130. The cause on that
+  installation is not confirmed.
 - A failed HomeBase connection records how far it got in the
-  `station_connection` record: `stage` is `lookup`, `station_found` or
+  `station_connection` record: `stage` is `none`, `lookup`, `station_found` or
   `session_open`, and `inventory_address` says whether the inventory had a LAN
-  address. The diagnostics assessment names the stage instead of "does not
-  identify the network cause". See `docs/DISCOVERY_DIAGNOSTICS.md`.
+  address. For a connection that ran out of time in the current report, the
+  diagnostics assessment names the stage instead of "does not identify the
+  network cause". See `docs/DISCOVERY_DIAGNOSTICS.md`.
 
 ### Evidence and limits
 
