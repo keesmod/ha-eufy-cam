@@ -156,19 +156,24 @@ def _failed_connection(support: dict[str, Any], discovery: list[Any]) -> Any:
         for r in support.get("recent_events", [])
         if r.get("event") == "station_connection" and r.get("report") == current
     ]
-    # A HomeBase that connected again later in the report has no failure to explain.
-    latest = {r.get("device_ref"): r.get("status") for r in events}
-    failed = [
+    # Only failures after a HomeBase's last connection in the report still apply.
+    connected_at = {
+        r.get("device_ref"): index
+        for index, r in enumerate(events)
+        if r.get("status") == "connected"
+    }
+    timeouts = [
         r
-        for r in events
+        for index, r in enumerate(events)
         if r.get("phase") == "connect"
         and r.get("status") == "error"
         and r.get("device_ref") in failing
-        and latest.get(r.get("device_ref")) != "connected"
+        and index > connected_at.get(r.get("device_ref"), -1)
         and r.get("reason") in _CONNECTION_TIMEOUTS
-        and r.get("stage") in _CONNECTION_STAGES
     ]
-    return failed[-1] if failed else None
+    if not timeouts or timeouts[-1].get("stage") not in _CONNECTION_STAGES:
+        return None
+    return timeouts[-1]
 
 
 def assess(report: dict[str, Any]) -> dict[str, Any]:

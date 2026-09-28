@@ -668,6 +668,59 @@ def test_owner_connection_reconnected_later_in_the_report_keeps_the_generic_text
     assert "does not identify the network cause" in finding["observation"]
 
 
+def _observation(status, phase="observation"):
+    return {
+        "event": "station_connection",
+        "phase": phase,
+        "status": status,
+        "report": 2,
+        "device_ref": 1,
+    }
+
+
+@pytest.mark.parametrize(
+    ("events", "expected"),
+    [
+        (
+            [
+                _connect_error(stage="lookup"),
+                _observation("connected"),
+                {
+                    **_observation("error", "refresh_state"),
+                    "reason": "device_request_timeout",
+                },
+            ],
+            "does not identify the network cause",
+        ),
+        (
+            [
+                _connect_error(stage="lookup"),
+                _observation("connected"),
+                _observation("disconnected"),
+            ],
+            "does not identify the network cause",
+        ),
+        (
+            [
+                _connect_error(stage="lookup"),
+                _observation("connected"),
+                _observation("disconnected"),
+                _connect_error(stage="station_found"),
+            ],
+            "did not complete the P2P handshake",
+        ),
+        (
+            [_connect_error(stage="station_found"), _connect_error(stage="none")],
+            "does not identify the network cause",
+        ),
+    ],
+)
+def test_owner_connection_only_explains_failures_after_the_last_connection(
+    events, expected
+):
+    assert expected in _owner_finding(_owner_report(events))["observation"]
+
+
 def test_owner_connection_uses_the_failing_camera_owner_reference():
     finding = _owner_finding(
         _owner_report([_connect_error(stage="station_found", device_ref=2)])

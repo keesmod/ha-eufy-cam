@@ -142,9 +142,11 @@ how far the attempt got:
 | `session_open` | The P2P session opened but the command key was not established |
 
 The assessment names the `lookup`, `station_found` and `session_open` stages. It
-uses the latest failed `connect` that ran out of time (`device_request_timeout`
-or `device_disconnected`) for a HomeBase that failed in the current report and
-did not connect again later in it. Otherwise it keeps the generic text. A
+takes the latest failed `connect` that ran out of time (`device_request_timeout`
+or `device_disconnected`) for a HomeBase that failed in the current report,
+counting only failures after that HomeBase's last connection in the report. It
+names that attempt's stage when it is one of those three. Otherwise it keeps
+the generic text. A
 failure that repeats the previous record of the same HomeBase is not recorded
 again, so its latest record is always its latest attempt.
 
