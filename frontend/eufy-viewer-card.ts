@@ -104,20 +104,20 @@ export class EufyViewerCard extends HTMLElement {
     this._pagehide = () => { this._stop(); this._closeRecordings(); };
     this._disconnected = () => { this._stop("ended"); this._closeRecordings(); };
     // Static markup only. Entity names and all remote strings use textContent.
-    // The card is a size container: below 500 px of card width, a phone in portrait, the inline live controls leave the
-    // video for a compact toolbar below it and the paused bar sits below the snapshot. Wider cards keep the overlay.
+    // At every card width the inline live controls sit in a compact toolbar below the video and the paused bar sits
+    // below the snapshot, so no control covers the camera image or its own timestamp. The popup keeps its bar above.
     this.shadowRoot!.innerHTML = `
       <style>
-        :host{display:block;min-width:0}*{box-sizing:border-box}ha-card{display:block;position:relative;overflow:hidden;border-radius:16px;container-type:inline-size}button{font:inherit;cursor:pointer}
+        :host{display:block;min-width:0}*{box-sizing:border-box}ha-card{display:block;position:relative;overflow:hidden;border-radius:16px}button{font:inherit;cursor:pointer}
         .preview{display:block;width:100%;border:0;padding:0;position:relative;color:var(--primary-text-color);background:var(--card-background-color,#18212b)}
         .preview:focus-visible,.close:focus-visible{outline:3px solid var(--primary-color,#03a9f4);outline-offset:-3px}
         .capability{padding:10px 16px;color:var(--secondary-text-color);font-size:12px;line-height:1.5}.capability:empty{display:none}
         .snapshot,.live{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#10161e}
         .snapshot[hidden],.empty[hidden],.live[hidden],.sound[hidden],.pause[hidden],.halt[hidden],.record-video[hidden]{display:none}.empty{display:grid;place-items:center;aspect-ratio:16/9;padding:24px;color:var(--secondary-text-color);font-size:13px;background:var(--secondary-background-color,#18212b)}
         .play{position:absolute;right:16px;bottom:16px;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:#0008;font-size:20px;color:white;pointer-events:none}.preview:disabled{cursor:default}.preview:disabled .play{display:none}
-        .preview[hidden],.stage[hidden],.paused[hidden]{display:none}.stage.inline{position:relative;background:#10161e}.stage.inline img.live:not([src]){visibility:hidden}.stage.inline .bar,.paused{position:absolute;top:0;left:0;right:0;z-index:1;justify-content:flex-end;flex-wrap:wrap;gap:8px;padding:8px;background:linear-gradient(#000a,#0000)}
-        .stage.inline #live-title,.stage.inline .live-status{display:none}.stage.inline .close,.paused .close{background:#000a;color:#fff}
-        @container (max-width:499px){.stage.inline:not([hidden]){display:flex;flex-direction:column}.stage.inline .bar{order:1}.stage.inline .bar,.paused{position:static;gap:4px;padding:6px 8px;background:var(--ha-card-background,var(--card-background-color,#fff))}.stage.inline .close,.paused .close{flex:1 1 auto;padding:10px 4px;color:inherit;background:var(--secondary-background-color,#eee)}}
+        .preview[hidden],.stage[hidden],.paused[hidden]{display:none}.stage.inline{background:#10161e}.stage.inline:not([hidden]){display:flex;flex-direction:column}.stage.inline img.live:not([src]){visibility:hidden}.stage.inline .bar{order:1}
+        .stage.inline .bar,.paused{justify-content:flex-end;flex-wrap:wrap;gap:4px;padding:6px 8px;background:var(--ha-card-background,var(--card-background-color,#fff))}
+        .stage.inline #live-title,.stage.inline .live-status{display:none}.stage.inline .close,.paused .close{flex:1 1 auto;padding:10px 4px;color:inherit;background:var(--secondary-background-color,#eee)}
         .meta{padding:16px}.head{display:flex;align-items:center;justify-content:space-between;gap:12px}.name{font-weight:600;font-size:16px;line-height:24px;min-width:0}
         .battery{display:inline-flex;align-items:center;gap:6px;flex:none;font-size:13px;line-height:24px;color:var(--secondary-text-color)}.battery[hidden]{display:none}.battery svg{display:block;width:28px;height:14px}.battery-body{fill:none;stroke:currentColor;stroke-width:1.5}.battery-cap{fill:currentColor}.battery-fill{fill:var(--battery-color,currentColor);transition:width .4s}
         .battery.high{--battery-color:var(--success-color,#43a047)}.battery.medium{--battery-color:var(--warning-color,#ffa600)}.battery.low{--battery-color:var(--error-color,#db4437)}.battery.low .battery-level{color:var(--error-color,#db4437);font-weight:600}.status:empty{display:none}.status{font-size:13px;color:var(--secondary-text-color);margin-top:5px}
@@ -385,7 +385,8 @@ export class EufyViewerCard extends HTMLElement {
     this._live.hidden = webrtc; this._video.hidden = !webrtc; this._sound.hidden = !webrtc;
     this._video.muted = true; this._sound.textContent = this._text().sound;
     this._open = true; this._autostartPending = false; this._paused = false;
-    if (this._inline) { this._preview.hidden = true; this._stage.hidden = false; this._stopButton.focus(); }
+    // Close sits below the video, often below the fold of a wide card. Focusing it must not scroll the page to it.
+    if (this._inline) { this._preview.hidden = true; this._stage.hidden = false; this._stopButton.focus({ preventScroll: true }); }
     else this._dialog.showModal();
     this._controls();
     this._status(this._text().connecting);
@@ -728,7 +729,7 @@ export class EufyViewerCard extends HTMLElement {
     this._autostartPending = false;
     void this._start();
   }
-  /** Pause and stop exist only on an inline card with autostart. The paused bar offers resume and stop over the snapshot. */
+  /** Pause and stop exist only on an inline card with autostart. The paused bar offers resume and stop below the snapshot. */
   _controls() {
     const autostart = this._inline && this._config?.live_autostart === true;
     this._pauseButton.hidden = this._haltButton.hidden = !autostart;

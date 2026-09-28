@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.8.36 - 2026-09-28
+
+### Inline live controls below the video at every card width
+
+- An inline card now shows its live controls (pause, stop, sound and close) in
+  the compact toolbar directly below the video at every card width, in
+  portrait and landscape. The paused bar with resume and stop sits below the
+  snapshot at every width as well. Until now only a card narrower than 500 px
+  did this, and a wider card laid the controls over the top of the video.
+- Why: on a desktop, a tablet in landscape and a phone in landscape the sound
+  and close buttons covered the timestamp a T8425 draws in the top-right
+  corner of its image. The reporter found that the toolbar below the video
+  keeps the whole camera image visible. Refs #127, refs #95.
+- Layout only. The controls and their order, status messages, live playback,
+  autostart, the popup dialog mode and the card editor are unchanged. There is
+  no new card option. The card no longer needs to be a CSS size container, so
+  the 500 px threshold is gone.
+- A live start still moves focus to Close live view, but without scrolling the
+  page to it. Below the video that button is often below the fold of a wide
+  card, and an autostart card coming into view would otherwise make the
+  dashboard jump.
+
+### Evidence and limits
+
+Playwright covers a 360 px card with the four controls in one toolbar row
+below the video, and a card resized between 320, 499, 500, 900 and 1200 px
+while live with every control below the video and the same session and
+focus, then the paused bar below the snapshot at 320, 499, 500 and 900 px.
+An autostart card taller than the window starts with focus on Close below
+the fold and the page still at the top. The popup dialog keeps its bar above
+the video at 360 and 900 px. In Chromium the inline layout below 500 px and
+the popup at every width are unchanged in size and position from 0.8.35. The
+reporter's dashboard has not confirmed this release yet.
+
+### Upgrade and rollback
+
+Integration-only release, the bridge stays at 0.8.28. Update the integration
+to 0.8.36 in HACS, restart Home Assistant and refresh the dashboard. In the
+companion app close and reopen the app if the card still shows the controls
+on the video. To roll back, restore integration 0.8.35 from your backup and
+reload the dashboard.
+
 ## 0.8.35 - 2026-09-25
 
 ### A live start without video says how far it got
