@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.8.36 - 2026-09-28
+
+### Inline live controls below the video at every card width
+
+- An inline card now shows its live controls (pause, stop, sound and close) in
+  the compact toolbar directly below the video at every card width, in
+  portrait and landscape. The paused bar with resume and stop sits below the
+  snapshot at every width as well. Until now only a card narrower than 500 px
+  did this, and a wider card laid the controls over the top of the video.
+- Why: on a desktop, a tablet in landscape and a phone in landscape the sound
+  and close buttons covered the timestamp a T8425 draws in the top-right
+  corner of its image. The reporter found that the toolbar below the video
+  keeps the whole camera image visible. Refs #127, refs #95.
+- Only the layout and focus scrolling change. The controls and their order,
+  status messages, live playback, autostart, the popup dialog mode and the
+  card editor are unchanged. There is no new card option. The card no longer
+  needs to be a CSS size container, so the 500 px threshold is gone.
+- The paused bar gets the same compact padding as the toolbar, so it is 12 px
+  shorter and as tall as the toolbar, also below 500 px. Since 0.8.24 its
+  compact padding had lost to the general bar style.
+- Focus goes to the same controls as before, but the focus moves scroll the
+  page less, at any card width, because Close below the video is often below
+  the fold of a wide card. A start with a tap, a key or Resume scrolls the
+  page by the least amount that shows Close. An autostart moves the focus
+  without scrolling, so a card coming into view does not make the dashboard
+  jump. Pause and Resume swap the paused bar and the toolbar in one layout
+  and in the same row, so Resume takes the place of Pause, Close appears at
+  the same height as Resume and the page stays where it is. The focus move
+  after Stop in the paused bar no longer scrolls the page up to the snapshot.
+  The page can still move when it gets shorter, for example when the paused
+  bar goes away near the end of the page.
+
+### Evidence and limits
+
+Playwright covers a 360 px card with the four controls in one toolbar row
+below the video, and a card resized between 320, 499, 500, 900 and 1200 px
+while live with every control below the video and the same session and
+focus, then the paused bar below the snapshot at 320, 499, 500 and 900 px.
+An autostart card taller than the window starts with focus on Close below
+the fold and the page still at the top, and a start with Enter or a tap
+scrolls less than 100 px to show Close. On a 780 by 360 window with content
+below the card, Pause and Resume keep the page and the height of the buttons
+within 1 px, Resume activated below the fold scrolls by the least amount that
+shows Close, and Stop in the paused bar leaves the page where it is. The
+popup dialog keeps its bar above the video at 360 and 900 px. In Chromium the
+inline live view below 500 px and the popup at every width are unchanged in
+size and position from 0.8.35, and the paused bar below 500 px is 12 px
+shorter. The reporter's dashboard has not confirmed this release yet.
+
+### Upgrade and rollback
+
+Integration-only release, the bridge stays at 0.8.28. Update the integration
+to 0.8.36 in HACS, restart Home Assistant and refresh the dashboard. In the
+companion app close and reopen the app if the card still shows the controls
+on the video. To roll back, restore integration 0.8.35 from your backup and
+reload the dashboard.
+
 ## 0.8.35 - 2026-09-25
 
 ### A live start without video says how far it got
