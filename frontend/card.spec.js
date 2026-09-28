@@ -1327,6 +1327,22 @@ test('a wide card shows its live controls below the video as well, and resizing 
   expect(seen.bar.top).toBeGreaterThanOrEqual(seen.media.bottom);
 });
 
+test('on a card taller than the window, as on a phone in landscape, Stop in the paused bar below the snapshot moves focus to the snapshot without scrolling the page', async ({ page }) => {
+  await page.setViewportSize({ width: 780, height: 360 });
+  await page.evaluate(() => { document.body.style.cssText = 'margin:0;width:780px;font:14px sans-serif'; });
+  await attachAutostart(page);
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  // The window shows the paused bar and only the lower part of the snapshot.
+  const before = await page.evaluate(() => ({ scrollY: window.scrollY, halt: card._pausedBar.querySelector('.halt').getBoundingClientRect().bottom <= window.innerHeight, snapshotTop: card._preview.getBoundingClientRect().top < 0 }));
+  expect(before).toMatchObject({ halt: true, snapshotTop: true });
+  expect(before.scrollY).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await expect(page.locator('.status')).toHaveText('Stopped until you open this view again. Tap to watch.');
+  expect(await page.evaluate(() => ({ scrollY: window.scrollY, focused: card.shadowRoot.activeElement === card._preview, paused: !card._pausedBar.hidden }))).toEqual({ scrollY: before.scrollY, focused: true, paused: false });
+});
+
 test('the popup dialog keeps its own bar above the video whatever the card width', async ({ page }) => {
   for (const [index, width] of [360, 900].entries()) {
     await page.evaluate(width => { document.body.style.cssText = `margin:0;width:${width}px;font:14px sans-serif`; }, width);

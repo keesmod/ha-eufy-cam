@@ -751,7 +751,8 @@ export class EufyViewerCard extends HTMLElement {
     this._autostartBlocked = true; this._autostartPending = false; this._paused = false;
     this._status(this._text().stopped);
     this._controls();
-    if (focused && this._pausedBar.contains(focused)) this._preview.focus();
+    // The paused bar sits below the snapshot. Returning focus to the snapshot must not scroll the page up to it.
+    if (focused && this._pausedBar.contains(focused)) this._preview.focus({ preventScroll: true });
   }
   _stop(reason?: "ended" | "error" | "station_limit") {
     this._liveDiagnostics.update(reason !== undefined);

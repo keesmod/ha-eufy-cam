@@ -13,14 +13,16 @@
   and close buttons covered the timestamp a T8425 draws in the top-right
   corner of its image. The reporter found that the toolbar below the video
   keeps the whole camera image visible. Refs #127, refs #95.
-- Layout only. The controls and their order, status messages, live playback,
-  autostart, the popup dialog mode and the card editor are unchanged. There is
-  no new card option. The card no longer needs to be a CSS size container, so
-  the 500 px threshold is gone.
-- A live start still moves focus to Close live view, but without scrolling the
-  page to it. Below the video that button is often below the fold of a wide
+- Only the layout and focus scrolling change. The controls and their order,
+  status messages, live playback, autostart, the popup dialog mode and the
+  card editor are unchanged. There is no new card option. The card no longer
+  needs to be a CSS size container, so the 500 px threshold is gone.
+- A live start still moves focus to Close live view, and Stop in the paused
+  bar still moves it to the snapshot, but neither scrolls the page any more,
+  at any card width. Below the video Close is often below the fold of a wide
   card, and an autostart card coming into view would otherwise make the
-  dashboard jump.
+  dashboard jump. Stop below the snapshot would otherwise scroll the page back
+  up to the snapshot.
 
 ### Evidence and limits
 
@@ -29,10 +31,11 @@ below the video, and a card resized between 320, 499, 500, 900 and 1200 px
 while live with every control below the video and the same session and
 focus, then the paused bar below the snapshot at 320, 499, 500 and 900 px.
 An autostart card taller than the window starts with focus on Close below
-the fold and the page still at the top. The popup dialog keeps its bar above
-the video at 360 and 900 px. In Chromium the inline layout below 500 px and
-the popup at every width are unchanged in size and position from 0.8.35. The
-reporter's dashboard has not confirmed this release yet.
+the fold and the page still at the top, and on a 780 by 360 window Stop in
+the paused bar leaves the page where it is. The popup dialog keeps its bar
+above the video at 360 and 900 px. In Chromium the inline layout below 500 px
+and the popup at every width are unchanged in size and position from 0.8.35.
+The reporter's dashboard has not confirmed this release yet.
 
 ### Upgrade and rollback
 
