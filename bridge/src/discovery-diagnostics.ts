@@ -16,10 +16,19 @@ export const diagnosticCode = (value: unknown): string =>
   /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.exec(value)?.[0] === value
     ? value
     : 'unclassified_error';
-const model = (value: unknown): string =>
-  typeof value === 'string' && value.length === 5 && /^T[A-Z0-9]{4}$/.test(value)
+// A received model code, optionally with a short suffix such as T8113-Z (#129).
+// Serials and free text never match.
+export const diagnosticModel = (value: unknown): string =>
+  typeof value === 'string' && value.length <= 8 && /^T[A-Z0-9]{4}(?:-[A-Z0-9]{1,2})?$/.test(value)
     ? value
     : 'unavailable';
+const model = diagnosticModel;
+const connectionStages = new Set(['none', 'lookup', 'station_found', 'session_open', 'encryption_ready']);
+/** How far a failed station connection got, from the library's connection stages. */
+export interface StationConnectionDetail {
+  stage: string;
+  inventoryAddress?: boolean;
+}
 const integer = (value: unknown, min: number, max: number): number | null =>
   typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
     ? value
@@ -80,6 +89,7 @@ export class DiscoveryDiagnostics {
       phase: string;
       status: ConnectionStatus;
       reason: string | null;
+      stage: string | null;
     }
   >();
   private lastDiscovery: Record<string, unknown>[] = [];
@@ -110,16 +120,25 @@ export class DiscoveryDiagnostics {
     phase: 'connect' | 'refresh_state' | 'observation',
     status: ConnectionStatus,
     reason?: string,
+    detail?: StationConnectionDetail,
   ): void {
     const ref = this.refs.get(id);
     if (ref === undefined) return;
     const code = reason ? diagnosticCode(reason) : null;
+    // Only a failed connect attempt says how far it got.
+    const stage =
+      detail && status === 'error' && phase === 'connect'
+        ? connectionStages.has(detail.stage)
+          ? detail.stage
+          : 'none'
+        : null;
     const previous = this.stationEvents.get(ref);
     this.stationOutcomes.set(id, status);
     if (
       previous?.report === this.pendingReport &&
       previous.status === status &&
       previous.reason === code &&
+      previous.stage === stage &&
       (status !== 'error' || previous.phase === phase)
     )
       return;
@@ -128,6 +147,7 @@ export class DiscoveryDiagnostics {
       phase,
       status,
       reason: code,
+      stage,
     });
     this.emit({
       event: 'station_connection',
@@ -137,6 +157,14 @@ export class DiscoveryDiagnostics {
       phase,
       status,
       reason: code,
+      ...(stage === null
+        ? {}
+        : {
+            stage,
+            ...(typeof detail?.inventoryAddress === 'boolean'
+              ? { inventory_address: detail.inventoryAddress }
+              : {}),
+          }),
     });
   }
 

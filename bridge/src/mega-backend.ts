@@ -11,11 +11,17 @@ import {
   type StationState,
   type LiveStream,
   type LiveStartProgress,
+  type StationConnectionProgress,
   type AuthState as MegaAuth,
 } from '@keesmod/eufy-mega-client';
 import { Storage } from './storage.js';
 import { migrationInventory, verifyInventory, type MigrationInventory } from './migration.js';
-import { DiscoveryDiagnostics, diagnosticCode } from './discovery-diagnostics.js';
+import {
+  DiscoveryDiagnostics,
+  diagnosticCode,
+  diagnosticModel,
+  type StationConnectionDetail,
+} from './discovery-diagnostics.js';
 import { RecordingTranscoder } from './recording-media.js';
 import { MegaRecordings } from './mega-recordings.js';
 import { RecordingError, StationError } from './errors.js';
@@ -57,16 +63,26 @@ export function liveMaxSecondsMains(value?: string): number {
     throw new Error('EUFY_LIVE_MAX_SECONDS_MAINS must be a whole number of seconds from 120 to 3600');
   return seconds;
 }
+/** Records the last stage a station connection reached, for its diagnostic record. */
+function connectionStages(): {
+  detail: StationConnectionDetail;
+  onProgress: (progress: StationConnectionProgress) => void;
+} {
+  const detail: StationConnectionDetail = { stage: 'none' };
+  return {
+    detail,
+    onProgress: (progress) => {
+      detail.stage = progress.stage;
+      if (typeof progress.inventoryAddress === 'boolean')
+        detail.inventoryAddress = progress.inventoryAddress;
+    },
+  };
+}
 function discoveryDetail(issue: DiscoveryIssue): string | undefined {
   if (issue.code !== 'unsupported_device') return undefined;
   // Revalidate even library-sanitized values at this logging boundary. These
   // bounds affect diagnostics only. Never stringify the issue or its identity.
-  const model =
-    typeof issue.deviceModel === 'string' &&
-    issue.deviceModel.length === 5 &&
-    /^T[A-Z0-9]{4}$/.test(issue.deviceModel)
-      ? issue.deviceModel
-      : 'unavailable';
+  const model = diagnosticModel(issue.deviceModel);
   const type =
     typeof issue.deviceType === 'number' &&
     Number.isInteger(issue.deviceType) &&
@@ -349,13 +365,14 @@ export class MegaBackend extends EventEmitter implements Backend {
       }
       for (const station of devices.filter((d) => d.kind === 'station')) {
         let phase: 'connect' | 'refresh_state' = 'connect';
+        const stages = connectionStages();
         try {
-          await client.connectStation(station.id);
+          await client.connectStation(station.id, { onProgress: stages.onProgress });
           phase = 'refresh_state';
           this.stationStates.set(station.id, await client.refreshStationState(station.id));
           this.discoveryDiagnostics.station(station.id, phase, this.stationStates.get(station.id)!.connected ? 'connected' : 'disconnected');
         } catch (error) {
-          this.discoveryDiagnostics.station(station.id, phase, 'error', error instanceof EufyError ? error.code : 'connection_failed');
+          this.discoveryDiagnostics.station(station.id, phase, 'error', error instanceof EufyError ? error.code : 'connection_failed', phase === 'connect' ? stages.detail : undefined);
           this.stationStates.set(station.id, {
             id: station.id,
             connected: false,
@@ -405,13 +422,14 @@ export class MegaBackend extends EventEmitter implements Backend {
           // Error/cancellation cleanup deliberately closes the device session.
           // Restore station telemetry while idle without waking a camera.
           let phase: 'connect' | 'refresh_state' = 'connect';
+          const stages = connectionStages();
           try {
-            await this.client.connectStation(id);
+            await this.client.connectStation(id, { onProgress: stages.onProgress });
             phase = 'refresh_state';
             this.stationStates.set(id, await this.client.refreshStationState(id));
             this.discoveryDiagnostics.station(id, phase, this.stationStates.get(id)!.connected ? 'connected' : 'disconnected');
           } catch (error) {
-            this.discoveryDiagnostics.station(id, phase, 'error', error instanceof EufyError ? error.code : 'connection_failed');
+            this.discoveryDiagnostics.station(id, phase, 'error', error instanceof EufyError ? error.code : 'connection_failed', phase === 'connect' ? stages.detail : undefined);
             throw error;
           }
           this.emit('change');

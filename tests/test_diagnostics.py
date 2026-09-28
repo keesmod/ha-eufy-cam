@@ -719,3 +719,20 @@ def test_video_stall_names_the_ffmpeg_stage_only_when_its_counters_cover_the_sto
     assert both == observation({}, input=stopped_input)
     assert "the P2P video input 15268 ms, the encoder output 21268 ms" in both
     assert "FFmpeg" not in both
+
+
+def test_station_connection_stage_and_suffixed_models_survive_download():
+    row = {
+        "event": "station_connection",
+        "phase": "connect",
+        "status": "error",
+        "reason": "device_request_timeout",
+        "model": "T8113-Z",
+        "stage": "station_found",
+        "inventory_address": False,
+    }
+    assert _fields(row) == row
+    assert _fields({**row, "stage": "PRIVATE"})["stage"] is None
+    assert _fields({**row, "inventory_address": "yes"})["inventory_address"] is None
+    for model in ("T8113-PRIVATE", "T8113-", "t8113-z", "T8113-z"):
+        assert _fields({**row, "model": model})["model"] == "unavailable"

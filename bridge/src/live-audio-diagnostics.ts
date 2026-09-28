@@ -53,12 +53,12 @@ export class LiveAudioObservation {
   private prefixBytes = 0;
   constructor(model: string, private readonly now: () => number, context: { firmware?: string; owner_model?: string; owner_firmware?: string } = {}) {
     this.started = now();
-    this.report = { attempt: randomInt(1, 2 ** 48), model: /^T[A-Z0-9]{4}$/.test(model) ? model : 'unavailable', state: 'starting', chunks: 0, bytes: 0, duration_ms: 0 };
+    this.report = { attempt: randomInt(1, 2 ** 48), model: /^T[A-Z0-9]{4}(?:-[A-Z0-9]{1,2})?$/.test(model) ? model : 'unavailable', state: 'starting', chunks: 0, bytes: 0, duration_ms: 0 };
     for (const key of ['firmware', 'owner_firmware'] as const) {
       const value = context[key];
       if (value && /^\d{1,4}(?:\.\d{1,4}){1,4}$/.test(value)) this.report[key] = value;
     }
-    if (context.owner_model && /^T[A-Z0-9]{4}$/.test(context.owner_model)) this.report.owner_model = context.owner_model;
+    if (context.owner_model && /^T[A-Z0-9]{4}(?:-[A-Z0-9]{1,2})?$/.test(context.owner_model)) this.report.owner_model = context.owner_model;
   }
   attach(stream: Readable, initialCodec: unknown, forwarded: boolean, readCodec: () => unknown): void {
     if (this.closed || this.stream) return;

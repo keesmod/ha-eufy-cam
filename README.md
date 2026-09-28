@@ -90,13 +90,18 @@ for a browser dashboard. See
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
 
-The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.36`.
+The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.37`.
 See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 </details>
 
 ## Upgrading
 
+The **0.8.37** integration and bridge **0.8.29** include client **0.26.0**,
+which discovers eufyCam 2C cameras reported as `T8113-Z`, recognizes the
+Floodlight Cam 2K `T8424` as a standalone camera, also looks for the HomeBase
+by broadcast on every network interface of the host, and records how far a
+failed HomeBase connection got.
 The **0.8.36** integration puts the inline live controls in the compact
 toolbar below the video at every card width, so they no longer cover the
 camera's own timestamp on a wide card.
@@ -130,8 +135,8 @@ default 120) raises the live session cap only for cameras without a battery
 value. Battery cameras keep two minutes. 0.8.25 keeps an inline card with `live_autostart: true` live while
 it is scrolled out of view, 0.8.24 moved the inline live controls below the
 video on narrow cards, and 0.8.23 added `live_mode: inline` and the optional
-`live_autostart: true`. Update the integration to **0.8.36** and the bridge to
-**0.8.28**, then refresh the dashboard.
+`live_autostart: true`. Update the integration to **0.8.37** and the bridge to
+**0.8.29**, then refresh the dashboard.
 See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
 for changes and any version-specific instructions.
 

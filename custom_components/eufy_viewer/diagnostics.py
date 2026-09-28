@@ -46,6 +46,7 @@ _ENUMS = {
         ).split()
     ),
     "phase": set("authentication events connect refresh_state observation".split()),
+    "stage": set("none lookup station_found session_open encryption_ready".split()),
     "operation": set("inventory login region key_exchange verification".split()),
     "scope": {"public_discovery_result"},
     "baseline": {"present", "absent", "unavailable"},
@@ -73,7 +74,7 @@ _NUMBERS = {
 _BOOLEANS = set(
     (
         "station_connected owner_connected push_connected available "
-        "inventory_available truncated unchanged"
+        "inventory_available truncated unchanged inventory_address"
     ).split()
 )
 _VERSIONS = set("firmware hardware parent_firmware bridge library node".split())
@@ -139,7 +140,8 @@ def _fields(raw: Any) -> dict[str, Any]:
         elif key in _MODELS:
             result[key] = (
                 value
-                if isinstance(value, str) and re.fullmatch(r"T[A-Z0-9]{4}", value)
+                if isinstance(value, str)
+                and re.fullmatch(r"T[A-Z0-9]{4}(?:-[A-Z0-9]{1,2})?", value)
                 else "unavailable"
             )
         else:

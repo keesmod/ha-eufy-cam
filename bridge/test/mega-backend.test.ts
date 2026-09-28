@@ -695,7 +695,7 @@ for (const empty of [false,true])
       const rows=lines.map(line=>JSON.parse(line));
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
-      assert.equal(summary.software.library,'0.21.0');
+      assert.equal(summary.software.library,'0.26.0');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
@@ -704,6 +704,25 @@ for (const empty of [false,true])
       assert.equal(bridge.supportReport().last_discovery.find(row=>row.event==='summary')?.outcome,empty?'camera_inventory_empty':'accepted');
     }finally{await bridge.close();}
   });
+
+test('a failed station connect records the last stage the library reported', async () => {
+  const f=fixture();
+  const options:unknown[]=[];
+  f.client.connectStation=async(_id:string,value?:any)=>{
+    options.push(value);
+    value?.onProgress?.({stage:'lookup',elapsedMs:0,inventoryAddress:false});
+    value?.onProgress?.({stage:'station_found',elapsedMs:40});
+    throw new EufyError('device_request_timeout');
+  };
+  try {
+    await f.backend.login({username:'fixture',password:'fixture',country:'NL'});
+    const failure=f.backend.supportReport().recent_events.find(row=>row.event==='station_connection'&&row.status==='error')!;
+    assert.equal(failure.phase,'connect');
+    assert.equal(failure.stage,'station_found');
+    assert.equal(failure.inventory_address,false);
+    assert.equal(typeof (options[0] as any)?.onProgress,'function');
+  } finally {await f.backend.close();}
+});
 
 for(const phase of ['connect','refresh_state'] as const)
   test(`station ${phase} failures and subsequent connection events are anonymous`, async () => {
@@ -716,6 +735,8 @@ for(const phase of ['connect','refresh_state'] as const)
       const failure=report.recent_events.find(row=>row.event==='station_connection'&&row.status==='error')!;
       assert.equal(failure.phase,phase);assert.equal(failure.device_ref,1);
       assert.equal(failure.reason,'device_request_timeout');
+      // A connect that reported no stage says so, a refresh failure carries none.
+      assert.equal(failure.stage,phase==='connect'?'none':undefined);
       assert.equal(report.last_discovery.find(row=>row.event==='device'&&row.ref===1)?.station_status,'error');
       f.client.emit('station',{id:'BASE',connected:true});
       f.client.emit('station',{id:'BASE',connected:true});

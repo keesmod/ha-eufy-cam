@@ -102,6 +102,41 @@ def _start_observation(start: dict[str, Any], failed: bool) -> str:
     )
 
 
+_CONNECTION_STAGES = {
+    "none": (
+        "Owner connection was not established. It failed before the bridge "
+        "looked for the HomeBase on the LAN."
+    ),
+    "lookup": (
+        "Owner connection was not established. No HomeBase answered the local "
+        "lookup{target}. The bridge host did not reach the HomeBase on its LAN."
+    ),
+    "station_found": (
+        "Owner connection was not established. The HomeBase answered the local "
+        "lookup but did not complete the P2P handshake."
+    ),
+    "session_open": (
+        "Owner connection was not established. The HomeBase opened the P2P "
+        "session but the command key was not established."
+    ),
+    "encryption_ready": (
+        "Owner connection was established, and the attempt still ended with an error."
+    ),
+}
+
+
+def _connection_stage(row: dict[str, Any]) -> str:
+    address = row.get("inventory_address")
+    target = (
+        " at its inventory LAN address or by broadcast"
+        if address is True
+        else ", and the inventory had no LAN address, so only broadcasts were sent"
+        if address is False
+        else ""
+    )
+    return _CONNECTION_STAGES[row["stage"]].format(target=target)
+
+
 def assess(report: dict[str, Any]) -> dict[str, Any]:
     """Only inspect the projected report. Findings never contain upstream text."""
     findings: list[dict[str, Any]] = []
@@ -140,12 +175,27 @@ def assess(report: dict[str, Any]) -> dict[str, Any]:
         or r.get("station_status") in {"error", "disconnected"}
         for r in discovery
     ):
-        add(
-            "owner_connection",
-            "Owner connection was not established. The report does not "
-            "identify the network cause.",
-            "support.last_discovery",
-        )
+        failed = [
+            r
+            for r in support.get("recent_events", [])
+            if r.get("event") == "station_connection"
+            and r.get("phase") == "connect"
+            and r.get("status") == "error"
+            and r.get("stage") in _CONNECTION_STAGES
+        ]
+        if failed:
+            add(
+                "owner_connection",
+                _connection_stage(failed[-1]),
+                "support.recent_events.station_connection",
+            )
+        else:
+            add(
+                "owner_connection",
+                "Owner connection was not established. The report does not "
+                "identify the network cause.",
+                "support.last_discovery",
+            )
     for row in support.get("live_audio", []):
         attempt = row.get("attempt")
         events = {e["event"] for e in row.get("pipeline", [])}

@@ -542,3 +542,64 @@ async def test_normal_reader_disconnect_is_distinct_from_closure(tmp_path):
         assert "client_disconnect" in {e["event"] for e in observation.data["events"]}
         assert body.owners == 1
     assert observation.data["file_closed"] is True
+
+
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        (
+            {"stage": "lookup", "inventory_address": False},
+            "No HomeBase answered the local lookup, and the inventory had no LAN "
+            "address, so only broadcasts were sent.",
+        ),
+        (
+            {"stage": "lookup", "inventory_address": True},
+            "No HomeBase answered the local lookup at its inventory LAN address "
+            "or by broadcast.",
+        ),
+        ({"stage": "station_found"}, "did not complete the P2P handshake"),
+        ({"stage": "session_open"}, "the command key was not established"),
+        ({"stage": "none"}, "before the bridge looked for the HomeBase"),
+    ],
+)
+def test_owner_connection_finding_names_the_stage_it_reached(row, expected):
+    report = {
+        "support": {
+            "last_discovery": [{"event": "device", "owner_status": "error"}],
+            "recent_events": [
+                {
+                    "event": "station_connection",
+                    "phase": "connect",
+                    "status": "error",
+                    "stage": "lookup",
+                },
+                {
+                    "event": "station_connection",
+                    "phase": "connect",
+                    "status": "error",
+                    **row,
+                },
+            ],
+        }
+    }
+    findings = [
+        f for f in assess(report)["findings"] if f["stage"] == "owner_connection"
+    ]
+    assert len(findings) == 1
+    assert expected in findings[0]["observation"]
+    assert findings[0]["evidence"] == "support.recent_events.station_connection"
+
+
+def test_owner_connection_without_stage_keeps_the_generic_finding():
+    report = {
+        "support": {
+            "last_discovery": [{"event": "device", "station_status": "error"}],
+            "recent_events": [
+                {"event": "station_connection", "phase": "connect", "status": "error"}
+            ],
+        }
+    }
+    (finding,) = [
+        f for f in assess(report)["findings"] if f["stage"] == "owner_connection"
+    ]
+    assert "does not identify the network cause" in finding["observation"]

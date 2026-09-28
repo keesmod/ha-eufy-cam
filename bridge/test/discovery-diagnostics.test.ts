@@ -29,7 +29,7 @@ test('support report includes software, inventory, anonymous ownership, firmware
     {snapshot:capability,live:capability,recordings:capability}]]),new Map());
   const rows=f.rows();
   assert.equal(rows.length,6);
-  assert.equal(rows[0].software.library,'0.21.0');
+  assert.equal(rows[0].software.library,'0.26.0');
   assert.equal(rows[0].software.bridge,diagnosticSoftware().bridge);
   assert.deepEqual([rows[0].cameras,rows[0].stations,rows[0].issues],[1,1,2]);
   assert.equal(rows[2].owner_ref,1);
@@ -184,4 +184,38 @@ test('future codes survive every report code field and normal log output', () =>
     assert.ok(f.rows().some(row => row.event === 'station_connection' && row.reason === code));
     assert.doesNotMatch(JSON.stringify(report), /PRIVATE/);
   }
+});
+
+test('a failed station connect records how far it got, without addresses', () => {
+  const f=collect();
+  f.reporter.prepare(result());
+  f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'lookup',inventoryAddress:false});
+  // The same failure at the same stage is not repeated, a later stage is recorded.
+  f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'lookup',inventoryAddress:false});
+  f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'station_found',inventoryAddress:true});
+  f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'PRIVATE_192.168.1.2'});
+  f.reporter.station('PRIVATE_BASE','refresh_state','error','device_request_timeout',{stage:'lookup',inventoryAddress:true});
+  f.reporter.station('PRIVATE_BASE','observation','connected',undefined,{stage:'lookup'});
+  const rows=f.reporter.report().recent_events.filter(row=>row.event==='station_connection');
+  assert.deepEqual(rows.map(({stage,inventory_address,phase,status})=>({stage,inventory_address,phase,status})),[
+    {stage:'lookup',inventory_address:false,phase:'connect',status:'error'},
+    {stage:'station_found',inventory_address:true,phase:'connect',status:'error'},
+    {stage:'none',inventory_address:undefined,phase:'connect',status:'error'},
+    {stage:undefined,inventory_address:undefined,phase:'refresh_state',status:'error'},
+    {stage:undefined,inventory_address:undefined,phase:'observation',status:'connected'},
+  ]);
+  assert.doesNotMatch(JSON.stringify(f.reporter.report()),/PRIVATE|192\.168/);
+});
+
+test('model codes with a short suffix are reported as received, serials never', () => {
+  const f=collect();
+  const value=result();
+  value.devices[1]!.model='T8113-Z';
+  value.issues[0]!.deviceModel='T8113-X';
+  value.issues[1]!.deviceModel='T8113-PRIVATE';
+  f.reporter.inventory(value,'accepted',undefined,true,new Map(),new Map());
+  const rows=f.rows();
+  assert.equal(rows.find(r=>r.event==='device'&&r.ref===2).model,'T8113-Z');
+  assert.deepEqual(rows.filter(r=>r.event==='issue').map(r=>r.model),['T8113-X','unavailable']);
+  assert.doesNotMatch(f.lines.join('\n'),/PRIVATE/);
 });

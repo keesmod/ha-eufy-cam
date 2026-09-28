@@ -91,6 +91,21 @@ bridge 0.8.26, admits exactly this pair with the C30 policy
 The reporter has not yet confirmed the C30 on that bridge. The other two issue
 rows were not shared.
 
+On 2026-09-25 and 2026-09-27 the reporter of
+[issue #129](https://github.com/keesmod/ha-eufy-cam/issues/129) described three
+eufyCam 2C cameras that arrive as `T8113-Z` with device type 8 under a T8030 on
+firmware 3.8.7.4, and a Floodlight Cam 2K that arrives as `T8424` with type 39 as
+its own station. With a local `T8113-Z` profile the cameras were accepted and
+snapshots, live view and HomeBase recordings worked for the reporter. Client
+0.26.0, included in bridge 0.8.29, admits exactly `T8113-Z` with type 8 and
+reports `T8424` as `relationship=standalone` with
+`relationship_reason=standalone_transport_unverified` instead of
+`unsupported_device`. Standalone cameras have no connection route yet
+([eufy-mega-client#142](https://github.com/keesmod/eufy-mega-client/issues/142)).
+This is reported, not independently reproduced. Since bridge 0.8.29 and
+integration 0.8.37 the report keeps a model code with a short suffix, such as
+`T8113-Z`, instead of `unavailable`.
+
 `ref`, `owner_ref` and `device_ref` are anonymous references within a report.
 `inventory_row` is a separate zero-based source position. Use the `report` number
 and timestamps together, and do not compare references across restarts.
@@ -115,6 +130,29 @@ such as `device_request_timeout` instead of replacing them with
 `unclassified_error`. The `phase` identifies `connect` or `refresh_state`.
 The timeout alone does not establish whether networking, connection negotiation
 or a device response is responsible. Include the complete report and firmware.
+
+Since bridge 0.8.29 and integration 0.8.37 a failed `connect` record also says
+how far the attempt got, and the download's assessment names it:
+
+| `stage` | Meaning |
+|---|---|
+| `none` | The attempt failed before the bridge looked for the HomeBase |
+| `lookup` | No HomeBase answered the local lookup. `inventory_address` says whether Eufy's inventory supplied a LAN address for it |
+| `station_found` | The HomeBase answered the lookup but did not complete the P2P handshake |
+| `session_open` | The P2P session opened but the command key was not established |
+
+The same client version changes the lookup itself. The first lookup still goes to
+the LAN address from the inventory. When that stays silent for a second, or there
+is none, the retries also go to the broadcast address of every network interface
+of the bridge host, so a stale address or a Docker host whose first interface is
+a container bridge still finds the HomeBase. Only the HomeBase's own answer ends
+the lookup. `lookup` with `inventory_address=false` on a Docker host therefore
+points at broadcasts that do not reach the HomeBase's LAN, for example a
+different subnet or a network that blocks UDP broadcasts on port 32108. This
+follows [issue #130](https://github.com/keesmod/ha-eufy-cam/issues/130), where a
+HomeBase 3 on firmware 3.8.7.4 behind a Docker host ended every connection in
+`device_request_timeout`. The maintainer's HomeBase 3 on the same firmware
+connects, so the firmware alone does not explain that report.
 
 No optional live-video debug setting is needed for these codes. After updating
 both components, restart the bridge once, wait for the startup result, then
