@@ -141,14 +141,14 @@ how far the attempt got:
 | `station_found` | The HomeBase answered the lookup but did not complete the P2P handshake |
 | `session_open` | The P2P session opened but the command key was not established |
 
-The assessment names the `lookup`, `station_found` and `session_open` stages. It
-takes the latest failed `connect` that ran out of time (`device_request_timeout`
-or `device_disconnected`) for a HomeBase that failed in the current report,
-counting only failures after that HomeBase's last connection in the report. It
-names that attempt's stage when it is one of those three. Otherwise it keeps
-the generic text. A
-failure that repeats the previous record of the same HomeBase is not recorded
-again, so its latest record is always its latest attempt.
+The assessment names the `lookup`, `station_found` and `session_open` stages.
+For each HomeBase that failed in the current report it takes the latest failed
+`connect` that ran out of time (`device_request_timeout` or
+`device_disconnected`) after that HomeBase's last connection in the report, and
+names the latest such attempt that reached one of those three stages. Otherwise
+it keeps the generic text. A failure that repeats the previous record of the
+same HomeBase is not recorded again, so its latest record is always its latest
+attempt.
 
 The same client version changes the lookup itself. The first lookup still goes
 to the LAN address from the inventory. When that stays silent for a second, the

@@ -135,7 +135,11 @@ def _connection_stage(row: dict[str, Any]) -> str:
 
 
 def _failed_connection(support: dict[str, Any], discovery: list[Any]) -> Any:
-    """The latest timed-out connect of a HomeBase that failed in the current report."""
+    """The latest named-stage timeout of a HomeBase that failed in the current report.
+
+    Per HomeBase only its latest timed-out connect after its last connection in
+    the report counts. None when no such attempt reached a named stage.
+    """
     reports = [r.get("report") for r in discovery if type(r.get("report")) is int]
     if not reports:
         return None
@@ -162,18 +166,22 @@ def _failed_connection(support: dict[str, Any], discovery: list[Any]) -> Any:
         for index, r in enumerate(events)
         if r.get("status") == "connected"
     }
-    timeouts = [
-        r
-        for index, r in enumerate(events)
-        if r.get("phase") == "connect"
-        and r.get("status") == "error"
-        and r.get("device_ref") in failing
-        and index > connected_at.get(r.get("device_ref"), -1)
-        and r.get("reason") in _CONNECTION_TIMEOUTS
-    ]
-    if not timeouts or timeouts[-1].get("stage") not in _CONNECTION_STAGES:
-        return None
-    return timeouts[-1]
+    latest: dict[Any, tuple[int, dict[str, Any]]] = {}
+    for index, r in enumerate(events):
+        if (
+            r.get("phase") == "connect"
+            and r.get("status") == "error"
+            and r.get("device_ref") in failing
+            and index > connected_at.get(r.get("device_ref"), -1)
+            and r.get("reason") in _CONNECTION_TIMEOUTS
+        ):
+            latest[r.get("device_ref")] = (index, r)
+    named = sorted(
+        (index, r)
+        for index, r in latest.values()
+        if r.get("stage") in _CONNECTION_STAGES
+    )
+    return named[-1][1] if named else None
 
 
 def assess(report: dict[str, Any]) -> dict[str, Any]:

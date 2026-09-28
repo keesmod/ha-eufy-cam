@@ -710,8 +710,12 @@ def _observation(status, phase="observation"):
             "did not complete the P2P handshake",
         ),
         (
-            [_connect_error(stage="station_found"), _connect_error(stage="none")],
-            "does not identify the network cause",
+            # Another HomeBase connecting does not clear this one's failure.
+            [
+                _connect_error(stage="lookup"),
+                {**_observation("connected"), "device_ref": 2},
+            ],
+            "No HomeBase answered the local lookup",
         ),
     ],
 )
@@ -719,6 +723,35 @@ def test_owner_connection_only_explains_failures_after_the_last_connection(
     events, expected
 ):
     assert expected in _owner_finding(_owner_report(events))["observation"]
+
+
+def test_owner_connection_names_only_a_stage_of_each_homebase_latest_attempt():
+    # The latest attempt of ref 1 reached no named stage, so its earlier
+    # station_found is not named. Ref 2's lookup is its latest attempt.
+    assert (
+        "does not identify the network cause"
+        in (
+            _owner_finding(
+                _owner_report(
+                    [
+                        _connect_error(stage="station_found"),
+                        _connect_error(stage="none"),
+                    ]
+                )
+            )["observation"]
+        )
+    )
+    assert (
+        "No HomeBase answered the local lookup"
+        in _owner_finding(
+            _owner_report(
+                [
+                    _connect_error(stage="none"),
+                    _connect_error(stage="lookup", device_ref=2),
+                ]
+            )
+        )["observation"]
+    )
 
 
 def test_owner_connection_uses_the_failing_camera_owner_reference():
