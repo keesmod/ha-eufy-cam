@@ -727,7 +727,8 @@ def test_owner_connection_only_explains_failures_after_the_last_connection(
 
 def test_owner_connection_names_only_a_stage_of_each_homebase_latest_attempt():
     # The latest attempt of ref 1 reached no named stage, so its earlier
-    # station_found is not named. Ref 2's lookup is its latest attempt.
+    # station_found is not named. Ref 2's lookup stays its latest attempt, also
+    # when ref 1 fails after it.
     assert (
         "does not identify the network cause"
         in (
@@ -746,8 +747,8 @@ def test_owner_connection_names_only_a_stage_of_each_homebase_latest_attempt():
         in _owner_finding(
             _owner_report(
                 [
-                    _connect_error(stage="none"),
                     _connect_error(stage="lookup", device_ref=2),
+                    _connect_error(stage="none"),
                 ]
             )
         )["observation"]
