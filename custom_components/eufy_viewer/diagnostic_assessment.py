@@ -117,7 +117,8 @@ _CONNECTION_STAGES = {
     ),
 }
 # Only a connection that ran out of time says where the HomeBase stopped
-# answering. Other failures, such as a concurrent attempt, keep the generic text.
+# answering. The latest such connect is used, and failures for other reasons,
+# such as a concurrent attempt, are skipped.
 _CONNECTION_TIMEOUTS = {"device_request_timeout", "device_disconnected"}
 
 
@@ -150,14 +151,20 @@ def _failed_connection(support: dict[str, Any], discovery: list[Any]) -> Any:
         if r.get("report") == current
         and r.get("owner_status") in {"error", "disconnected"}
     }
-    failed = [
+    events = [
         r
         for r in support.get("recent_events", [])
-        if r.get("event") == "station_connection"
-        and r.get("phase") == "connect"
+        if r.get("event") == "station_connection" and r.get("report") == current
+    ]
+    # A HomeBase that connected again later in the report has no failure to explain.
+    latest = {r.get("device_ref"): r.get("status") for r in events}
+    failed = [
+        r
+        for r in events
+        if r.get("phase") == "connect"
         and r.get("status") == "error"
-        and r.get("report") == current
         and r.get("device_ref") in failing
+        and latest.get(r.get("device_ref")) != "connected"
         and r.get("reason") in _CONNECTION_TIMEOUTS
         and r.get("stage") in _CONNECTION_STAGES
     ]

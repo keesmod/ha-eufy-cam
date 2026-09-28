@@ -207,15 +207,15 @@ test('a failed station connect records how far it got, without addresses', () =>
   assert.doesNotMatch(JSON.stringify(f.reporter.report()),/PRIVATE|192\.168/);
 });
 
-test('a connection alternating between failed stages is recorded once per stage until it connects', () => {
+test('repeated failures at one stage are recorded once, and the latest record is the latest attempt', () => {
   const f=collect();
   f.reporter.prepare(result());
-  for(let i=0;i<50;i++)
-    f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:i%2?'station_found':'lookup',inventoryAddress:true});
+  for(const stage of ['lookup','lookup','lookup','station_found','lookup','lookup'])
+    f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage,inventoryAddress:true});
   f.reporter.station('PRIVATE_BASE','observation','connected');
   f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'lookup',inventoryAddress:true});
   const rows=f.reporter.report().recent_events.filter(row=>row.event==='station_connection');
-  assert.deepEqual(rows.map(row=>row.stage??row.status),['lookup','station_found','connected','lookup']);
+  assert.deepEqual(rows.map(row=>row.stage??row.status),['lookup','station_found','lookup','connected','lookup']);
 });
 
 test('model codes with a short suffix are reported as received, serials never', () => {

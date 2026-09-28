@@ -132,7 +132,7 @@ The timeout alone does not establish whether networking, connection negotiation
 or a device response is responsible. Include the complete report and firmware.
 
 Since bridge 0.8.29 and integration 0.8.37 a failed `connect` record also says
-how far the attempt got, and the download's assessment names it:
+how far the attempt got:
 
 | `stage` | Meaning |
 |---|---|
@@ -141,10 +141,12 @@ how far the attempt got, and the download's assessment names it:
 | `station_found` | The HomeBase answered the lookup but did not complete the P2P handshake |
 | `session_open` | The P2P session opened but the command key was not established |
 
-The assessment uses the stage of the latest failed `connect` of a HomeBase that
-failed in the current report, and only when that attempt ran out of time
-(`device_request_timeout` or `device_disconnected`). Otherwise it keeps the
-generic text.
+The assessment names the `lookup`, `station_found` and `session_open` stages. It
+uses the latest failed `connect` that ran out of time (`device_request_timeout`
+or `device_disconnected`) for a HomeBase that failed in the current report and
+did not connect again later in it. Otherwise it keeps the generic text. A
+failure that repeats the previous record of the same HomeBase is not recorded
+again, so its latest record is always its latest attempt.
 
 The same client version changes the lookup itself. The first lookup still goes
 to the LAN address from the inventory. When that stays silent for a second, the

@@ -20,7 +20,7 @@
 - The discovery report, the live diagnostics and the HA download keep a model
   code with a short suffix, such as `T8113-Z`, instead of `unavailable`.
 
-### HomeBase lookup on every network interface
+### HomeBase lookup on every interface
 
 - The bridge still asks the HomeBase's LAN address from Eufy's inventory first.
   When that stays silent for a second, the retries also go to the broadcast
@@ -34,9 +34,9 @@
 - A failed HomeBase connection records how far it got in the
   `station_connection` record: `stage` is `none`, `lookup`, `station_found` or
   `session_open`, and `inventory_address` says whether the inventory had a LAN
-  address. For a connection that ran out of time in the current report, the
-  diagnostics assessment names the stage instead of "does not identify the
-  network cause". See `docs/DISCOVERY_DIAGNOSTICS.md`.
+  address. For the latest connection that ran out of time in the current
+  report, the diagnostics assessment names the stage instead of "does not
+  identify the network cause". See `docs/DISCOVERY_DIAGNOSTICS.md`.
 
 ### Evidence and limits
 

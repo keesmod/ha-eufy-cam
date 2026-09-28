@@ -82,9 +82,6 @@ export class DiscoveryDiagnostics {
   private pendingReport = 0;
   private models = new Map<string, string>();
   private stationOutcomes = new Map<string, ConnectionStatus>();
-  // Failures already recorded per station since its last non-error record in a
-  // report, so a connection that alternates between stages is recorded once each.
-  private stationFailures = new Map<number, { report: number; keys: Set<string> }>();
   private stationEvents = new Map<
     number,
     {
@@ -137,25 +134,16 @@ export class DiscoveryDiagnostics {
         : null;
     const previous = this.stationEvents.get(ref);
     this.stationOutcomes.set(id, status);
-    if (status === 'error') {
-      const key = `${phase}|${code}|${stage}`;
-      let failures = this.stationFailures.get(ref);
-      if (failures?.report !== this.pendingReport) {
-        failures = { report: this.pendingReport, keys: new Set() };
-        this.stationFailures.set(ref, failures);
-      }
-      if (failures.keys.has(key)) return;
-      failures.keys.add(key);
-    } else {
-      this.stationFailures.delete(ref);
-      if (
-        previous?.report === this.pendingReport &&
-        previous.status === status &&
-        previous.reason === code &&
-        previous.stage === stage
-      )
-        return;
-    }
+    // Only a repeat of the previous record is left out, so the latest record of
+    // a station is always its latest attempt.
+    if (
+      previous?.report === this.pendingReport &&
+      previous.status === status &&
+      previous.reason === code &&
+      previous.stage === stage &&
+      (status !== 'error' || previous.phase === phase)
+    )
+      return;
     this.stationEvents.set(ref, {
       report: this.pendingReport,
       phase,

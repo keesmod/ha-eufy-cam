@@ -638,6 +638,36 @@ def test_owner_connection_keeps_the_generic_finding_without_a_matching_stage(eve
     assert finding["evidence"] == "support.last_discovery"
 
 
+def test_owner_connection_names_the_latest_connect_that_ran_out_of_time():
+    finding = _owner_finding(
+        _owner_report(
+            [
+                _connect_error(stage="station_found"),
+                _connect_error(stage="lookup", reason="client_closed"),
+            ]
+        )
+    )
+    assert "did not complete the P2P handshake" in finding["observation"]
+
+
+def test_owner_connection_reconnected_later_in_the_report_keeps_the_generic_text():
+    finding = _owner_finding(
+        _owner_report(
+            [
+                _connect_error(stage="lookup"),
+                {
+                    "event": "station_connection",
+                    "phase": "observation",
+                    "status": "connected",
+                    "report": 2,
+                    "device_ref": 1,
+                },
+            ]
+        )
+    )
+    assert "does not identify the network cause" in finding["observation"]
+
+
 def test_owner_connection_uses_the_failing_camera_owner_reference():
     finding = _owner_finding(
         _owner_report([_connect_error(stage="station_found", device_ref=2)])
