@@ -971,6 +971,8 @@ test('an autostart card releases on hidden page, pagehide, disconnection and rem
 test('an autostart card scrolled out of view keeps its session and keeps acknowledging frames, and scrolling back starts no second session', async ({ page }) => {
   await attachAutostart(page);
   await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  // An autostart focuses Close below the video, here below the fold, without scrolling the page to it.
+  expect(await page.evaluate(() => ({ scrollY: window.scrollY, below: card._stopButton.getBoundingClientRect().bottom > window.innerHeight, focused: card.shadowRoot.activeElement === card._stopButton }))).toEqual({ scrollY: 0, below: true, focused: true });
   await page.evaluate(() => receive({ type: 'frame', subscription: 9, sequence: 1, jpeg }));
   await expect.poll(() => page.evaluate(() => acks.length)).toBe(1);
   await page.evaluate(() => { card.style.marginTop = '4000px'; });
@@ -1213,9 +1215,9 @@ test('card editor offers automatic start only for the inline mode and stores fal
   expect(await page.evaluate(() => calls.length)).toBe(0);
 });
 
-// Narrow cards, about a phone in portrait: below 500 px of card width the inline live controls sit in a compact
-// toolbar below the video and the paused bar below the snapshot, decided by the card's own width through a CSS
-// container query. Wider cards keep the overlay on the video. Layout only: sessions, focus and messages are unchanged.
+// At every card width the inline live controls sit in a compact toolbar below the video and the paused bar below the
+// snapshot, so no control covers the camera image or the camera's own timestamp in its top corner (#95, #127). Layout
+// only: sessions, focus and messages are unchanged, and the popup keeps its own bar above the video.
 const layout = page => page.evaluate(() => {
   const rect = element => { const r = element.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), width: Math.round(r.width), height: Math.round(r.height) }; };
   const root = card.shadowRoot, stage = card._stage, paused = card._pausedBar, preview = card._preview;
@@ -1224,7 +1226,7 @@ const layout = page => page.evaluate(() => {
   return { card: rect(root.querySelector('ha-card')), stage: stage.hidden ? null : rect(stage), media: stage.hidden ? null : rect(media), bar: stage.hidden ? null : rect(bar), buttons: stage.hidden ? [] : [...bar.querySelectorAll('button')].filter(button => !button.hidden).map(rect), paused: paused.hidden ? null : rect(paused), preview: preview.hidden ? null : rect(preview) };
 });
 
-test('a card narrower than 500 px shows its live controls in one toolbar row below the video and the paused bar below the snapshot', async ({ page }) => {
+test('a narrow card shows its live controls in one toolbar row below the video and the paused bar below the snapshot', async ({ page }) => {
   await page.evaluate(() => { document.body.style.cssText = 'margin:0;width:360px;font:14px sans-serif'; card._hass.states['camera.front'].attributes.viewer_webrtc = true; });
   await attachAutostart(page);
   await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
@@ -1249,7 +1251,7 @@ test('a card narrower than 500 px shows its live controls in one toolbar row bel
   seen = await layout(page);
   expect(seen).toMatchObject({ stage: null, bar: null, buttons: [] });
   expect(seen.paused.top).toBeGreaterThanOrEqual(seen.preview.bottom);
-  expect(seen.paused.height).toBeLessThanOrEqual(64);
+  expect(seen.paused.height).toBeLessThanOrEqual(56);
   expect(seen.preview.width).toBe(360);
   expect(seen.preview.height).toBeGreaterThanOrEqual(202);
   await expect(page.locator('ha-card .stage .bar')).toBeHidden();
@@ -1277,53 +1279,152 @@ test('a card narrower than 500 px shows its live controls in one toolbar row bel
   expect(new Set(seen.buttons.map(button => button.top)).size).toBe(1);
 });
 
-test('a card of 500 px or wider keeps the controls on the video, and crossing the threshold while live only moves them', async ({ page }) => {
-  await page.evaluate(() => { document.body.style.cssText = 'margin:0;width:700px;font:14px sans-serif'; card._hass.states['camera.front'].attributes.viewer_webrtc = true; });
+test('a wide card shows its live controls below the video as well, and resizing the card while live only resizes the toolbar', async ({ page }) => {
+  await page.evaluate(() => { document.body.style.cssText = 'margin:0;width:900px;font:14px sans-serif'; card._hass.states['camera.front'].attributes.viewer_webrtc = true; });
   await attachAutostart(page);
   await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
   await expect(page.locator('ha-card video.video')).toBeVisible();
-  let seen = await layout(page);
-  expect(seen.card.width).toBe(700);
-  // The overlay lies on the top of the video and the stage is exactly as tall as the video.
-  expect(seen.bar.top).toBe(seen.media.top);
-  expect(seen.bar.bottom).toBeLessThan(seen.media.bottom);
-  expect(seen.stage.height).toBe(seen.media.height);
-  expect(seen.buttons).toHaveLength(4);
-  // The card's own width decides: 500 keeps the overlay, 499 moves the controls below the video, with no new session and no focus change.
-  for (const [width, below] of [[500, false], [499, true], [360, true], [520, false]]) {
+  // No control lies on the video at any width: the video fills the card width at 16:9 from the top of the stage and
+  // every button starts where the video ends. From 360 px the four controls share one compact row, a 320 px card may wrap.
+  for (const width of [900, 500, 499, 320, 1200]) {
     await page.evaluate(width => { document.body.style.width = `${width}px`; }, width);
-    seen = await layout(page);
+    const seen = await layout(page);
     expect(seen.card.width, `${width}px`).toBe(width);
-    expect(seen.bar.top >= seen.media.bottom, `${width}px`).toBe(below);
-    expect(seen.bar.top === seen.media.top, `${width}px`).toBe(!below);
+    expect(seen.media, `${width}px`).toMatchObject({ top: seen.stage.top, width });
+    expect(seen.media.height, `${width}px`).toBeGreaterThanOrEqual(Math.floor(width * 9 / 16));
+    expect(seen.bar.top, `${width}px`).toBeGreaterThanOrEqual(seen.media.bottom);
+    expect(seen.bar.bottom, `${width}px`).toBeLessThanOrEqual(seen.stage.bottom);
+    expect(seen.buttons, `${width}px`).toHaveLength(4);
+    for (const button of seen.buttons) expect(button.top, `${width}px`).toBeGreaterThanOrEqual(seen.media.bottom);
+    if (width >= 360) {
+      expect(new Set(seen.buttons.map(button => button.top)).size, `${width}px`).toBe(1);
+      expect(seen.bar.height, `${width}px`).toBeLessThanOrEqual(56);
+    }
   }
+  for (const name of ['Pause', 'Stop', 'Enable sound', 'Close live view']) await expect(page.getByRole('button', { name, exact: true })).toBeVisible();
   expect(await page.evaluate(() => ({ calls: calls.length, closes: closeCount, open: card._open, focused: card.shadowRoot.activeElement === card._stopButton }))).toEqual({ calls: 1, closes: 0, open: true, focused: true });
-  // The paused bar overlays the snapshot on a wide card and moves below it on a narrow one.
-  await page.evaluate(() => { document.body.style.width = '700px'; });
+  // Pause: the paused bar sits below the snapshot at every width, and the snapshot keeps its size.
+  await page.evaluate(() => { document.body.style.width = '900px'; });
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
   await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
-  seen = await layout(page);
-  expect(seen.paused.top).toBe(seen.preview.top);
-  expect(seen.paused.bottom).toBeLessThan(seen.preview.bottom);
-  await page.evaluate(() => { document.body.style.width = '360px'; });
-  seen = await layout(page);
-  expect(seen.paused.top).toBeGreaterThanOrEqual(seen.preview.bottom);
+  for (const width of [900, 500, 499, 320]) {
+    await page.evaluate(width => { document.body.style.width = `${width}px`; }, width);
+    const seen = await layout(page);
+    expect(seen, `${width}px`).toMatchObject({ stage: null, bar: null, buttons: [] });
+    expect(seen.paused.top, `${width}px`).toBeGreaterThanOrEqual(seen.preview.bottom);
+    expect(seen.paused.height, `${width}px`).toBeLessThanOrEqual(56);
+    expect(seen.preview.width, `${width}px`).toBe(width);
+    expect(seen.preview.height, `${width}px`).toBeGreaterThanOrEqual(Math.floor(width * 9 / 16));
+  }
   expect(await page.evaluate(() => card.shadowRoot.activeElement === card._resumeButton)).toBe(true);
+  await expect(page.locator('.status')).toHaveText('Paused. Tap Resume to watch.');
+  // Resume on the wide card: a fresh session with the toolbar below the video again.
+  await page.evaluate(() => { document.body.style.width = '900px'; });
+  await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(2);
+  const seen = await layout(page);
+  expect(seen.paused).toBeNull();
+  expect(seen.bar.top).toBeGreaterThanOrEqual(seen.media.bottom);
+});
+
+test('on a card taller than the window, as on a phone in landscape, Pause, Resume and Stop below the media leave the page where it is', async ({ page }) => {
+  await page.setViewportSize({ width: 780, height: 360 });
+  await page.evaluate(() => { document.body.style.cssText = 'margin:0;width:780px;font:14px sans-serif'; });
+  await attachAutostart(page);
+  // Content below the card, so the page never has to scroll back because it got shorter.
+  await page.evaluate(() => { const spacer = document.createElement('div'); spacer.style.height = '1000px'; document.body.append(spacer); });
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  const where = () => page.evaluate(() => {
+    const top = element => element.getBoundingClientRect().top;
+    return { scrollY: window.scrollY, media: top(card._video.hidden ? card._live : card._video), pause: top(card._pauseButton), close: top(card._stopButton), resume: top(card._resumeButton), toolbar: card._stage.querySelector('.bar').getBoundingClientRect().height, bar: card._pausedBar.getBoundingClientRect().height, focus: card.shadowRoot.activeElement?.className ?? null };
+  });
+  // Scrolled so that the toolbar is in view and the top of the video is not.
+  await page.evaluate(() => window.scrollTo(0, 275));
+  const live = await where();
+  expect(live.scrollY).toBe(275);
+  expect(live.media).toBeLessThan(0);
+  // Pause: the paused bar, as compact as the toolbar, takes its place, so the page stays and Resume appears where Pause was.
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  const paused = await where();
+  expect(paused.focus).toBe('close resume');
+  expect(Math.abs(paused.scrollY - live.scrollY)).toBeLessThanOrEqual(1);
+  expect(Math.abs(paused.resume - live.pause)).toBeLessThanOrEqual(1);
+  expect(Math.abs(paused.bar - live.toolbar)).toBeLessThanOrEqual(1);
+  // Resume: the toolbar takes the paused bar's row again, the page stays and Close appears at the height of Resume.
+  await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(2);
+  const resumed = await where();
+  expect(resumed.focus).toBe('close stop');
+  expect(Math.abs(resumed.scrollY - live.scrollY)).toBeLessThanOrEqual(1);
+  expect(Math.abs(resumed.close - paused.resume)).toBeLessThanOrEqual(1);
+  // Resume activated while the paused bar is below the fold, as with a key after scrolling away: the page scrolls just
+  // enough to show Close, which then has focus.
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(2);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  expect(await page.evaluate(() => card._resumeButton.getBoundingClientRect().top > window.innerHeight)).toBe(true);
+  await page.evaluate(() => card._resumeButton.click());
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(3);
+  const shown = await page.evaluate(() => { const r = card._stopButton.getBoundingClientRect(); return { scrollY: window.scrollY, top: r.top, bottom: r.bottom, inner: window.innerHeight, focused: card.shadowRoot.activeElement === card._stopButton }; });
+  expect(shown.focused).toBe(true);
+  expect(shown.top).toBeGreaterThanOrEqual(0);
+  expect(shown.bottom).toBeLessThanOrEqual(shown.inner);
+  expect(shown.scrollY).toBeGreaterThan(0);
+  expect(shown.scrollY).toBeLessThanOrEqual(Math.ceil(shown.bottom + shown.scrollY - shown.inner) + 1);
+  // Stop in the paused bar returns focus to the snapshot, whose top is out of view, without scrolling the page up to it.
+  await page.evaluate(() => window.scrollTo(0, 275));
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(3);
+  const before = await page.evaluate(() => ({ scrollY: window.scrollY, halt: card._pausedBar.querySelector('.halt').getBoundingClientRect().bottom <= window.innerHeight, snapshot: card._preview.getBoundingClientRect().top < 0 }));
+  expect(before).toMatchObject({ halt: true, snapshot: true });
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await expect(page.locator('.status')).toHaveText('Stopped until you open this view again. Tap to watch.');
+  expect(await page.evaluate(() => ({ scrollY: window.scrollY, focused: card.shadowRoot.activeElement === card._preview, paused: !card._pausedBar.hidden }))).toEqual({ scrollY: before.scrollY, focused: true, paused: false });
+});
+
+test('a key or tap that starts an inline card brings Close below the video into view with the least scroll', async ({ page }) => {
+  await attachAutostart(page, { entity: 'camera.front', live_mode: 'inline' });
+  await page.evaluate(() => { const spacer = document.createElement('div'); spacer.style.height = '1000px'; document.body.append(spacer); });
+  const close = () => page.evaluate(() => { const r = card._stopButton.getBoundingClientRect(); return { scrollY: window.scrollY, top: r.top, bottom: r.bottom, inner: window.innerHeight, focused: card.shadowRoot.activeElement === card._stopButton }; });
+  // Keyboard: Enter on the snapshot. Close lands below the fold of this 720 px window and the page scrolls just enough.
+  await page.evaluate(() => card._preview.focus());
+  await page.keyboard.press('Enter');
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  let seen = await close();
+  expect(seen.focused).toBe(true);
+  expect(seen.bottom).toBeLessThanOrEqual(seen.inner);
+  expect(seen.top).toBeGreaterThanOrEqual(0);
+  expect(seen.scrollY).toBeGreaterThan(0);
+  expect(seen.scrollY).toBeLessThan(100);
+  // A tap does the same.
+  await page.getByRole('button', { name: 'Close live view', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(2);
+  seen = await close();
+  expect(seen).toMatchObject({ focused: true });
+  expect(seen.bottom).toBeLessThanOrEqual(seen.inner);
+  expect(seen.scrollY).toBeGreaterThan(0);
+  expect(seen.scrollY).toBeLessThan(100);
 });
 
 test('the popup dialog keeps its own bar above the video whatever the card width', async ({ page }) => {
-  await page.evaluate(() => { document.body.style.cssText = 'margin:0;width:360px;font:14px sans-serif'; });
-  await page.getByRole('button', { name: 'Watch live' }).click();
-  await expect(page.locator('dialog:not(.record-dialog)')).toBeVisible();
-  const seen = await page.evaluate(() => {
-    const top = element => Math.round(element.getBoundingClientRect().top);
-    const bar = card.shadowRoot.querySelector('dialog .bar');
-    return { stage: getComputedStyle(card._stage).display, position: getComputedStyle(bar).position, bar: top(bar), media: top(card._live) };
-  });
-  expect(seen).toMatchObject({ stage: 'block', position: 'static' });
-  expect(seen.bar).toBeLessThan(seen.media);
-  await page.getByRole('button', { name: 'Close live view' }).click();
-  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  for (const [index, width] of [360, 900].entries()) {
+    await page.evaluate(width => { document.body.style.cssText = `margin:0;width:${width}px;font:14px sans-serif`; }, width);
+    await page.getByRole('button', { name: 'Watch live' }).click();
+    await expect(page.locator('dialog:not(.record-dialog)')).toBeVisible();
+    const seen = await page.evaluate(() => {
+      const top = element => Math.round(element.getBoundingClientRect().top);
+      const bar = card.shadowRoot.querySelector('dialog .bar');
+      return { stage: getComputedStyle(card._stage).display, position: getComputedStyle(bar).position, bar: top(bar), media: top(card._live) };
+    });
+    expect(seen, `${width}px`).toMatchObject({ stage: 'block', position: 'static' });
+    expect(seen.bar, `${width}px`).toBeLessThan(seen.media);
+    await page.getByRole('button', { name: 'Close live view' }).click();
+    await expect.poll(() => page.evaluate(() => closeCount)).toBe(index + 1);
+  }
 });
 
 test('the battery level shows an icon whose fill and colour follow the level, updates with the state and hides without a value or while unavailable', async ({ page }) => {
