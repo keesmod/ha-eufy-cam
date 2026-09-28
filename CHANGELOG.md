@@ -17,12 +17,15 @@
   status messages, live playback, autostart, the popup dialog mode and the
   card editor are unchanged. There is no new card option. The card no longer
   needs to be a CSS size container, so the 500 px threshold is gone.
-- A live start still moves focus to Close live view, and Stop in the paused
-  bar still moves it to the snapshot, but neither scrolls the page any more,
-  at any card width. Below the video Close is often below the fold of a wide
-  card, and an autostart card coming into view would otherwise make the
-  dashboard jump. Stop below the snapshot would otherwise scroll the page back
-  up to the snapshot.
+- Focus goes to the same controls as before, but the focus moves scroll the
+  page less, at any card width. Below the video Close is often below the fold
+  of a wide card. A start with a tap or a key scrolls the page only as far as
+  needed to show Close, and an autostart moves the focus without scrolling,
+  so a card coming into view does not make the dashboard jump. Pause shows
+  the paused bar in the place of the toolbar, so Resume appears where Pause
+  was. The focus move after Stop in the paused bar no longer scrolls the page
+  up to the snapshot. The page can still move when it gets shorter, for
+  example when the paused bar goes away near the end of the page.
 
 ### Evidence and limits
 
@@ -31,9 +34,11 @@ below the video, and a card resized between 320, 499, 500, 900 and 1200 px
 while live with every control below the video and the same session and
 focus, then the paused bar below the snapshot at 320, 499, 500 and 900 px.
 An autostart card taller than the window starts with focus on Close below
-the fold and the page still at the top, and on a 780 by 360 window Stop in
-the paused bar leaves the page where it is. The popup dialog keeps its bar
-above the video at 360 and 900 px. In Chromium the inline layout below 500 px
+the fold and the page still at the top, and a start with Enter or a tap
+scrolls just enough to show Close. On a 780 by 360 window with content below
+the card, Resume appears within 12 px of where Pause was and Stop in the
+paused bar leaves the page where it is. The popup dialog keeps its bar above
+the video at 360 and 900 px. In Chromium the inline layout below 500 px
 and the popup at every width are unchanged in size and position from 0.8.35.
 The reporter's dashboard has not confirmed this release yet.
 

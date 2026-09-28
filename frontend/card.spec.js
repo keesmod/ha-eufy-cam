@@ -971,7 +971,7 @@ test('an autostart card releases on hidden page, pagehide, disconnection and rem
 test('an autostart card scrolled out of view keeps its session and keeps acknowledging frames, and scrolling back starts no second session', async ({ page }) => {
   await attachAutostart(page);
   await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
-  // The start focuses Close below the video, here below the fold, without scrolling the page to it.
+  // An autostart focuses Close below the video, here below the fold, without scrolling the page to it.
   expect(await page.evaluate(() => ({ scrollY: window.scrollY, below: card._stopButton.getBoundingClientRect().bottom > window.innerHeight, focused: card.shadowRoot.activeElement === card._stopButton }))).toEqual({ scrollY: 0, below: true, focused: true });
   await page.evaluate(() => receive({ type: 'frame', subscription: 9, sequence: 1, jpeg }));
   await expect.poll(() => page.evaluate(() => acks.length)).toBe(1);
@@ -1327,20 +1327,56 @@ test('a wide card shows its live controls below the video as well, and resizing 
   expect(seen.bar.top).toBeGreaterThanOrEqual(seen.media.bottom);
 });
 
-test('on a card taller than the window, as on a phone in landscape, Stop in the paused bar below the snapshot moves focus to the snapshot without scrolling the page', async ({ page }) => {
+test('on a card taller than the window, as on a phone in landscape, Pause and Stop below the media leave the page where it is', async ({ page }) => {
   await page.setViewportSize({ width: 780, height: 360 });
   await page.evaluate(() => { document.body.style.cssText = 'margin:0;width:780px;font:14px sans-serif'; });
   await attachAutostart(page);
+  // Content below the card, so the page never has to scroll back because it got shorter.
+  await page.evaluate(() => { const spacer = document.createElement('div'); spacer.style.height = '1000px'; document.body.append(spacer); });
   await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  // Scrolled so that the toolbar is in view and the top of the video is not.
+  await page.evaluate(() => window.scrollTo(0, 275));
+  const live = await page.evaluate(() => ({ scrollY: window.scrollY, pause: card._pauseButton.getBoundingClientRect().top, media: card._video.hidden ? card._live.getBoundingClientRect().top : card._video.getBoundingClientRect().top }));
+  expect(live).toMatchObject({ scrollY: 275 });
+  expect(live.media).toBeLessThan(0);
+  // Pause: the paused bar takes the place of the toolbar, so Resume appears where Pause was.
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
   await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
-  // The window shows the paused bar and only the lower part of the snapshot.
-  const before = await page.evaluate(() => ({ scrollY: window.scrollY, halt: card._pausedBar.querySelector('.halt').getBoundingClientRect().bottom <= window.innerHeight, snapshotTop: card._preview.getBoundingClientRect().top < 0 }));
-  expect(before).toMatchObject({ halt: true, snapshotTop: true });
-  expect(before.scrollY).toBeGreaterThan(0);
+  const paused = await page.evaluate(() => ({ scrollY: window.scrollY, resume: card._resumeButton.getBoundingClientRect().top, focused: card.shadowRoot.activeElement === card._resumeButton }));
+  expect(paused.focused).toBe(true);
+  expect(Math.abs(paused.resume - live.pause)).toBeLessThanOrEqual(12);
+  // Stop in the paused bar returns focus to the snapshot, whose top is out of view, without scrolling the page up to it.
+  const before = await page.evaluate(() => ({ scrollY: window.scrollY, halt: card._pausedBar.querySelector('.halt').getBoundingClientRect().bottom <= window.innerHeight, snapshot: card._preview.getBoundingClientRect().top < 0 }));
+  expect(before).toMatchObject({ halt: true, snapshot: true });
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   await expect(page.locator('.status')).toHaveText('Stopped until you open this view again. Tap to watch.');
   expect(await page.evaluate(() => ({ scrollY: window.scrollY, focused: card.shadowRoot.activeElement === card._preview, paused: !card._pausedBar.hidden }))).toEqual({ scrollY: before.scrollY, focused: true, paused: false });
+});
+
+test('a key or tap that starts an inline card brings Close below the video into view with the least scroll', async ({ page }) => {
+  await attachAutostart(page, { entity: 'camera.front', live_mode: 'inline' });
+  await page.evaluate(() => { const spacer = document.createElement('div'); spacer.style.height = '1000px'; document.body.append(spacer); });
+  const close = () => page.evaluate(() => { const r = card._stopButton.getBoundingClientRect(); return { scrollY: window.scrollY, top: r.top, bottom: r.bottom, inner: window.innerHeight, focused: card.shadowRoot.activeElement === card._stopButton }; });
+  // Keyboard: Enter on the snapshot. Close lands below the fold of this 720 px window and the page scrolls just enough.
+  await page.evaluate(() => card._preview.focus());
+  await page.keyboard.press('Enter');
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  let seen = await close();
+  expect(seen.focused).toBe(true);
+  expect(seen.bottom).toBeLessThanOrEqual(seen.inner);
+  expect(seen.top).toBeGreaterThanOrEqual(0);
+  expect(seen.scrollY).toBeGreaterThan(0);
+  expect(seen.scrollY).toBeLessThan(100);
+  // A tap does the same.
+  await page.getByRole('button', { name: 'Close live view', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.getByRole('button', { name: 'Watch live' }).click();
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(2);
+  seen = await close();
+  expect(seen).toMatchObject({ focused: true });
+  expect(seen.bottom).toBeLessThanOrEqual(seen.inner);
+  expect(seen.scrollY).toBeGreaterThan(0);
 });
 
 test('the popup dialog keeps its own bar above the video whatever the card width', async ({ page }) => {

@@ -166,13 +166,13 @@ export class EufyViewerCard extends HTMLElement {
     this._pausedBar = this.shadowRoot!.querySelector<HTMLElement>(".paused")!;
     this._resumeButton = this.shadowRoot!.querySelector<HTMLButtonElement>(".resume")!;
     this._pauseButton.addEventListener("click", () => this._pause());
-    this._resumeButton.addEventListener("click", () => { void this._start(); });
+    this._resumeButton.addEventListener("click", () => { void this._start(true); });
     for (const halt of this.shadowRoot!.querySelectorAll<HTMLButtonElement>(".halt")) halt.addEventListener("click", () => this._halt());
     // Escape closes the modal dialog through its cancel event. An inline live view closes on Escape while it has focus.
     this._stage.addEventListener("keydown", event => { if (event.key === "Escape" && this._inline && this._open) { event.preventDefault(); this._stop(); } });
     this._liveDiagnostics = new EufyDiagnosticControl(this.shadowRoot!.querySelector(".meta")!, () => ({ ha: this._hass, entity: this._config?.entity }));
     this._recordDiagnostics = new EufyDiagnosticControl(this._recordDialog, () => ({ ha: this._hass, entity: this._config?.entity }));
-    this._preview.addEventListener("click", () => { void this._start(); });
+    this._preview.addEventListener("click", () => { void this._start(true); });
     this._stopButton.addEventListener("click", () => this._stop());
     this._dialog.addEventListener("cancel", event => { event.preventDefault(); this._stop(); });
     this._dialog.addEventListener("close", () => { if (this._open) this._stop(); });
@@ -368,7 +368,7 @@ export class EufyViewerCard extends HTMLElement {
   /** An inline card with autostart keeps its session and its acknowledgement loop while it is scrolled out of view. Every other card stops on intersection loss. */
   _keepsOutOfView() { return this._inline && this._config?.live_autostart === true; }
   _watching(generation: number) { return this._open && generation === this._generation && this.isConnected && (this._visible || this._keepsOutOfView()) && document.visibilityState === "visible" && (this._inline ? !this._stage.hidden : this._dialog.open); }
-  async _start() {
+  async _start(fromUser = false) {
     this._liveDiagnostics.update(false);
     if (this._open || this._preview.disabled || !this._hass || !this._config || !this._visible || document.visibilityState !== "visible") return;
     const generation = ++this._generation;
@@ -385,8 +385,12 @@ export class EufyViewerCard extends HTMLElement {
     this._live.hidden = webrtc; this._video.hidden = !webrtc; this._sound.hidden = !webrtc;
     this._video.muted = true; this._sound.textContent = this._text().sound;
     this._open = true; this._autostartPending = false; this._paused = false;
-    // Close sits below the video, often below the fold of a wide card. Focusing it must not scroll the page to it.
-    if (this._inline) { this._preview.hidden = true; this._stage.hidden = false; this._stopButton.focus({ preventScroll: true }); }
+    // Close sits below the video, often below the fold of a wide card. A tap or key brings it into view with the least
+    // scroll, so keyboard focus stays visible. An autostart never scrolls the page.
+    if (this._inline) {
+      this._preview.hidden = true; this._stage.hidden = false; this._stopButton.focus({ preventScroll: true });
+      if (fromUser) this._stopButton.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
     else this._dialog.showModal();
     this._controls();
     this._status(this._text().connecting);
@@ -738,10 +742,10 @@ export class EufyViewerCard extends HTMLElement {
   /** Pause releases the lease and shows the snapshot. Resume starts a new session, and so does the next autostart trigger. */
   _pause() {
     if (!this._open) return;
-    this._stop();
+    // Paused first, so the paused bar replaces the toolbar in the same layout as the snapshot and the page does not shift.
     this._paused = true;
+    this._stop();
     this._status(this._text().paused);
-    this._controls();
     this._resumeButton.focus();
   }
   /** The stop control ends the session and disables autostart until the card is attached again. */
@@ -762,6 +766,7 @@ export class EufyViewerCard extends HTMLElement {
     const unsubscribe = this._unsubscribe; this._unsubscribe = null;
     if (unsubscribe) Promise.resolve().then(unsubscribe).catch(() => {});
     if (this._dialog.open) this._dialog.close();
+    this._controls();
     if (this._inline) {
       const focused = this.shadowRoot!.activeElement !== null && this._stage.contains(this.shadowRoot!.activeElement);
       this._stage.hidden = true; this._preview.hidden = false;
@@ -772,7 +777,6 @@ export class EufyViewerCard extends HTMLElement {
     if (this._frameUrl) URL.revokeObjectURL(this._frameUrl);
     this._frameUrl = null;
     if (reason) this._status(this._text()[reason]);
-    this._controls();
   }
 }
 
