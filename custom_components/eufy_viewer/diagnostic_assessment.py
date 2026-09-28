@@ -102,6 +102,88 @@ def _start_observation(start: dict[str, Any], failed: bool) -> str:
     )
 
 
+_CONNECTION_STAGES = {
+    "lookup": (
+        "Owner connection was not established. No HomeBase answered the local "
+        "lookup{target}. The bridge host did not reach the HomeBase on its LAN."
+    ),
+    "station_found": (
+        "Owner connection was not established. The HomeBase answered the local "
+        "lookup but did not complete the P2P handshake."
+    ),
+    "session_open": (
+        "Owner connection was not established. The HomeBase opened the P2P "
+        "session but the command key was not established."
+    ),
+}
+# Only a connection that ran out of time says where the HomeBase stopped
+# answering. The latest such connect is used, and failures for other reasons,
+# such as a concurrent attempt, are skipped.
+_CONNECTION_TIMEOUTS = {"device_request_timeout", "device_disconnected"}
+
+
+def _connection_stage(row: dict[str, Any]) -> str:
+    address = row.get("inventory_address")
+    target = (
+        " at its inventory LAN address or by broadcast"
+        if address is True
+        else ", and the inventory had no LAN address for it"
+        if address is False
+        else ""
+    )
+    return _CONNECTION_STAGES[row["stage"]].format(target=target)
+
+
+def _failed_connection(support: dict[str, Any], discovery: list[Any]) -> Any:
+    """The latest named-stage timeout of a HomeBase that failed in the current report.
+
+    Per HomeBase only its latest timed-out connect after its last connection in
+    the report counts. None when no such attempt reached a named stage.
+    """
+    reports = [r.get("report") for r in discovery if type(r.get("report")) is int]
+    if not reports:
+        return None
+    current = max(reports)
+    failing = {
+        r.get("ref")
+        for r in discovery
+        if r.get("report") == current
+        and r.get("station_status") in {"error", "disconnected"}
+    } | {
+        r.get("owner_ref")
+        for r in discovery
+        if r.get("report") == current
+        and r.get("owner_status") in {"error", "disconnected"}
+    }
+    events = [
+        r
+        for r in support.get("recent_events", [])
+        if r.get("event") == "station_connection" and r.get("report") == current
+    ]
+    # Only failures after a HomeBase's last connection in the report still apply.
+    connected_at = {
+        r.get("device_ref"): index
+        for index, r in enumerate(events)
+        if r.get("status") == "connected"
+    }
+    latest: dict[Any, tuple[int, dict[str, Any]]] = {}
+    for index, r in enumerate(events):
+        if (
+            r.get("phase") == "connect"
+            and r.get("status") == "error"
+            and r.get("device_ref") in failing
+            and index > connected_at.get(r.get("device_ref"), -1)
+            and r.get("reason") in _CONNECTION_TIMEOUTS
+        ):
+            latest[r.get("device_ref")] = (index, r)
+    named = sorted(
+        (index, r)
+        for index, r in latest.values()
+        if r.get("stage") in _CONNECTION_STAGES
+    )
+    return named[-1][1] if named else None
+
+
 def assess(report: dict[str, Any]) -> dict[str, Any]:
     """Only inspect the projected report. Findings never contain upstream text."""
     findings: list[dict[str, Any]] = []
@@ -140,12 +222,20 @@ def assess(report: dict[str, Any]) -> dict[str, Any]:
         or r.get("station_status") in {"error", "disconnected"}
         for r in discovery
     ):
-        add(
-            "owner_connection",
-            "Owner connection was not established. The report does not "
-            "identify the network cause.",
-            "support.last_discovery",
-        )
+        failed = _failed_connection(support, discovery)
+        if failed:
+            add(
+                "owner_connection",
+                _connection_stage(failed),
+                "support.recent_events.station_connection",
+            )
+        else:
+            add(
+                "owner_connection",
+                "Owner connection was not established. The report does not "
+                "identify the network cause.",
+                "support.last_discovery",
+            )
     for row in support.get("live_audio", []):
         attempt = row.get("attempt")
         events = {e["event"] for e in row.get("pipeline", [])}

@@ -542,3 +542,221 @@ async def test_normal_reader_disconnect_is_distinct_from_closure(tmp_path):
         assert "client_disconnect" in {e["event"] for e in observation.data["events"]}
         assert body.owners == 1
     assert observation.data["file_closed"] is True
+
+
+def _owner_report(events, discovery=None):
+    return {
+        "support": {
+            "last_discovery": discovery
+            or [
+                {"event": "summary", "report": 2},
+                {"event": "device", "ref": 1, "report": 2, "station_status": "error"},
+                {
+                    "event": "device",
+                    "ref": 4,
+                    "owner_ref": 2,
+                    "report": 2,
+                    "owner_status": "error",
+                },
+                {
+                    "event": "device",
+                    "ref": 3,
+                    "report": 2,
+                    "station_status": "connected",
+                },
+            ],
+            "recent_events": events,
+        }
+    }
+
+
+def _connect_error(**row):
+    return {
+        "event": "station_connection",
+        "phase": "connect",
+        "status": "error",
+        "report": 2,
+        "device_ref": 1,
+        "reason": "device_request_timeout",
+        **row,
+    }
+
+
+def _owner_finding(report):
+    (finding,) = [
+        f for f in assess(report)["findings"] if f["stage"] == "owner_connection"
+    ]
+    return finding
+
+
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        (
+            {"stage": "lookup", "inventory_address": False},
+            "No HomeBase answered the local lookup, and the inventory had no LAN "
+            "address for it.",
+        ),
+        (
+            {"stage": "lookup", "inventory_address": True},
+            "No HomeBase answered the local lookup at its inventory LAN address "
+            "or by broadcast.",
+        ),
+        ({"stage": "station_found"}, "did not complete the P2P handshake"),
+        ({"stage": "session_open"}, "the command key was not established"),
+        (
+            {"stage": "session_open", "reason": "device_disconnected"},
+            "the command key was not established",
+        ),
+    ],
+)
+def test_owner_connection_finding_names_the_stage_it_reached(row, expected):
+    finding = _owner_finding(
+        _owner_report([_connect_error(stage="lookup"), _connect_error(**row)])
+    )
+    assert expected in finding["observation"]
+    assert finding["evidence"] == "support.recent_events.station_connection"
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        # No stage was recorded.
+        _connect_error(),
+        # The attempt did not run out of time, another one was in progress.
+        _connect_error(stage="none", reason="connection_busy"),
+        _connect_error(stage="lookup", reason="client_closed"),
+        # An earlier discovery report failed at the lookup, the current one did not.
+        _connect_error(stage="lookup", report=1),
+        # Another HomeBase, which connected in the current report, failed later.
+        _connect_error(stage="session_open", device_ref=3),
+    ],
+)
+def test_owner_connection_keeps_the_generic_finding_without_a_matching_stage(event):
+    finding = _owner_finding(_owner_report([event]))
+    assert "does not identify the network cause" in finding["observation"]
+    assert finding["evidence"] == "support.last_discovery"
+
+
+def test_owner_connection_names_the_latest_connect_that_ran_out_of_time():
+    finding = _owner_finding(
+        _owner_report(
+            [
+                _connect_error(stage="station_found"),
+                _connect_error(stage="lookup", reason="client_closed"),
+            ]
+        )
+    )
+    assert "did not complete the P2P handshake" in finding["observation"]
+
+
+def test_owner_connection_reconnected_later_in_the_report_keeps_the_generic_text():
+    finding = _owner_finding(
+        _owner_report(
+            [
+                _connect_error(stage="lookup"),
+                {
+                    "event": "station_connection",
+                    "phase": "observation",
+                    "status": "connected",
+                    "report": 2,
+                    "device_ref": 1,
+                },
+            ]
+        )
+    )
+    assert "does not identify the network cause" in finding["observation"]
+
+
+def _observation(status, phase="observation"):
+    return {
+        "event": "station_connection",
+        "phase": phase,
+        "status": status,
+        "report": 2,
+        "device_ref": 1,
+    }
+
+
+@pytest.mark.parametrize(
+    ("events", "expected"),
+    [
+        (
+            [
+                _connect_error(stage="lookup"),
+                _observation("connected"),
+                {
+                    **_observation("error", "refresh_state"),
+                    "reason": "device_request_timeout",
+                },
+            ],
+            "does not identify the network cause",
+        ),
+        (
+            [
+                _connect_error(stage="lookup"),
+                _observation("connected"),
+                _observation("disconnected"),
+            ],
+            "does not identify the network cause",
+        ),
+        (
+            [
+                _connect_error(stage="lookup"),
+                _observation("connected"),
+                _observation("disconnected"),
+                _connect_error(stage="station_found"),
+            ],
+            "did not complete the P2P handshake",
+        ),
+        (
+            # Another HomeBase connecting does not clear this one's failure.
+            [
+                _connect_error(stage="lookup"),
+                {**_observation("connected"), "device_ref": 2},
+            ],
+            "No HomeBase answered the local lookup",
+        ),
+    ],
+)
+def test_owner_connection_only_explains_failures_after_the_last_connection(
+    events, expected
+):
+    assert expected in _owner_finding(_owner_report(events))["observation"]
+
+
+def test_owner_connection_names_only_a_stage_of_each_homebase_latest_attempt():
+    # The latest attempt of ref 1 reached no named stage, so its earlier
+    # station_found is not named. Ref 2's lookup stays its latest attempt, also
+    # when ref 1 fails after it.
+    assert (
+        "does not identify the network cause"
+        in (
+            _owner_finding(
+                _owner_report(
+                    [
+                        _connect_error(stage="station_found"),
+                        _connect_error(stage="none"),
+                    ]
+                )
+            )["observation"]
+        )
+    )
+    assert (
+        "No HomeBase answered the local lookup"
+        in _owner_finding(
+            _owner_report(
+                [
+                    _connect_error(stage="lookup", device_ref=2),
+                    _connect_error(stage="none"),
+                ]
+            )
+        )["observation"]
+    )
+
+
+def test_owner_connection_uses_the_failing_camera_owner_reference():
+    finding = _owner_finding(
+        _owner_report([_connect_error(stage="station_found", device_ref=2)])
+    )
+    assert "did not complete the P2P handshake" in finding["observation"]

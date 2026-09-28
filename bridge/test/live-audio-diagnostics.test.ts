@@ -141,6 +141,9 @@ test('continuity and pipeline evidence survive close with bounded privacy and no
   assert.ok(!JSON.stringify(r).includes('PRIVATE'));
   const bad = d.begin('PRIVATE', { firmware: 'PRIVATE', owner_model:'PRIVATE', owner_firmware:'PRIVATE' });
   assert.ok(!JSON.stringify(bad.snapshot()).includes('PRIVATE')); stream.destroy();
+  // A received model code with a short suffix (#129) is kept, a serial-like suffix is not.
+  assert.equal(d.begin('T8113-Z').snapshot().model, 'T8113-Z');
+  assert.equal(d.begin('T8113-PRIVATE').snapshot().model, 'unavailable');
 });
 
 test('the report keeps a row for fifteen minutes by default and for the live cap plus fifteen minutes when asked', () => {
