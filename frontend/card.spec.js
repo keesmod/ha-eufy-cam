@@ -1351,7 +1351,7 @@ test('on a card taller than the window, as on a phone in landscape, Pause, Resum
   expect(Math.abs(paused.scrollY - live.scrollY)).toBeLessThanOrEqual(1);
   expect(Math.abs(paused.resume - live.pause)).toBeLessThanOrEqual(1);
   expect(Math.abs(paused.bar - live.toolbar)).toBeLessThanOrEqual(1);
-  // Resume: the toolbar takes the paused bar's place again, the page stays and Close appears where Resume was.
+  // Resume: the toolbar takes the paused bar's row again, the page stays and Close appears at the height of Resume.
   await page.getByRole('button', { name: 'Resume', exact: true }).click();
   await expect.poll(() => page.evaluate(() => calls.length)).toBe(2);
   const resumed = await where();
