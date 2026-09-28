@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.29 - 2026-09-28
+
+- Include client 0.26.0. Discovery admits eufyCam 2C cameras that Eufy reports
+  as `T8113-Z` with device type 8, with the same handling as `T8113`, and
+  recognizes the Floodlight Cam 2K `T8424`, as its own station a standalone
+  camera without media, as reported on #129. The discovery report keeps a
+  model code with a short suffix instead of `unavailable`.
+- The local lookup for the HomeBase also broadcasts on every external IPv4
+  interface of the host, at most 16, when the inventory's LAN address stays
+  silent or is missing, and only the HomeBase's own answer ends it. A failed
+  connection records how far it got in `station_connection.stage` and
+  `inventory_address`. Refs #130.
+
 ## 0.8.28 - 2026-09-25
 
 - Include client 0.21.0. Every live video row in the diagnostics carries a

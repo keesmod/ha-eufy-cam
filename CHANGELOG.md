@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.8.37 - 2026-09-28
+
+### eufyCam 2C as T8113-Z and Floodlight Cam 2K T8424
+
+- Bridge 0.8.29 includes client
+  [0.26.0](https://github.com/keesmod/eufy-mega-client/releases/tag/v0.26.0).
+  Discovery admits eufyCam 2C cameras that Eufy reports as `T8113-Z` with
+  device type 8, with the same HomeBase 3 handling, snapshots, live view and
+  recordings as `T8113`. The reporter on #129 saw exactly this working with a
+  local patch, which is no longer needed. Other suffixes stay unsupported.
+- The Floodlight Cam 2K `T8424` with type 39 is recognized. As its own
+  station, as on #129, it reports `relationship=standalone` with
+  `standalone_transport_unverified` instead of `unsupported_device`. Under a
+  HomeBase 3 parent it reports `unsupported_station`, because the HomeBase
+  only stores its video. It still has no media, because standalone
+  cameras have no connection route yet
+  ([eufy-mega-client#142](https://github.com/keesmod/eufy-mega-client/issues/142)).
+- The discovery report, the live diagnostics and the HA download keep a model
+  code with a short suffix, such as `T8113-Z`, instead of `unavailable`.
+
+### HomeBase lookup on every interface
+
+- The bridge still asks the HomeBase's LAN address from Eufy's inventory first.
+  When that stays silent for a second, the retries also go to the broadcast
+  address of every external IPv4 interface of the host, at most 16. Without an
+  inventory address, or an address the HomeBase last completed a handshake
+  from, the first lookup already broadcasts. Only the HomeBase's own answer
+  ends the lookup. Earlier, a stale inventory address or a Docker host whose
+  first interface is a container bridge could end every connection in
+  `device_request_timeout`, the failure reported on #130. The cause on that
+  installation is not confirmed.
+- A failed HomeBase connection records how far it got in the
+  `station_connection` record: `stage` is `none`, `lookup`, `station_found` or
+  `session_open`, and `inventory_address` says whether the inventory had a LAN
+  address. For the latest connection that ran out of time in the current
+  report, the diagnostics assessment names the stage instead of "does not
+  identify the network cause". See `docs/DISCOVERY_DIAGNOSTICS.md`.
+
+### Evidence and limits
+
+The bridge, integration and diagnostics tests cover the new profiles, the
+suffixed model codes, the connection stages and the assessment texts. The
+client's own tests cover the lookup targets, the DID check and the stage order.
+The cameras from #129 and the installation from #130 are not available to the
+maintainer. Hardware validation of the unchanged working path, a HomeBase 3 on
+firmware 3.8.7.4 with its inventory LAN address, runs on the maintainer's bench
+before publication and is recorded in the release notes.
+
+### Upgrade and rollback
+
+Update the bridge app to 0.8.29 (Docker: rebuild from the v0.8.37 tag as
+`docs/DOCKER.md` describes) and the integration to 0.8.37, then restart Home
+Assistant. No identifier, option or session change. To roll back, restore the
+0.8.28 bridge and the 0.8.36 integration from your backups.
+
 ## 0.8.36 - 2026-09-28
 
 ### Inline live controls below the video at every card width
