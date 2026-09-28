@@ -116,7 +116,7 @@ export class EufyViewerCard extends HTMLElement {
         .snapshot[hidden],.empty[hidden],.live[hidden],.sound[hidden],.pause[hidden],.halt[hidden],.record-video[hidden]{display:none}.empty{display:grid;place-items:center;aspect-ratio:16/9;padding:24px;color:var(--secondary-text-color);font-size:13px;background:var(--secondary-background-color,#18212b)}
         .play{position:absolute;right:16px;bottom:16px;display:grid;place-items:center;width:44px;height:44px;border-radius:50%;background:#0008;font-size:20px;color:white;pointer-events:none}.preview:disabled{cursor:default}.preview:disabled .play{display:none}
         .preview[hidden],.stage[hidden],.paused[hidden]{display:none}.stage.inline{background:#10161e}.stage.inline:not([hidden]){display:flex;flex-direction:column}.stage.inline img.live:not([src]){visibility:hidden}.stage.inline .bar{order:1}
-        .stage.inline .bar,.paused{justify-content:flex-end;flex-wrap:wrap;gap:4px;padding:6px 8px;background:var(--ha-card-background,var(--card-background-color,#fff))}
+        .stage.inline .bar,.bar.paused{justify-content:flex-end;flex-wrap:wrap;gap:4px;padding:6px 8px;background:var(--ha-card-background,var(--card-background-color,#fff))}
         .stage.inline #live-title,.stage.inline .live-status{display:none}.stage.inline .close,.paused .close{flex:1 1 auto;padding:10px 4px;color:inherit;background:var(--secondary-background-color,#eee)}
         .meta{padding:16px}.head{display:flex;align-items:center;justify-content:space-between;gap:12px}.name{font-weight:600;font-size:16px;line-height:24px;min-width:0}
         .battery{display:inline-flex;align-items:center;gap:6px;flex:none;font-size:13px;line-height:24px;color:var(--secondary-text-color)}.battery[hidden]{display:none}.battery svg{display:block;width:28px;height:14px}.battery-body{fill:none;stroke:currentColor;stroke-width:1.5}.battery-cap{fill:currentColor}.battery-fill{fill:var(--battery-color,currentColor);transition:width .4s}
@@ -385,14 +385,15 @@ export class EufyViewerCard extends HTMLElement {
     this._live.hidden = webrtc; this._video.hidden = !webrtc; this._sound.hidden = !webrtc;
     this._video.muted = true; this._sound.textContent = this._text().sound;
     this._open = true; this._autostartPending = false; this._paused = false;
-    // Close sits below the video, often below the fold of a wide card. A tap or key brings it into view with the least
+    // The paused bar goes away in the same layout in which the toolbar appears, so the card keeps its height on Resume.
+    this._controls();
+    // Close sits below the video, often below the fold of a wide card. A tap or key scrolls it into view with the least
     // scroll, so keyboard focus stays visible. An autostart never scrolls the page.
     if (this._inline) {
       this._preview.hidden = true; this._stage.hidden = false; this._stopButton.focus({ preventScroll: true });
       if (fromUser) this._stopButton.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
     else this._dialog.showModal();
-    this._controls();
     this._status(this._text().connecting);
     this._startup = setTimeout(() => { if (this._watching(generation)) this._stop("error"); }, 25_000);
     try {
@@ -742,7 +743,7 @@ export class EufyViewerCard extends HTMLElement {
   /** Pause releases the lease and shows the snapshot. Resume starts a new session, and so does the next autostart trigger. */
   _pause() {
     if (!this._open) return;
-    // Paused first, so the paused bar replaces the toolbar in the same layout as the snapshot and the page does not shift.
+    // Paused first, so the paused bar replaces the toolbar in the same layout in which the snapshot replaces the video.
     this._paused = true;
     this._stop();
     this._status(this._text().paused);

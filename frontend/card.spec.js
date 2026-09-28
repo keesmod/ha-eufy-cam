@@ -1251,7 +1251,7 @@ test('a narrow card shows its live controls in one toolbar row below the video a
   seen = await layout(page);
   expect(seen).toMatchObject({ stage: null, bar: null, buttons: [] });
   expect(seen.paused.top).toBeGreaterThanOrEqual(seen.preview.bottom);
-  expect(seen.paused.height).toBeLessThanOrEqual(64);
+  expect(seen.paused.height).toBeLessThanOrEqual(56);
   expect(seen.preview.width).toBe(360);
   expect(seen.preview.height).toBeGreaterThanOrEqual(202);
   await expect(page.locator('ha-card .stage .bar')).toBeHidden();
@@ -1312,7 +1312,7 @@ test('a wide card shows its live controls below the video as well, and resizing 
     const seen = await layout(page);
     expect(seen, `${width}px`).toMatchObject({ stage: null, bar: null, buttons: [] });
     expect(seen.paused.top, `${width}px`).toBeGreaterThanOrEqual(seen.preview.bottom);
-    expect(seen.paused.height, `${width}px`).toBeLessThanOrEqual(64);
+    expect(seen.paused.height, `${width}px`).toBeLessThanOrEqual(56);
     expect(seen.preview.width, `${width}px`).toBe(width);
     expect(seen.preview.height, `${width}px`).toBeGreaterThanOrEqual(Math.floor(width * 9 / 16));
   }
@@ -1327,25 +1327,55 @@ test('a wide card shows its live controls below the video as well, and resizing 
   expect(seen.bar.top).toBeGreaterThanOrEqual(seen.media.bottom);
 });
 
-test('on a card taller than the window, as on a phone in landscape, Pause and Stop below the media leave the page where it is', async ({ page }) => {
+test('on a card taller than the window, as on a phone in landscape, Pause, Resume and Stop below the media leave the page where it is', async ({ page }) => {
   await page.setViewportSize({ width: 780, height: 360 });
   await page.evaluate(() => { document.body.style.cssText = 'margin:0;width:780px;font:14px sans-serif'; });
   await attachAutostart(page);
   // Content below the card, so the page never has to scroll back because it got shorter.
   await page.evaluate(() => { const spacer = document.createElement('div'); spacer.style.height = '1000px'; document.body.append(spacer); });
   await expect.poll(() => page.evaluate(() => calls.length)).toBe(1);
+  const where = () => page.evaluate(() => {
+    const top = element => element.getBoundingClientRect().top;
+    return { scrollY: window.scrollY, media: top(card._video.hidden ? card._live : card._video), pause: top(card._pauseButton), close: top(card._stopButton), resume: top(card._resumeButton), toolbar: card._stage.querySelector('.bar').getBoundingClientRect().height, bar: card._pausedBar.getBoundingClientRect().height, focus: card.shadowRoot.activeElement?.className ?? null };
+  });
   // Scrolled so that the toolbar is in view and the top of the video is not.
   await page.evaluate(() => window.scrollTo(0, 275));
-  const live = await page.evaluate(() => ({ scrollY: window.scrollY, pause: card._pauseButton.getBoundingClientRect().top, media: card._video.hidden ? card._live.getBoundingClientRect().top : card._video.getBoundingClientRect().top }));
-  expect(live).toMatchObject({ scrollY: 275 });
+  const live = await where();
+  expect(live.scrollY).toBe(275);
   expect(live.media).toBeLessThan(0);
-  // Pause: the paused bar takes the place of the toolbar, so Resume appears where Pause was.
+  // Pause: the paused bar, as compact as the toolbar, takes its place, so the page stays and Resume appears where Pause was.
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
   await expect.poll(() => page.evaluate(() => closeCount)).toBe(1);
-  const paused = await page.evaluate(() => ({ scrollY: window.scrollY, resume: card._resumeButton.getBoundingClientRect().top, focused: card.shadowRoot.activeElement === card._resumeButton }));
-  expect(paused.focused).toBe(true);
-  expect(Math.abs(paused.resume - live.pause)).toBeLessThanOrEqual(12);
+  const paused = await where();
+  expect(paused.focus).toBe('close resume');
+  expect(Math.abs(paused.scrollY - live.scrollY)).toBeLessThanOrEqual(1);
+  expect(Math.abs(paused.resume - live.pause)).toBeLessThanOrEqual(1);
+  expect(Math.abs(paused.bar - live.toolbar)).toBeLessThanOrEqual(1);
+  // Resume: the toolbar takes the paused bar's place again, the page stays and Close appears where Resume was.
+  await page.getByRole('button', { name: 'Resume', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(2);
+  const resumed = await where();
+  expect(resumed.focus).toBe('close stop');
+  expect(Math.abs(resumed.scrollY - live.scrollY)).toBeLessThanOrEqual(1);
+  expect(Math.abs(resumed.close - paused.resume)).toBeLessThanOrEqual(1);
+  // Resume activated while the paused bar is below the fold, as with a key after scrolling away: the page scrolls just
+  // enough to show Close, which then has focus.
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(2);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  expect(await page.evaluate(() => card._resumeButton.getBoundingClientRect().top > window.innerHeight)).toBe(true);
+  await page.evaluate(() => card._resumeButton.click());
+  await expect.poll(() => page.evaluate(() => calls.length)).toBe(3);
+  const shown = await page.evaluate(() => { const r = card._stopButton.getBoundingClientRect(); return { scrollY: window.scrollY, top: r.top, bottom: r.bottom, inner: window.innerHeight, focused: card.shadowRoot.activeElement === card._stopButton }; });
+  expect(shown.focused).toBe(true);
+  expect(shown.top).toBeGreaterThanOrEqual(0);
+  expect(shown.bottom).toBeLessThanOrEqual(shown.inner);
+  expect(shown.scrollY).toBeGreaterThan(0);
+  expect(shown.scrollY).toBeLessThanOrEqual(Math.ceil(shown.bottom + shown.scrollY - shown.inner) + 1);
   // Stop in the paused bar returns focus to the snapshot, whose top is out of view, without scrolling the page up to it.
+  await page.evaluate(() => window.scrollTo(0, 275));
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => closeCount)).toBe(3);
   const before = await page.evaluate(() => ({ scrollY: window.scrollY, halt: card._pausedBar.querySelector('.halt').getBoundingClientRect().bottom <= window.innerHeight, snapshot: card._preview.getBoundingClientRect().top < 0 }));
   expect(before).toMatchObject({ halt: true, snapshot: true });
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
@@ -1377,6 +1407,7 @@ test('a key or tap that starts an inline card brings Close below the video into 
   expect(seen).toMatchObject({ focused: true });
   expect(seen.bottom).toBeLessThanOrEqual(seen.inner);
   expect(seen.scrollY).toBeGreaterThan(0);
+  expect(seen.scrollY).toBeLessThan(100);
 });
 
 test('the popup dialog keeps its own bar above the video whatever the card width', async ({ page }) => {
