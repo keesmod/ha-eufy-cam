@@ -28,6 +28,11 @@
   [GHSA-ch52-4w7c-c8xp](https://github.com/advisories/GHSA-ch52-4w7c-c8xp). It
   reaches the bridge through the client's push service, which uses no response
   cache.
+- The integration manifest requires `go2rtc-client>=0.4.0` instead of exactly
+  0.4.0. Home Assistant itself depends on this package, and the current
+  Hassfest rejects an exact pin of it so the integration can follow Home
+  Assistant's own version. Home Assistant 2026.9.4 has 0.4.0 installed, so
+  nothing changes on install there.
 - Client 0.27.0, which this update also brings in, changes only the separate
   mower module and moves `date-and-time` from 4.5.2 to 4.6.0. The client uses it
   for the dates of HomeBase recording queries, and both versions return the

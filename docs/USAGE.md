@@ -135,7 +135,7 @@ Sessions have a **two-minute absolute limit** for battery cameras and by default
 
 | Component | Runtime requirements |
 |---|---|
-| Integration | Home Assistant ≥ 2026.9.0, built-in `camera`, `http`, `lovelace`, `websocket_api`, `go2rtc-client` 0.4.0 (installed automatically), HA-managed `go2rtc` for WebRTC |
+| Integration | Home Assistant ≥ 2026.9.0, built-in `camera`, `http`, `lovelace`, `websocket_api`, `go2rtc-client` 0.4.0 or newer (installed automatically), HA-managed `go2rtc` for WebRTC |
 | Card | Bundled JavaScript, Home Assistant frontend and a modern browser, no separate frontend runtime package |
 | Bridge | Node.js 24, FFmpeg and tini, all included in the app/container |
 | Bridge libraries | `@keesmod/eufy-mega-client` 0.13.0 from its checksum-pinned GitHub release and `ws` 8.21.3. Mega retains MIT and Apache-2.0 attribution. Dependencies are pinned by `bridge/package-lock.json`. |
