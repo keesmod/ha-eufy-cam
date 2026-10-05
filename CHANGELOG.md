@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.8.38 - 2026-10-05
+
+### Wired Cam C31 T817L
+
+- Bridge 0.8.30 includes client
+  [0.28.0](https://github.com/keesmod/eufy-mega-client/releases/tag/v0.28.0).
+  Discovery admits the Wired Cam C31 that Eufy reports as `T817L` with device
+  type 10031, under a HomeBase 3, with snapshots, live view, recordings and
+  motion, person, pet, vehicle, sound and crying events. Earlier versions
+  rejected it as `unsupported_device`, as reported on #136. Only this exact
+  model and type are added.
+- Live view uses the HomeBase start that the client already sends for the
+  Indoor Cam S350 and the Indoor Cam 2K Pan & Tilt, with the camera's channel.
+  A separate project reports live view and snapshots for this camera through a
+  HomeBase 3 with the same fields. Nothing has been confirmed through this
+  bridge yet. Pan and tilt, presets, the light and the siren are not offered.
+- A C31 that is its own station, without a HomeBase, reports
+  `relationship=standalone` with `standalone_transport_unverified` and has no
+  media, because standalone cameras have no connection route yet
+  ([eufy-mega-client#142](https://github.com/keesmod/eufy-mega-client/issues/142)).
+
+### Dependencies
+
+- The client and bridge lockfiles resolve `http-cache-semantics` 4.3.0 for the
+  high advisory
+  [GHSA-ch52-4w7c-c8xp](https://github.com/advisories/GHSA-ch52-4w7c-c8xp). It
+  reaches the bridge through the client's push service, which uses no response
+  cache.
+- Client 0.27.0, which this update also brings in, changes only the separate
+  mower module and moves `date-and-time` from 4.5.2 to 4.6.0. The client uses it
+  for the dates of HomeBase recording queries, and both versions return the
+  same dates for its two patterns.
+
+Upgrade: update the bridge to 0.8.30 and the integration to 0.8.38, then
+refresh the dashboard. Rollback: bridge 0.8.29 and integration 0.8.37, which
+reject the C31 again.
+
 ## 0.8.37 - 2026-09-28
 
 ### eufyCam 2C as T8113-Z and Floodlight Cam 2K T8424

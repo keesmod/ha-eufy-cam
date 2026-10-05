@@ -106,6 +106,17 @@ This is reported, not independently reproduced. Since bridge 0.8.29 and
 integration 0.8.37 the report keeps a model code with a short suffix, such as
 `T8113-Z`, instead of `unavailable`.
 
+On 2026-10-04 the reporter of
+[issue #136](https://github.com/keesmod/ha-eufy-cam/issues/136) shared that a
+Wired Cam C31 arrives as `model=T817L` with `device_type=10031`, firmware
+2.1.0.3, `parent_status=present` and a T8030 owner on firmware 3.8.5.2, and that
+bridge 0.8.29 rejects it with `unsupported_device`, because the client did not
+know this pair. Client 0.28.0, included in bridge 0.8.30, adds type 10031 and
+admits exactly this pair in the indoor family with HomeBase 3 media. A C31 that is its
+own station reports `relationship=standalone` with
+`relationship_reason=standalone_transport_unverified`. This is reported, not
+independently reproduced. The camera has not yet been confirmed on bridge 0.8.30.
+
 `ref`, `owner_ref` and `device_ref` are anonymous references within a report.
 `inventory_row` is a separate zero-based source position. Use the `report` number
 and timestamps together, and do not compare references across restarts.
