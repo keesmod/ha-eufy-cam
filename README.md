@@ -98,9 +98,9 @@ See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 ## Upgrading
 
 The **0.8.38** integration and bridge **0.8.30** include client **0.28.0**,
-which discovers the Wired Cam C31 `T817L` under a HomeBase 3. Its snapshots,
-live view, recordings and events are implemented but not yet confirmed on a C31
-through this bridge.
+which discovers the Wired Cam C31 `T817L` under a HomeBase 3. A C31 owner
+reported snapshots, live view with audio, recordings and a person event working
+on this release.
 The **0.8.37** integration and bridge **0.8.29** include client **0.26.0**,
 which discovers eufyCam 2C cameras reported as `T8113-Z`, recognizes the
 Floodlight Cam 2K `T8424` as a standalone camera, also looks for the HomeBase

@@ -113,9 +113,18 @@ Wired Cam C31 arrives as `model=T817L` with `device_type=10031`, firmware
 bridge 0.8.29 rejects it with `unsupported_device`, because the client did not
 know this pair. This is reported, not independently reproduced. Client 0.28.0,
 included in bridge 0.8.30, adds type 10031 and admits exactly this pair in the
-indoor family with HomeBase 3 media. The camera has not yet been confirmed on
-bridge 0.8.30. A C31 that is its own station reports `relationship=standalone`
-with `relationship_reason=standalone_transport_unverified`.
+indoor family with HomeBase 3 media. A C31 that is its own station reports
+`relationship=standalone` with
+`relationship_reason=standalone_transport_unverified`.
+
+On 2026-10-05 the same reporter
+[ran bridge 0.8.30](https://github.com/keesmod/ha-eufy-cam/issues/136#issuecomment-5993196872)
+with integration 0.8.38 on that camera and HomeBase. The discovery report showed
+the C31 under the HomeBase 3, and snapshot, live video and audio, recording
+lists and playback and a person event worked. The live audio row recorded
+`stop_confirmed: true`. Recording playback showed a native remux, because the
+C31 records H.264 and the bridge only converts H.265 recordings. This is
+reported, not independently reproduced.
 
 `ref`, `owner_ref` and `device_ref` are anonymous references within a report.
 `inventory_row` is a separate zero-based source position. Use the `report` number
