@@ -16,11 +16,13 @@
   A separate project reports live view and snapshots for this camera through a
   HomeBase 3 with the same fields. Nothing has been confirmed through this
   bridge yet. Whether the C31 acknowledges the HomeBase stop is also
-  unverified. Without that acknowledgement a live stop stays unconfirmed for 8
-  seconds, the HomeBase session is closed and reopened, and the camera waits in
-  `stopping` meanwhile. `stop_confirmed` in the live audio rows of the
-  diagnostics download shows it. Pan
-  and tilt, presets, the light and the siren are not offered.
+  unverified. Without that acknowledgement the stop stays unconfirmed for 8
+  seconds and the HomeBase session is closed. The camera stays in `stopping`
+  until a later stop is acknowledged. The bridge tries that once, when no
+  camera is live. A C31 that never acknowledges the stop stays in `stopping`
+  until the bridge restarts, and recordings return `live_stopping` meanwhile.
+  `stop_confirmed: false` in the live audio rows of the diagnostics download
+  shows it. Pan and tilt, presets, the light and the siren are not offered.
 - A C31 that is its own station, without a HomeBase, reports
   `relationship=standalone` with `standalone_transport_unverified` and has no
   media, because standalone cameras have no connection route yet
