@@ -135,10 +135,10 @@ Sessions have a **two-minute absolute limit** for battery cameras and by default
 
 | Component | Runtime requirements |
 |---|---|
-| Integration | Home Assistant ≥ 2026.9.0, built-in `camera`, `http`, `lovelace`, `websocket_api`, `go2rtc-client` 0.4.0 (installed automatically), HA-managed `go2rtc` for WebRTC |
+| Integration | Home Assistant ≥ 2026.9.0, built-in `camera`, `http`, `lovelace`, `websocket_api`, `go2rtc-client` 0.4.0 or newer (installed automatically), HA-managed `go2rtc` for WebRTC |
 | Card | Bundled JavaScript, Home Assistant frontend and a modern browser, no separate frontend runtime package |
 | Bridge | Node.js 24, FFmpeg and tini, all included in the app/container |
-| Bridge libraries | `@keesmod/eufy-mega-client` 0.13.0 from its checksum-pinned GitHub release and `ws` 8.21.3. Mega retains MIT and Apache-2.0 attribution. Dependencies are pinned by `bridge/package-lock.json`. |
+| Bridge libraries | `@keesmod/eufy-mega-client` 0.28.0 from its checksum-pinned GitHub release and `ws` 8.21.3. Mega retains MIT and Apache-2.0 attribution. Dependencies are pinned by `bridge/package-lock.json`. |
 | External services | Eufy account with camera access, Eufy cloud/push connectivity and local connectivity to camera/HomeBase |
 
 No MQTT, separately installed RTSP server, existing Eufy integration or `eufy-security-ws` app is required. WebRTC uses HA's managed go2rtc and its FFmpeg audio conversion. Upgrade the bridge and integration together for the new transport. A dedicated shared Eufy account is recommended for ongoing use. Simultaneous operation with another Eufy client using the same account has only been briefly observed, not long-term validated. TypeScript, Playwright and Python test tools are development-only dependencies.
