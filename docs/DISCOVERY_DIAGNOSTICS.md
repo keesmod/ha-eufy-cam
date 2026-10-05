@@ -111,11 +111,11 @@ On 2026-10-04 the reporter of
 Wired Cam C31 arrives as `model=T817L` with `device_type=10031`, firmware
 2.1.0.3, `parent_status=present` and a T8030 owner on firmware 3.8.5.2, and that
 bridge 0.8.29 rejects it with `unsupported_device`, because the client did not
-know this pair. Client 0.28.0, included in bridge 0.8.30, adds type 10031 and
-admits exactly this pair in the indoor family with HomeBase 3 media. A C31 that is its
-own station reports `relationship=standalone` with
-`relationship_reason=standalone_transport_unverified`. This is reported, not
-independently reproduced. The camera has not yet been confirmed on bridge 0.8.30.
+know this pair. This is reported, not independently reproduced. Client 0.28.0,
+included in bridge 0.8.30, adds type 10031 and admits exactly this pair in the
+indoor family with HomeBase 3 media. The camera has not yet been confirmed on
+bridge 0.8.30. A C31 that is its own station reports `relationship=standalone`
+with `relationship_reason=standalone_transport_unverified`.
 
 `ref`, `owner_ref` and `device_ref` are anonymous references within a report.
 `inventory_row` is a separate zero-based source position. Use the `report` number

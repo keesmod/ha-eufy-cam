@@ -3,8 +3,9 @@
 ## 0.8.30 - 2026-10-05
 
 - Include client 0.28.0. Discovery admits the Wired Cam C31 that Eufy reports
-  as `T817L` with device type 10031 under a HomeBase 3, with snapshots, live
-  view, recordings and events, as reported on #136. A C31 without a HomeBase is
+  as `T817L` with device type 10031 under a HomeBase 3. Earlier versions
+  rejected it, as reported on #136. Snapshots, live view, recordings and events
+  are implemented but not yet confirmed on a C31. A C31 without a HomeBase is
   recognized as a standalone camera without media.
 - The lockfile resolves `http-cache-semantics` 4.3.0 for GHSA-ch52-4w7c-c8xp,
   and `date-and-time` 4.6.0 through client 0.27.0.
