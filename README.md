@@ -97,7 +97,7 @@ See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 ## Upgrading
 
-The **0.8.39** integration and bridge **0.8.31** correct the live limits the
+The **0.8.39** integration and bridge **0.8.31** update the live evidence the
 bridge logs at startup. Nothing else changes.
 The **0.8.38** integration and bridge **0.8.30** include client **0.28.0**,
 which discovers the Wired Cam C31 `T817L` under a HomeBase 3. A C31 owner

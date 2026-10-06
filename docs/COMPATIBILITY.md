@@ -107,9 +107,11 @@ stable playback while all four ran. Their dashboard starts and switches the
 cameras one after another rather than at the same moment, which they found
 more reliable with the HomeBase. The report does not state the transport, the
 versions or whether every stop was device-confirmed. The day before, the tester
-ran integration 0.8.38 with bridge 0.8.30. Reported, not independently
-reproduced. Source:
-[comment on issue #136](https://github.com/keesmod/ha-eufy-cam/issues/136#issuecomment-6018970178).
+ran integration 0.8.38 with bridge 0.8.30 and gave the C31 firmware. Reported,
+not independently reproduced. Sources:
+[comment on issue #136 of 2026-10-06](https://github.com/keesmod/ha-eufy-cam/issues/136#issuecomment-6018970178)
+and, for the firmware and versions,
+[comment of 2026-10-05](https://github.com/keesmod/ha-eufy-cam/issues/136#issuecomment-5993196872).
 
 ## Dated 0.8.27 mains powered live session
 
