@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.31 - 2026-10-06
+
+- The startup log describes the current live evidence. With
+  `live_max_streams_per_station` above 1 it says three concurrent cameras per
+  HomeBase are verified and four are reported, and with
+  `live_max_seconds_mains` above 120 it says 1800 seconds are verified on one
+  mains powered camera. Only the log text changes.
+
 ## 0.8.30 - 2026-10-05
 
 - Include client 0.28.0. Discovery admits the Wired Cam C31 that Eufy reports

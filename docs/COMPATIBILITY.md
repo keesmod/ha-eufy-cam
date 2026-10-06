@@ -100,6 +100,19 @@ together with the GPU at about 7 percent, with an intermittent third-stream
 resolved. Reported, not independently reproduced. Source: comments on
 [issue #94](https://github.com/keesmod/ha-eufy-cam/issues/94).
 
+On 2026-10-06 the same tester reported four concurrent live streams on that
+HomeBase 3, now with four cameras including the Wired Cam C31 T817L (firmware
+2.1.0.3), `live_max_streams_per_station: 4` and NVIDIA live acceleration, with
+stable playback while all four ran. Their dashboard starts and switches the
+cameras one after another rather than at the same moment, which they found
+more reliable with the HomeBase. The report does not state the transport, the
+versions or whether every stop was device-confirmed. The day before, the tester
+ran integration 0.8.38 with bridge 0.8.30 and gave the C31 firmware. Reported,
+not independently reproduced. Sources:
+[comment on issue #136 of 2026-10-06](https://github.com/keesmod/ha-eufy-cam/issues/136#issuecomment-6018970178)
+and, for the firmware and versions,
+[comment of 2026-10-05](https://github.com/keesmod/ha-eufy-cam/issues/136#issuecomment-5993196872).
+
 ## Dated 0.8.27 mains powered live session
 
 On 2026-09-19 an external tester ran one mains powered T8425 (firmware 1.6.4.6,

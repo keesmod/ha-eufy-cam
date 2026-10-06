@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.39 - 2026-10-06
+
+### Live evidence in the bridge's startup log
+
+- Bridge 0.8.31 corrects two lines it logs at startup, which still described
+  the evidence before 2026-09-19. With `live_max_streams_per_station` above 1
+  it logs `(3 verified, 4 reported)` instead of `(verified with 2)`. Three
+  concurrent eufyCam 3 on one HomeBase 3 were verified on 2026-09-19, and on
+  2026-10-06 a user reported four concurrent live streams on their HomeBase 3
+  (#136). With `live_max_seconds_mains` above 120 it logs
+  `(verified for 1800 seconds on one mains powered camera)` instead of
+  `(candidate, unverified on mains powered hardware)`.
+- Only the log text changes. The limits, the caps and live, snapshot and
+  recording behaviour are the same.
+
+Upgrade: update the bridge to 0.8.31 and the integration to 0.8.39. Rollback:
+bridge 0.8.30 and integration 0.8.38.
+
 ## 0.8.38 - 2026-10-05
 
 ### Wired Cam C31 T817L
