@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.32 - 2026-10-08
+
+- Update `ws` from 8.21.3 to 8.22.0 for the event stream and live sessions,
+  and `uint8array-extras` from 1.5.0 to 1.6.0, which the client's image type
+  detection uses. Live view, snapshots, recordings and events behave the same.
+
 ## 0.8.31 - 2026-10-06
 
 - The startup log describes the current live evidence. With

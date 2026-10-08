@@ -90,13 +90,16 @@ for a browser dashboard. See
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
 
-The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.40`.
+The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.41`.
 See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 </details>
 
 ## Upgrading
 
+The **0.8.41** integration and bridge **0.8.32** update the bridge's `ws` and
+`uint8array-extras` packages. Home Assistant 2026.9.0 or newer is still
+required.
 The **0.8.40** integration is tested against Home Assistant 2026.10.0 and still
 supports 2026.9.0 or newer. Nothing changes on the dashboard or in the bridge.
 The **0.8.39** integration and bridge **0.8.31** update the live evidence the
@@ -143,8 +146,8 @@ default 120) raises the live session cap only for cameras without a battery
 value. Battery cameras keep two minutes. 0.8.25 keeps an inline card with `live_autostart: true` live while
 it is scrolled out of view, 0.8.24 moved the inline live controls below the
 video on narrow cards, and 0.8.23 added `live_mode: inline` and the optional
-`live_autostart: true`. Update the integration to **0.8.40** and the bridge to
-**0.8.31**, then refresh the dashboard.
+`live_autostart: true`. Update the integration to **0.8.41** and the bridge to
+**0.8.32**, then refresh the dashboard.
 See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
 for changes and any version-specific instructions.
 

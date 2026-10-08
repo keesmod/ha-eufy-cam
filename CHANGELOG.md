@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.8.41 - 2026-10-08
+
+This is the first release after 0.8.38. It also contains the unreleased 0.8.39
+and 0.8.40, summarized below.
+
+### Home Assistant version
+
+- Home Assistant 2026.9.0 or newer is still required. 2026.10.0 is not
+  required. The integration ships no Python packages, so PyJWT and
+  cryptography come from Home Assistant itself. Home Assistant 2026.10.0
+  brings PyJWT 2.15.1 and cryptography 50.0.1, which fix the PyJWT and
+  cryptography advisories that apply to the versions in Home Assistant 2026.9.
+  Updating Home Assistant is recommended for that reason.
+- Since 0.8.40, tests and type checks run against Home Assistant 2026.10.0.
+  The config flow, the card WebSocket commands and the live diagnostics command
+  import `probatio`, which Home Assistant has used for schema validation since
+  2026.9. Validation is the same.
+
+### Bridge dependencies
+
+- Bridge 0.8.32 updates `ws` from 8.21.3 to 8.22.0. The bridge uses it for the
+  `/v1/events` stream to the integration and the `/v1/live` sessions. 8.22.0
+  adds an optional `protocols` option that the bridge does not use, and a
+  `close()` call with invalid arguments no longer moves a socket to closing.
+- `uint8array-extras` moves from 1.5.0 to 1.6.0. It reaches the bridge
+  through the client's image type detection and now also accepts an
+  `ArrayBuffer`.
+- The development types `@types/ws` 8.18.2 and `@types/node` 24.19.0 change
+  nothing at runtime.
+
+### Also in this release
+
+- 0.8.40: the dependency security workflow also audits every package in
+  `uv.lock`, on each PR, push and release run and daily.
+- 0.8.39 with bridge 0.8.31: the startup log states the current live evidence.
+  With `live_max_streams_per_station` above 1 it logs `(3 verified, 4
+  reported)`, and with `live_max_seconds_mains` above 120 it logs `(verified
+  for 1800 seconds on one mains powered camera)`. Only the log text changed.
+
+Upgrade: update the bridge app to 0.8.32 and the integration to 0.8.41, then
+refresh the dashboard. Either can be updated first. Rollback: integration
+0.8.38 with bridge 0.8.31 from the app backup, or with bridge 0.8.30 from the
+0.8.38 release.
+
 ## 0.8.40 - 2026-10-08
 
 ### Home Assistant 2026.10 schema types
