@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.8.40 - 2026-10-08
+
+### Home Assistant 2026.10 schema types
+
+- The config flow, the card WebSocket commands and the live diagnostics
+  command import `probatio` instead of `voluptuous`. Home Assistant has
+  validated schemas with probatio since 2026.9 and resolves `import
+  voluptuous` to it at startup, so validation is the same. Home Assistant
+  2026.10 declares these APIs with probatio schema types, and the direct import
+  keeps the integration's type check passing.
+- The minimum stays Home Assistant 2026.9.0, which already ships probatio.
+- Tests and type checks now run against Home Assistant 2026.10.0. Its exact
+  pins move the development lock to PyJWT 2.15.1, cryptography 50.0.1 and
+  pyOpenSSL 26.4.0. multidict moves to 6.9.1. This resolves the open Dependabot
+  alerts for these packages. The integration ZIP carries no Python packages. A
+  Home Assistant host uses the versions of its own Home Assistant release.
+- The dependency security workflow also audits every package in `uv.lock`, on
+  each PR, push and release run and daily.
+
+Upgrade: update the integration to 0.8.40. The bridge stays at 0.8.31.
+Rollback: integration 0.8.39.
+
 ## 0.8.39 - 2026-10-06
 
 ### Live evidence in the bridge's startup log

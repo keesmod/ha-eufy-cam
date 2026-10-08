@@ -7,7 +7,7 @@ import base64
 from typing import Any
 
 import aiohttp
-import voluptuous as vol
+import probatio as vol
 from homeassistant.auth.permissions.const import POLICY_READ
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback

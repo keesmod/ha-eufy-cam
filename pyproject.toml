@@ -1,18 +1,18 @@
 [project]
 name = "eufy-security-viewer"
-version = "0.8.39"
+version = "0.8.40"
 requires-python = ">=3.14.2"
 dependencies = []
 
 [dependency-groups]
 dev = [
-    "homeassistant==2026.9.0",
+    "homeassistant==2026.10.0",
     "pytest-homeassistant-custom-component",
     "ruff",
     "mypy",
     "pytest-cov",
     "pyturbojpeg==1.8.3",
-    "infrared-protocols==9.0.0",
+    "infrared-protocols==10.1.0",
     "go2rtc-client==0.4.0",
 ]
 
