@@ -43,3 +43,31 @@ jobs:
           path: ${{ matrix.directory }}/npm-audit.json
           if-no-files-found: error
           retention-days: 14
+  python:
+    name: python / uv.lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          # uv audit and its JSON output are preview features. An exact uv
+          # version keeps the audit result and report format stable. This
+          # setup-uv commit has no known checksum for it, so the checksum of
+          # uv-x86_64-unknown-linux-gnu.tar.gz from the uv release is pinned.
+          version: '0.12.23'
+          checksum: '9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6'
+          enable-cache: false
+      - name: Audit all locked Python packages without installing them
+        timeout-minutes: 3
+        run: uv audit --frozen --preview-features audit-command,json-output --output-format json > uv-audit.json
+      - name: Keep the audit report even when vulnerabilities are found
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dependency-audit-python
+          path: uv-audit.json
+          if-no-files-found: error
+          retention-days: 14

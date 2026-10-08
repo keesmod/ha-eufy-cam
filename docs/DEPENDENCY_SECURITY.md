@@ -2,6 +2,8 @@
 
 The **Dependency security** workflow audits all locked npm packages in `bridge`, `ha_app` and `frontend`,
 including direct, transitive, development, optional and peer dependencies.
+It also audits every package in the Python `uv.lock`, including all platform
+entries, against the OSV database.
 It runs daily at 05:17 UTC and can be started manually from Actions.
 Validate calls the same workflow for each PR, push and release run.
 The required `ci` check and release packaging depend on its success.
@@ -62,12 +64,35 @@ must be released in its own repository first, then pinned and tested here.
 The full lockfile security audit, library repository scans, and required release
 URL/integrity checks still apply. No advisory is dismissed by this configuration.
 
+## Python development lock
+
+`pyproject.toml` declares no runtime Python dependencies. `uv.lock` describes
+only the development and test environment, and the integration ZIP carries no
+Python packages. A Home Assistant host uses the packages of its own Home
+Assistant release.
+
+Home Assistant pins many packages exactly, for example PyJWT, cryptography and
+orjson. A fix for such a package arrives with the Home Assistant release that
+moves the pin. Then update the `homeassistant` test pin in `pyproject.toml` and
+relock. pytest-homeassistant-custom-component follows, because each release
+pins one exact Home Assistant version. Packages that Home Assistant does not
+pin exactly can move on their own with `uv lock --upgrade-package <name>`. Do
+not add uv overrides or constraints to force a version that Home Assistant does
+not ship.
+
 ## Local verification and limits
 
 Run the same command from each package root with Node.js 24:
 
 ```sh
 npm audit --package-lock-only --ignore-scripts --include=dev --include=optional --include=peer
+```
+
+Audit the Python lock from the repository root with uv 0.12.23. `uv audit` is a
+preview feature, so CI pins that exact uv version:
+
+```sh
+uv audit --frozen --preview-features audit-command
 ```
 
 For scanner or registry failures, fix the failure and rerun the check. Do not
