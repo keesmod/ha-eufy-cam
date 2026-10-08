@@ -54,8 +54,11 @@ jobs:
       - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
         with:
           # uv audit and its JSON output are preview features. An exact uv
-          # version keeps the audit result and report format stable.
+          # version keeps the audit result and report format stable. This
+          # setup-uv commit has no known checksum for it, so the checksum of
+          # uv-x86_64-unknown-linux-gnu.tar.gz from the uv release is pinned.
           version: '0.12.23'
+          checksum: '9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6'
           enable-cache: false
       - name: Audit all locked Python packages without installing them
         timeout-minutes: 3

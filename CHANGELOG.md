@@ -14,8 +14,9 @@
 - Tests and type checks now run against Home Assistant 2026.10.0. Its exact
   pins move the development lock to PyJWT 2.15.1, cryptography 50.0.1 and
   pyOpenSSL 26.4.0. multidict moves to 6.9.1. This resolves the open Dependabot
-  alerts for these packages. The integration ZIP carries no Python packages. A
-  Home Assistant host uses the versions of its own Home Assistant release.
+  alerts for PyJWT, cryptography and multidict. The integration ZIP carries no
+  Python packages. A Home Assistant host uses the versions of its own Home
+  Assistant release and gets these fixes with Home Assistant 2026.10.0.
 - The dependency security workflow also audits every package in `uv.lock`, on
   each PR, push and release run and daily.
 

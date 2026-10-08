@@ -97,8 +97,8 @@ See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 ## Upgrading
 
-The **0.8.40** integration is tested against Home Assistant 2026.10.0. Nothing
-changes on the dashboard or in the bridge.
+The **0.8.40** integration is tested against Home Assistant 2026.10.0 and still
+supports 2026.9.0 or newer. Nothing changes on the dashboard or in the bridge.
 The **0.8.39** integration and bridge **0.8.31** update the live evidence the
 bridge logs at startup. Nothing else changes.
 The **0.8.38** integration and bridge **0.8.30** include client **0.28.0**,
