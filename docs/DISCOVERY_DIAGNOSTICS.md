@@ -127,6 +127,25 @@ were not reported. Recording playback showed a native remux, because this C31's
 recordings arrived as H.264 and the bridge only converts H.265 recordings. This
 is reported, not independently reproduced.
 
+On 2026-10-09 the [issue #66 reporter][66-update] ran integration 0.8.41 and
+bridge 0.8.32 with a T8030 on firmware 3.8.7.4. Snapshots, live and recordings
+worked on T8213 firmware 0.2.1.8 and T8161 firmware 3.4.3.0. A T8113-V with
+type 8 and firmware 3.0.7.8 under that HomeBase was still rejected as
+`unsupported_device`. Client 0.28.2, included in bridge 0.8.33, admits exactly
+this pair with the T8113/T8113-Z H3 policy. The new variant has software tests
+but no post-upgrade hardware results yet.
+
+The same update describes standalone T84A1 firmware 1.1.0.4 with no media and
+`standalone_transport_unverified`. That is the existing missing standalone
+route in [client #142](https://github.com/keesmod/eufy-mega-client/issues/142),
+not the T8113-V recognition bug. The reporter's model/type/firmware/topology
+and feature results are recorded in the client's [model matrix][66-matrix].
+T8920/type 20 and T87B0/type 157 are non-camera sensor/tracker products and
+remain outside camera discovery.
+
+[66-update]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6083775017
+[66-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-issue-66-update-0282
+
 `ref`, `owner_ref` and `device_ref` are anonymous references within a report.
 `inventory_row` is a separate zero-based source position. Use the `report` number
 and timestamps together, and do not compare references across restarts.

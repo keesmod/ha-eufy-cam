@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.8.42 - 2026-10-09
+
+- Bridge 0.8.33 pins client 0.28.2, which admits exactly the reported
+  `T8113-V`/type 8 eufyCam 2C under its actual HomeBase 3. Bridge 0.8.32 rejected
+  the model as `unsupported_device`, so HA never created the camera. The new
+  profile uses the same snapshot, live and recording route as T8113/T8113-Z.
+- Synthetic client tests cover discovery, state/events, stored snapshots, live
+  video/audio with confirmed stop, and recording download/cancellation. The
+  reporter's V variant on firmware 3.0.7.8 behind T8030 firmware 3.8.7.4 still
+  needs post-upgrade hardware validation. This is experimental software support.
+- The [issue #66 update][66-update] reports snapshots, live and recordings now
+  working on T8213 and T8161. The separate standalone T84A1 limitation remains
+  blocked by [client #142][standalone]. T8920 and T87B0 are non-camera products
+  and remain outside camera discovery. No standalone or legacy cloud route is
+  added.
+
+Upgrade: update the bridge app to 0.8.33. Integration 0.8.41 already understands
+this camera descriptor, and 0.8.42 packages the matching release notes without a
+Python or card behavior change. Keep the same bridge token and session. No
+configuration migration is needed. Rollback: restore the bridge 0.8.32 app
+backup and integration 0.8.41.
+
+[66-update]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6083775017
+[standalone]: https://github.com/keesmod/eufy-mega-client/issues/142
+
 ## 0.8.41 - 2026-10-08
 
 This is the first release after 0.8.38. It also contains the unreleased 0.8.39

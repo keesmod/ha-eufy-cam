@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.33 - 2026-10-09
+
+- Pin client 0.28.2 to recognize exactly `T8113-V`/type 8 behind a HomeBase 3,
+  as reported on [issue #66](https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6083775017).
+  It shares T8113/T8113-Z discovery and snapshot/live/recording handling. Owner,
+  firmware and lifecycle checks are preserved. Post-upgrade hardware results for
+  the V variant remain pending.
+- Standalone T84A1 media still requires the unimplemented authentication and
+  transport route tracked by client #142. No fallback is enabled.
+
+Upgrade: keep the same token and session. Integration 0.8.41 is compatible,
+0.8.42 has the matching release notes. Rollback: restore the 0.8.32 app backup.
+
 ## 0.8.32 - 2026-10-08
 
 - Update `ws` from 8.21.3 to 8.22.0 for the event stream and live sessions,
