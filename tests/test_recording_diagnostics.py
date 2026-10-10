@@ -760,3 +760,112 @@ def test_owner_connection_uses_the_failing_camera_owner_reference():
         _owner_report([_connect_error(stage="station_found", device_ref=2)])
     )
     assert "did not complete the P2P handshake" in finding["observation"]
+
+
+def _standalone_report(events, owner_status="error", homebase_status="connected"):
+    """A HomeBase row and an opted-in standalone T84A1 row, ref 5, in report 2."""
+    return _owner_report(
+        events,
+        [
+            {"event": "summary", "report": 2},
+            {
+                "event": "device",
+                "ref": 1,
+                "report": 2,
+                "station_status": homebase_status,
+            },
+            {
+                "event": "device",
+                "ref": 5,
+                "owner_ref": 5,
+                "report": 2,
+                "relationship": "standalone",
+                "relationship_transport": "experimental",
+                "owner_status": owner_status,
+            },
+        ],
+    )
+
+
+def _standalone_findings(report):
+    return [
+        f for f in assess(report)["findings"] if f["stage"] == "standalone_connection"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        (
+            {"stage": "lookup", "inventory_address": False},
+            "The experimental standalone camera did not answer the local lookup, "
+            "and the inventory had no LAN address for it.",
+        ),
+        ({"stage": "station_found"}, "did not complete the P2P handshake"),
+        ({"stage": "session_open"}, "the command key was not established"),
+        (
+            {"stage": "none", "reason": "invalid_connection_credentials"},
+            "did not start its local lookup (invalid_connection_credentials)",
+        ),
+    ],
+)
+def test_standalone_connection_names_its_own_stage_and_never_a_homebase(row, expected):
+    report = _standalone_report([_connect_error(device_ref=5, **row)])
+    (finding,) = _standalone_findings(report)
+    assert expected in finding["observation"]
+    assert "HomeBase" not in finding["observation"]
+    assert finding["evidence"] == "support.recent_events.station_connection"
+    # The HomeBase connected, so no owner finding blames it.
+    assert not [
+        f for f in assess(report)["findings"] if f["stage"] == "owner_connection"
+    ]
+
+
+def test_standalone_and_homebase_failures_are_explained_separately():
+    report = _standalone_report(
+        [
+            _connect_error(device_ref=1, stage="station_found"),
+            _connect_error(device_ref=5, stage="lookup"),
+        ],
+        homebase_status="error",
+    )
+    assert "HomeBase answered the local lookup" in _owner_finding(report)["observation"]
+    (finding,) = _standalone_findings(report)
+    assert "did not answer the local lookup" in finding["observation"]
+
+
+def test_standalone_session_that_connected_and_closed_is_not_called_a_failure():
+    report = _standalone_report(
+        [
+            {
+                "event": "station_connection",
+                "phase": "connect",
+                "status": "connected",
+                "report": 2,
+                "device_ref": 5,
+            },
+            {
+                "event": "station_connection",
+                "phase": "observation",
+                "status": "disconnected",
+                "report": 2,
+                "device_ref": 5,
+            },
+        ],
+        owner_status="disconnected",
+    )
+    (finding,) = _standalone_findings(report)
+    assert "connected on the local route" in finding["observation"]
+
+
+def test_standalone_without_a_recorded_connect_keeps_a_generic_finding():
+    (finding,) = _standalone_findings(_standalone_report([]))
+    assert "does not show how far it got" in finding["observation"]
+    assert finding["evidence"] == "support.last_discovery"
+
+
+def test_connected_or_unverified_standalone_cameras_add_no_finding():
+    assert not _standalone_findings(_standalone_report([], owner_status="connected"))
+    report = _standalone_report([], owner_status="not_applicable")
+    report["support"]["last_discovery"][2].pop("relationship_transport")
+    assert not _standalone_findings(report)

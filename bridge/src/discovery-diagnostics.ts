@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import type {
   CameraCapabilities,
+  DeviceRelationship,
   Diagnostic,
   DiscoveryResult,
   StationState,
@@ -29,6 +30,14 @@ export interface StationConnectionDetail {
   stage: string;
   inventoryAddress?: boolean;
 }
+/** An opted-in standalone camera that is its own experimental owner. */
+export const experimentalOwner = (
+  relationship: DeviceRelationship | undefined,
+): relationship is Extract<DeviceRelationship, { transport: 'experimental' }> =>
+  relationship?.kind === 'standalone' &&
+  'transport' in relationship &&
+  relationship.transport === 'experimental';
+const flag = (value: unknown): boolean | null => (typeof value === 'boolean' ? value : null);
 const integer = (value: unknown, min: number, max: number): number | null =>
   typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
     ? value
@@ -261,6 +270,12 @@ export class DiscoveryDiagnostics {
       const relationship = result?.relationships.find((row) => row.deviceId === device.id);
       const owner =
         relationship && 'ownerId' in relationship ? refs.get(relationship.ownerId) : undefined;
+      // An opted-in standalone camera owns its own session, so its status is checked.
+      const experimental = experimentalOwner(relationship);
+      const descriptor =
+        relationship?.kind === 'standalone' && relationship.descriptor
+          ? relationship.descriptor
+          : undefined;
       const media = capabilities.get(device.id);
       const capability = (name: keyof CameraCapabilities) => {
         const value = media?.[name];
@@ -290,13 +305,24 @@ export class DiscoveryDiagnostics {
             : 'unavailable',
         relationship_reason:
           relationship && 'reason' in relationship ? diagnosticCode(relationship.reason) : null,
+        relationship_transport: experimental ? 'experimental' : null,
+        // Presence of the standalone row's connection fields, never their values.
+        descriptor: descriptor
+          ? {
+              did: flag(descriptor.did),
+              license: flag(descriptor.license),
+              admin_user: flag(descriptor.adminUser),
+              lan_address: flag(descriptor.lanAddress),
+            }
+          : null,
         owner_ref: owner ?? null,
         owner_connected:
-          relationship?.kind === 'station'
+          relationship?.kind === 'station' || experimental
             ? connectionBoolean(connectionStatus(relationship.ownerId))
             : null,
-        owner_status:
-          relationship?.kind === 'standalone'
+        owner_status: experimental
+          ? connectionStatus(relationship.ownerId)
+          : relationship?.kind === 'standalone'
             ? 'not_applicable'
             : relationship?.kind === 'station'
               ? connectionStatus(relationship.ownerId)

@@ -20,6 +20,7 @@ import {
   DiscoveryDiagnostics,
   connectionStages as knownConnectionStages,
   diagnosticCode,
+  experimentalOwner,
   diagnosticModel,
   type StationConnectionDetail,
 } from './discovery-diagnostics.js';
@@ -63,6 +64,17 @@ export function liveMaxSecondsMains(value?: string): number {
   if (seconds < 120 || seconds > 3600)
     throw new Error('EUFY_LIVE_MAX_SECONDS_MAINS must be a whole number of seconds from 120 to 3600');
   return seconds;
+}
+/**
+ * Parse EUFY_EXPERIMENTAL_STANDALONE, true or false. Unset keeps it off. With it,
+ * a standalone camera whose library profile allows it, only T84A1 today, opens
+ * its own local session. Unverified on hardware.
+ */
+export function experimentalStandalone(value?: string): boolean {
+  const text = value?.trim() ?? '';
+  if (text === '' || text === 'false') return false;
+  if (text === 'true') return true;
+  throw new Error('EUFY_EXPERIMENTAL_STANDALONE must be true or false');
 }
 /** Records the last stage a station connection reached, for its diagnostic record. */
 function connectionStages(): {
@@ -200,6 +212,8 @@ export class MegaBackend extends EventEmitter implements Backend {
     readonly liveStreamsPerStation = 1,
     /** Session cap in seconds for cameras without a battery value, 120 to 3600. */
     readonly liveMaxSecondsMains = 120,
+    /** Forwarded to the client as its experimentalStandalone opt-in. */
+    readonly experimentalStandalone = false,
   ) {
     super();
     if (!Number.isInteger(liveStreamsPerStation) || liveStreamsPerStation < 1 || liveStreamsPerStation > 4)
@@ -252,6 +266,7 @@ export class MegaBackend extends EventEmitter implements Backend {
         diagnostics: (event) => this.discoveryDiagnostics.cloud(event),
         maxLiveStreamsPerStation: this.liveStreamsPerStation,
         liveUpperBoundMs: this.liveMaxSecondsMains * 1000,
+        experimentalStandalone: this.experimentalStandalone,
         credentials: {
           email: credentials.username,
           password: credentials.password,
@@ -390,6 +405,22 @@ export class MegaBackend extends EventEmitter implements Backend {
         }
         reportedStates.set(station.id, this.stationStates.get(station.id)!);
       }
+      // An opted-in standalone camera is its own owner. Connect it at each
+      // discovery so the report says how far its session got. With the option
+      // on, a silent camera adds up to the library's 20-second connect bound to
+      // startup. It never becomes a HomeBase.
+      for (const relationship of result.relationships) {
+        if (!experimentalOwner(relationship)) continue;
+        const stages = connectionStages();
+        try {
+          await client.connectStation(relationship.ownerId, { onProgress: stages.onProgress });
+          this.discoveryDiagnostics.station(relationship.ownerId, 'connect', 'connected');
+        } catch (error) {
+          const code = error instanceof EufyError ? error.code : 'connection_failed';
+          this.discoveryDiagnostics.station(relationship.ownerId, 'connect', 'error', code, stages.detail);
+          this.emit('backend_fault', code);
+        }
+      }
       // HomeBase connection already requests existing cover images. This does not
       // start cameras or manufacture a new snapshot by briefly opening live video.
       this.emit('change');
@@ -472,7 +503,9 @@ export class MegaBackend extends EventEmitter implements Backend {
       }
     });
     client.on('station', (state) => {
-      this.stationStates.set(state.id, state);
+      // An experimental standalone camera reports its own session here. It is no
+      // HomeBase, so it gets no alarm state and no idle reconnect.
+      if (this.devices.get(state.id)?.kind !== 'camera') this.stationStates.set(state.id, state);
       this.discoveryDiagnostics.station(state.id, 'observation', state.connected ? 'connected' : 'disconnected');
       this.emit('change');
     });

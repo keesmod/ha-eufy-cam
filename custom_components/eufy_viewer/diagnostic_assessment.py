@@ -116,22 +116,111 @@ _CONNECTION_STAGES = {
         "session but the command key was not established."
     ),
 }
+# An opted-in standalone camera is its own owner. Its connect says how far its
+# own session got, whatever the reason, so the next protocol step is visible.
+_STANDALONE_STAGES = {
+    "none": (
+        "The experimental standalone camera did not start its local lookup ({reason})."
+    ),
+    "lookup": (
+        "The experimental standalone camera did not answer the local lookup{target}."
+    ),
+    "station_found": (
+        "The experimental standalone camera answered the local lookup but did "
+        "not complete the P2P handshake."
+    ),
+    "session_open": (
+        "The experimental standalone camera opened the P2P session but the "
+        "command key was not established."
+    ),
+}
+
+
+def _experimental(row: dict[str, Any]) -> bool:
+    return row.get("relationship_transport") == "experimental"
+
+
+def _standalone_connections(
+    support: dict[str, Any], discovery: list[Any]
+) -> list[tuple[str, str]]:
+    """Explain each opted-in standalone camera that failed in the current report."""
+    reports = [r.get("report") for r in discovery if type(r.get("report")) is int]
+    if not reports:
+        return []
+    current = max(reports)
+    failing = {
+        r.get("ref")
+        for r in discovery
+        if r.get("report") == current
+        and _experimental(r)
+        and type(r.get("ref")) is int
+        and r.get("owner_status") in {"error", "disconnected"}
+    }
+    connected: set[Any] = set()
+    latest: dict[Any, dict[str, Any]] = {}
+    for r in support.get("recent_events", []):
+        if (
+            r.get("event") != "station_connection"
+            or r.get("report") != current
+            or r.get("device_ref") not in failing
+        ):
+            continue
+        if r.get("status") == "connected":
+            connected.add(r.get("device_ref"))
+            latest.pop(r.get("device_ref"), None)
+        elif r.get("phase") == "connect" and r.get("status") == "error":
+            latest[r.get("device_ref")] = r
+    findings = []
+    for ref in sorted(failing):
+        row = latest.get(ref)
+        if row and row.get("stage") in _STANDALONE_STAGES:
+            findings.append(
+                (
+                    _STANDALONE_STAGES[row["stage"]].format(
+                        target=_lookup_target(row),
+                        reason=row.get("reason") or "unclassified_error",
+                    ),
+                    "support.recent_events.station_connection",
+                )
+            )
+        elif ref in connected:
+            findings.append(
+                (
+                    "The experimental standalone camera connected on the local "
+                    "route, and its session later closed.",
+                    "support.recent_events.station_connection",
+                )
+            )
+        else:
+            findings.append(
+                (
+                    "The experimental standalone camera connection was not "
+                    "established. The report does not show how far it got.",
+                    "support.last_discovery",
+                )
+            )
+    return findings
+
+
 # Only a connection that ran out of time says where the HomeBase stopped
 # answering. The latest such connect is used, and failures for other reasons,
 # such as a concurrent attempt, are skipped.
 _CONNECTION_TIMEOUTS = {"device_request_timeout", "device_disconnected"}
 
 
-def _connection_stage(row: dict[str, Any]) -> str:
+def _lookup_target(row: dict[str, Any]) -> str:
     address = row.get("inventory_address")
-    target = (
+    return (
         " at its inventory LAN address or by broadcast"
         if address is True
         else ", and the inventory had no LAN address for it"
         if address is False
         else ""
     )
-    return _CONNECTION_STAGES[row["stage"]].format(target=target)
+
+
+def _connection_stage(row: dict[str, Any]) -> str:
+    return _CONNECTION_STAGES[row["stage"]].format(target=_lookup_target(row))
 
 
 def _failed_connection(support: dict[str, Any], discovery: list[Any]) -> Any:
@@ -217,12 +306,14 @@ def assess(report: dict[str, Any]) -> dict[str, Any]:
                 missing.add("discovery_stale_or_clock_mismatch")
         except ValueError:
             missing.add("discovery_time_unavailable")
+    # An opted-in standalone camera is no HomeBase and gets its own finding.
+    homebase = [r for r in discovery if not _experimental(r)]
     if any(
         r.get("owner_status") in {"error", "disconnected"}
         or r.get("station_status") in {"error", "disconnected"}
-        for r in discovery
+        for r in homebase
     ):
-        failed = _failed_connection(support, discovery)
+        failed = _failed_connection(support, homebase)
         if failed:
             add(
                 "owner_connection",
@@ -236,6 +327,8 @@ def assess(report: dict[str, Any]) -> dict[str, Any]:
                 "identify the network cause.",
                 "support.last_discovery",
             )
+    for observation, evidence in _standalone_connections(support, discovery):
+        add("standalone_connection", observation, evidence)
     for row in support.get("live_audio", []):
         attempt = row.get("attempt")
         events = {e["event"] for e in row.get("pipeline", [])}

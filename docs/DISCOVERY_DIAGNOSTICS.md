@@ -218,6 +218,37 @@ use **Download diagnostics**. An older integration may replace new codes with
 `null`. In that case use the updated bridge's complete startup report until the
 integration is updated too. The HAOS app URL is `http://127.0.0.1:8063`.
 
+### Experimental standalone cameras
+
+Since bridge 0.8.34 with client 0.29.0 and integration 0.8.43, every standalone
+camera row has `descriptor`. It says whether Eufy's inventory row for that
+camera has a P2P device ID (`did`), a P2P license (`license`), an administrator
+user (`admin_user`) and a private LAN address (`lan_address`). These are
+booleans only. The values themselves are never reported, and a present field
+does not prove that it works.
+
+With the [opt-in](USAGE.md#experimental-standalone-cameras), a standalone
+`T84A1` row has `relationship_transport=experimental` and no
+`relationship_reason`. The bridge connects that camera at every discovery,
+normally at startup. Its
+`owner_status` and `owner_connected` then describe the camera's own session, and
+`recent_events` has its `station_connection` records with the same `stage`
+values as a HomeBase. The assessment reports such a camera as
+`standalone_connection`, separately from any HomeBase:
+
+| Result | Meaning |
+|---|---|
+| `owner_status=connected` | The camera answered the lookup, completed the handshake and accepted the command key |
+| `stage=none` | The attempt stopped before the lookup. The `reason` says why, for example `invalid_connection_credentials` when `descriptor` lacks `did` or `admin_user` |
+| `stage=lookup` | The camera did not answer the local lookup |
+| `stage=station_found` | The camera answered the lookup but did not complete the P2P handshake |
+| `stage=session_open` | The P2P session opened but the command key was not established |
+
+After a connected result, the media rows and a snapshot, live view and
+recording attempt show whether the camera answers those commands on its own
+storage. Include the complete download in
+[client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
+
 ## Privacy and scope
 
 The dedicated report excludes device names, serial numbers, account identifiers,

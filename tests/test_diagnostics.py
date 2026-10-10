@@ -736,3 +736,41 @@ def test_station_connection_stage_and_suffixed_models_survive_download():
     assert _fields({**row, "inventory_address": "yes"})["inventory_address"] is None
     for model in ("T8113-PRIVATE", "T8113-", "t8113-z", "T8113-z"):
         assert _fields({**row, "model": model})["model"] == "unavailable"
+
+
+def test_standalone_descriptor_and_transport_survive_download_as_booleans_only():
+    row = {
+        "event": "device",
+        "ref": 3,
+        "relationship": "standalone",
+        "relationship_transport": "experimental",
+        "descriptor": {
+            "did": True,
+            "license": "PRIVATE",
+            "admin_user": False,
+            "lan_address": 1,
+            "p2p_did": "PRIVATE",
+        },
+    }
+    result = support_report(
+        {
+            "schema": 2,
+            "generated_at": STAMP,
+            "last_discovery": [row],
+            "recent_events": [],
+        }
+    )
+    (projected,) = result["last_discovery"]
+    assert projected["relationship_transport"] == "experimental"
+    assert projected["descriptor"] == {
+        "did": True,
+        "license": None,
+        "admin_user": False,
+        "lan_address": None,
+    }
+    assert "PRIVATE" not in json.dumps(result)
+    other = _fields(
+        {**row, "relationship_transport": "legacy", "descriptor": "PRIVATE"}
+    )
+    assert other["relationship_transport"] is None
+    assert "descriptor" not in other

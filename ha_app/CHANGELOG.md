@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.34 - 2026-10-10
+
+- Pin client 0.29.0 and add the option `experimental_standalone`, off by
+  default. With it, a standalone Wall Light Cam S100 `T84A1` tries its own
+  local session at every discovery, normally at startup. Its snapshot, live view
+  and recordings are offered as experimental features and work only if that
+  session works. A silent camera adds up to 20 seconds to startup. Unverified on
+  hardware, see
+  [client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
+- Discovery diagnostics report each standalone camera's inventory connection
+  fields as booleans and the stage its own connection reached.
+
+Upgrade: keep the same token and session. Without the option nothing changes.
+Update the integration to 0.8.43 before turning the option on, because 0.8.42
+names a failed standalone connection as a HomeBase failure. Rollback: turn the
+option off, or restore the 0.8.33 app backup.
+
 ## 0.8.33 - 2026-10-09
 
 - Pin client 0.28.2 to recognize exactly `T8113-V`/type 8 behind a HomeBase 3,

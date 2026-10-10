@@ -121,6 +121,31 @@ WebRTC requires Home Assistant's **go2rtc integration** to be loaded and the bro
 
 Sessions have a **two-minute absolute limit** for battery cameras and by default for every camera. From bridge 0.8.22 the app option `live_max_seconds_mains` (Docker: `EUFY_LIVE_MAX_SECONDS_MAINS`, a whole number of seconds from 120 to 3600, default 120) raises that limit only for cameras the inventory reports without a battery value, verified on 2026-09-19 with one mains powered camera for a full 1800-second session, see [compatibility](COMPATIBILITY.md#dated-0827-mains-powered-live-session). From integration 0.8.27 the Home Assistant viewer follows that cap as well, before that it ended every session at 125 seconds. Continuing after the cap requires another tap, also on a card with `live_autostart`. Normal close immediately issues stop. After a network partition or frozen page the bridge expires a viewer within **10 seconds**, plus its 250 ms watchdog tick. Startup without frames expires after 20 seconds. A bridge or host hard failure cannot deliver a stop command, camera firmware/P2P behavior in that case must be verified on the intended hardware. No software can promise instantaneous physical stop across a dead network.
 
+## Experimental standalone cameras
+
+Cameras that are not connected to a HomeBase normally show their snapshot, live
+and recording features as unsupported with `standalone_transport_unverified`.
+From bridge 0.8.34 the app option `experimental_standalone: true` (Docker:
+`EUFY_EXPERIMENTAL_STANDALONE=true`) lets a standalone Wall Light Cam S100
+`T84A1` try its own local session. It is off by default. Only that model is
+included, and no other camera or HomeBase changes. Update the integration to
+0.8.43 or newer before turning it on.
+
+With the option on, the bridge connects to the camera at every discovery,
+normally at startup, over the same local lookup and command key it uses for a
+HomeBase. A camera that does not answer adds up to 20 seconds to startup. The
+camera's snapshot, live view and recordings are offered as experimental
+features and work only if that session works. No physical standalone camera has
+confirmed this yet, so a failure is expected and useful evidence. Recordings
+that would need a cloud key cannot be downloaded, and the camera's detection
+events, guard mode and alarm state are not part of this test.
+
+To test it, update the app and the integration, set `experimental_standalone`
+to true in the app's configuration, restart the app, wait for the startup
+result, try a snapshot, live view and a recording, then use **Download
+diagnostics** as described in [discovery diagnostics](DISCOVERY_DIAGNOSTICS.md#experimental-standalone-cameras).
+Turn the option off again to return to the previous behavior.
+
 ## Recovery and maintenance
 
 - Use the integration's **Reconfigure** action when the bridge address or token changes. Its stable bridge ID must match.
