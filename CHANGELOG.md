@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.8.43 - 2026-10-10
+
+- Bridge 0.8.34 pins client 0.29.0 and adds the app option
+  `experimental_standalone` (Docker: `EUFY_EXPERIMENTAL_STANDALONE`), off by
+  default. With it, a standalone Wall Light Cam S100 `T84A1` tries its own local
+  session with the same lookup and command key as a HomeBase. Its snapshot, live
+  view and recordings are then offered as experimental features. They work only
+  if that session works. This is a test build for the [issue #66][66-result] reporter's
+  offer and [client #142][standalone]. No physical standalone camera has
+  confirmed it, and its detection events are not included. No cloud key, cipher
+  or legacy security-cloud call is added.
+- The bridge connects an opted-in standalone camera at every discovery,
+  normally at startup. A camera that does not answer adds up to 20 seconds to
+  that discovery. It never becomes a HomeBase, so it gets no alarm entity and
+  no idle reconnect.
+- Discovery diagnostics show, for every standalone camera, which connection
+  fields Eufy's inventory row has, as booleans only. An opted-in camera reports
+  `relationship_transport=experimental` and the stage its own connection
+  reached. The integration keeps these fields in **Download diagnostics** and
+  names a failed standalone connection as `standalone_connection`, separately
+  from the HomeBase.
+
+Upgrade: update the bridge app to 0.8.34 and the integration to 0.8.43, then
+restart Home Assistant. Keep the same token and session. Without the new option
+nothing changes for HomeBase cameras. Update the integration before turning the
+option on: integration 0.8.42 works with bridge 0.8.34, but its download drops
+the new fields and names a failed standalone connection as a HomeBase failure.
+Rollback: turn the option off, or restore the bridge 0.8.33 app backup and
+integration 0.8.42.
+
+[66-result]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6098838866
+[standalone]: https://github.com/keesmod/eufy-mega-client/issues/142
+
 ## 0.8.42 - 2026-10-09
 
 - Bridge 0.8.33 pins client 0.28.2, which admits exactly the reported

@@ -131,7 +131,12 @@ can precede the latest discovery, so keep their timestamps and report numbers.
 
 A HomeBase status can be `not_checked`, `connected`, `disconnected` or `error`.
 A camera's own station status is `not_applicable`, with `owner_status` describing
-its actual owner instead. Nullable booleans must not turn unknown/error states
+its actual owner instead. Since bridge 0.8.34 a standalone camera row carries
+`descriptor`, four nullable booleans `did`, `license`, `admin_user` and
+`lan_address` for the presence of its inventory connection fields, never their
+values. An opted-in standalone row has `relationship_transport=experimental`.
+Its owner is the camera itself, so its `owner_status` describes that camera's
+own session. Nullable booleans must not turn unknown/error states
 into a successful or failed connection. A present parent row does not prove
 support, connectivity or playback. Preserve observed availability and software
 capabilities as separate evidence.

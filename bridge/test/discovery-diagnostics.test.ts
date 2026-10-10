@@ -29,7 +29,7 @@ test('support report includes software, inventory, anonymous ownership, firmware
     {snapshot:capability,live:capability,recordings:capability}]]),new Map());
   const rows=f.rows();
   assert.equal(rows.length,6);
-  assert.equal(rows[0].software.library,'0.28.2');
+  assert.equal(rows[0].software.library,'0.29.0');
   assert.equal(rows[0].software.bridge,diagnosticSoftware().bridge);
   assert.deepEqual([rows[0].cameras,rows[0].stations,rows[0].issues],[1,1,2]);
   assert.equal(rows[2].owner_ref,1);
@@ -229,4 +229,25 @@ test('model codes with a short suffix are reported as received, serials never', 
   assert.equal(rows.find(r=>r.event==='device'&&r.ref===2).model,'T8113-Z');
   assert.deepEqual(rows.filter(r=>r.event==='issue').map(r=>r.model),['T8113-X','unavailable']);
   assert.doesNotMatch(f.lines.join('\n'),/PRIVATE/);
+});
+
+test('standalone descriptors are booleans only and other relationships have none', () => {
+  const f=collect();
+  const value=result();
+  value.devices.push({id:'PRIVATE_WALL',stationId:'PRIVATE_WALL',kind:'camera',model:'T84A1',name:'PRIVATE_NAME',firmware:'1.1.0.4',hardware:'1',battery:null});
+  value.relationships.push({deviceId:'PRIVATE_WALL',kind:'standalone',ownerId:'PRIVATE_WALL',transport:'experimental',
+    descriptor:{did:true,license:'PRIVATE' as unknown as boolean,adminUser:false,lanAddress:1 as unknown as boolean}});
+  f.reporter.prepare(value);
+  f.reporter.inventory(value,'accepted',undefined,true,new Map(),new Map());
+  const rows=f.reporter.report().last_discovery.filter(row=>row.event==='device');
+  const wall=rows.find(row=>row.model==='T84A1')!;
+  assert.deepEqual(wall.descriptor,{did:true,license:null,admin_user:false,lan_address:null});
+  assert.equal(wall.relationship_transport,'experimental');
+  assert.equal(wall.owner_status,'not_checked');
+  assert.equal(wall.owner_ref,3);
+  for (const row of rows.filter(row=>row.model!=='T84A1')) {
+    assert.equal(row.descriptor,null);
+    assert.equal(row.relationship_transport,null);
+  }
+  assert.doesNotMatch(JSON.stringify(f.reporter.report()),/PRIVATE/);
 });

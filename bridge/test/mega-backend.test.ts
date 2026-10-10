@@ -13,7 +13,7 @@ import {
   type CameraCapabilities,
   type DiscoveryResult,
 } from '@keesmod/eufy-mega-client';
-import { MegaBackend, liveStreamsPerStation, liveMaxSecondsMains } from '../src/mega-backend.js';
+import { MegaBackend, liveStreamsPerStation, liveMaxSecondsMains, experimentalStandalone } from '../src/mega-backend.js';
 import { Storage } from '../src/storage.js';
 import { backendName } from '../src/backend.js';
 import { MegaRecordings } from '../src/mega-recordings.js';
@@ -85,7 +85,7 @@ test('recording cancellation before the media handle arrives is counted and rele
   assert.equal(recordings.busy, false);
   assert.equal(recordings.metrics.cancelled, 1);
 });
-function fixture(limit?: number, mainsSeconds?: number) {
+function fixture(limit?: number, mainsSeconds?: number, standalone?: boolean) {
   const calls: string[] = [];
   const state = {
     id: 'BASE',
@@ -190,6 +190,7 @@ function fixture(limit?: number, mainsSeconds?: number) {
     undefined,
     limit,
     mainsSeconds,
+    standalone,
   );
   return { backend, client, calls, reads, storage, options, bounds };
 }
@@ -695,7 +696,7 @@ for (const empty of [false,true])
       const rows=lines.map(line=>JSON.parse(line));
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
-      assert.equal(summary.software.library,'0.28.2');
+      assert.equal(summary.software.library,'0.29.0');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
@@ -766,3 +767,190 @@ test('setup errors before backend creation are retained without raw storage erro
     assert.doesNotMatch(JSON.stringify(report),/PRIVATE|fixture/);
   } finally {await bridge.close();}
 });
+
+// keesmod/eufy-mega-client#142: an opted-in standalone T84A1 is its own owner.
+const wallLight: Device = {
+  id: 'WALL',
+  stationId: 'WALL',
+  kind: 'camera',
+  model: 'T84A1',
+  name: 'Wall light',
+  hardware: '1',
+  firmware: '1.1.0.4',
+  battery: null,
+};
+const descriptor = { did: true, license: true, adminUser: true, lanAddress: false };
+function standaloneInventory(transport: boolean): DiscoveryResult {
+  return {
+    devices: [...devices, wallLight],
+    relationships: [
+      { deviceId: 'BASE', kind: 'station', ownerId: 'BASE' },
+      { deviceId: 'CAM', kind: 'station', ownerId: 'BASE' },
+      transport
+        ? { deviceId: 'WALL', kind: 'standalone', ownerId: 'WALL', transport: 'experimental', descriptor }
+        : { deviceId: 'WALL', kind: 'standalone', ownerId: 'WALL', reason: 'standalone_transport_unverified', descriptor },
+    ],
+    issues: transport ? [] : [{ index: 2, deviceId: 'WALL', code: 'standalone_transport_unverified' }],
+  };
+}
+test('EUFY_EXPERIMENTAL_STANDALONE accepts only true or false and defaults to off', () => {
+  assert.equal(experimentalStandalone(undefined), false);
+  assert.equal(experimentalStandalone(''), false);
+  assert.equal(experimentalStandalone('false'), false);
+  assert.equal(experimentalStandalone(' true '), true);
+  for (const bad of ['TRUE', 'yes', '1', 'on', 'truee'])
+    assert.throws(() => experimentalStandalone(bad), /EUFY_EXPERIMENTAL_STANDALONE/, bad);
+});
+for (const enabled of [undefined, false, true])
+  test(`the experimentalStandalone option ${enabled ? 'reaches' : 'stays off in'} the client (${enabled})`, async () => {
+    const f = fixture(undefined, undefined, enabled);
+    try {
+      await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+      assert.equal(f.options[0]?.experimentalStandalone, enabled === true);
+      assert.equal(f.backend.experimentalStandalone, enabled === true);
+    } finally {
+      await f.backend.close();
+    }
+  });
+test('an opted-in standalone camera connects once at discovery and never becomes a HomeBase', async () => {
+  const f = fixture(undefined, undefined, true);
+  const connected: string[] = [];
+  const connect = f.client.connectStation;
+  f.client.connectStation = async (id: string, value?: any) => {
+    connected.push(id);
+    if (id === 'WALL') {
+      value?.onProgress?.({ stage: 'lookup', elapsedMs: 0, inventoryAddress: false });
+      value?.onProgress?.({ stage: 'encryption_ready', elapsedMs: 900 });
+      // Like the library, the session reports itself before the connect resolves.
+      const session = { id: 'WALL', connected: true, guardMode: null, currentMode: null, alarm: false, alarmDelay: 0, armDelay: 0, commandEncryption: 'lan-derived' as const };
+      f.client.emit('station', session);
+      return session;
+    }
+    return connect();
+  };
+  f.client.discoverDevices = async () => standaloneInventory(true);
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.deepEqual(connected, ['BASE', 'WALL']);
+    const report = f.backend.supportReport();
+    const row = report.last_discovery.find((r) => r.event === 'device' && r.model === 'T84A1')!;
+    assert.equal(row.relationship, 'standalone');
+    assert.equal(row.relationship_transport, 'experimental');
+    assert.equal(row.relationship_reason, null);
+    assert.equal(row.owner_status, 'connected');
+    assert.equal(row.owner_connected, true);
+    assert.equal(row.station_status, 'not_applicable');
+    assert.deepEqual(row.descriptor, { did: true, license: true, admin_user: true, lan_address: false });
+    const events = report.recent_events.filter((r) => r.event === 'station_connection' && r.model === 'T84A1');
+    assert.deepEqual(events.map((r) => r.status), ['connected']);
+    assert.equal((f.backend as any).stationStates.has('WALL'), false);
+    // Its session is no HomeBase: no alarm entity and no idle reconnect.
+    f.client.emit('station', { id: 'WALL', connected: false });
+    assert.deepEqual(
+      f.backend.stations.inventory().map((station) => station.serial),
+      ['BASE'],
+    );
+    assert.equal((f.backend as any).stationStates.has('WALL'), false);
+    assert.equal(f.backend.inventory().find((camera) => camera.serial === 'WALL')?.model, 'T84A1');
+    assert.doesNotMatch(JSON.stringify(report), /WALL|BASE|CAM|Wall light/);
+  } finally {
+    await f.backend.close();
+  }
+});
+test('a failed standalone connect records its stage and leaves the HomeBase connected', async () => {
+  const f = fixture(undefined, undefined, true);
+  const faults: string[] = [];
+  f.backend.on('backend_fault', (code) => faults.push(code));
+  const connect = f.client.connectStation;
+  f.client.connectStation = async (id: string, value?: any) => {
+    if (id !== 'WALL') return connect();
+    value?.onProgress?.({ stage: 'lookup', elapsedMs: 0, inventoryAddress: true });
+    throw new EufyError('device_request_timeout');
+  };
+  f.client.discoverDevices = async () => standaloneInventory(true);
+  try {
+    assert.deepEqual(await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' }), { state: 'connected' });
+    const report = f.backend.supportReport();
+    const failure = report.recent_events.find((r) => r.event === 'station_connection' && r.status === 'error')!;
+    assert.equal(failure.model, 'T84A1');
+    assert.equal(failure.stage, 'lookup');
+    assert.equal(failure.inventory_address, true);
+    assert.equal(failure.reason, 'device_request_timeout');
+    const row = report.last_discovery.find((r) => r.event === 'device' && r.model === 'T84A1')!;
+    assert.equal(row.owner_status, 'error');
+    assert.equal(row.owner_connected, null);
+    assert.ok(faults.includes('device_request_timeout'));
+    assert.equal(f.backend.stations.inventory()[0]?.connected, true);
+  } finally {
+    await f.backend.close();
+  }
+});
+test('an unverified standalone camera is never connected and reports its descriptor', async () => {
+  const f = fixture();
+  const connected: string[] = [];
+  const connect = f.client.connectStation;
+  f.client.connectStation = async (id: string) => {
+    connected.push(id);
+    return connect();
+  };
+  f.client.discoverDevices = async () => standaloneInventory(false);
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.deepEqual(connected, ['BASE']);
+    const row = f.backend.supportReport().last_discovery.find((r) => r.event === 'device' && r.model === 'T84A1')!;
+    assert.equal(row.relationship_reason, 'standalone_transport_unverified');
+    assert.equal(row.relationship_transport, null);
+    assert.equal(row.owner_status, 'not_applicable');
+    assert.equal(row.owner_connected, null);
+    assert.deepEqual(row.descriptor, { did: true, license: true, admin_user: true, lan_address: false });
+  } finally {
+    await f.backend.close();
+  }
+});
+
+for (const enabled of [true, false])
+  test(`a raw standalone T84A1 row through the shipped client ${enabled ? 'connects and reports presence only' : 'stays unverified'}`, async () => {
+    const f = fixture(undefined, undefined, enabled);
+    const connected: string[] = [];
+    const connect = f.client.connectStation;
+    f.client.connectStation = async (id: string) => {
+      connected.push(id);
+      return connect();
+    };
+    const rows = [
+      { category: 'eufy_security', device_sn: 'BASE', parent_sn: '', device_model: 'T8030', device_type: 18, device_name: 'PRIVATE_NAME', main_sw_version: '3.8.7.4', p2p_did: 'PRIVATE_DID', member: { admin_user_id: 'PRIVATE_ADMIN' } },
+      { category: 'eufy_security', device_sn: 'CAM', parent_sn: 'BASE', device_model: 'T8161', device_type: 23, device_name: 'PRIVATE_NAME' },
+      {
+        category: 'eufy_security',
+        device_sn: 'WALL',
+        parent_sn: '',
+        device_model: 'T84A1',
+        device_type: 151,
+        device_name: 'PRIVATE_NAME',
+        main_sw_version: '1.1.0.4',
+        p2p_did: 'PRIVATE_DID',
+        p2p_license: 'PRIVATE_LICENSE',
+        member: { admin_user_id: 'PRIVATE_ADMIN' },
+        params: [{ param_type: 1176, param_value: '192.168.1.40' }],
+      },
+    ];
+    // The installed library's discovery, with only the cloud boundary synthetic.
+    const actual = Object.assign(Object.create(EufyMegaClient.prototype), {
+      experimentalStandalone: enabled,
+      cloud: { call: async () => ({ devices: rows }) },
+    }) as EufyMegaClient;
+    f.client.discoverDevices = () => actual.discoverDevices();
+    try {
+      assert.equal((await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' })).state, 'connected');
+      assert.deepEqual(connected, enabled ? ['BASE', 'WALL'] : ['BASE']);
+      const report = f.backend.supportReport();
+      const row = report.last_discovery.find((r) => r.event === 'device' && r.model === 'T84A1')!;
+      assert.equal(row.relationship_transport, enabled ? 'experimental' : null);
+      assert.equal(row.relationship_reason, enabled ? null : 'standalone_transport_unverified');
+      assert.equal(row.owner_status, enabled ? 'connected' : 'not_applicable');
+      assert.deepEqual(row.descriptor, { did: true, license: true, admin_user: true, lan_address: true });
+      assert.doesNotMatch(JSON.stringify(report), /PRIVATE|192\.168\.1\.40|WALL|BASE/);
+    } finally {
+      await f.backend.close();
+    }
+  });

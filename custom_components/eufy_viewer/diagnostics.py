@@ -30,6 +30,7 @@ _ENUMS = {
     "kind": {"camera", "station", "unavailable"},
     "availability": {"online", "offline", "disabled"},
     "relationship": {"station", "standalone", "unsupported", "unavailable"},
+    "relationship_transport": {"experimental"},
     "parent_status": set(
         "none self present missing ambiguous invalid unavailable".split()
     ),
@@ -167,6 +168,13 @@ def _fields(raw: Any) -> dict[str, Any]:
             if isinstance(raw["media"].get(feature), dict)
             else None
             for feature in ("snapshot", "live", "recordings")
+        }
+    if isinstance(raw.get("descriptor"), dict):
+        # Presence of a standalone row's connection fields, never their values.
+        descriptor = raw["descriptor"]
+        result["descriptor"] = {
+            key: descriptor.get(key) if type(descriptor.get(key)) is bool else None
+            for key in ("did", "license", "admin_user", "lan_address")
         }
     return result
 

@@ -90,20 +90,29 @@ for a browser dashboard. See
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
 
-The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.42`.
+The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.43`.
 See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 </details>
 
 ## Upgrading
 
+The **0.8.43** integration and bridge **0.8.34** include client **0.29.0**.
+The new app option `experimental_standalone` (off by default) lets a standalone
+Wall Light Cam S100 `T84A1` try its own local session for snapshots, live view
+and recordings. Update the integration before turning it on. It is a test for
+[client #142](https://github.com/keesmod/eufy-mega-client/issues/142) and not
+yet confirmed on a camera. See
+[experimental standalone cameras](docs/USAGE.md#experimental-standalone-cameras).
+Nothing changes for HomeBase cameras.
+
 The **0.8.42** integration and bridge **0.8.33** include client **0.28.2**,
 which recognizes the reported eufyCam 2C `T8113-V` with type 8 behind a
 HomeBase 3. It uses the same media route as `T8113` and `T8113-Z`. A T8113-V
 owner reported discovery, a snapshot, live view, recording playback and motion
 events working on this release. Audio and other event types were not reported
-yet. Standalone `T84A1` media remains
-blocked by the missing standalone authentication and transport route.
+yet. Standalone `T84A1` media remained blocked by the missing standalone
+authentication and transport route in that release.
 
 The **0.8.41** integration and bridge **0.8.32** update the bridge's `ws` and
 `uint8array-extras` packages. Home Assistant 2026.9.0 or newer is still
@@ -154,8 +163,8 @@ default 120) raises the live session cap only for cameras without a battery
 value. Battery cameras keep two minutes. 0.8.25 keeps an inline card with `live_autostart: true` live while
 it is scrolled out of view, 0.8.24 moved the inline live controls below the
 video on narrow cards, and 0.8.23 added `live_mode: inline` and the optional
-`live_autostart: true`. Update the integration to **0.8.42** and the bridge to
-**0.8.33**, then refresh the dashboard.
+`live_autostart: true`. Update the integration to **0.8.43** and the bridge to
+**0.8.34**, then refresh the dashboard.
 See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
 for changes and any version-specific instructions.
 
