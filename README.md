@@ -99,8 +99,10 @@ See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 The **0.8.42** integration and bridge **0.8.33** include client **0.28.2**,
 which recognizes the reported eufyCam 2C `T8113-V` with type 8 behind a
-HomeBase 3. It uses the same media route as `T8113` and `T8113-Z`. This variant
-still needs post-upgrade hardware results. Standalone `T84A1` media remains
+HomeBase 3. It uses the same media route as `T8113` and `T8113-Z`. A T8113-V
+owner reported discovery, a snapshot, live view, recording playback and motion
+events working on this release. Audio and other event types were not reported
+yet. Standalone `T84A1` media remains
 blocked by the missing standalone authentication and transport route.
 
 The **0.8.41** integration and bridge **0.8.32** update the bridge's `ws` and
