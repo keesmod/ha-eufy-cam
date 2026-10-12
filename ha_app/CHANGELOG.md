@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.35 - 2026-10-12
+
+- Pin client 0.29.1. With `experimental_standalone` on, a standalone Indoor Cam
+  2K Pan & Tilt `T8410` now also tries its own local session at every
+  discovery, normally at startup. On
+  [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152) bridge 0.8.34
+  left two such cameras at `standalone_transport_unverified` without an
+  attempt. Each standalone T8410 that does not answer adds up to 20 seconds to
+  startup. Unverified on hardware, see
+  [client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
+- The startup log names both models. Nothing changes for HomeBase cameras or
+  with the option off.
+
+Upgrade: update the integration in HACS and this app, then restart. Keep the
+same token and session. Integration 0.8.43 is also compatible with bridge
+0.8.35. Rollback: turn the option off, or restore the 0.8.34 app backup and
+integration 0.8.43.
+
 ## 0.8.34 - 2026-10-10
 
 - Pin client 0.29.0 and add the option `experimental_standalone`, off by

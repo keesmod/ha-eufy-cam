@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.8.44 - 2026-10-12
+
+- Bridge 0.8.35 pins client 0.29.1, which also admits a standalone Indoor Cam
+  2K Pan & Tilt `T8410`/type 31 to the opt-in `experimental_standalone` route.
+  The [issue #152][152] reporter has two such cameras without a HomeBase. With
+  the option on, bridge 0.8.34 discovered them with a complete descriptor but
+  left them at `standalone_transport_unverified` without a session attempt,
+  because client 0.29.0 admitted only the Wall Light Cam S100 `T84A1`.
+- With the option on, the bridge now connects each standalone T8410 at every
+  discovery, normally at startup, as it does for the T84A1. Each standalone
+  T8410 that does not answer adds up to 20 seconds to discovery. Its snapshot,
+  live view and recordings are offered as experimental features and work only
+  if that session works. No physical standalone camera has confirmed it yet,
+  see [client #142][standalone].
+- Without the option nothing changes. A T8410 under a HomeBase keeps its
+  HomeBase route, also with the option. Any other standalone model stays at
+  `standalone_transport_unverified`. In the bridge only the client pin and the
+  startup log text change, and the log now names both models.
+- The discovery diagnostics docs record the #152 report. They now say that
+  `owner_status=connected` means the lookup, handshake and command key setup
+  completed. The first answered snapshot, recording or live result shows
+  whether the camera accepts that key.
+
+Upgrade: update the integration to 0.8.44 in HACS and the bridge app to 0.8.35,
+then restart Home Assistant. Keep the same token and session. Integration
+0.8.43 is also compatible with bridge 0.8.35, and 0.8.44 packages the matching
+release notes without a Python or card change. Rollback: turn the option off,
+or restore the bridge 0.8.34 app backup and integration 0.8.43.
+
+[152]: https://github.com/keesmod/ha-eufy-cam/issues/152
+[standalone]: https://github.com/keesmod/eufy-mega-client/issues/142
+
 ## 0.8.43 - 2026-10-10
 
 - Bridge 0.8.34 pins client 0.29.0 and adds the app option
