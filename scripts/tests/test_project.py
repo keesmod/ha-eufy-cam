@@ -95,6 +95,41 @@ class ProjectTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             project.metadata(self.root)
 
+    def test_release_notes_must_name_the_pinned_client(self):
+        meta = project.metadata(self.root)
+        version, bridge, pin = meta["version"], meta["bridge"], meta["mega_client"]
+        other = pin + "9"
+
+        def write(notes, app, readme):
+            (self.root / "CHANGELOG.md").write_text(
+                f"# Changelog\n\n## {version} - 2026-10-12\n\n- {notes}\n"
+            )
+            (self.root / "ha_app/CHANGELOG.md").write_text(
+                f"# Changelog\n\n## {bridge} - 2026-10-12\n\n- {app}\n"
+            )
+            (self.root / "README.md").write_text(
+                f"`/eufy_viewer/eufy-viewer-card.js?v={version}`\n"
+                f"The integration and bridge **{bridge}** include client "
+                f"**{readme}**.\nThe integration and bridge **0.0.1** include "
+                f"client **{other}**.\n"
+            )
+
+        names = f"Bridge {bridge} pins client {{}} with exact pairs."
+        write(names.format(pin), f"Pin client {pin} with exact pairs.", pin)
+        self.assertIn(pin, project.changelog(self.root, version))
+        unchanged = "No client change in this release."
+        write(unchanged, unchanged, pin)
+        project.changelog(self.root, version)
+        for notes, app, readme in (
+            (names.format(other), f"Pin client {pin} here.", pin),
+            (names.format(pin), f"Include client {other} here.", pin),
+            (names.format(pin), f"Pin client {pin} here.", other),
+        ):
+            write(notes, app, readme)
+            with self.assertRaisesRegex(ValueError, "bridge pins " + pin):
+                project.changelog(self.root, version)
+        self.assertEqual(project.metadata(self.root)["mega_client"], pin)
+
     def test_archive_cannot_include_untracked_local_files(self):
         (self.root / "bridge/credentials.json").write_text("synthetic secret fixture")
         paths = b"README.md\0LICENSE\0bridge/package.json\0"

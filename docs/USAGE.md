@@ -127,9 +127,12 @@ Cameras that are not connected to a HomeBase normally show their snapshot, live
 and recording features as unsupported with `standalone_transport_unverified`.
 From bridge 0.8.34 the app option `experimental_standalone: true` (Docker:
 `EUFY_EXPERIMENTAL_STANDALONE=true`) lets a standalone Wall Light Cam S100
-`T84A1` try its own local session. It is off by default. Only that model is
-included, and no other camera or HomeBase changes. Update the integration to
-0.8.43 or newer before turning it on.
+`T84A1` try its own local session. From bridge 0.8.35 with client 0.29.1 a
+standalone `T8410` with type 31 is included too, for
+[issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152). It is off by
+default. Only those models are included, and no other camera or HomeBase
+changes. A `T8410` under a HomeBase keeps its HomeBase route. Update the
+integration to 0.8.43 or newer before turning it on.
 
 With the option on, the bridge connects to the camera at every discovery,
 normally at startup, over the same local lookup and command key it uses for a

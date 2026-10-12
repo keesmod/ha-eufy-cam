@@ -166,8 +166,11 @@ reproduced.
 Client 0.29.1, included in bridge 0.8.35, admits exactly `T8160-C` with type 19
 under the H3 media policy, which checks the actual HomeBase 3 owner and its
 firmware. It does not join the closed model-only policy of the original T8160.
-The client also admits exactly `T8410C` with type 31 under the same policy as
-`T8410`. That admission rests on public evidence, not on these rows. Eufy's
+The client also admits exactly `T8410C` with type 31 under the HomeBase 3
+policy of `T8410`: the indoor camera route with H3 media and the same owner and
+firmware checks. Unlike `T8410`, it is not admitted to the opt-in
+[experimental standalone route](#experimental-standalone-cameras). That
+admission rests on public evidence, not on these rows. Eufy's
 [HomeBase compatibility guide][149-eufy] lists the Indoor Cam Pan&Tilt 2K as
 `T8410C`, supported on HomeBase 3. A [public inventory log][149-mega] shows
 `T8410C` with type 31 under a T8030, and an [upstream report][149-upstream]
@@ -271,7 +274,10 @@ does not prove that it works.
 
 With the [opt-in](USAGE.md#experimental-standalone-cameras), a standalone
 `T84A1` row has `relationship_transport=experimental` and no
-`relationship_reason`. The bridge connects that camera at every discovery,
+`relationship_reason`. Since bridge 0.8.35 with client 0.29.1 the same applies
+to a standalone `T8410` row with type 31, for
+[issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152). A `T8410`
+under a HomeBase keeps its HomeBase route. The bridge connects that camera at every discovery,
 normally at startup. Its
 `owner_status` and `owner_connected` then describe the camera's own session, and
 `recent_events` has its `station_connection` records with the same `stage`
@@ -289,7 +295,8 @@ values as a HomeBase. The assessment reports such a camera as
 After a connected result, the media rows and a snapshot, live view and
 recording attempt show whether the camera answers those commands on its own
 storage. Include the complete download in
-[client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
+[client #142](https://github.com/keesmod/eufy-mega-client/issues/142), or for a
+`T8410` in [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152).
 
 ## Privacy and scope
 

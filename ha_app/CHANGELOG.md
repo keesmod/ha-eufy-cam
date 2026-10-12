@@ -2,12 +2,19 @@
 
 ## 0.8.35 - 2026-10-12
 
-- Pin client 0.29.1 to recognize exactly `T8160-C`/type 19 and `T8410C`/type 31
-  behind a HomeBase 3, as reported on
-  [issue #149](https://github.com/keesmod/ha-eufy-cam/issues/149). Both use the
-  H3 media policy with its owner and firmware checks. `T8410C` is admitted on
-  public evidence, and whether the reporter's type 31 rows carry exactly that
-  string is not verified. Hardware results for both remain pending.
+- Pin client 0.29.1. It recognizes exactly `T8160-C`/type 19 behind a HomeBase
+  3, as reported on
+  [issue #149](https://github.com/keesmod/ha-eufy-cam/issues/149), with the H3
+  media policy and its owner and firmware checks. On public evidence it also
+  recognizes exactly `T8410C`/type 31 behind a HomeBase 3, with the `T8410`
+  policy under a HomeBase but without the experimental standalone route.
+  Whether the two type 31 rows on issue #149 carry exactly `T8410C` is not
+  verified. Hardware results for both remain pending.
+- With the option `experimental_standalone`, a standalone `T8410`/type 31 now
+  also tries its own local session at every discovery, as a standalone `T84A1`
+  does, for [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152). A
+  silent camera adds up to 20 seconds to startup. Without the option nothing
+  changes. Unverified on hardware.
 - Discovery rows, the `Eufy backend:` line and the live video and audio rows
   now show an unhyphenated model code such as `T8410C` as received instead of
   `unavailable`. The bound stays at eight characters, so serial numbers still
@@ -15,7 +22,8 @@
 
 Upgrade: keep the same token and session. Update the integration to 0.8.44,
 because 0.8.43 shows such model codes as `unavailable` in its download.
-Rollback: restore the 0.8.34 app backup.
+Rollback: restore the 0.8.34 app backup. For a standalone `T8410`, turning the
+option off is enough.
 
 ## 0.8.34 - 2026-10-10
 

@@ -98,10 +98,12 @@ See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 ## Upgrading
 
 The **0.8.44** integration and bridge **0.8.35** include client **0.29.1**,
-which recognizes the eufyCam 3 reported as `T8160-C` with type 19 and the
-Indoor Cam Pan&Tilt 2K `T8410C` with type 31 behind a HomeBase 3. Both use the
-HomeBase 3 media route with its owner and firmware checks. Neither has hardware
-results yet. Bridge diagnostics and **Download diagnostics** now also show an
+which recognizes the eufyCam 3 reported as `T8160-C` with type 19 behind a
+HomeBase 3. On public evidence it also recognizes the Indoor Cam Pan&Tilt 2K
+`T8410C` with type 31 behind a HomeBase 3. Both use the HomeBase 3 media route
+with its owner and firmware checks. Neither has hardware results yet. With
+`experimental_standalone` on, a standalone `T8410` now also tries its own local
+session, as a standalone `T84A1` does. Bridge diagnostics and **Download diagnostics** now also show an
 unhyphenated model code such as `T8410C` instead of `unavailable`. Update both
 parts. Integration 0.8.43 still works with bridge 0.8.35, but its download
 shows such models as `unavailable`.
