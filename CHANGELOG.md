@@ -9,16 +9,16 @@
   actual HomeBase 3 owner and firmware checks. It does not join the closed
   model-only policy of the original T8160.
 - The second pair, `T8410C`/type 31, the Indoor Cam Pan&Tilt 2K in Eufy's
-  HomeBase guide, is admitted on public evidence. Eufy's
-  [HomeBase compatibility guide][149-eufy] lists `T8410C` as supported on
-  HomeBase 3, and public reports show `T8410C` with type 31 under a T8030 on the
-  3.3.x firmware line. `T8410C` is the likely model of the two type 31 rows on
-  issue #149, which showed `model=unavailable`, but that is not verified. Owners
-  use Pan & Tilt names for both `T8410` and `T8410C`, so the received model
-  code, not the product name, decides which route applies. Under a HomeBase 3
-  `T8410C` uses the `T8410` policy: the indoor camera route with H3 media and
-  the same owner and firmware checks. Unlike `T8410`, it is not admitted to the experimental standalone route. A standalone
-  `T8410C`, with an empty or self parent, is now reported as
+  HomeBase guide, is admitted on public evidence. Eufy's [HomeBase compatibility
+  guide][149-eufy] lists `T8410C` as supported on HomeBase 3, and public reports
+  show `T8410C` with type 31 under a T8030 on the 3.3.x firmware line. `T8410C`
+  is the likely model of the two type 31 rows on issue #149, which showed
+  `model=unavailable`, but that is not verified. Owners use Pan & Tilt names for
+  both `T8410` and `T8410C`, so the received model code, not the product name,
+  decides which route applies. Under a HomeBase 3, `T8410C` uses the `T8410`
+  policy: the indoor camera route with H3 media and the same owner and firmware
+  checks. Unlike `T8410`, it is not admitted to the experimental standalone
+  route. A standalone `T8410C`, with an empty or self parent, is now reported as
   `relationship=standalone` with `standalone_transport_unverified` instead of
   `unsupported_device`. Home Assistant then creates it as a camera whose
   snapshot, live view and recordings are unsupported, also with
