@@ -2,7 +2,7 @@
 
 ## 0.8.44 - 2026-10-12
 
-- Bridge 0.8.35 pins client 0.29.1, which admits exactly two more pairs under a
+- Bridge 0.8.35 pins client 0.29.2, which admits exactly two more pairs under a
   HomeBase 3. Bridge 0.8.34 and earlier reject both as `unsupported_device`.
   `T8160-C`/type 19 was reported on [issue #149][149], and the Eufy app shows
   that camera as a regular eufyCam 3. It uses the H3 media policy with the
@@ -15,15 +15,20 @@
   rows on issue #149, which showed `model=unavailable`, but that is not
   verified. Under a HomeBase 3 it uses the `T8410` policy: the indoor camera
   route with H3 media and the same owner and firmware checks. Unlike `T8410`,
-  it is not admitted to the experimental standalone route. No type-only or
-  prefix match is added.
-- Client 0.29.1 also lets the opt-in `experimental_standalone` route admit a
-  standalone `T8410`/type 31 with an empty or self parent, for
-  [issue #152][152]. With the option on, the bridge connects such a camera at
-  every discovery, as it does a standalone `T84A1`, and a camera that does not
-  answer adds up to 20 seconds to that discovery. Without the option nothing
-  changes. A `T8410` under a HomeBase keeps its HomeBase route, also with the
-  option. No physical standalone camera has confirmed the route.
+  it is not admitted to the experimental standalone route. A standalone
+  `T8410C`, with an empty or self parent, is now reported as
+  `relationship=standalone` with `standalone_transport_unverified` instead of
+  `unsupported_device`. Home Assistant then creates it as a camera whose
+  snapshot, live view and recordings are unsupported, also with
+  `experimental_standalone` on. No type-only or prefix match is added.
+- Client 0.29.2 also carries the client 0.29.1 change for [issue #152][152].
+  The opt-in `experimental_standalone` route now admits a standalone
+  `T8410`/type 31 with an empty or self parent. With the option on, the bridge
+  connects such a camera at every discovery, as it does a standalone `T84A1`,
+  and a camera that does not answer adds up to 20 seconds to that discovery.
+  Without the option nothing changes. A `T8410` under a HomeBase keeps its
+  HomeBase route, also with the option. No physical standalone camera has
+  confirmed the route.
 - Diagnostics now show an unhyphenated catalogue code such as `T8410C`,
   `T8W11C` or `T8419N` as received, next to the hyphen form such as `T8113-Z`.
   This applies to the bridge's `Eufy discovery:` rows and `Eufy backend:` line,

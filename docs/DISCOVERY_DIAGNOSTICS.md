@@ -163,7 +163,7 @@ because the received string did not fit the diagnostic bound. The reporter
 calls them Indoor Cam Pan&Tilt 2K. This is reported, not independently
 reproduced.
 
-Client 0.29.1, included in bridge 0.8.35, admits exactly `T8160-C` with type 19
+Client 0.29.2, included in bridge 0.8.35, admits exactly `T8160-C` with type 19
 under the H3 media policy, which checks the actual HomeBase 3 owner and its
 firmware. It does not join the closed model-only policy of the original T8160.
 The client also admits exactly `T8410C` with type 31 under the HomeBase 3
@@ -179,8 +179,13 @@ shows `T8410C` with type 31 on firmware 3.3.3.2 under a T8030. The reporter's
 `T8410C` is not verified. If the string differs, bridge 0.8.35 and integration
 0.8.44 show it in the next report, as long as it fits the widened bound
 described below. No other type 31 string and no type-only or prefix match is
-admitted. Both new pairs have software tests only, and hardware results for
-both remain pending in the client's [model matrix][149-matrix].
+admitted. A standalone `T8410C`, with an empty or self parent, is now reported
+as `relationship=standalone` with
+`relationship_reason=standalone_transport_unverified` instead of
+`unsupported_device`, also with the opt-in. Home Assistant then creates it as a
+camera whose snapshot, live view and recordings are unsupported. Both new pairs
+have software tests only, and hardware results for both remain pending in the
+client's [model matrix][149-matrix].
 
 [66-update]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6083775017
 [66-result]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6098838866
@@ -189,7 +194,7 @@ both remain pending in the client's [model matrix][149-matrix].
 [149-eufy]: https://service.eufy.com/eu/article-description/eufy-Security-Complete-HomeBase-Compatibility-Guide
 [149-mega]: https://github.com/mscodemonkey/eufy-mega-security/issues/7
 [149-upstream]: https://github.com/bropat/eufy-security-client/issues/722
-[149-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md
+[149-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-issue-149-0292
 
 `ref`, `owner_ref` and `device_ref` are anonymous references within a report.
 `inventory_row` is a separate zero-based source position. Use the `report` number
@@ -274,11 +279,14 @@ does not prove that it works.
 
 With the [opt-in](USAGE.md#experimental-standalone-cameras), a standalone
 `T84A1` row has `relationship_transport=experimental` and no
-`relationship_reason`. Since bridge 0.8.35 with client 0.29.1 the same applies
-to a standalone `T8410` row with type 31, for
-[issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152). A `T8410`
-under a HomeBase keeps its HomeBase route. The bridge connects that camera at every discovery,
-normally at startup. Its
+`relationship_reason`. Since bridge 0.8.35 with client 0.29.2, which carries
+the client 0.29.1 change for
+[issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152), the same
+applies to a standalone `T8410` row with type 31. A `T8410` under a HomeBase
+keeps its HomeBase route. A standalone `T8410C` row keeps
+`relationship_reason=standalone_transport_unverified`, also with the opt-in.
+The bridge connects an opted-in camera at every discovery, normally at startup.
+Its
 `owner_status` and `owner_connected` then describe the camera's own session, and
 `recent_events` has its `station_connection` records with the same `stage`
 values as a HomeBase. The assessment reports such a camera as

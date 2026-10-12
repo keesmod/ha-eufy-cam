@@ -17,6 +17,7 @@ import { MegaBackend, liveStreamsPerStation, liveMaxSecondsMains, experimentalSt
 import { Storage } from '../src/storage.js';
 import { backendName } from '../src/backend.js';
 import { MegaRecordings } from '../src/mega-recordings.js';
+import { diagnosticSoftware } from '../src/discovery-diagnostics.js';
 const devices: Device[] = [
   {
     id: 'BASE',
@@ -994,6 +995,89 @@ for (const enabled of [true, false])
       assert.equal(row.owner_status, enabled ? 'connected' : 'not_applicable');
       assert.deepEqual(row.descriptor, { did: true, license: true, admin_user: true, lan_address: true });
       assert.doesNotMatch(JSON.stringify(report), /PRIVATE|192\.168\.1\.40|WALL|BASE/);
+    } finally {
+      await f.backend.close();
+    }
+  });
+
+// #149 and #152: the 0.8.44 notes describe what client 0.29.2 contains. Raw rows
+// go through the installed client, so a pin that lacks one of those changes fails
+// here even when its version string matches the notes. Until the pin moves from
+// 0.29.0, that client still rejects both #149 pairs and keeps a standalone T8410
+// unverified, as bridge 0.8.34 does.
+const claimedClient = diagnosticSoftware().library !== '0.29.0';
+for (const enabled of [true, false])
+  test(`raw T8160-C, T8410C and T8410 rows through the shipped client with the opt-in ${enabled ? 'on' : 'off'} (#149, #152)`, async () => {
+    const f = fixture(undefined, undefined, enabled);
+    const faults: unknown[][] = [];
+    f.backend.on('backend_fault', (...args) => faults.push(args));
+    const connected: string[] = [];
+    const connect = f.client.connectStation;
+    f.client.connectStation = async (id: string) => {
+      connected.push(id);
+      return connect();
+    };
+    const row = (device_sn: string, parent_sn: string, device_model: string, device_type: number, main_sw_version: string) => ({
+      category: 'eufy_security',
+      device_sn,
+      parent_sn,
+      device_model,
+      device_type,
+      main_sw_version,
+      device_name: 'PRIVATE_NAME',
+      p2p_did: 'PRIVATE_DID',
+      p2p_license: 'PRIVATE_LICENSE',
+      member: { admin_user_id: 'PRIVATE_ADMIN' },
+      params: [{ param_type: 1176, param_value: '192.168.1.42' }],
+    });
+    const rows = [
+      row('BASE', '', 'T8030', 18, '3.8.7.4'),
+      row('H3_EUFYCAM', 'BASE', 'T8160-C', 19, '1.5.8.6'),
+      row('H3_INDOOR', 'BASE', 'T8410C', 31, '3.3.4.4'),
+      row('SOLO_C', '', 'T8410C', 31, '3.3.4.4'),
+      row('SOLO', 'SOLO', 'T8410', 31, '2.3.2.4'),
+    ];
+    // The installed library's discovery, with only the cloud boundary synthetic.
+    const actual = Object.assign(Object.create(EufyMegaClient.prototype), {
+      experimentalStandalone: enabled,
+      cloud: { call: async () => ({ devices: rows }) },
+    }) as EufyMegaClient;
+    f.client.discoverDevices = () => actual.discoverDevices();
+    const unverified = ['standalone', 'standalone_transport_unverified', null, 'not_applicable'];
+    try {
+      assert.equal((await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' })).state, 'connected');
+      assert.deepEqual(connected, claimedClient && enabled ? ['BASE', 'SOLO'] : ['BASE']);
+      assert.deepEqual(faults, [
+        ...(claimedClient
+          ? []
+          : [
+              ['unsupported_device', 'device_model=T8160-C device_type=19'],
+              // Client 0.29.0 itself omits the unhyphenated code, as on #149.
+              ['unsupported_device', 'device_model=unavailable device_type=31'],
+            ]),
+        ['standalone_transport_unverified'],
+      ]);
+      const report = f.backend.supportReport();
+      const cameras = report.last_discovery
+        .filter((r) => r.event === 'device' && r.model !== 'T8030')
+        .map((r) => [r.model, r.relationship, r.relationship_reason, r.relationship_transport, r.owner_status]);
+      const t8410 = claimedClient && enabled ? ['standalone', null, 'experimental', 'connected'] : unverified;
+      assert.deepEqual(cameras, [
+        ...(claimedClient
+          ? [
+              ['T8160-C', 'station', null, null, 'connected'],
+              ['T8410C', 'station', null, null, 'connected'],
+              // T8410C has no experimental standalone route, also with the opt-in.
+              ['T8410C', ...unverified],
+            ]
+          : []),
+        ['T8410', ...t8410],
+      ]);
+      assert.deepEqual(
+        f.backend.inventory().map((camera) => camera.model),
+        claimedClient ? ['T8160-C', 'T8410C', 'T8410C', 'T8410'] : ['T8410'],
+      );
+      assert.doesNotMatch(JSON.stringify(report), /PRIVATE|192\.168\.1\.42|BASE|H3_|SOLO/);
     } finally {
       await f.backend.close();
     }
