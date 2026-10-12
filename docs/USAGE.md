@@ -140,8 +140,9 @@ From bridge 0.8.37 the app log names its model in a line beginning with
 diagnostics** explains it under `standalone_admission`. That is not a failed
 connection attempt. The bridge makes no attempt for such a camera. A camera
 whose model the library does not recognize gets neither. With the option on or
-off, it shows only as an `Eufy backend: unsupported_device` line with its model
-code and type.
+off, it appears as an `unsupported_device` issue row with its model code and
+type in the `Eufy discovery:` report and in **Download diagnostics**, and as an
+`Eufy backend: unsupported_device` line.
 
 With the option on, the bridge connects to the camera at every discovery,
 normally at startup, over the same local lookup and command key it uses for a
