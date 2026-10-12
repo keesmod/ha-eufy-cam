@@ -21,13 +21,6 @@ def read_json(root, path):
     return json.loads((root / path).read_text())
 
 
-# Notes may wrap a claim over lines, link the version or prefix it with v, as in
-# "includes client [0.28.0](...)" or "pins the client v0.29.2".
-CLIENT_CLAIM = re.compile(
-    r"\b(?:[Pp]ins?|[Ii]ncludes?)\s+(?:the\s+)?client\s+(?:\[|\*\*)?v?(\d+\.\d+\.\d+)"
-)
-
-
 def changelog(root, version, path="CHANGELOG.md"):
     match = re.search(
         r"^## " + re.escape(version) + r"(?:\s[^\n]*)?\n(.+?)(?=^## |\Z)",
@@ -36,40 +29,7 @@ def changelog(root, version, path="CHANGELOG.md"):
     )
     if not match or len(match[1].strip()) < 20:
         raise ValueError("Missing substantive changelog entry in " + path)
-    if path == "CHANGELOG.md":
-        client_claims(root, match[1])
     return match[1].strip()
-
-
-def client_claims(root, notes):
-    """Release text may be written before the client it names is published.
-
-    Every check, build and publication reads the integration release notes, so a
-    candidate whose notes, app notes or README upgrade line name another client
-    than the bridge pins stops there until the pin follows.
-    """
-    bridge = read_json(root, "bridge/package.json")
-    pinned = re.search(
-        r"/releases/download/v(\d+\.\d+\.\d+)/",
-        bridge["dependencies"]["@keesmod/eufy-mega-client"],
-    )
-    readme = re.findall(
-        r"bridge\s+\*\*"
-        + re.escape(bridge["version"])
-        + r"\*\*\s+includes?\s+client\s+\*\*v?(\d+\.\d+\.\d+)\*\*",
-        (root / "README.md").read_text(),
-    )
-    app_notes = changelog(root, bridge["version"], "ha_app/CHANGELOG.md")
-    named = set(
-        CLIENT_CLAIM.findall(notes) + CLIENT_CLAIM.findall(app_notes) + readme
-    )
-    if named and (not pinned or named != {pinned[1]}):
-        raise ValueError(
-            "Release notes name client "
-            + ", ".join(sorted(named))
-            + " but the bridge pins "
-            + (pinned[1] if pinned else "no versioned client")
-        )
 
 
 def metadata(root):

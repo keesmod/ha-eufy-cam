@@ -24,10 +24,6 @@ exact GitHub tarball URL in `bridge/package.json`, refresh its lockfile with npm
 and regenerate the HA app. CI checks the versioned URL, embedded version and
 SHA512 integrity, installs it through `npm ci`, and tests the consuming bridge.
 Never reference a mutable Git branch or silently select a newer library.
-Release notes can be written before the library is published. Until the pin
-follows, `release.py check` rejects a current integration or app changelog
-entry that pins or includes another client, and a README upgrade line for the
-current bridge that names one.
 
 Update the release's `CHANGELOG.md` section with the user-visible behavior,
 upgrade steps, compatibility limits and rollback instructions. Runtime changes

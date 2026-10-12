@@ -17,7 +17,6 @@ import { MegaBackend, liveStreamsPerStation, liveMaxSecondsMains, experimentalSt
 import { Storage } from '../src/storage.js';
 import { backendName } from '../src/backend.js';
 import { MegaRecordings } from '../src/mega-recordings.js';
-import { diagnosticSoftware } from '../src/discovery-diagnostics.js';
 const devices: Device[] = [
   {
     id: 'BASE',
@@ -741,7 +740,7 @@ for (const empty of [false,true])
       const rows=lines.map(line=>JSON.parse(line));
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
-      assert.equal(summary.software.library,'0.29.1');
+      assert.equal(summary.software.library,'0.29.2');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
@@ -1014,12 +1013,8 @@ for (const enabled of [true, false])
     }
   });
 
-// #149: the 0.8.45 notes describe what client 0.29.2 contains. Raw rows go
-// through the installed client, so a pin that lacks those changes fails here even
-// when its version string matches the notes. Until the pin moves from 0.29.1, that
-// client still rejects both #149 pairs, as bridge 0.8.35 does. Its standalone
-// T8410 route for #152 applies with either client.
-const claimedClient = diagnosticSoftware().library !== '0.29.1';
+// #149: raw rows go through the installed client, so a pin without the T8160-C and
+// T8410C admissions fails here even when its version string matches the notes.
 for (const enabled of [true, false])
   test(`raw T8160-C, T8410C and T8410 rows through the shipped client with the opt-in ${enabled ? 'on' : 'off'} (#149, #152)`, async () => {
     const f = fixture(undefined, undefined, enabled);
@@ -1061,37 +1056,21 @@ for (const enabled of [true, false])
     try {
       assert.equal((await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' })).state, 'connected');
       assert.deepEqual([...connected].sort(), enabled ? ['BASE', 'SOLO'] : ['BASE']);
-      assert.deepEqual(faults, [
-        ...(claimedClient
-          ? []
-          : [
-              ['unsupported_device', 'device_model=T8160-C device_type=19'],
-              // Client 0.29.1 itself omits the unhyphenated code, as on #149.
-              ['unsupported_device', 'device_model=unavailable device_type=31'],
-            ]),
-        // Only a standalone T8410C, or a T8410 without the opt-in, stays unverified.
-        ...(claimedClient || !enabled ? [['standalone_transport_unverified']] : []),
-      ]);
+      // Only the standalone T8410C, and a T8410 without the opt-in, stay unverified.
+      assert.deepEqual(faults, [['standalone_transport_unverified']]);
       const report = f.backend.supportReport();
       const cameras = report.last_discovery
         .filter((r) => r.event === 'device' && r.model !== 'T8030')
         .map((r) => [r.model, r.relationship, r.relationship_reason, r.relationship_transport, r.owner_status]);
       const t8410 = enabled ? ['standalone', null, 'experimental', 'connected'] : unverified;
       assert.deepEqual(cameras, [
-        ...(claimedClient
-          ? [
-              ['T8160-C', 'station', null, null, 'connected'],
-              ['T8410C', 'station', null, null, 'connected'],
-              // T8410C has no experimental standalone route, also with the opt-in.
-              ['T8410C', ...unverified],
-            ]
-          : []),
+        ['T8160-C', 'station', null, null, 'connected'],
+        ['T8410C', 'station', null, null, 'connected'],
+        // T8410C has no experimental standalone route, also with the opt-in.
+        ['T8410C', ...unverified],
         ['T8410', ...t8410],
       ]);
-      assert.deepEqual(
-        f.backend.inventory().map((camera) => camera.model),
-        claimedClient ? ['T8160-C', 'T8410C', 'T8410C', 'T8410'] : ['T8410'],
-      );
+      assert.deepEqual(f.backend.inventory().map((camera) => camera.model), ['T8160-C', 'T8410C', 'T8410C', 'T8410']);
       assert.doesNotMatch(JSON.stringify(report), /PRIVATE|192\.168\.1\.42|BASE|H3_|SOLO/);
     } finally {
       await f.backend.close();
