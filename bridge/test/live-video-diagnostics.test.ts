@@ -221,6 +221,15 @@ test('the report keeps a row for fifteen minutes by default and for the live cap
   now = 2_700_000; assert.equal(reports.report(2_700_000).length, 0);
 });
 
+test('a received model code with or without a short suffix is kept, serials and free text never (#149)', () => {
+  const reports = new LiveVideoDiagnostics(() => 0);
+  for (const model of ['T8113-Z', 'T8160-C', 'T8410C', 'T8W11C', 'T8419N'])
+    assert.equal(reports.begin(model).snapshot().model, model);
+  for (const model of ['T8410ABCD', 'T8224-ABC', 'T8224A-B', 'T8410c', 'T8410PRIVATE0001', 'T8410C ', ' T8410C', 'T8410C\n'])
+    assert.equal(reports.begin(model).snapshot().model, 'unavailable', JSON.stringify(model));
+  assert.ok(!JSON.stringify(reports.report()).includes('PRIVATE'));
+});
+
 // The relay counts readers and output chunks per session against real FFmpeg
 // output, so the row says which reader the bridge dropped and why.
 test('the media relay reports output chunks and reader attach, backpressure, client close and revoke counts', { timeout: 15000 }, async t => {

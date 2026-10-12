@@ -17,10 +17,15 @@ export const diagnosticCode = (value: unknown): string =>
   /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.exec(value)?.[0] === value
     ? value
     : 'unclassified_error';
-// A received model code, optionally with a short suffix such as T8113-Z (#129).
-// Serials and free text never match.
+// A received model code of at most eight characters, optionally with a short
+// hyphen suffix such as T8113-Z (#129) or an unhyphenated catalogue suffix such
+// as T8410C (#149). Serials and free text never match. The value is shown as
+// received or not at all: never trimmed, truncated, coerced or taken from a serial.
+// The live video and audio rows use this same bound.
 export const diagnosticModel = (value: unknown): string =>
-  typeof value === 'string' && value.length <= 8 && /^T[A-Z0-9]{4}(?:-[A-Z0-9]{1,2})?$/.test(value)
+  typeof value === 'string' &&
+  value.length <= 8 &&
+  /^T[A-Z0-9]{4}(?:[A-Z0-9]{1,3}|-[A-Z0-9]{1,2})?$/.test(value)
     ? value
     : 'unavailable';
 const model = diagnosticModel;

@@ -139,10 +139,16 @@ def _fields(raw: Any) -> dict[str, Any]:
         elif key in _VERSIONS:
             result[key] = _version(value)
         elif key in _MODELS:
+            # A received model code such as T8113-Z or T8410C, the same bound as
+            # the bridge. Serials and free text never match, and the value is
+            # kept as received or replaced, never trimmed or truncated.
             result[key] = (
                 value
                 if isinstance(value, str)
-                and re.fullmatch(r"T[A-Z0-9]{4}(?:-[A-Z0-9]{1,2})?", value)
+                and len(value) <= 8
+                and re.fullmatch(
+                    r"T[A-Z0-9]{4}(?:[A-Z0-9]{1,3}|-[A-Z0-9]{1,2})?", value
+                )
                 else "unavailable"
             )
         else:

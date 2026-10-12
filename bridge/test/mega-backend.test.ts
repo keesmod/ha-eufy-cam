@@ -677,6 +677,50 @@ test('discovery revalidates diagnostics and ignores extra issue fields at the br
   }
 });
 
+test('the backend log line shows unhyphenated catalogue codes as received, serials never (#149)', async () => {
+  const f = fixture();
+  const faults: unknown[][] = [];
+  f.backend.on('backend_fault', (...args) => faults.push(args));
+  const received = [
+    ['T8410C', 31],
+    ['T8160-C', 19],
+    ['T8W11C', 31],
+    ['T8419N', 31],
+    ['T8410ABCD', 31],
+    ['T8224-ABC', 31],
+    ['T8224A-B', 31],
+    ['T8410c', 31],
+    ['T8410PRIVATE0001', 31],
+    ['T8410C ', 31],
+    [' T8410C', 31],
+    ['T8410C\n', 31],
+  ];
+  f.client.discoverDevices = async () => ({
+    devices,
+    relationships: [],
+    issues: received.map(([deviceModel, deviceType], index) => ({
+      index,
+      deviceId: 'PRIVATE_SERIAL',
+      code: 'unsupported_device',
+      deviceModel,
+      deviceType,
+    })) as unknown as DiscoveryResult['issues'],
+  });
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.deepEqual(faults, [
+      ['unsupported_device', 'device_model=T8410C device_type=31'],
+      ['unsupported_device', 'device_model=T8160-C device_type=19'],
+      ['unsupported_device', 'device_model=T8W11C device_type=31'],
+      ['unsupported_device', 'device_model=T8419N device_type=31'],
+      ['unsupported_device', 'device_model=unavailable device_type=31'],
+    ]);
+    assert.doesNotMatch(JSON.stringify(faults), /PRIVATE/);
+  } finally {
+    await f.backend.close();
+  }
+});
+
 for (const empty of [false,true])
   test(`support report crosses Eufy and its normal logger for ${empty?'blocked':'usable'} discovery`, async t => {
     const {Eufy}=await import('../src/eufy.js');

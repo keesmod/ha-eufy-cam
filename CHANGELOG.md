@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.8.44 - 2026-10-12
+
+- Bridge 0.8.35 pins client 0.29.1, which admits exactly two pairs reported
+  under a HomeBase 3 on [issue #149][149]. `T8160-C`/type 19, which the Eufy
+  app shows as a regular eufyCam 3, uses the H3 media policy with the actual
+  HomeBase 3 owner and firmware checks. It does not join the closed model-only
+  policy of the original T8160. `T8410C`/type 31, the Indoor Cam Pan&Tilt 2K,
+  uses the same policy as `T8410`. Bridge 0.8.34 rejected both as
+  `unsupported_device`, so HA never created these cameras.
+- The `T8410C` admission rests on public evidence. Eufy's
+  [HomeBase compatibility guide][149-eufy] lists it as supported on HomeBase 3,
+  and public reports show `T8410C` with type 31 under a T8030 on the 3.3.x
+  firmware line. The reporter's two type 31 rows showed `model=unavailable`,
+  so it is not verified that they carry exactly `T8410C`. No type-only or
+  prefix match is added.
+- Diagnostics now show an unhyphenated catalogue code such as `T8410C`,
+  `T8W11C` or `T8419N` as received, next to the hyphen form such as `T8113-Z`.
+  This applies to the bridge's `Eufy discovery:` rows and `Eufy backend:` line,
+  its live video and audio rows and the integration's **Download
+  diagnostics**. The bound stays at eight characters, so serial numbers and
+  free text still show as `unavailable`. Nothing is trimmed, truncated or taken
+  from a serial number. If the reporter's type 31 string is another catalogue
+  code, the next report shows it.
+- Coverage of both new pairs is software only. Hardware results for `T8160-C`
+  and `T8410C` remain pending in the client's model matrix. This is
+  experimental software support.
+
+Upgrade: update the bridge app to 0.8.35 and the HACS integration to 0.8.44,
+then restart Home Assistant. Keep the same token and session. No configuration
+migration is needed. Integration 0.8.43 still works with bridge 0.8.35, but its
+download shows such model codes as `unavailable`. Rollback: restore the bridge
+0.8.34 app backup and integration 0.8.43.
+
+[149]: https://github.com/keesmod/ha-eufy-cam/issues/149
+[149-eufy]: https://service.eufy.com/eu/article-description/eufy-Security-Complete-HomeBase-Compatibility-Guide
+
 ## 0.8.43 - 2026-10-10
 
 - Bridge 0.8.34 pins client 0.29.0 and adds the app option

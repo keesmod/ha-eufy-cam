@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.35 - 2026-10-12
+
+- Pin client 0.29.1 to recognize exactly `T8160-C`/type 19 and `T8410C`/type 31
+  behind a HomeBase 3, as reported on
+  [issue #149](https://github.com/keesmod/ha-eufy-cam/issues/149). Both use the
+  H3 media policy with its owner and firmware checks. `T8410C` is admitted on
+  public evidence, and whether the reporter's type 31 rows carry exactly that
+  string is not verified. Hardware results for both remain pending.
+- Discovery rows, the `Eufy backend:` line and the live video and audio rows
+  now show an unhyphenated model code such as `T8410C` as received instead of
+  `unavailable`. The bound stays at eight characters, so serial numbers still
+  never appear.
+
+Upgrade: keep the same token and session. Update the integration to 0.8.44,
+because 0.8.43 shows such model codes as `unavailable` in its download.
+Rollback: restore the 0.8.34 app backup.
+
 ## 0.8.34 - 2026-10-10
 
 - Pin client 0.29.0 and add the option `experimental_standalone`, off by

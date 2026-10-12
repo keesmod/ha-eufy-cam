@@ -146,6 +146,21 @@ test('continuity and pipeline evidence survive close with bounded privacy and no
   assert.equal(d.begin('T8113-PRIVATE').snapshot().model, 'unavailable');
 });
 
+test('camera and owner model codes with or without a short suffix are kept, serials and free text never (#149)', () => {
+  const d = new LiveAudioDiagnostics(() => 0);
+  for (const model of ['T8113-Z', 'T8160-C', 'T8410C', 'T8W11C', 'T8419N']) {
+    const r = d.begin(model, { owner_model: model }).snapshot();
+    assert.equal(r.model, model); assert.equal(r.owner_model, model);
+  }
+  for (const model of ['T8410ABCD', 'T8224-ABC', 'T8224A-B', 'T8410c', 'T8410PRIVATE0001', 'T8410C ', ' T8410C', 'T8410C\n']) {
+    const r = d.begin(model, { owner_model: model }).snapshot();
+    assert.equal(r.model, 'unavailable', JSON.stringify(model));
+    assert.equal(r.owner_model, undefined, JSON.stringify(model));
+  }
+  assert.equal(d.begin('T8410C').snapshot().owner_model, undefined, 'No owner model means no field');
+  assert.ok(!JSON.stringify(d.report()).includes('PRIVATE'));
+});
+
 test('the report keeps a row for fifteen minutes by default and for the live cap plus fifteen minutes when asked', () => {
   let now = 0;
   const reports = new LiveAudioDiagnostics(() => now);

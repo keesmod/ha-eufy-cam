@@ -104,7 +104,8 @@ reports `T8424` as `relationship=standalone` with
 ([eufy-mega-client#142](https://github.com/keesmod/eufy-mega-client/issues/142)).
 This is reported, not independently reproduced. Since bridge 0.8.29 and
 integration 0.8.37 the report keeps a model code with a short suffix, such as
-`T8113-Z`, instead of `unavailable`.
+`T8113-Z`, instead of `unavailable`. Since bridge 0.8.35 and integration 0.8.44
+it also keeps an unhyphenated catalogue code such as `T8410C`.
 
 On 2026-10-04 the reporter of
 [issue #136](https://github.com/keesmod/ha-eufy-cam/issues/136) shared that a
@@ -149,9 +150,43 @@ and feature results are recorded in the client's [model matrix][66-matrix].
 T8920/type 20 and T87B0/type 157 are non-camera sensor/tracker products and
 remain outside camera discovery.
 
+On 2026-10-09 the reporter of [issue #149][149] ran integration 0.8.42 and
+bridge 0.8.33 with client 0.28.2 on Home Assistant 2026.10.0, with a T8030 on
+firmware 3.8.7.4. Three T8160 cameras on firmware 3.4.3.0 and a T8213 on
+firmware 0.2.1.8 were discovered with state, battery and stored snapshots, and
+live video worked on one T8160 through the card on the local network. Three
+other rows under that HomeBase were rejected as `unsupported_device` with
+`parent_status=present`. One arrives as `T8160-C` with type 19, firmware
+1.5.8.6 and hardware 0.0.3.7, and the Eufy app shows it as a regular eufyCam 3.
+The other two have type 31 and firmware 3.3.4.4 and show `model=unavailable`,
+because the received string did not fit the diagnostic bound. The reporter
+calls them Indoor Cam Pan&Tilt 2K. This is reported, not independently
+reproduced.
+
+Client 0.29.1, included in bridge 0.8.35, admits exactly `T8160-C` with type 19
+under the H3 media policy, which checks the actual HomeBase 3 owner and its
+firmware. It does not join the closed model-only policy of the original T8160.
+The client also admits exactly `T8410C` with type 31 under the same policy as
+`T8410`. That admission rests on public evidence, not on these rows. Eufy's
+[HomeBase compatibility guide][149-eufy] lists the Indoor Cam Pan&Tilt 2K as
+`T8410C`, supported on HomeBase 3. A [public inventory log][149-mega] shows
+`T8410C` with type 31 under a T8030, and an [upstream report][149-upstream]
+shows `T8410C` with type 31 on firmware 3.3.3.2 under a T8030. The reporter's
+3.3.4.4 fits that firmware line. Whether their type 31 rows carry exactly
+`T8410C` is not verified. If the string differs, bridge 0.8.35 and integration
+0.8.44 show it in the next report, as long as it fits the widened bound
+described below. No other type 31 string and no type-only or prefix match is
+admitted. Both new pairs have software tests only, and hardware results for
+both remain pending in the client's [model matrix][149-matrix].
+
 [66-update]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6083775017
 [66-result]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6098838866
 [66-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-issue-66-update-0282
+[149]: https://github.com/keesmod/ha-eufy-cam/issues/149
+[149-eufy]: https://service.eufy.com/eu/article-description/eufy-Security-Complete-HomeBase-Compatibility-Guide
+[149-mega]: https://github.com/mscodemonkey/eufy-mega-security/issues/7
+[149-upstream]: https://github.com/bropat/eufy-security-client/issues/722
+[149-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md
 
 `ref`, `owner_ref` and `device_ref` are anonymous references within a report.
 `inventory_row` is a separate zero-based source position. Use the `report` number
@@ -169,6 +204,13 @@ Rejected-device firmware and parent fields are included when available and valid
 is a supported or connected HomeBase. Other values distinguish `none`, `self`,
 `missing`, `ambiguous` and `invalid`. Unknown or invalid output values remain
 `null` or `unavailable`. No model or type is inferred from a serial number.
+A model appears exactly as received when it is `T` followed by four uppercase
+letters or digits, optionally followed by one to three more (`T8410C`) or by a
+hyphen and one or two (`T8113-Z`), at most eight characters in total. Anything
+else, including a serial number, a lowercase letter or a space, shows as
+`unavailable` and is never trimmed or shortened to fit. Bridges before 0.8.35
+and integrations before 0.8.44 also show an unhyphenated code such as `T8410C`
+as `unavailable`.
 
 ### HomeBase connection timeouts
 
