@@ -801,3 +801,142 @@ def test_standalone_descriptor_and_transport_survive_download_as_booleans_only()
     )
     assert other["relationship_transport"] is None
     assert "descriptor" not in other
+
+
+def test_experimental_standalone_survives_download_only_as_a_strict_boolean():
+    # Issue #154: the option state a bridge 0.8.37 summary carries.
+    for value in (True, False):
+        row = {"event": "summary", "experimental_standalone": value}
+        assert _fields(row)["experimental_standalone"] is value
+    for value in ("true", 1, 0, None, "PRIVATE", {}, []):
+        row = {"event": "summary", "experimental_standalone": value}
+        assert _fields(row)["experimental_standalone"] is None
+    assert "experimental_standalone" not in _fields({"event": "summary"})
+
+
+def _bridge_0837_report():
+    """A mixed bridge 0.8.37 report with the option on and a standalone T8410C."""
+    unsupported = {
+        "available": False,
+        "status": "unsupported",
+        "reason": "standalone_transport_unverified",
+    }
+    experimental = {"available": True, "status": "experimental", "reason": None}
+
+    def record(**row):
+        return {"diagnostic": "discovery", "schema": 2, "timestamp": STAMP, **row}
+
+    def standalone(ref, model, media, **row):
+        return record(
+            event="device",
+            ref=ref,
+            kind="camera",
+            model=model,
+            firmware="3.3.4.4",
+            hardware="1",
+            availability=None,
+            relationship="standalone",
+            descriptor={"did": True, "license": True, "admin_user": True},
+            owner_ref=ref,
+            station_status="not_applicable",
+            station_connected=None,
+            media={"snapshot": media, "live": media, "recordings": media},
+            report=1,
+            **row,
+        )
+
+    return {
+        "schema": 2,
+        "generated_at": STAMP,
+        "last_discovery": [
+            record(
+                event="summary",
+                software={"bridge": "0.8.37", "library": "0.29.2", "node": "24.21.0"},
+                outcome="accepted",
+                inventory_available=True,
+                scope="public_discovery_result",
+                cameras=2,
+                stations=1,
+                issues=1,
+                truncated=False,
+                baseline="absent",
+                experimental_standalone=True,
+                experimental_models=["PRIVATE"],
+                report=1,
+                unchanged=False,
+            ),
+            record(
+                event="device",
+                ref=1,
+                kind="station",
+                model="T8030",
+                relationship="station",
+                owner_ref=1,
+                owner_status="connected",
+                station_status="connected",
+                station_connected=True,
+                report=1,
+            ),
+            standalone(
+                2,
+                "T84A1",
+                experimental,
+                relationship_reason=None,
+                relationship_transport="experimental",
+                owner_status="connected",
+                owner_connected=True,
+            ),
+            standalone(
+                3,
+                "T8410C",
+                unsupported,
+                relationship_reason="standalone_transport_unverified",
+                relationship_transport=None,
+                owner_status="not_applicable",
+                owner_connected=None,
+                name="PRIVATE",
+            ),
+            record(
+                event="issue",
+                inventory_row=4,
+                code="standalone_transport_unverified",
+                device_ref=3,
+                model="unavailable",
+                parent_status="none",
+                report=1,
+            ),
+            record(event="end", report=1, rows=4),
+        ],
+        "recent_events": [],
+    }
+
+
+def test_full_bridge_0837_report_keeps_the_option_state_and_nothing_unknown():
+    result = support_report(_bridge_0837_report())
+    summary = result["last_discovery"][0]
+    assert summary["event"] == "summary"
+    assert summary["experimental_standalone"] is True
+    assert "experimental_models" not in summary
+    assert all(
+        "experimental_standalone" not in row for row in result["last_discovery"][1:]
+    )
+    assert "PRIVATE" not in json.dumps(result)
+
+
+async def test_download_names_a_standalone_model_the_library_did_not_admit(hass):
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="PRIVATE", data=DATA)
+    entry.add_to_hass(hass)
+    with patch(
+        "custom_components.eufy_viewer.api.BridgeClient.request",
+        AsyncMock(return_value=_bridge_0837_report()),
+    ):
+        result = await async_get_config_entry_diagnostics(hass, entry)
+    assert result["support"]["last_discovery"][0]["experimental_standalone"] is True
+    (finding,) = [
+        f
+        for f in result["assessment"]["findings"]
+        if f["stage"] == "standalone_admission"
+    ]
+    assert "model code T8410C" in finding["observation"]
+    assert finding["evidence"] == "support.last_discovery"
+    assert "PRIVATE" not in json.dumps(result)

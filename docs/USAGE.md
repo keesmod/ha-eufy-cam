@@ -132,6 +132,13 @@ T8410 needs bridge 0.8.35 or newer. The option is off by default. Only these
 two models are included, and no other camera or HomeBase changes. Update the
 integration to 0.8.43 or newer before turning it on.
 
+Any other standalone camera, including a standalone `T8410C`, stays unsupported
+with the option on, because the bundled library admits only these two models.
+From bridge 0.8.37 the app log names its model in a line beginning with
+`Eufy experimental standalone:`, and from integration 0.8.46 **Download
+diagnostics** explains it under `standalone_admission`. That is not a failed
+connection attempt. The bridge makes no attempt for such a camera.
+
 With the option on, the bridge connects to the camera at every discovery,
 normally at startup, over the same local lookup and command key it uses for a
 HomeBase. Each camera that does not answer adds up to 20 seconds to startup. The

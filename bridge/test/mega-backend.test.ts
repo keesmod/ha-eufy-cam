@@ -740,6 +740,7 @@ for (const empty of [false,true])
       const rows=lines.map(line=>JSON.parse(line));
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
+      assert.equal(summary.experimental_standalone,false);
       assert.equal(summary.software.library,'0.29.2');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
@@ -848,10 +849,18 @@ test('EUFY_EXPERIMENTAL_STANDALONE accepts only true or false and defaults to of
 for (const enabled of [undefined, false, true])
   test(`the experimentalStandalone option ${enabled ? 'reaches' : 'stays off in'} the client (${enabled})`, async () => {
     const f = fixture(undefined, undefined, enabled);
+    const events: unknown[] = [];
+    f.backend.on('standalone_not_admitted', (model) => events.push(model));
     try {
       await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
       assert.equal(f.options[0]?.experimentalStandalone, enabled === true);
       assert.equal(f.backend.experimentalStandalone, enabled === true);
+      // The report states the option the library received (#154).
+      const summary = f.backend.supportReport().last_discovery[0]!;
+      assert.equal(summary.event, 'summary');
+      assert.equal(summary.experimental_standalone, enabled === true);
+      // The default inventory has no standalone row.
+      assert.deepEqual(events, []);
     } finally {
       await f.backend.close();
     }
@@ -931,6 +940,8 @@ test('a failed standalone connect records its stage and leaves the HomeBase conn
 });
 test('an unverified standalone camera is never connected and reports its descriptor', async () => {
   const f = fixture();
+  const events: unknown[] = [];
+  f.backend.on('standalone_not_admitted', (model) => events.push(model));
   const connected: string[] = [];
   const connect = f.client.connectStation;
   f.client.connectStation = async (id: string) => {
@@ -947,6 +958,9 @@ test('an unverified standalone camera is never connected and reports its descrip
     assert.equal(row.owner_status, 'not_applicable');
     assert.equal(row.owner_connected, null);
     assert.deepEqual(row.descriptor, { did: true, license: true, admin_user: true, lan_address: false });
+    // With the option off the row says nothing about admission (#154).
+    assert.equal(f.backend.supportReport().last_discovery[0]!.experimental_standalone, false);
+    assert.deepEqual(events, []);
   } finally {
     await f.backend.close();
   }
@@ -973,6 +987,8 @@ function rawStandalone(id: string, parent: string, model: string, type: number, 
 for (const enabled of [true, false])
   test(`raw standalone T84A1 and T8410 rows through the shipped client ${enabled ? 'each connect and report presence only' : 'stay unverified'}`, async () => {
     const f = fixture(undefined, undefined, enabled);
+    const events: unknown[] = [];
+    f.backend.on('standalone_not_admitted', (model) => events.push(model));
     const connected: string[] = [];
     const connect = f.client.connectStation;
     f.client.connectStation = async (id: string) => {
@@ -1008,6 +1024,9 @@ for (const enabled of [true, false])
         assert.deepEqual(row.descriptor, { did: true, license: true, admin_user: true, lan_address: true });
       }
       assert.doesNotMatch(JSON.stringify(report), /PRIVATE|192\.168\.1\.4[0-2]|WALL|BASE|PAN_/);
+      // Admitted models are never named, and with the option off nothing is (#154).
+      assert.deepEqual(events, []);
+      assert.equal(report.last_discovery[0]!.experimental_standalone, enabled);
     } finally {
       await f.backend.close();
     }
@@ -1020,6 +1039,8 @@ for (const enabled of [true, false])
     const f = fixture(undefined, undefined, enabled);
     const faults: unknown[][] = [];
     f.backend.on('backend_fault', (...args) => faults.push(args));
+    const events: unknown[] = [];
+    f.backend.on('standalone_not_admitted', (model) => events.push(model));
     const connected: string[] = [];
     const connect = f.client.connectStation;
     f.client.connectStation = async (id: string) => {
@@ -1058,7 +1079,10 @@ for (const enabled of [true, false])
       assert.deepEqual([...connected].sort(), enabled ? ['BASE', 'SOLO'] : ['BASE']);
       // Only the standalone T8410C, and a T8410 without the opt-in, stay unverified.
       assert.deepEqual(faults, [['standalone_transport_unverified']]);
+      // With the opt-in the standalone T8410C is named as not admitted (#154).
+      assert.deepEqual(events, enabled ? ['T8410C'] : []);
       const report = f.backend.supportReport();
+      assert.equal(report.last_discovery[0]!.experimental_standalone, enabled);
       const cameras = report.last_discovery
         .filter((r) => r.event === 'device' && r.model !== 'T8030')
         .map((r) => [r.model, r.relationship, r.relationship_reason, r.relationship_transport, r.owner_status]);
@@ -1076,3 +1100,142 @@ for (const enabled of [true, false])
       await f.backend.close();
     }
   });
+
+// #154: with the opt-in, each standalone row the installed client keeps at
+// standalone_transport_unverified is named once per discovery by model code only.
+for (const enabled of [true, false])
+  test(`raw mixed standalone rows through the shipped client name only the rows the client did not admit, opt-in ${enabled ? 'on' : 'off'} (#154)`, async () => {
+    const f = fixture(undefined, undefined, enabled);
+    const events: unknown[] = [];
+    f.backend.on('standalone_not_admitted', (model) => events.push(model));
+    const connected: string[] = [];
+    const connect = f.client.connectStation;
+    f.client.connectStation = async (id: string) => {
+      connected.push(id);
+      return connect();
+    };
+    const rows = [
+      { category: 'eufy_security', device_sn: 'BASE', parent_sn: '', device_model: 'T8030', device_type: 18, device_name: 'PRIVATE_NAME', main_sw_version: '3.8.7.4', p2p_did: 'PRIVATE_DID', member: { admin_user_id: 'PRIVATE_ADMIN' } },
+      { category: 'eufy_security', device_sn: 'CAM', parent_sn: 'BASE', device_model: 'T8161', device_type: 23, device_name: 'PRIVATE_NAME' },
+      rawStandalone('WALL', '', 'T84A1', 151, '1.1.0.4', '192.168.1.40'),
+      rawStandalone('PAN', 'PAN', 'T8410', 31, '2.3.2.4', '192.168.1.41'),
+      rawStandalone('SOLO_C', '', 'T8410C', 31, '3.3.4.4', '192.168.1.42'),
+      rawStandalone('INDOOR_A', '', 'T8400', 30, '2.1.6.4', '192.168.1.43'),
+      rawStandalone('INDOOR_B', 'INDOOR_B', 'T8400', 30, '2.1.6.4', '192.168.1.44'),
+      { category: 'eufy_security', device_sn: 'ORPHAN', parent_sn: 'MISSING', device_model: 'T8161', device_type: 23, device_name: 'PRIVATE_NAME' },
+    ];
+    // The installed library's discovery, with only the cloud boundary synthetic.
+    const actual = Object.assign(Object.create(EufyMegaClient.prototype), {
+      experimentalStandalone: enabled,
+      cloud: { call: async () => ({ devices: rows }) },
+    }) as EufyMegaClient;
+    f.client.discoverDevices = () => actual.discoverDevices();
+    try {
+      assert.equal((await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' })).state, 'connected');
+      const notAdmitted = ['T8410C', 'T8400', 'T8400'];
+      assert.deepEqual(events, enabled ? notAdmitted : []);
+      assert.deepEqual([...connected].sort(), enabled ? ['BASE', 'PAN', 'WALL'] : ['BASE']);
+      const report = f.backend.supportReport();
+      assert.equal(report.last_discovery[0]!.experimental_standalone, enabled);
+      const standalone = report.last_discovery
+        .filter((r) => r.event === 'device' && ['T8410C', 'T8400'].includes(r.model as string))
+        .map((r) => [r.model, r.relationship, r.relationship_reason, r.relationship_transport, r.owner_status]);
+      const unverified = ['standalone', 'standalone_transport_unverified', null, 'not_applicable'];
+      assert.deepEqual(standalone, [['T8410C', ...unverified], ['T8400', ...unverified], ['T8400', ...unverified]]);
+      const orphan = report.last_discovery.filter((r) => r.event === 'device' && r.relationship === 'unsupported');
+      assert.deepEqual(orphan.map((r) => [r.model, r.relationship_reason]), [['T8161', 'unsupported_station']]);
+      // A rediscovery after a reconnect names them again.
+      await (f.backend as any).discover();
+      assert.deepEqual(events, enabled ? [...notAdmitted, ...notAdmitted] : []);
+      const ids = /PRIVATE|192\.168\.|BASE|CAM|WALL|PAN|SOLO_C|INDOOR_|ORPHAN|MISSING/;
+      assert.doesNotMatch(JSON.stringify(events), ids);
+      assert.doesNotMatch(JSON.stringify(f.backend.supportReport()), ids);
+    } finally {
+      await f.backend.close();
+    }
+  });
+
+test('hostile standalone rows are named only as unavailable, and only for a matching unadmitted device row (#154)', async () => {
+  const f = fixture(undefined, undefined, true);
+  const events: unknown[] = [];
+  f.backend.on('standalone_not_admitted', (model) => events.push(model));
+  const connected: string[] = [];
+  const connect = f.client.connectStation;
+  f.client.connectStation = async (id: string) => {
+    connected.push(id);
+    return connect();
+  };
+  const camera = (id: string, model: string): Device => ({ id, stationId: id, kind: 'camera', model, name: 'PRIVATE_NAME', hardware: '1', firmware: '1.0.0.0', battery: null });
+  const descriptor = { did: true, license: true, adminUser: true, lanAddress: true };
+  f.client.discoverDevices = async () => ({
+    devices: [...devices, camera('HOSTILE_A', 'T8400\nPRIVATE_TOKEN'), camera('HOSTILE_B', 'T8410PRIVATE0001'), camera('BOTH', 'T8410C')],
+    relationships: [
+      { deviceId: 'BASE', kind: 'station', ownerId: 'BASE' },
+      { deviceId: 'CAM', kind: 'station', ownerId: 'BASE' },
+      { deviceId: 'HOSTILE_A', kind: 'standalone', ownerId: 'HOSTILE_A', reason: 'standalone_transport_unverified', descriptor },
+      { deviceId: 'HOSTILE_B', kind: 'standalone', ownerId: 'HOSTILE_B', reason: 'standalone_transport_unverified', descriptor },
+      // A relationship without a device row is never named.
+      { deviceId: 'GHOST', kind: 'standalone', ownerId: 'GHOST', reason: 'standalone_transport_unverified', descriptor },
+      // The client's experimental transport wins over a reason, whatever the model.
+      { deviceId: 'BOTH', kind: 'standalone', ownerId: 'BOTH', transport: 'experimental', reason: 'standalone_transport_unverified', descriptor } as unknown as DiscoveryResult['relationships'][number],
+    ],
+    issues: [],
+  });
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.deepEqual(events, ['unavailable', 'unavailable']);
+    assert.deepEqual([...connected].sort(), ['BASE', 'BOTH']);
+    for (const model of events) assert.doesNotMatch(String(model), /PRIVATE|\n/);
+    assert.doesNotMatch(JSON.stringify(f.backend.supportReport()), /PRIVATE|HOSTILE|GHOST/);
+  } finally {
+    await f.backend.close();
+  }
+});
+
+test('only a boolean true option names unadmitted standalone rows (#154)', async () => {
+  const f = fixture(undefined, undefined, 'true' as unknown as boolean);
+  const events: unknown[] = [];
+  f.backend.on('standalone_not_admitted', (model) => events.push(model));
+  f.client.discoverDevices = async () => standaloneInventory(false);
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.equal(f.backend.supportReport().last_discovery[0]!.experimental_standalone, false);
+    assert.deepEqual(events, []);
+  } finally {
+    await f.backend.close();
+  }
+});
+
+test('an unadmitted standalone row is named before a failing migration baseline rejects login (#154)', async () => {
+  const f = fixture(undefined, undefined, true);
+  const order: unknown[] = [];
+  f.backend.on('standalone_not_admitted', (model) => order.push(model));
+  const expected = { version: 1, bridge_id: 'bridge-test', backend: 'legacy', cameras: ['CAM', 'MISSING'], stations: ['BASE'] };
+  f.storage.read = async (name) => {
+    if (name === 'migration-inventory.json') {
+      order.push('baseline');
+      return JSON.stringify(expected);
+    }
+    return name === 'bridge-id' ? 'bridge-test' : undefined;
+  };
+  const rows = [
+    { category: 'eufy_security', device_sn: 'BASE', parent_sn: '', device_model: 'T8030', device_type: 18, device_name: 'PRIVATE_NAME' },
+    { category: 'eufy_security', device_sn: 'CAM', parent_sn: 'BASE', device_model: 'T8161', device_type: 23, device_name: 'PRIVATE_NAME' },
+    rawStandalone('SOLO_C', '', 'T8410C', 31, '3.3.4.4', '192.168.1.42'),
+  ];
+  const actual = Object.assign(Object.create(EufyMegaClient.prototype), {
+    experimentalStandalone: true,
+    cloud: { call: async () => ({ devices: rows }) },
+  }) as EufyMegaClient;
+  f.client.discoverDevices = () => actual.discoverDevices();
+  try {
+    await assert.rejects(f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' }), /expected_devices_missing/);
+    assert.deepEqual(order, ['T8410C', 'baseline']);
+    const summary = f.backend.supportReport().last_discovery[0]!;
+    assert.equal(summary.outcome, 'expected_devices_missing');
+    assert.equal(summary.experimental_standalone, true);
+    assert.doesNotMatch(JSON.stringify(f.backend.supportReport()), /PRIVATE|192\.168\.|SOLO_C/);
+  } finally {
+    await f.backend.close();
+  }
+});

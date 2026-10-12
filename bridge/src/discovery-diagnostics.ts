@@ -256,6 +256,7 @@ export class DiscoveryDiagnostics {
     baselineChecked: boolean,
     capabilities: ReadonlyMap<string, CameraCapabilities>,
     states: ReadonlyMap<string, StationState>,
+    experimentalStandalone = false,
   ): void {
     if (result && this.pendingReport !== this.sequence + 1) this.prepare(result);
     const devices = result?.devices.slice(0, 99) ?? [];
@@ -385,6 +386,9 @@ export class DiscoveryDiagnostics {
       missing_expected_stations: expected
         ? integer(expected.stations.filter((id) => !accepted.has(id)).length, 0, 100)
         : null,
+      // The opt-in the library received, so a standalone row with
+      // standalone_transport_unverified can be read as not admitted (#154).
+      experimental_standalone: experimentalStandalone === true,
     };
     const snapshot = JSON.stringify([summary, rows, rejections]);
     const unchanged = snapshot === this.previous;

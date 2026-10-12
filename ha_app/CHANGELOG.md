@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.37 - 2026-10-12
+
+- Record whether `experimental_standalone` is on as `experimental_standalone`
+  in the discovery `summary`. The report schema stays 2.
+- With the option on, log one info line per standalone camera that the bundled
+  client 0.29.2 keeps at `standalone_transport_unverified`, with its model code
+  only: `Eufy experimental standalone: model=T8410C is not admitted to the
+  experimental route. ...` Admitted T84A1 and T8410 cameras, cameras under a
+  HomeBase and unsupported rows get no line
+  ([issue #154](https://github.com/keesmod/ha-eufy-cam/issues/154)).
+- Nothing else changes with the option on or off. The client pin stays 0.29.2.
+
+Upgrade: keep the same token and session. Update the integration to 0.8.46 to
+keep the field and get the `standalone_admission` finding in **Download
+diagnostics**. Integration 0.8.45 still works but drops the field. Rollback:
+restore the 0.8.36 app backup and integration 0.8.45.
+
 ## 0.8.36 - 2026-10-12
 
 - Pin client 0.29.2. It recognizes exactly `T8160-C`/type 19 behind a HomeBase

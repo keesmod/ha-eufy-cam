@@ -96,8 +96,11 @@ consumers retain their own endpoints and sessions.
 
 `bridge/src/discovery-diagnostics.ts` constructs allowlisted records. The normal
 logger prefixes their JSON with `Eufy discovery:`. Existing `Eufy backend:` error
-lines remain available. `MegaBackend` supplies library and connection observations,
-and `Eufy` retains setup-failure evidence when its backend is cleaned up.
+lines remain available. Since bridge 0.8.37, with `experimental_standalone` on, an
+`Eufy experimental standalone:` info line names the bounded model code of each
+standalone row the library does not admit, never an ID or name. `MegaBackend`
+supplies library and connection observations, and `Eufy` retains setup-failure
+evidence when its backend is cleaned up.
 
 The bridge's Bearer-authenticated `GET /v1/diagnostics` returns:
 
@@ -113,7 +116,7 @@ selects the record shape:
 
 | Event | Contents |
 |---|---|
-| `summary` | Actual bridge/library/Node/platform versions, outcome, discovery counts, inventory availability, migration-baseline/missing counts, truncation and report number |
+| `summary` | Actual bridge/library/Node/platform versions, outcome, discovery counts, inventory availability, migration-baseline/missing counts, truncation and report number, and since bridge 0.8.37 the `experimental_standalone` opt-in |
 | `device` | Anonymous reference, model/firmware/hardware, observed availability, owner relationship/status and per-feature software capabilities |
 | `issue` | Source inventory row, validated reason code, bounded model/type/firmware and parent context, anonymous links where known |
 | `end` | Report number and number of device/issue rows emitted |
@@ -136,7 +139,19 @@ its actual owner instead. Since bridge 0.8.34 a standalone camera row carries
 `lan_address` for the presence of its inventory connection fields, never their
 values. An opted-in standalone row has `relationship_transport=experimental`.
 Its owner is the camera itself, so its `owner_status` describes that camera's
-own session. Nullable booleans must not turn unknown/error states
+own session. Since bridge 0.8.37 the `summary` carries `experimental_standalone`,
+a boolean that is `true` exactly when the bridge passes the opt-in to the
+library. It is a configuration flag without identity. Older bridges, and a setup
+report without a discovery summary, leave it out. With `true`, a standalone row
+with `relationship_reason=standalone_transport_unverified` and no
+`relationship_transport` is a camera whose model the library does not admit to
+the experimental route. With `false` or no field, such a row says nothing about
+the option. The bridge and integration decide this from the library's
+relationship, never from a model list. The HA download keeps only a strict
+boolean, so any other value becomes `null`. Integration 0.8.46 reports such rows
+as `standalone_admission`, and older integrations drop the field. The schema
+stays `2` because no existing field changes shape or meaning. Nullable booleans
+must not turn unknown/error states
 into a successful or failed connection. A present parent row does not prove
 support, connectivity or playback. Preserve observed availability and software
 capabilities as separate evidence.

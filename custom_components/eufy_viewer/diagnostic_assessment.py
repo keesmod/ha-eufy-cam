@@ -202,6 +202,35 @@ def _standalone_connections(
     return findings
 
 
+def _standalone_not_admitted(discovery: list[Any]) -> list[str]:
+    """Model codes of standalone rows the library kept off the opted-in route.
+
+    Only the current report counts, and only when its summary says the option
+    is on. Older bridges send no option state, so they get no finding.
+    """
+    reports = [r.get("report") for r in discovery if type(r.get("report")) is int]
+    if not reports:
+        return []
+    current = max(reports)
+    rows = [r for r in discovery if r.get("report") == current]
+    if not any(
+        r.get("event") == "summary" and r.get("experimental_standalone") is True
+        for r in rows
+    ):
+        return []
+    models: list[str] = []
+    for r in rows:
+        if (
+            r.get("event") == "device"
+            and r.get("relationship") == "standalone"
+            and r.get("relationship_reason") == "standalone_transport_unverified"
+            and not _experimental(r)
+        ):
+            model = r.get("model")
+            models.append(model if isinstance(model, str) else "unavailable")
+    return models
+
+
 # Only a connection that ran out of time says where the HomeBase stopped
 # answering. The latest such connect is used, and failures for other reasons,
 # such as a concurrent attempt, are skipped.
@@ -329,6 +358,16 @@ def assess(report: dict[str, Any]) -> dict[str, Any]:
             )
     for observation, evidence in _standalone_connections(support, discovery):
         add("standalone_connection", observation, evidence)
+    for model in _standalone_not_admitted(discovery):
+        add(
+            "standalone_admission",
+            "The experimental_standalone option is on, but the bridge's library "
+            f"does not admit a standalone camera with model code {model} to the "
+            "experimental route. It keeps standalone_transport_unverified and "
+            "the bridge makes no connection attempt. This follows from the "
+            "library's admitted models, not from a failed connection.",
+            "support.last_discovery",
+        )
     for row in support.get("live_audio", []):
         attempt = row.get("attempt")
         events = {e["event"] for e in row.get("pipeline", [])}

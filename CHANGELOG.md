@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.8.46 - 2026-10-12
+
+- Bridge 0.8.37 records the `experimental_standalone` option in the discovery
+  `summary`. With the option on, a standalone camera whose model the bundled
+  client 0.29.2 does not admit to the experimental route, such as a standalone
+  `T8410C`, is now named as such. On [issue #152][152] such rows looked like a
+  failed attempt, because the report did not carry the option state
+  ([issue #154][154]).
+- The bridge log has one `Eufy experimental standalone:` info line per such
+  camera with its model code only. **Download diagnostics** keeps the field and
+  explains each such model as `standalone_admission`. Neither part uses a model
+  list. With an older bridge that lacks the field, no finding appears.
+- Nothing changes with the option off apart from
+  `experimental_standalone: false` in the report. No model is admitted or
+  removed, the client stays at 0.29.2 and the report schema stays 2.
+
+Upgrade: update the bridge app to 0.8.37 and the HACS integration to 0.8.46,
+then restart Home Assistant. Keep the same token and session. No configuration
+migration is needed. Integration 0.8.45 still works with bridge 0.8.37, but its
+download drops the new field and shows no finding, so use the bridge log line.
+Rollback: restore the bridge 0.8.36 app backup and integration 0.8.45.
+
+[154]: https://github.com/keesmod/ha-eufy-cam/issues/154
+
 ## 0.8.45 - 2026-10-12
 
 - Bridge 0.8.36 pins client 0.29.2, which admits exactly two more pairs under a

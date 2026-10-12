@@ -90,12 +90,22 @@ for a browser dashboard. See
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
 
-The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.45`.
+The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.46`.
 See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 </details>
 
 ## Upgrading
+
+The **0.8.46** integration and bridge **0.8.37** keep client **0.29.2**. With
+`experimental_standalone` on, a standalone camera whose model the client does
+not admit to the experimental route, such as a standalone `T8410C`, is now named
+by its model code in the bridge log and explained as `standalone_admission` in
+**Download diagnostics**. On
+[#152](https://github.com/keesmod/ha-eufy-cam/issues/152) such a camera looked
+like a failed attempt. Nothing changes with the option off. Update both parts.
+Integration 0.8.45 still works with bridge 0.8.37 but leaves the new field out
+of its download.
 
 The **0.8.45** integration and bridge **0.8.36** include client **0.29.2**,
 which recognizes the eufyCam 3 reported as `T8160-C` with type 19 behind a
@@ -188,8 +198,8 @@ default 120) raises the live session cap only for cameras without a battery
 value. Battery cameras keep two minutes. 0.8.25 keeps an inline card with `live_autostart: true` live while
 it is scrolled out of view, 0.8.24 moved the inline live controls below the
 video on narrow cards, and 0.8.23 added `live_mode: inline` and the optional
-`live_autostart: true`. Update the integration to **0.8.45** and the bridge to
-**0.8.36**, then refresh the dashboard.
+`live_autostart: true`. Update the integration to **0.8.46** and the bridge to
+**0.8.37**, then refresh the dashboard.
 See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
 for changes and any version-specific instructions.
 
