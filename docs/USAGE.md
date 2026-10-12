@@ -144,14 +144,14 @@ off, it appears as an `unsupported_device` issue row with its model code and
 type in the `Eufy discovery:` report and in **Download diagnostics**, and as an
 `Eufy backend: unsupported_device` line.
 
-With the option on, the bridge connects to the camera at every discovery,
-normally at startup, over the same local lookup and command key it uses for a
-HomeBase. Each camera that does not answer adds up to 20 seconds to startup. The
-camera's snapshot, live view and recordings are offered as experimental
-features and work only if that session works. No physical standalone camera has
-confirmed this yet, so a failure is expected and useful evidence. Recordings
-that would need a cloud key cannot be downloaded, and the camera's detection
-events, guard mode and alarm state are not part of this test.
+With the option on, the bridge connects to each admitted camera at every
+discovery, normally at startup, over the same local lookup and command key it
+uses for a HomeBase. Each camera that does not answer adds up to 20 seconds to
+startup. The camera's snapshot, live view and recordings are offered as
+experimental features and work only if that session works. No physical
+standalone camera has confirmed this yet, so a failure is expected and useful
+evidence. Recordings that would need a cloud key cannot be downloaded, and the
+camera's detection events, guard mode and alarm state are not part of this test.
 
 To test it, update the app and the integration, set `experimental_standalone`
 to true in the app's configuration, restart the app, wait for the startup
