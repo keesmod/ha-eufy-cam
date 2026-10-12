@@ -99,10 +99,10 @@ See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 The **0.8.44** integration and bridge **0.8.35** include client **0.29.1**.
 With `experimental_standalone`, a standalone Indoor Cam 2K Pan & Tilt `T8410`
-now also tries its own local session, as reported on
-[#152](https://github.com/keesmod/ha-eufy-cam/issues/152). Bridge 0.8.34 left
-it at `standalone_transport_unverified` without an attempt. It is not yet
-confirmed on a camera. See
+now also tries its own local session. On
+[#152](https://github.com/keesmod/ha-eufy-cam/issues/152) bridge 0.8.34 left
+two such cameras at `standalone_transport_unverified` without an attempt. It is
+not yet confirmed on a camera. See
 [experimental standalone cameras](docs/USAGE.md#experimental-standalone-cameras).
 Nothing changes for HomeBase cameras or with the option off.
 

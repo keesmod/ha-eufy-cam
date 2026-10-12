@@ -4,11 +4,11 @@
 
 - Pin client 0.29.1. With `experimental_standalone` on, a standalone Indoor Cam
   2K Pan & Tilt `T8410` now also tries its own local session at every
-  discovery, normally at startup, as reported on
-  [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152). Bridge
-  0.8.34 left it at `standalone_transport_unverified` without an attempt. Each
-  standalone T8410 that does not answer adds up to 20 seconds to startup.
-  Unverified on hardware, see
+  discovery, normally at startup. On
+  [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152) bridge 0.8.34
+  left two such cameras at `standalone_transport_unverified` without an
+  attempt. Each standalone T8410 that does not answer adds up to 20 seconds to
+  startup. Unverified on hardware, see
   [client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
 - The startup log names both models. Nothing changes for HomeBase cameras or
   with the option off.
