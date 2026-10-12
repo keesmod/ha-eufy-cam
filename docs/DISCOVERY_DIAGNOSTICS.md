@@ -194,8 +194,9 @@ shows `T8410C` with type 31 on firmware 3.3.3.2 under a T8030. The reporter's
 0.8.45 show it in the next report, as long as it fits the widened bound
 described below. No other type 31 string and no type-only or prefix match is
 added. Owners use Pan & Tilt names for both `T8410` and `T8410C`, so the
-received model code, not the product name, decides which route applies. A standalone `T8410C`, with an empty or self parent, is now reported
-as `relationship=standalone` with
+received model code, not the product name, decides which route applies. A
+standalone `T8410C`, with an empty or self parent, is now reported as
+`relationship=standalone` with
 `relationship_reason=standalone_transport_unverified` instead of
 `unsupported_device`, also with the opt-in. Home Assistant then creates it as a
 camera whose snapshot, live view and recordings are unsupported. Both new pairs

@@ -101,10 +101,11 @@ The **0.8.45** integration and bridge **0.8.36** include client **0.29.2**,
 which recognizes the eufyCam 3 reported as `T8160-C` with type 19 behind a
 HomeBase 3 on [issue #149](https://github.com/keesmod/ha-eufy-cam/issues/149).
 On public evidence it also recognizes the Indoor Cam Pan&Tilt 2K `T8410C` with
-type 31 behind a HomeBase 3. Owners use Pan & Tilt names for both `T8410` and
-`T8410C`, so the model code in the diagnostics, not the product name, tells
-which one a camera is. Both use the HomeBase 3 media route with its owner
-and firmware checks. Neither has hardware results yet. A standalone `T8410C`
+type 31 behind a HomeBase 3. `T8160-C` and `T8410C` both use the HomeBase 3
+media route with its owner and firmware checks, and neither has hardware
+results yet. Owners use Pan & Tilt names for both `T8410` and `T8410C`, so the
+model code in the diagnostics, not the product name, tells which one a camera
+is. A standalone `T8410C`
 now appears as a camera with `standalone_transport_unverified` instead of
 `unsupported_device`, and its snapshot, live view and recordings stay
 unsupported, also with `experimental_standalone` on. Bridge diagnostics and
