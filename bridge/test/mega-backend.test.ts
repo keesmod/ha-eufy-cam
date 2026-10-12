@@ -696,7 +696,7 @@ for (const empty of [false,true])
       const rows=lines.map(line=>JSON.parse(line));
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
-      assert.equal(summary.software.library,'0.29.0');
+      assert.equal(summary.software.library,'0.29.1');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
@@ -908,8 +908,26 @@ test('an unverified standalone camera is never connected and reports its descrip
   }
 });
 
+// A standalone camera row with a complete descriptor and an empty or self parent.
+function rawStandalone(id: string, parent: string, model: string, type: number, firmware: string, address: string) {
+  return {
+    category: 'eufy_security',
+    device_sn: id,
+    parent_sn: parent,
+    device_model: model,
+    device_type: type,
+    device_name: 'PRIVATE_NAME',
+    main_sw_version: firmware,
+    p2p_did: 'PRIVATE_DID',
+    p2p_license: 'PRIVATE_LICENSE',
+    member: { admin_user_id: 'PRIVATE_ADMIN' },
+    params: [{ param_type: 1176, param_value: address }],
+  };
+}
+
+// The T8410 rows mirror ha-eufy-cam#152: two standalone type 31 cameras without a HomeBase.
 for (const enabled of [true, false])
-  test(`a raw standalone T84A1 row through the shipped client ${enabled ? 'connects and reports presence only' : 'stays unverified'}`, async () => {
+  test(`raw standalone T84A1 and T8410 rows through the shipped client ${enabled ? 'each connect and report presence only' : 'stay unverified'}`, async () => {
     const f = fixture(undefined, undefined, enabled);
     const connected: string[] = [];
     const connect = f.client.connectStation;
@@ -920,19 +938,9 @@ for (const enabled of [true, false])
     const rows = [
       { category: 'eufy_security', device_sn: 'BASE', parent_sn: '', device_model: 'T8030', device_type: 18, device_name: 'PRIVATE_NAME', main_sw_version: '3.8.7.4', p2p_did: 'PRIVATE_DID', member: { admin_user_id: 'PRIVATE_ADMIN' } },
       { category: 'eufy_security', device_sn: 'CAM', parent_sn: 'BASE', device_model: 'T8161', device_type: 23, device_name: 'PRIVATE_NAME' },
-      {
-        category: 'eufy_security',
-        device_sn: 'WALL',
-        parent_sn: '',
-        device_model: 'T84A1',
-        device_type: 151,
-        device_name: 'PRIVATE_NAME',
-        main_sw_version: '1.1.0.4',
-        p2p_did: 'PRIVATE_DID',
-        p2p_license: 'PRIVATE_LICENSE',
-        member: { admin_user_id: 'PRIVATE_ADMIN' },
-        params: [{ param_type: 1176, param_value: '192.168.1.40' }],
-      },
+      rawStandalone('WALL', '', 'T84A1', 151, '1.1.0.4', '192.168.1.40'),
+      rawStandalone('PAN_A', '', 'T8410', 31, '2.3.2.4', '192.168.1.41'),
+      rawStandalone('PAN_B', 'PAN_B', 'T8410', 31, '2.3.1.6', '192.168.1.42'),
     ];
     // The installed library's discovery, with only the cloud boundary synthetic.
     const actual = Object.assign(Object.create(EufyMegaClient.prototype), {
@@ -942,14 +950,20 @@ for (const enabled of [true, false])
     f.client.discoverDevices = () => actual.discoverDevices();
     try {
       assert.equal((await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' })).state, 'connected');
-      assert.deepEqual(connected, enabled ? ['BASE', 'WALL'] : ['BASE']);
+      assert.deepEqual([...connected].sort(), enabled ? ['BASE', 'PAN_A', 'PAN_B', 'WALL'] : ['BASE']);
       const report = f.backend.supportReport();
-      const row = report.last_discovery.find((r) => r.event === 'device' && r.model === 'T84A1')!;
-      assert.equal(row.relationship_transport, enabled ? 'experimental' : null);
-      assert.equal(row.relationship_reason, enabled ? null : 'standalone_transport_unverified');
-      assert.equal(row.owner_status, enabled ? 'connected' : 'not_applicable');
-      assert.deepEqual(row.descriptor, { did: true, license: true, admin_user: true, lan_address: true });
-      assert.doesNotMatch(JSON.stringify(report), /PRIVATE|192\.168\.1\.40|WALL|BASE/);
+      const wall = report.last_discovery.filter((r) => r.event === 'device' && r.model === 'T84A1');
+      const pans = report.last_discovery.filter((r) => r.event === 'device' && r.model === 'T8410');
+      assert.equal(wall.length, 1);
+      assert.equal(pans.length, 2);
+      assert.deepEqual(pans.map((r) => r.firmware).sort(), ['2.3.1.6', '2.3.2.4']);
+      for (const row of [...wall, ...pans]) {
+        assert.equal(row.relationship_transport, enabled ? 'experimental' : null);
+        assert.equal(row.relationship_reason, enabled ? null : 'standalone_transport_unverified');
+        assert.equal(row.owner_status, enabled ? 'connected' : 'not_applicable');
+        assert.deepEqual(row.descriptor, { did: true, license: true, admin_user: true, lan_address: true });
+      }
+      assert.doesNotMatch(JSON.stringify(report), /PRIVATE|192\.168\.1\.4[0-2]|WALL|BASE|PAN_/);
     } finally {
       await f.backend.close();
     }

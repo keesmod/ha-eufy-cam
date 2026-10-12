@@ -90,12 +90,21 @@ for a browser dashboard. See
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
 
-The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.43`.
+The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.44`.
 See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 </details>
 
 ## Upgrading
+
+The **0.8.44** integration and bridge **0.8.35** include client **0.29.1**.
+With `experimental_standalone`, a standalone Indoor Cam 2K Pan & Tilt `T8410`
+now also tries its own local session, as reported on
+[#152](https://github.com/keesmod/ha-eufy-cam/issues/152). Bridge 0.8.34 left
+it at `standalone_transport_unverified` without an attempt. It is not yet
+confirmed on a camera. See
+[experimental standalone cameras](docs/USAGE.md#experimental-standalone-cameras).
+Nothing changes for HomeBase cameras or with the option off.
 
 The **0.8.43** integration and bridge **0.8.34** include client **0.29.0**.
 The new app option `experimental_standalone` (off by default) lets a standalone
@@ -163,8 +172,8 @@ default 120) raises the live session cap only for cameras without a battery
 value. Battery cameras keep two minutes. 0.8.25 keeps an inline card with `live_autostart: true` live while
 it is scrolled out of view, 0.8.24 moved the inline live controls below the
 video on narrow cards, and 0.8.23 added `live_mode: inline` and the optional
-`live_autostart: true`. Update the integration to **0.8.43** and the bridge to
-**0.8.34**, then refresh the dashboard.
+`live_autostart: true`. Update the integration to **0.8.44** and the bridge to
+**0.8.35**, then refresh the dashboard.
 See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
 for changes and any version-specific instructions.
 

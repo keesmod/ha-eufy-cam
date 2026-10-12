@@ -67,7 +67,7 @@ export function liveMaxSecondsMains(value?: string): number {
 }
 /**
  * Parse EUFY_EXPERIMENTAL_STANDALONE, true or false. Unset keeps it off. With it,
- * a standalone camera whose library profile allows it, only T84A1 today, opens
+ * a standalone camera whose library profile allows it, T84A1 and T8410 today, opens
  * its own local session. Unverified on hardware.
  */
 export function experimentalStandalone(value?: string): boolean {
