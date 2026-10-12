@@ -97,23 +97,14 @@ See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 ## Upgrading
 
-The **0.8.44** integration and bridge **0.8.35** include client **0.29.2**,
-which recognizes the eufyCam 3 reported as `T8160-C` with type 19 behind a
-HomeBase 3. On public evidence it also recognizes the Indoor Cam Pan&Tilt 2K
-`T8410C` with type 31 behind a HomeBase 3. Both use the HomeBase 3 media route
-with its owner and firmware checks. Neither has hardware results yet. A
-standalone `T8410C` now appears as a camera with
-`standalone_transport_unverified` instead of `unsupported_device`, and its
-snapshot, live view and recordings stay unsupported, also with
-`experimental_standalone` on. With that option on, a standalone `T8410` now
-tries its own local session, as a standalone `T84A1` does. That route is not
-yet confirmed on a camera, see
-[issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152) and
+The **0.8.44** integration and bridge **0.8.35** include client **0.29.1**.
+With `experimental_standalone`, a standalone Indoor Cam 2K Pan & Tilt `T8410`
+now also tries its own local session. On
+[#152](https://github.com/keesmod/ha-eufy-cam/issues/152) bridge 0.8.34 left
+two such cameras at `standalone_transport_unverified` without an attempt. It is
+not yet confirmed on a camera. See
 [experimental standalone cameras](docs/USAGE.md#experimental-standalone-cameras).
-Bridge diagnostics and **Download diagnostics** now also show an unhyphenated
-model code such as `T8410C` instead of `unavailable`. Update both parts.
-Integration 0.8.43 still works with bridge 0.8.35, but its download shows such
-models as `unavailable`.
+Nothing changes for HomeBase cameras or with the option off.
 
 The **0.8.43** integration and bridge **0.8.34** include client **0.29.0**.
 The new app option `experimental_standalone` (off by default) lets a standalone

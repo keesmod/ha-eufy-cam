@@ -127,16 +127,14 @@ Cameras that are not connected to a HomeBase normally show their snapshot, live
 and recording features as unsupported with `standalone_transport_unverified`.
 From bridge 0.8.34 the app option `experimental_standalone: true` (Docker:
 `EUFY_EXPERIMENTAL_STANDALONE=true`) lets a standalone Wall Light Cam S100
-`T84A1` try its own local session. From bridge 0.8.35 with client 0.29.2 a
-standalone `T8410` with type 31 is included too, for
-[issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152). It is off by
-default. Only those models are included, and no other camera or HomeBase
-changes. A `T8410` under a HomeBase keeps its HomeBase route. Update the
+`T84A1` or Indoor Cam 2K Pan & Tilt `T8410` try its own local session. The
+T8410 needs bridge 0.8.35 or newer. The option is off by default. Only these
+two models are included, and no other camera or HomeBase changes. Update the
 integration to 0.8.43 or newer before turning it on.
 
 With the option on, the bridge connects to the camera at every discovery,
 normally at startup, over the same local lookup and command key it uses for a
-HomeBase. A camera that does not answer adds up to 20 seconds to startup. The
+HomeBase. Each camera that does not answer adds up to 20 seconds to startup. The
 camera's snapshot, live view and recordings are offered as experimental
 features and work only if that session works. No physical standalone camera has
 confirmed this yet, so a failure is expected and useful evidence. Recordings

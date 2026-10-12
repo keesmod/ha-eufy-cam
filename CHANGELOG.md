@@ -2,56 +2,35 @@
 
 ## 0.8.44 - 2026-10-12
 
-- Bridge 0.8.35 pins client 0.29.2, which admits exactly two more pairs under a
-  HomeBase 3. Bridge 0.8.34 and earlier reject both as `unsupported_device`.
-  `T8160-C`/type 19 was reported on [issue #149][149], and the Eufy app shows
-  that camera as a regular eufyCam 3. It uses the H3 media policy with the
-  actual HomeBase 3 owner and firmware checks. It does not join the closed
-  model-only policy of the original T8160.
-- The second pair, `T8410C`/type 31, the Indoor Cam Pan&Tilt 2K, is admitted on
-  public evidence. Eufy's [HomeBase compatibility guide][149-eufy] lists it as
-  supported on HomeBase 3, and public reports show `T8410C` with type 31 under
-  a T8030 on the 3.3.x firmware line. It is the likely model of the two type 31
-  rows on issue #149, which showed `model=unavailable`, but that is not
-  verified. Under a HomeBase 3 it uses the `T8410` policy: the indoor camera
-  route with H3 media and the same owner and firmware checks. Unlike `T8410`,
-  it is not admitted to the experimental standalone route. A standalone
-  `T8410C`, with an empty or self parent, is now reported as
-  `relationship=standalone` with `standalone_transport_unverified` instead of
-  `unsupported_device`. Home Assistant then creates it as a camera whose
-  snapshot, live view and recordings are unsupported, also with
-  `experimental_standalone` on. No type-only or prefix match is added.
-- Client 0.29.2 also carries the client 0.29.1 change for [issue #152][152].
-  The opt-in `experimental_standalone` route now admits a standalone
-  `T8410`/type 31 with an empty or self parent. With the option on, the bridge
-  connects such a camera at every discovery, as it does a standalone `T84A1`,
-  and a camera that does not answer adds up to 20 seconds to that discovery.
-  Without the option nothing changes. A `T8410` under a HomeBase keeps its
-  HomeBase route, also with the option. No physical standalone camera has
-  confirmed the route.
-- Diagnostics now show an unhyphenated catalogue code such as `T8410C`,
-  `T8W11C` or `T8419N` as received, next to the hyphen form such as `T8113-Z`.
-  This applies to the bridge's `Eufy discovery:` rows and `Eufy backend:` line,
-  its live video and audio rows and the integration's **Download
-  diagnostics**. The bound stays at eight characters, so serial numbers and
-  free text still show as `unavailable`. Nothing is trimmed, truncated or taken
-  from a serial number. If the reporter's type 31 string is another catalogue
-  code, the next report shows it.
-- Coverage of both new pairs and of the standalone `T8410` route is software
-  only. Hardware results for `T8160-C`, `T8410C` and the standalone `T8410`
-  remain pending in the client's model matrix. This is experimental software
-  support.
+- Bridge 0.8.35 pins client 0.29.1, which also admits a standalone Indoor Cam
+  2K Pan & Tilt `T8410`/type 31 to the opt-in `experimental_standalone` route.
+  The [issue #152][152] reporter has two such cameras without a HomeBase. With
+  the option on, bridge 0.8.34 discovered them with a complete descriptor but
+  left them at `standalone_transport_unverified` without a session attempt,
+  because client 0.29.0 admitted only the Wall Light Cam S100 `T84A1`.
+- With the option on, the bridge now connects each standalone T8410 at every
+  discovery, normally at startup, as it does for the T84A1. Each standalone
+  T8410 that does not answer adds up to 20 seconds to discovery. Its snapshot,
+  live view and recordings are offered as experimental features and work only
+  if that session works. No physical standalone camera has confirmed it yet,
+  see [client #142][standalone].
+- Without the option nothing changes. A T8410 under a HomeBase keeps its
+  HomeBase route, also with the option. Any other standalone model stays at
+  `standalone_transport_unverified`. In the bridge only the client pin and the
+  startup log text change, and the log now names both models.
+- The discovery diagnostics docs record the #152 report. They now say that
+  `owner_status=connected` means the lookup, handshake and command key setup
+  completed. The first answered snapshot, recording or live result shows
+  whether the camera accepts that key.
 
-Upgrade: update the bridge app to 0.8.35 and the HACS integration to 0.8.44,
-then restart Home Assistant. Keep the same token and session. No configuration
-migration is needed. Integration 0.8.43 still works with bridge 0.8.35, but its
-download shows such model codes as `unavailable`. Rollback: restore the bridge
-0.8.34 app backup and integration 0.8.43. For a standalone `T8410`, turning
-`experimental_standalone` off is enough.
+Upgrade: update the integration to 0.8.44 in HACS and the bridge app to 0.8.35,
+then restart Home Assistant. Keep the same token and session. Integration
+0.8.43 is also compatible with bridge 0.8.35, and 0.8.44 packages the matching
+release notes without a Python or card change. Rollback: turn the option off,
+or restore the bridge 0.8.34 app backup and integration 0.8.43.
 
-[149]: https://github.com/keesmod/ha-eufy-cam/issues/149
-[149-eufy]: https://service.eufy.com/eu/article-description/eufy-Security-Complete-HomeBase-Compatibility-Guide
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
+[standalone]: https://github.com/keesmod/eufy-mega-client/issues/142
 
 ## 0.8.43 - 2026-10-10
 

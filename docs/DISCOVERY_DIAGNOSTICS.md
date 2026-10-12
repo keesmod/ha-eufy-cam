@@ -150,43 +150,20 @@ and feature results are recorded in the client's [model matrix][66-matrix].
 T8920/type 20 and T87B0/type 157 are non-camera sensor/tracker products and
 remain outside camera discovery.
 
-On 2026-10-09 the reporter of [issue #149][149] ran integration 0.8.42 and
-bridge 0.8.33 with client 0.28.2 on Home Assistant 2026.10.0, with a T8030 on
-firmware 3.8.7.4. Three T8160 cameras on firmware 3.4.3.0 and a T8213 on
-firmware 0.2.1.8 were discovered with state, battery and stored snapshots, and
-live video worked on one T8160 through the card on the local network. Three
-other rows under that HomeBase were rejected as `unsupported_device` with
-`parent_status=present`. One arrives as `T8160-C` with type 19, firmware
-1.5.8.6 and hardware 0.0.3.7, and the Eufy app shows it as a regular eufyCam 3.
-The other two have type 31 and firmware 3.3.4.4 and show `model=unavailable`,
-because the received string did not fit the diagnostic bound. The reporter
-calls them Indoor Cam Pan&Tilt 2K. This is reported, not independently
-reproduced.
+On 2026-10-10 the [issue #152][152] reporter ran integration 0.8.43 and bridge
+0.8.34 with client 0.29.0 as the Home Assistant OS app on amd64, with Home
+Assistant 2026.9.4. `experimental_standalone` was on, and the cameras and the
+bridge were on the same Wi-Fi subnet. Two standalone Indoor Cam 2K Pan & Tilt
+`T8410`/type 31 cameras on firmware 2.3.2.4 and 2.3.1.6, without a HomeBase,
+were discovered with a complete `descriptor`. `did`, `license`, `admin_user` and
+`lan_address` were all true. `relationship_transport` stayed `null`, the media
+rows stayed unsupported with `standalone_transport_unverified`, and the bridge
+made no session attempt. The cause is that client 0.29.0 admitted only the
+`T84A1` to the experimental route. Client 0.29.1, included in bridge 0.8.35,
+also admits a standalone T8410. The session result on these cameras is still
+unknown. Reported, not independently reproduced.
 
-Client 0.29.2, included in bridge 0.8.35, admits exactly `T8160-C` with type 19
-under the H3 media policy, which checks the actual HomeBase 3 owner and its
-firmware. It does not join the closed model-only policy of the original T8160.
-The client also admits exactly `T8410C` with type 31 under the HomeBase 3
-policy of `T8410`: the indoor camera route with H3 media and the same owner and
-firmware checks. Unlike `T8410`, it is not admitted to the opt-in
-[experimental standalone route](#experimental-standalone-cameras). That
-admission rests on public evidence, not on these rows. Eufy's
-[HomeBase compatibility guide][149-eufy] lists the Indoor Cam Pan&Tilt 2K as
-`T8410C`, supported on HomeBase 3. A [public inventory log][149-mega] shows
-`T8410C` with type 31 under a T8030, and an [upstream report][149-upstream]
-shows `T8410C` with type 31 on firmware 3.3.3.2 under a T8030. The reporter's
-3.3.4.4 fits that firmware line. Whether their type 31 rows carry exactly
-`T8410C` is not verified. If the string differs, bridge 0.8.35 and integration
-0.8.44 show it in the next report, as long as it fits the widened bound
-described below. No other type 31 string and no type-only or prefix match is
-admitted. A standalone `T8410C`, with an empty or self parent, is now reported
-as `relationship=standalone` with
-`relationship_reason=standalone_transport_unverified` instead of
-`unsupported_device`, also with the opt-in. Home Assistant then creates it as a
-camera whose snapshot, live view and recordings are unsupported. Both new pairs
-have software tests only, and hardware results for both remain pending in the
-client's [model matrix][149-matrix].
-
+[152]: https://github.com/keesmod/ha-eufy-cam/issues/152
 [66-update]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6083775017
 [66-result]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6098838866
 [66-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-issue-66-update-0282
@@ -278,15 +255,12 @@ booleans only. The values themselves are never reported, and a present field
 does not prove that it works.
 
 With the [opt-in](USAGE.md#experimental-standalone-cameras), a standalone
-`T84A1` row has `relationship_transport=experimental` and no
-`relationship_reason`. Since bridge 0.8.35 with client 0.29.2, which carries
-the client 0.29.1 change for
-[issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152), the same
-applies to a standalone `T8410` row with type 31. A `T8410` under a HomeBase
-keeps its HomeBase route. A standalone `T8410C` row keeps
-`relationship_reason=standalone_transport_unverified`, also with the opt-in.
-The bridge connects an opted-in camera at every discovery, normally at startup.
-Its
+`T84A1` row, and from bridge 0.8.35 with client 0.29.1 a standalone `T8410`
+row, has `relationship_transport=experimental` and no `relationship_reason`.
+Any other standalone model, or a T8410 on bridge 0.8.34, keeps
+`relationship_transport=null` and `standalone_transport_unverified` without a
+connection attempt, even with the option on. The bridge connects each admitted
+camera at every discovery, normally at startup. Its
 `owner_status` and `owner_connected` then describe the camera's own session, and
 `recent_events` has its `station_connection` records with the same `stage`
 values as a HomeBase. The assessment reports such a camera as
@@ -294,7 +268,7 @@ values as a HomeBase. The assessment reports such a camera as
 
 | Result | Meaning |
 |---|---|
-| `owner_status=connected` | The camera answered the lookup, completed the handshake and accepted the command key |
+| `owner_status=connected` | The lookup, handshake and command key setup completed. The client sets the key locally once the session answers, so this does not yet show that the camera accepts it |
 | `stage=none` | The attempt stopped before the lookup. The `reason` says why, for example `invalid_connection_credentials` when `descriptor` lacks `did` or `admin_user` |
 | `stage=lookup` | The camera did not answer the local lookup |
 | `stage=station_found` | The camera answered the lookup but did not complete the P2P handshake |
@@ -302,9 +276,9 @@ values as a HomeBase. The assessment reports such a camera as
 
 After a connected result, the media rows and a snapshot, live view and
 recording attempt show whether the camera answers those commands on its own
-storage. Include the complete download in
-[client #142](https://github.com/keesmod/eufy-mega-client/issues/142), or for a
-`T8410` in [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152).
+storage. The first answered snapshot, recording or live result shows whether
+the camera accepts the command key. Include the complete download in
+[client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
 
 ## Privacy and scope
 
