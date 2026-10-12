@@ -141,10 +141,11 @@ beginning with `Eufy experimental standalone:`, and from integration 0.8.46
 a failed connection attempt. The bridge makes no attempt for such a camera. Two
 other cases get neither, with the option on or off. A camera whose model the
 library supports only behind a HomeBase, found without one, appears as an
-`invalid_device_relationship` issue row. A camera whose model the library does
-not recognize appears as an `unsupported_device` issue row with its model code
-and type in the `Eufy discovery:` report and in **Download diagnostics**, and
-as an `Eufy backend: unsupported_device` line.
+`invalid_device_relationship` issue row. A camera whose model/type pair the
+library does not recognize, including a known model code reported with another
+type, appears as an `unsupported_device` issue row with its model code and type
+in the `Eufy discovery:` report and in **Download diagnostics**, and as an
+`Eufy backend: unsupported_device` line.
 
 With the option on, the bridge connects to each admitted camera at every
 discovery, normally at startup, over the same local lookup and command key it

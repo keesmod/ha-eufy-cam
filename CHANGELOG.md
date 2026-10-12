@@ -13,8 +13,9 @@
   camera with its model code only. **Download diagnostics** keeps the field and
   explains each such model as `standalone_admission`. Neither part uses a model
   list. With an older bridge that lacks the field, no finding appears. A camera
-  whose model the client does not recognize gets neither part. It still appears
-  as an `unsupported_device` issue row and log line. A camera whose model the
+  whose model/type pair the client does not recognize, including a known model
+  code reported with another type, gets neither part. It still appears as an
+  `unsupported_device` issue row and log line. A camera whose model the
   client supports only behind a HomeBase, found without one, gets neither part
   either. It still appears as an `invalid_device_relationship` issue row.
 - Nothing changes with the option off apart from
