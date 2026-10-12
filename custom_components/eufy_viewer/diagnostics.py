@@ -75,7 +75,8 @@ _NUMBERS = {
 _BOOLEANS = set(
     (
         "station_connected owner_connected push_connected available "
-        "inventory_available truncated unchanged inventory_address"
+        "inventory_available truncated unchanged inventory_address "
+        "experimental_standalone"
     ).split()
 )
 _VERSIONS = set("firmware hardware parent_firmware bridge library node".split())

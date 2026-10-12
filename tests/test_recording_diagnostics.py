@@ -869,3 +869,151 @@ def test_connected_or_unverified_standalone_cameras_add_no_finding():
     report = _standalone_report([], owner_status="not_applicable")
     report["support"]["last_discovery"][2].pop("relationship_transport")
     assert not _standalone_findings(report)
+    # Its summary carries no option state, so it is no admission result (#154).
+    assert not _admission_findings(report)
+
+
+ADMISSION = (
+    "The experimental_standalone option is on, but the bridge's library does not "
+    "admit a standalone camera with model code {model} to the experimental route. "
+    "It keeps standalone_transport_unverified and the bridge makes no connection "
+    "attempt. This follows from the library's admitted models, not from a failed "
+    "connection."
+)
+_OPTION_ON = {"event": "summary", "report": 2, "experimental_standalone": True}
+
+
+def _unadmitted(ref, model="T8410C", **row):
+    """A standalone row the library kept at standalone_transport_unverified."""
+    return {
+        "event": "device",
+        "ref": ref,
+        "owner_ref": ref,
+        "report": 2,
+        "model": model,
+        "relationship": "standalone",
+        "relationship_reason": "standalone_transport_unverified",
+        "relationship_transport": None,
+        "owner_status": "not_applicable",
+        **row,
+    }
+
+
+def _admission_report(discovery, events=()):
+    return {"support": {"last_discovery": discovery, "recent_events": list(events)}}
+
+
+def _admission_findings(report):
+    return [
+        f for f in assess(report)["findings"] if f["stage"] == "standalone_admission"
+    ]
+
+
+def test_unadmitted_standalone_camera_with_the_option_on_is_named_once():
+    (finding,) = _admission_findings(_admission_report([_OPTION_ON, _unadmitted(5)]))
+    assert finding == {
+        "stage": "standalone_admission",
+        "observation": ADMISSION.format(model="T8410C"),
+        "evidence": "support.last_discovery",
+    }
+    assert "HomeBase" not in finding["observation"]
+
+
+@pytest.mark.parametrize(
+    "discovery",
+    [
+        [{**_OPTION_ON, "experimental_standalone": False}, _unadmitted(5)],
+        [{**_OPTION_ON, "experimental_standalone": None}, _unadmitted(5)],
+        [{"event": "summary", "report": 2}, _unadmitted(5)],
+        # Only an older report had the option on.
+        [
+            {**_OPTION_ON, "report": 1},
+            {"event": "summary", "report": 2},
+            _unadmitted(5),
+        ],
+        # The option state counts only on the summary.
+        [
+            {"event": "summary", "report": 2},
+            _unadmitted(5, experimental_standalone=True),
+        ],
+        # Without an integer report nothing is current.
+        [{**_OPTION_ON, "report": None}, _unadmitted(5, report=None)],
+        [{**_OPTION_ON, "report": True}, _unadmitted(5, report=True)],
+    ],
+)
+def test_no_admission_finding_without_the_current_option_state(discovery):
+    assert not _admission_findings(_admission_report(discovery))
+
+
+def test_mixed_standalone_report_separates_admission_from_connection():
+    report = _admission_report(
+        [
+            _OPTION_ON,
+            {"event": "device", "ref": 1, "report": 2, "station_status": "connected"},
+            {
+                **_unadmitted(3, "T84A1", relationship_transport="experimental"),
+                "relationship_reason": None,
+                "owner_status": "connected",
+            },
+            {
+                **_unadmitted(4, "T8410", relationship_transport="experimental"),
+                "relationship_reason": None,
+                "owner_status": "error",
+            },
+            _unadmitted(5, "T8410C"),
+            _unadmitted(6, "T8400"),
+            _unadmitted(7, "T8400"),
+        ],
+        [_connect_error(device_ref=4, stage="lookup")],
+    )
+    findings = assess(report)["findings"]
+    assert [f["observation"] for f in _admission_findings(report)] == [
+        ADMISSION.format(model="T8410C"),
+        ADMISSION.format(model="T8400"),
+    ]
+    (connection,) = _standalone_findings(report)
+    assert "did not answer the local lookup" in connection["observation"]
+    assert not [f for f in findings if f["stage"] == "owner_connection"]
+    assert all(";" not in f["observation"] for f in findings)
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        _unadmitted(5, relationship_transport="experimental"),
+        _unadmitted(5, relationship="unsupported"),
+        _unadmitted(5, relationship_reason="unsupported_station"),
+        _unadmitted(5, relationship_reason=None),
+        {
+            "event": "issue",
+            "report": 2,
+            "code": "standalone_transport_unverified",
+            "model": "T8410C",
+            "relationship": "standalone",
+            "relationship_reason": "standalone_transport_unverified",
+        },
+    ],
+)
+def test_only_an_unadmitted_standalone_device_row_is_named(row):
+    assert not _admission_findings(_admission_report([_OPTION_ON, row]))
+
+
+def test_admission_text_names_only_projected_model_codes():
+    raw = {
+        "schema": 2,
+        "last_discovery": [
+            _OPTION_ON,
+            _unadmitted(5, "T8410PRIVATE0001"),
+            _unadmitted(6, "T8400\nPRIVATE"),
+            _unadmitted(7, "T8400"),
+        ],
+        "recent_events": [],
+    }
+    findings = _admission_findings({"support": support_report(raw)})
+    assert [f["observation"] for f in findings] == [
+        ADMISSION.format(model="unavailable"),
+        ADMISSION.format(model="T8400"),
+    ]
+    assert "model code unavailable" in findings[0]["observation"]
+    assert all(";" not in f["observation"] for f in findings)
+    assert "PRIVATE" not in json.dumps(findings)

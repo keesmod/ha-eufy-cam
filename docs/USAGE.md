@@ -132,14 +132,29 @@ T8410 needs bridge 0.8.35 or newer. The option is off by default. Only these
 two models are included, and no other camera or HomeBase changes. Update the
 integration to 0.8.43 or newer before turning it on.
 
-With the option on, the bridge connects to the camera at every discovery,
-normally at startup, over the same local lookup and command key it uses for a
-HomeBase. Each camera that does not answer adds up to 20 seconds to startup. The
-camera's snapshot, live view and recordings are offered as experimental
-features and work only if that session works. No physical standalone camera has
-confirmed this yet, so a failure is expected and useful evidence. Recordings
-that would need a cloud key cannot be downloaded, and the camera's detection
-events, guard mode and alarm state are not part of this test.
+Any other standalone camera that the bundled library keeps at
+`standalone_transport_unverified`, including a standalone `T8410C`, stays there
+with the option on, because the library admits only these two models to the
+experimental route. From bridge 0.8.37 the app log names its model in a line
+beginning with `Eufy experimental standalone:`, and from integration 0.8.46
+**Download diagnostics** explains it under `standalone_admission`. That is not
+a failed connection attempt. The bridge makes no attempt for such a camera. Two
+other cases get neither, with the option on or off. A camera whose model the
+library supports only behind a HomeBase, found without one, appears as an
+`invalid_device_relationship` issue row. A camera whose model/type pair the
+library does not recognize, including a known model code reported with another
+type, appears as an `unsupported_device` issue row with its model code and type
+in the `Eufy discovery:` report and in **Download diagnostics**, and as an
+`Eufy backend: unsupported_device` line.
+
+With the option on, the bridge connects to each admitted camera at every
+discovery, normally at startup, over the same local lookup and command key it
+uses for a HomeBase. Each camera that does not answer adds up to 20 seconds to
+startup. The camera's snapshot, live view and recordings are offered as
+experimental features and work only if that session works. No physical
+standalone camera has confirmed this yet, so a failure is expected and useful
+evidence. Recordings that would need a cloud key cannot be downloaded, and the
+camera's detection events, guard mode and alarm state are not part of this test.
 
 To test it, update the app and the integration, set `experimental_standalone`
 to true in the app's configuration, restart the app, wait for the startup

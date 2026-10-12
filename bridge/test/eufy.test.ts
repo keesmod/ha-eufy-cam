@@ -9,7 +9,7 @@ import { PassThrough } from 'node:stream';
 import type { Backend, AuthState } from '../src/backend.js';
 import { Eufy } from '../src/eufy.js';
 import { Storage } from '../src/storage.js';
-import { logBackendFault } from '../src/backend-log.js';
+import { logBackendFault, logStandaloneNotAdmitted } from '../src/backend-log.js';
 
 function fixtureBackend(login: () => Promise<AuthState> = async () => ({ state: 'connected' })): Backend {
   const backend = Object.assign(new EventEmitter(), {
@@ -318,5 +318,32 @@ test('default bridge logger receives discovery detail through the Eufy event rel
       ['Eufy backend:', 'unsupported_station'],
     ]);
     assert.equal(bridge.diagnostics.enabled, false);
+  } finally { await bridge.close(); }
+});
+
+test('an unadmitted standalone camera reaches the default info logger by model code only (#154)', async (t) => {
+  const storage = new Storage('/unused');
+  storage.read = async () => undefined;
+  storage.write = async () => {};
+  const backend = fixtureBackend();
+  const bridge = new Eufy(storage, 'mega', false, () => backend);
+  const info = t.mock.method(console, 'info', () => {});
+  const error = t.mock.method(console, 'error', () => {});
+  bridge.on('standalone_not_admitted', logStandaloneNotAdmitted);
+  const text = (model: string) =>
+    `model=${model} is not admitted to the experimental route. The option is on, but the bundled library allows that route only for specific standalone models, so this camera stays standalone_transport_unverified without a connection attempt.`;
+  try {
+    await bridge.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    backend.emit('standalone_not_admitted', 'T8410C');
+    backend.emit('standalone_not_admitted', 'T8410C\nPRIVATE');
+    backend.emit('standalone_not_admitted', undefined);
+    const calls = info.mock.calls.map(call => call.arguments);
+    assert.deepEqual(calls, [
+      ['Eufy experimental standalone:', text('T8410C')],
+      ['Eufy experimental standalone:', text('unavailable')],
+      ['Eufy experimental standalone:', text('unavailable')],
+    ]);
+    assert.equal(error.mock.callCount(), 0);
+    for (const value of calls.flat()) assert.doesNotMatch(String(value), /PRIVATE|\n/);
   } finally { await bridge.close(); }
 });

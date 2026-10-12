@@ -278,3 +278,75 @@ test('standalone descriptors are booleans only and other relationships have none
   }
   assert.doesNotMatch(JSON.stringify(f.reporter.report()),/PRIVATE/);
 });
+
+test('the summary carries the experimental_standalone option and no other record does (#154)', () => {
+  const summary = (f: ReturnType<typeof collect>) => f.rows().find(row => row.event === 'summary');
+  for (const enabled of [true, false]) {
+    const f = collect();
+    f.reporter.connection('authentication', 'connected', false);
+    f.reporter.inventory(result(), 'accepted', undefined, true, new Map(), new Map(), enabled);
+    assert.equal(summary(f).experimental_standalone, enabled);
+    const report = f.reporter.report();
+    assert.equal(report.last_discovery[0]!.event, 'summary');
+    assert.equal(report.last_discovery[0]!.experimental_standalone, enabled);
+    assert.deepEqual([...new Set(report.last_discovery.map(row => row.event))], ['summary', 'device', 'issue', 'end']);
+    assert.deepEqual(report.recent_events.map(row => row.event), ['connection']);
+    for (const row of [...f.rows(), ...report.last_discovery, ...report.recent_events]) {
+      assert.equal(row.schema, 2);
+      if (row.event !== 'summary') assert.equal('experimental_standalone' in row, false, String(row.event));
+    }
+  }
+  // Only the boolean true the library receives turns it on.
+  for (const value of ['true', 1, {}, null, undefined]) {
+    const f = collect();
+    f.reporter.inventory(result(), 'accepted', undefined, true, new Map(), new Map(), value as unknown as boolean);
+    assert.equal(summary(f).experimental_standalone, false, JSON.stringify(value));
+    assert.equal(f.reporter.report().last_discovery[0]!.experimental_standalone, false);
+  }
+  const omitted = collect();
+  omitted.reporter.inventory(result(), 'accepted', undefined, true, new Map(), new Map());
+  assert.equal(summary(omitted).experimental_standalone, false);
+  // An unchanged inventory still states the option on its summary line and download.
+  const f = collect();
+  f.reporter.inventory(result(), 'accepted', undefined, true, new Map(), new Map(), true);
+  f.lines.length = 0;
+  f.reporter.inventory(result(), 'accepted', undefined, true, new Map(), new Map(), true);
+  assert.equal(f.lines.length, 2);
+  assert.equal(f.rows()[0].unchanged, true);
+  assert.equal(f.rows()[0].experimental_standalone, true);
+  const downloaded = f.reporter.report();
+  assert.equal(downloaded.last_discovery.length, 6);
+  assert.equal(downloaded.last_discovery[0]!.report, 2);
+  assert.equal(downloaded.last_discovery[0]!.experimental_standalone, true);
+  // Without an inventory the summary still says which option the library had.
+  f.lines.length = 0;
+  f.reporter.inventory(undefined, 'invalid_inventory', undefined, false, new Map(), new Map(), true);
+  assert.equal(f.rows()[0].inventory_available, false);
+  assert.equal(f.rows()[0].experimental_standalone, true);
+  // The option changes no device row: the library's relationship stays the evidence.
+  const mixed = (): DiscoveryResult => {
+    const value = result();
+    const descriptor = { did: true, license: true, adminUser: true, lanAddress: true };
+    value.devices.push(
+      {id:'PRIVATE_SOLO',stationId:'PRIVATE_SOLO',kind:'camera',model:'T8410C',name:'PRIVATE_NAME',firmware:'3.3.4.4',hardware:'1',battery:null},
+      {id:'PRIVATE_WALL',stationId:'PRIVATE_WALL',kind:'camera',model:'T84A1',name:'PRIVATE_NAME',firmware:'1.1.0.4',hardware:'1',battery:null},
+    );
+    value.relationships.push(
+      {deviceId:'PRIVATE_SOLO',kind:'standalone',ownerId:'PRIVATE_SOLO',reason:'standalone_transport_unverified',descriptor},
+      {deviceId:'PRIVATE_WALL',kind:'standalone',ownerId:'PRIVATE_WALL',transport:'experimental',descriptor},
+    );
+    return value;
+  };
+  const devices = (enabled: boolean) => {
+    const g = collect();
+    g.reporter.inventory(mixed(), 'accepted', undefined, true, new Map(), new Map(), enabled);
+    assert.doesNotMatch(g.lines.join('\n'), /PRIVATE/);
+    return g.rows().filter(row => row.event === 'device').map(({ timestamp: _, ...row }) => row);
+  };
+  const on = devices(true);
+  assert.deepEqual(on, devices(false));
+  assert.deepEqual(
+    on.filter(row => row.relationship === 'standalone').map(row => [row.model, row.relationship_reason, row.relationship_transport]),
+    [['T8410C', 'standalone_transport_unverified', null], ['T84A1', null, 'experimental']],
+  );
+});

@@ -365,6 +365,20 @@ export class MegaBackend extends EventEmitter implements Backend {
         reported.add(key);
         this.emit('backend_fault', issue.code, ...(detail ? [detail] : []));
       }
+      // With the option on, name each standalone camera the library kept off the
+      // experimental route, one event per device row and by bounded model code
+      // only, never its ID or name (#154). The library decides admission.
+      if (this.experimentalStandalone === true)
+        for (const device of devices.slice(0, 99)) {
+          const relationship = result.relationships.find((row) => row.deviceId === device.id);
+          if (
+            relationship?.kind === 'standalone' &&
+            !experimentalOwner(relationship) &&
+            'reason' in relationship &&
+            relationship.reason === 'standalone_transport_unverified'
+          )
+            this.emit('standalone_not_admitted', diagnosticModel(device.model));
+        }
       expected = await migrationInventory(this.storage);
       baselineChecked = true;
       verifyInventory(expected, devices);
@@ -437,6 +451,7 @@ export class MegaBackend extends EventEmitter implements Backend {
         baselineChecked,
         reportedCapabilities,
         reportedStates,
+        this.experimentalStandalone,
       );
     }
   }
