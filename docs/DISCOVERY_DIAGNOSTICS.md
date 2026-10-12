@@ -314,9 +314,11 @@ Eufy experimental standalone: model=T8410C is not admitted to the experimental r
 ```
 
 Integration 0.8.46 keeps the field in **Download diagnostics** and reports each
-such model as `standalone_admission`. An older bridge leaves the field out and
-an older integration drops it. Use the bridge log in that case. With the option
-off the field is `false` and nothing else changes.
+such model as `standalone_admission`. Bridge 0.8.36 or older has neither the
+field nor the log line, so it cannot tell such a camera from the option being
+off. Update the bridge to 0.8.37 in that case. With bridge 0.8.37, integration
+0.8.45 or older drops the field and shows no finding. Use the bridge log line in
+that case. With the option off the field is `false` and nothing else changes.
 
 The bridge connects each admitted camera at every discovery, normally at
 startup. Its `owner_status` and `owner_connected` then describe the camera's
