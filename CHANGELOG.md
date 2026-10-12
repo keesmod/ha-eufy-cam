@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.46 - 2026-10-12
+## 0.8.46 - 2026-10-13
 
 - Bridge 0.8.37 records the `experimental_standalone` option in the discovery
   `summary`. With the option on, a standalone camera whose model the bundled
@@ -22,6 +22,7 @@ migration is needed. Integration 0.8.45 still works with bridge 0.8.37, but its
 download drops the new field and shows no finding, so use the bridge log line.
 Rollback: restore the bridge 0.8.36 app backup and integration 0.8.45.
 
+[152]: https://github.com/keesmod/ha-eufy-cam/issues/152
 [154]: https://github.com/keesmod/ha-eufy-cam/issues/154
 
 ## 0.8.45 - 2026-10-12

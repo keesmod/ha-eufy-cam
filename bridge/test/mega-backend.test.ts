@@ -1168,7 +1168,13 @@ test('hostile standalone rows are named only as unavailable, and only for a matc
   const camera = (id: string, model: string): Device => ({ id, stationId: id, kind: 'camera', model, name: 'PRIVATE_NAME', hardware: '1', firmware: '1.0.0.0', battery: null });
   const descriptor = { did: true, license: true, adminUser: true, lanAddress: true };
   f.client.discoverDevices = async () => ({
-    devices: [...devices, camera('HOSTILE_A', 'T8400\nPRIVATE_TOKEN'), camera('HOSTILE_B', 'T8410PRIVATE0001'), camera('BOTH', 'T8410C')],
+    devices: [
+      ...devices,
+      camera('HOSTILE_A', 'T8400\nPRIVATE_TOKEN'),
+      camera('HOSTILE_B', 'T8410PRIVATE0001'),
+      camera('BOTH', 'T8410C'),
+      camera('FUTURE', 'T8400'),
+    ],
     relationships: [
       { deviceId: 'BASE', kind: 'station', ownerId: 'BASE' },
       { deviceId: 'CAM', kind: 'station', ownerId: 'BASE' },
@@ -1178,6 +1184,9 @@ test('hostile standalone rows are named only as unavailable, and only for a matc
       { deviceId: 'GHOST', kind: 'standalone', ownerId: 'GHOST', reason: 'standalone_transport_unverified', descriptor },
       // The client's experimental transport wins over a reason, whatever the model.
       { deviceId: 'BOTH', kind: 'standalone', ownerId: 'BOTH', transport: 'experimental', reason: 'standalone_transport_unverified', descriptor } as unknown as DiscoveryResult['relationships'][number],
+      // Only the exact standalone_transport_unverified reason is named, as in HA,
+      // so a future client reason is never mislabelled as not admitted.
+      { deviceId: 'FUTURE', kind: 'standalone', ownerId: 'FUTURE', reason: 'future_standalone_reason', descriptor } as unknown as DiscoveryResult['relationships'][number],
     ],
     issues: [],
   });
@@ -1186,7 +1195,7 @@ test('hostile standalone rows are named only as unavailable, and only for a matc
     assert.deepEqual(events, ['unavailable', 'unavailable']);
     assert.deepEqual([...connected].sort(), ['BASE', 'BOTH']);
     for (const model of events) assert.doesNotMatch(String(model), /PRIVATE|\n/);
-    assert.doesNotMatch(JSON.stringify(f.backend.supportReport()), /PRIVATE|HOSTILE|GHOST/);
+    assert.doesNotMatch(JSON.stringify(f.backend.supportReport()), /PRIVATE|HOSTILE|GHOST|FUTURE/);
   } finally {
     await f.backend.close();
   }

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.37 - 2026-10-12
+## 0.8.37 - 2026-10-13
 
 - Record whether `experimental_standalone` is on as `experimental_standalone`
   in the discovery `summary`. The report schema stays 2.
