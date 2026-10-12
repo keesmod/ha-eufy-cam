@@ -90,12 +90,25 @@ for a browser dashboard. See
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
 
-The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.44`.
+The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.45`.
 See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 </details>
 
 ## Upgrading
+
+The **0.8.45** integration and bridge **0.8.36** include client **0.29.2**,
+which recognizes the eufyCam 3 reported as `T8160-C` with type 19 behind a
+HomeBase 3 on [issue #149](https://github.com/keesmod/ha-eufy-cam/issues/149).
+On public evidence it also recognizes the Indoor Cam Pan&Tilt 2K `T8410C` with
+type 31 behind a HomeBase 3. Both use the HomeBase 3 media route with its owner
+and firmware checks. Neither has hardware results yet. A standalone `T8410C`
+now appears as a camera with `standalone_transport_unverified` instead of
+`unsupported_device`, and its snapshot, live view and recordings stay
+unsupported, also with `experimental_standalone` on. Bridge diagnostics and
+**Download diagnostics** now also show an unhyphenated model code such as
+`T8410C` instead of `unavailable`. Update both parts. Integration 0.8.44 still
+works with bridge 0.8.36, but its download shows such models as `unavailable`.
 
 The **0.8.44** integration and bridge **0.8.35** include client **0.29.1**.
 With `experimental_standalone`, a standalone Indoor Cam 2K Pan & Tilt `T8410`
@@ -172,8 +185,8 @@ default 120) raises the live session cap only for cameras without a battery
 value. Battery cameras keep two minutes. 0.8.25 keeps an inline card with `live_autostart: true` live while
 it is scrolled out of view, 0.8.24 moved the inline live controls below the
 video on narrow cards, and 0.8.23 added `live_mode: inline` and the optional
-`live_autostart: true`. Update the integration to **0.8.44** and the bridge to
-**0.8.35**, then refresh the dashboard.
+`live_autostart: true`. Update the integration to **0.8.45** and the bridge to
+**0.8.36**, then refresh the dashboard.
 See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
 for changes and any version-specific instructions.
 

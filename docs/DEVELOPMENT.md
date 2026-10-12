@@ -149,7 +149,7 @@ capabilities as separate evidence.
   evidence. Do not introduce unbounded retention or polling for logging.
 - Models match `T[A-Z0-9]{4}(?:[A-Z0-9]{1,3}|-[A-Z0-9]{1,2})?` and are at most
   eight characters long. That allows an unhyphenated catalogue code such as
-  `T8410C` (since bridge 0.8.35 and integration 0.8.44) and a short hyphen
+  `T8410C` (since bridge 0.8.36 and integration 0.8.45) and a short hyphen
   suffix such as `T8113-Z` (since bridge 0.8.29 and integration 0.8.37). Both
   validators check the length explicitly. The bridge's discovery rows,
   `Eufy backend:` line and live video and audio rows share `diagnosticModel`,

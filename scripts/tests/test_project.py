@@ -100,7 +100,7 @@ class ProjectTests(unittest.TestCase):
         version, bridge, pin = meta["version"], meta["bridge"], meta["mega_client"]
         other = pin + "9"
 
-        def write(notes, app, readme):
+        def write(notes, app, readme, wrap=" "):
             (self.root / "CHANGELOG.md").write_text(
                 f"# Changelog\n\n## {version} - 2026-10-12\n\n- {notes}\n"
             )
@@ -109,23 +109,32 @@ class ProjectTests(unittest.TestCase):
             )
             (self.root / "README.md").write_text(
                 f"`/eufy_viewer/eufy-viewer-card.js?v={version}`\n"
-                f"The integration and bridge **{bridge}** include client "
+                f"The integration and bridge **{bridge}**{wrap}include client "
                 f"**{readme}**.\nThe integration and bridge **0.0.1** include "
                 f"client **{other}**.\n"
             )
 
         names = f"Bridge {bridge} pins client {{}} with exact pairs."
+        link = "[{0}](https://github.com/keesmod/eufy-mega-client/releases/tag/v{0})"
         write(names.format(pin), f"Pin client {pin} with exact pairs.", pin)
         self.assertIn(pin, project.changelog(self.root, version))
+        # Wrapped and linked claims of the pinned client pass as well.
+        wrapped = f"Bridge {bridge} includes\n  client {link.format(pin)}."
+        write(wrapped, f"Pin client\n  v{pin}.", pin, "\n")
+        project.changelog(self.root, version)
         unchanged = "No client change in this release."
         write(unchanged, unchanged, pin)
         project.changelog(self.root, version)
-        for notes, app, readme in (
-            (names.format(other), f"Pin client {pin} here.", pin),
-            (names.format(pin), f"Include client {other} here.", pin),
-            (names.format(pin), f"Pin client {pin} here.", other),
+        for notes, app, readme, wrap in (
+            (names.format(other), f"Pin client {pin} here.", pin, " "),
+            (names.format(pin), f"Include client {other} here.", pin, " "),
+            (names.format(pin), f"Pin client {pin} here.", other, " "),
+            (f"Bridge {bridge} pins\n  client {other}.", f"Pin client {pin}.", pin, " "),
+            (names.format(pin), f"Pin client\n  {link.format(other)}.", pin, " "),
+            (names.format(pin), f"Pins the client v{other}.", pin, " "),
+            (names.format(pin), f"Pin client {pin} here.", other, "\n"),
         ):
-            write(notes, app, readme)
+            write(notes, app, readme, wrap)
             with self.assertRaisesRegex(ValueError, "bridge pins " + pin):
                 project.changelog(self.root, version)
         self.assertEqual(project.metadata(self.root)["mega_client"], pin)

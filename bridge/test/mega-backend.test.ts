@@ -1014,12 +1014,12 @@ for (const enabled of [true, false])
     }
   });
 
-// #149 and #152: the 0.8.44 notes describe what client 0.29.2 contains. Raw rows
-// go through the installed client, so a pin that lacks one of those changes fails
-// here even when its version string matches the notes. Until the pin moves from
-// 0.29.0, that client still rejects both #149 pairs and keeps a standalone T8410
-// unverified, as bridge 0.8.34 does.
-const claimedClient = diagnosticSoftware().library !== '0.29.0';
+// #149: the 0.8.45 notes describe what client 0.29.2 contains. Raw rows go
+// through the installed client, so a pin that lacks those changes fails here even
+// when its version string matches the notes. Until the pin moves from 0.29.1, that
+// client still rejects both #149 pairs, as bridge 0.8.35 does. Its standalone
+// T8410 route for #152 applies with either client.
+const claimedClient = diagnosticSoftware().library !== '0.29.1';
 for (const enabled of [true, false])
   test(`raw T8160-C, T8410C and T8410 rows through the shipped client with the opt-in ${enabled ? 'on' : 'off'} (#149, #152)`, async () => {
     const f = fixture(undefined, undefined, enabled);
@@ -1060,22 +1060,23 @@ for (const enabled of [true, false])
     const unverified = ['standalone', 'standalone_transport_unverified', null, 'not_applicable'];
     try {
       assert.equal((await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' })).state, 'connected');
-      assert.deepEqual(connected, claimedClient && enabled ? ['BASE', 'SOLO'] : ['BASE']);
+      assert.deepEqual([...connected].sort(), enabled ? ['BASE', 'SOLO'] : ['BASE']);
       assert.deepEqual(faults, [
         ...(claimedClient
           ? []
           : [
               ['unsupported_device', 'device_model=T8160-C device_type=19'],
-              // Client 0.29.0 itself omits the unhyphenated code, as on #149.
+              // Client 0.29.1 itself omits the unhyphenated code, as on #149.
               ['unsupported_device', 'device_model=unavailable device_type=31'],
             ]),
-        ['standalone_transport_unverified'],
+        // Only a standalone T8410C, or a T8410 without the opt-in, stays unverified.
+        ...(claimedClient || !enabled ? [['standalone_transport_unverified']] : []),
       ]);
       const report = f.backend.supportReport();
       const cameras = report.last_discovery
         .filter((r) => r.event === 'device' && r.model !== 'T8030')
         .map((r) => [r.model, r.relationship, r.relationship_reason, r.relationship_transport, r.owner_status]);
-      const t8410 = claimedClient && enabled ? ['standalone', null, 'experimental', 'connected'] : unverified;
+      const t8410 = enabled ? ['standalone', null, 'experimental', 'connected'] : unverified;
       assert.deepEqual(cameras, [
         ...(claimedClient
           ? [

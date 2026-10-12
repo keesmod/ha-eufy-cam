@@ -21,7 +21,11 @@ def read_json(root, path):
     return json.loads((root / path).read_text())
 
 
-CLIENT_CLAIM = re.compile(r"\b(?:[Pp]ins?|[Ii]ncludes?) client (\d+\.\d+\.\d+)")
+# Notes may wrap a claim over lines, link the version or prefix it with v, as in
+# "includes client [0.28.0](...)" or "pins the client v0.29.2".
+CLIENT_CLAIM = re.compile(
+    r"\b(?:[Pp]ins?|[Ii]ncludes?)\s+(?:the\s+)?client\s+(?:\[|\*\*)?v?(\d+\.\d+\.\d+)"
+)
 
 
 def changelog(root, version, path="CHANGELOG.md"):
@@ -50,9 +54,9 @@ def client_claims(root, notes):
         bridge["dependencies"]["@keesmod/eufy-mega-client"],
     )
     readme = re.findall(
-        r"bridge \*\*"
+        r"bridge\s+\*\*"
         + re.escape(bridge["version"])
-        + r"\*\* includes? client \*\*(\d+\.\d+\.\d+)\*\*",
+        + r"\*\*\s+includes?\s+client\s+\*\*v?(\d+\.\d+\.\d+)\*\*",
         (root / "README.md").read_text(),
     )
     app_notes = changelog(root, bridge["version"], "ha_app/CHANGELOG.md")
