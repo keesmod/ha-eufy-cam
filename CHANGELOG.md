@@ -3,9 +3,10 @@
 ## 0.8.46 - 2026-10-13
 
 - Bridge 0.8.37 records the `experimental_standalone` option in the discovery
-  `summary`. With the option on, a standalone camera whose model the bundled
-  client 0.29.2 recognizes but does not admit to the experimental route, such as
-  a standalone `T8410C`, is now named as such. On [issue #152][152] such rows
+  `summary`. With the option on, a standalone camera that the bundled client
+  0.29.2 keeps at `standalone_transport_unverified` because it does not admit
+  its model to the experimental route, such as a standalone `T8410C`, is now
+  named as such. On [issue #152][152] such rows
   looked like a failed attempt, because the report did not carry the option
   state ([issue #154][154]).
 - The bridge log has one `Eufy experimental standalone:` info line per such
@@ -13,7 +14,9 @@
   explains each such model as `standalone_admission`. Neither part uses a model
   list. With an older bridge that lacks the field, no finding appears. A camera
   whose model the client does not recognize gets neither part. It still appears
-  as an `unsupported_device` issue row and log line.
+  as an `unsupported_device` issue row and log line. A camera whose model the
+  client supports only behind a HomeBase, found without one, gets neither part
+  either. It still appears as an `invalid_device_relationship` issue row.
 - Nothing changes with the option off apart from
   `experimental_standalone: false` in the report. No model is admitted or
   removed, the client stays at 0.29.2 and the report schema stays 2.

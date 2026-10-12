@@ -98,9 +98,10 @@ See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 ## Upgrading
 
 The **0.8.46** integration and bridge **0.8.37** keep client **0.29.2**. With
-`experimental_standalone` on, a standalone camera whose model the client
-recognizes but does not admit to the experimental route, such as a standalone
-`T8410C`, is now named by its model code in the bridge log and explained as
+`experimental_standalone` on, a standalone camera that the client keeps at
+`standalone_transport_unverified` because it does not admit its model to the
+experimental route, such as a standalone `T8410C`, is now named by its model
+code in the bridge log and explained as
 `standalone_admission` in **Download diagnostics**. On
 [#152](https://github.com/keesmod/ha-eufy-cam/issues/152) such a camera looked
 like a failed attempt. Nothing changes with the option off. Update both parts.

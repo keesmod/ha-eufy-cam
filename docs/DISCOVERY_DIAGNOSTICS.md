@@ -9,7 +9,7 @@ No live stream or optional debug logging is needed to generate discovery evidenc
 
 | Collection method | Bridge | Bundled library | HA integration |
 |---|---|---|---|
-| Experimental standalone option state, and a log line for each standalone camera the library recognizes but does not admit with the option on | 0.8.37 | 0.29.2 | 0.8.46 for the download and assessment, none for the log line |
+| Experimental standalone option state, and a log line for each standalone camera the library keeps at `standalone_transport_unverified` with the option on | 0.8.37 | 0.29.2 | 0.8.46 for the download and assessment, none for the log line |
 | Machine error codes without a fixed code list, in logs and download | 0.8.16 | 0.12.2 | 0.8.16 for the download |
 | Current startup logs, including rejected-device firmware and parent context | 0.8.5 | 0.12.2 | No integration update needed to read bridge logs |
 | One file through HA **Download diagnostics** | 0.8.5 | 0.12.2 | 0.8.5 |
@@ -315,10 +315,13 @@ Eufy experimental standalone: model=T8410C is not admitted to the experimental r
 
 Integration 0.8.46 keeps the field in **Download diagnostics** and reports each
 such model as `standalone_admission`. Bridge 0.8.36 or older has neither the
-field nor the log line, so it cannot tell such a camera from the option being
-off. Update the bridge to 0.8.37 in that case. With bridge 0.8.37, integration
-0.8.45 or older drops the field and shows no finding. Use the bridge log line in
-that case. With the option off the field is `false` and nothing else changes.
+field nor the per-camera log line, so its report and **Download diagnostics**
+look the same as with the option off. On bridge 0.8.34 to 0.8.36 only the
+startup line beginning with `Eufy experimental standalone cameras enabled:`
+shows that the option is on. Update the bridge to 0.8.37 in that case. With
+bridge 0.8.37, integration 0.8.45 or older drops the field and shows no
+finding. Use the bridge log line in that case. With the option off the field is
+`false` and nothing else changes.
 
 The bridge connects each admitted camera at every discovery, normally at
 startup. Its `owner_status` and `owner_connected` then describe the camera's
