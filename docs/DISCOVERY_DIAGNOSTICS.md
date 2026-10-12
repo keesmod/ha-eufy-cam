@@ -173,8 +173,9 @@ other rows under that HomeBase were rejected as `unsupported_device` with
 1.5.8.6 and hardware 0.0.3.7, and the Eufy app shows it as a regular eufyCam 3.
 The other two have type 31 and firmware 3.3.4.4 and show `model=unavailable`,
 because the received string did not fit the diagnostic bound. The reporter
-calls them Indoor Cam Pan&Tilt 2K. This is reported, not independently
-reproduced.
+calls them Indoor Cam Pan&Tilt 2K T8410, but `T8410` with type 31 was already
+admitted, so the received string is not exactly `T8410`. This is reported, not
+independently reproduced.
 
 Client 0.29.2, included in bridge 0.8.36, admits exactly `T8160-C` with type 19
 under the H3 media policy, which checks the actual HomeBase 3 owner and its
@@ -192,7 +193,8 @@ shows `T8410C` with type 31 on firmware 3.3.3.2 under a T8030. The reporter's
 `T8410C` is not verified. If the string differs, bridge 0.8.36 and integration
 0.8.45 show it in the next report, as long as it fits the widened bound
 described below. No other type 31 string and no type-only or prefix match is
-admitted. A standalone `T8410C`, with an empty or self parent, is now reported
+added. Owners use Pan & Tilt names for both `T8410` and `T8410C`, so the
+received model code, not the product name, decides which route applies. A standalone `T8410C`, with an empty or self parent, is now reported
 as `relationship=standalone` with
 `relationship_reason=standalone_transport_unverified` instead of
 `unsupported_device`, also with the opt-in. Home Assistant then creates it as a
