@@ -1,5 +1,6 @@
 /** Observe the live video path without starting or changing media flow. */
 import { diagnosticEvents, type DiagnosticEvent } from './diagnostics.js';
+import { diagnosticModel } from './discovery-diagnostics.js';
 import type { LiveEncoderProgress } from './live-transcoder.js';
 import { randomInt } from 'node:crypto';
 import type { Readable } from 'node:stream';
@@ -133,7 +134,7 @@ export class LiveVideoObservation implements LiveVideoObserver {
     this.stages = { input: new Stage(this.started, now), output: new Stage(this.started, now), jpeg: new Stage(this.started, now) };
     this.readerCounts = { video: new Readers(this.started, now), audio: new Readers(this.started, now) };
     this.report = {
-      attempt: randomInt(1, 2 ** 48), model: /^T[A-Z0-9]{4}(?:-[A-Z0-9]{1,2})?$/.test(model) ? model : 'unavailable', state: 'starting',
+      attempt: randomInt(1, 2 ** 48), model: diagnosticModel(model), state: 'starting',
       encoder: { mode: 'unavailable', exits: 0, stderr_chunks: 0 },
       input: this.stages.input.report, output: this.stages.output.report, jpeg: this.stages.jpeg.report,
       readers: this.readerCounts.video.report, audio_readers: this.readerCounts.audio.report, start: {}, duration_ms: 0,

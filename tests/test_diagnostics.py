@@ -738,6 +738,33 @@ def test_station_connection_stage_and_suffixed_models_survive_download():
         assert _fields({**row, "model": model})["model"] == "unavailable"
 
 
+def test_unhyphenated_catalogue_codes_survive_download_but_serials_never():
+    # Issue #149: a rejected Indoor Cam row showed only "unavailable".
+    for model in ("T8410C", "T8160-C", "T8W11C", "T8419N", "T8410AB", "T8410ABC"):
+        row = {"event": "issue", "model": model, "parent_model": model}
+        assert _fields(row) == row
+        assert audio_report({"owner_model": model})["owner_model"] == model
+    for model in (
+        "T8410ABCD",
+        "T8224-ABC",
+        "T8224A-B",
+        "T8410c",
+        "t8410C",
+        "T8410PRIVATE0001",
+        "T8410C ",
+        " T8410C",
+        "T8410C\n",
+        "T84 10C",
+        "",
+        None,
+        8410,
+    ):
+        fields = _fields({"event": "issue", "model": model, "parent_model": model})
+        assert fields["model"] == "unavailable"
+        assert fields["parent_model"] == "unavailable"
+        assert audio_report({"owner_model": model})["owner_model"] == "unavailable"
+
+
 def test_standalone_descriptor_and_transport_survive_download_as_booleans_only():
     row = {
         "event": "device",

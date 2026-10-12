@@ -677,6 +677,50 @@ test('discovery revalidates diagnostics and ignores extra issue fields at the br
   }
 });
 
+test('the backend log line shows unhyphenated catalogue codes as received, serials never (#149)', async () => {
+  const f = fixture();
+  const faults: unknown[][] = [];
+  f.backend.on('backend_fault', (...args) => faults.push(args));
+  const received = [
+    ['T8410C', 31],
+    ['T8160-C', 19],
+    ['T8W11C', 31],
+    ['T8419N', 31],
+    ['T8410ABCD', 31],
+    ['T8224-ABC', 31],
+    ['T8224A-B', 31],
+    ['T8410c', 31],
+    ['T8410PRIVATE0001', 31],
+    ['T8410C ', 31],
+    [' T8410C', 31],
+    ['T8410C\n', 31],
+  ];
+  f.client.discoverDevices = async () => ({
+    devices,
+    relationships: [],
+    issues: received.map(([deviceModel, deviceType], index) => ({
+      index,
+      deviceId: 'PRIVATE_SERIAL',
+      code: 'unsupported_device',
+      deviceModel,
+      deviceType,
+    })) as unknown as DiscoveryResult['issues'],
+  });
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.deepEqual(faults, [
+      ['unsupported_device', 'device_model=T8410C device_type=31'],
+      ['unsupported_device', 'device_model=T8160-C device_type=19'],
+      ['unsupported_device', 'device_model=T8W11C device_type=31'],
+      ['unsupported_device', 'device_model=T8419N device_type=31'],
+      ['unsupported_device', 'device_model=unavailable device_type=31'],
+    ]);
+    assert.doesNotMatch(JSON.stringify(faults), /PRIVATE/);
+  } finally {
+    await f.backend.close();
+  }
+});
+
 for (const empty of [false,true])
   test(`support report crosses Eufy and its normal logger for ${empty?'blocked':'usable'} discovery`, async t => {
     const {Eufy}=await import('../src/eufy.js');
@@ -696,7 +740,7 @@ for (const empty of [false,true])
       const rows=lines.map(line=>JSON.parse(line));
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
-      assert.equal(summary.software.library,'0.29.1');
+      assert.equal(summary.software.library,'0.29.2');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
@@ -964,6 +1008,70 @@ for (const enabled of [true, false])
         assert.deepEqual(row.descriptor, { did: true, license: true, admin_user: true, lan_address: true });
       }
       assert.doesNotMatch(JSON.stringify(report), /PRIVATE|192\.168\.1\.4[0-2]|WALL|BASE|PAN_/);
+    } finally {
+      await f.backend.close();
+    }
+  });
+
+// #149: raw rows go through the installed client, so a pin without the T8160-C and
+// T8410C admissions fails here even when its version string matches the notes.
+for (const enabled of [true, false])
+  test(`raw T8160-C, T8410C and T8410 rows through the shipped client with the opt-in ${enabled ? 'on' : 'off'} (#149, #152)`, async () => {
+    const f = fixture(undefined, undefined, enabled);
+    const faults: unknown[][] = [];
+    f.backend.on('backend_fault', (...args) => faults.push(args));
+    const connected: string[] = [];
+    const connect = f.client.connectStation;
+    f.client.connectStation = async (id: string) => {
+      connected.push(id);
+      return connect();
+    };
+    const row = (device_sn: string, parent_sn: string, device_model: string, device_type: number, main_sw_version: string) => ({
+      category: 'eufy_security',
+      device_sn,
+      parent_sn,
+      device_model,
+      device_type,
+      main_sw_version,
+      device_name: 'PRIVATE_NAME',
+      p2p_did: 'PRIVATE_DID',
+      p2p_license: 'PRIVATE_LICENSE',
+      member: { admin_user_id: 'PRIVATE_ADMIN' },
+      params: [{ param_type: 1176, param_value: '192.168.1.42' }],
+    });
+    const rows = [
+      row('BASE', '', 'T8030', 18, '3.8.7.4'),
+      row('H3_EUFYCAM', 'BASE', 'T8160-C', 19, '1.5.8.6'),
+      row('H3_INDOOR', 'BASE', 'T8410C', 31, '3.3.4.4'),
+      row('SOLO_C', '', 'T8410C', 31, '3.3.4.4'),
+      row('SOLO', 'SOLO', 'T8410', 31, '2.3.2.4'),
+    ];
+    // The installed library's discovery, with only the cloud boundary synthetic.
+    const actual = Object.assign(Object.create(EufyMegaClient.prototype), {
+      experimentalStandalone: enabled,
+      cloud: { call: async () => ({ devices: rows }) },
+    }) as EufyMegaClient;
+    f.client.discoverDevices = () => actual.discoverDevices();
+    const unverified = ['standalone', 'standalone_transport_unverified', null, 'not_applicable'];
+    try {
+      assert.equal((await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' })).state, 'connected');
+      assert.deepEqual([...connected].sort(), enabled ? ['BASE', 'SOLO'] : ['BASE']);
+      // Only the standalone T8410C, and a T8410 without the opt-in, stay unverified.
+      assert.deepEqual(faults, [['standalone_transport_unverified']]);
+      const report = f.backend.supportReport();
+      const cameras = report.last_discovery
+        .filter((r) => r.event === 'device' && r.model !== 'T8030')
+        .map((r) => [r.model, r.relationship, r.relationship_reason, r.relationship_transport, r.owner_status]);
+      const t8410 = enabled ? ['standalone', null, 'experimental', 'connected'] : unverified;
+      assert.deepEqual(cameras, [
+        ['T8160-C', 'station', null, null, 'connected'],
+        ['T8410C', 'station', null, null, 'connected'],
+        // T8410C has no experimental standalone route, also with the opt-in.
+        ['T8410C', ...unverified],
+        ['T8410', ...t8410],
+      ]);
+      assert.deepEqual(f.backend.inventory().map((camera) => camera.model), ['T8160-C', 'T8410C', 'T8410C', 'T8410']);
+      assert.doesNotMatch(JSON.stringify(report), /PRIVATE|192\.168\.1\.42|BASE|H3_|SOLO/);
     } finally {
       await f.backend.close();
     }

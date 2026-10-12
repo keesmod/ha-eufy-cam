@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.8.36 - 2026-10-12
+
+- Pin client 0.29.2. It recognizes exactly `T8160-C`/type 19 behind a HomeBase
+  3, as reported on
+  [issue #149](https://github.com/keesmod/ha-eufy-cam/issues/149), with the H3
+  media policy and its owner and firmware checks. On public evidence it also
+  recognizes exactly `T8410C`/type 31 behind a HomeBase 3, with the `T8410`
+  policy under a HomeBase but without the experimental standalone route.
+  Whether the two type 31 rows on issue #149 carry exactly `T8410C` is not
+  verified. Hardware results for both remain pending.
+- A standalone `T8410C`, with an empty or self parent, is now reported as
+  `relationship=standalone` with `standalone_transport_unverified` instead of
+  `unsupported_device`. Home Assistant then creates it as a camera whose
+  snapshot, live view and recordings are unsupported, also with the option
+  `experimental_standalone`.
+- Discovery rows, the `Eufy backend:` line and the live video and audio rows
+  now show an unhyphenated model code such as `T8410C` as received instead of
+  `unavailable`. The bound stays at eight characters, so serial numbers still
+  never appear.
+
+Upgrade: keep the same token and session. Update the integration to 0.8.45,
+because 0.8.44 shows such model codes as `unavailable` in its download.
+Rollback: restore the 0.8.35 app backup and integration 0.8.44.
+
 ## 0.8.35 - 2026-10-12
 
 - Pin client 0.29.1. With `experimental_standalone` on, a standalone Indoor Cam

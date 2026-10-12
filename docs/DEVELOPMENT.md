@@ -147,8 +147,16 @@ capabilities as separate evidence.
   100 recent events. The download is cached in memory, without extra cloud or
   device calls. Restarting loses earlier retained events and collects new startup
   evidence. Do not introduce unbounded retention or polling for logging.
-- Models are exactly five characters matching `T[A-Z0-9]{4}`. Device types are
-  integers from 0 through 65535. Numeric dotted versions contain one to four
+- Models match `T[A-Z0-9]{4}(?:[A-Z0-9]{1,3}|-[A-Z0-9]{1,2})?` and are at most
+  eight characters long. That allows an unhyphenated catalogue code such as
+  `T8410C` (since bridge 0.8.36 and integration 0.8.45) and a short hyphen
+  suffix such as `T8113-Z` (since bridge 0.8.29 and integration 0.8.37). Both
+  validators check the length explicitly. The bridge's discovery rows,
+  `Eufy backend:` line and live video and audio rows share `diagnosticModel`,
+  and the HA download applies the same pattern with `re.fullmatch`. A serial
+  number longer than eight characters never matches. Any other value becomes
+  `unavailable`. Device types are integers from 0 through 65535. Numeric dotted
+  versions contain one to four
   components of one to four digits, with a maximum length of 19. Do not coerce,
   trim, truncate or infer rejected values. Use fixed enum allowlists for structural values.
 - `code`, `reason`, `relationship_reason` and `outcome` accept complete machine

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import type { DiscoveryResult, Diagnostic, CameraCapabilities } from '@keesmod/eufy-mega-client';
-import { DiscoveryDiagnostics, diagnosticCode, diagnosticSoftware } from '../src/discovery-diagnostics.js';
+import { DiscoveryDiagnostics, diagnosticCode, diagnosticModel, diagnosticSoftware } from '../src/discovery-diagnostics.js';
 
 const result = (): DiscoveryResult => ({
   devices: [
@@ -29,7 +29,7 @@ test('support report includes software, inventory, anonymous ownership, firmware
     {snapshot:capability,live:capability,recordings:capability}]]),new Map());
   const rows=f.rows();
   assert.equal(rows.length,6);
-  assert.equal(rows[0].software.library,'0.29.1');
+  assert.equal(rows[0].software.library,'0.29.2');
   assert.equal(rows[0].software.bridge,diagnosticSoftware().bridge);
   assert.deepEqual([rows[0].cameras,rows[0].stations,rows[0].issues],[1,1,2]);
   assert.equal(rows[2].owner_ref,1);
@@ -228,6 +228,33 @@ test('model codes with a short suffix are reported as received, serials never', 
   const rows=f.rows();
   assert.equal(rows.find(r=>r.event==='device'&&r.ref===2).model,'T8113-Z');
   assert.deepEqual(rows.filter(r=>r.event==='issue').map(r=>r.model),['T8113-X','unavailable']);
+  assert.doesNotMatch(f.lines.join('\n'),/PRIVATE/);
+});
+
+// The same bound applies to the live video and audio rows and the HA download (#149).
+const modelBound = {
+  shown: ['T8030', 'T8113-Z', 'T8160-C', 'T8410C', 'T8W11C', 'T8419N', 'T8410AB', 'T8410ABC'],
+  hidden: [
+    'T8410ABCD', 'T8224-ABC', 'T8224A-B', 'T8224-', 'T8224-z', 'T8410c', 't8410C', 'T8410PRIVATE0001',
+    'T8410C ', ' T8410C', 'T8410C\n', 'T84 10C', 'T841', '', undefined, null, 8410, {}, [],
+  ] as unknown[],
+};
+
+test('unhyphenated catalogue codes are reported as received, serials and free text never (#149)', () => {
+  for (const value of modelBound.shown) assert.equal(diagnosticModel(value), value, String(value));
+  for (const value of modelBound.hidden) assert.equal(diagnosticModel(value), 'unavailable', JSON.stringify(value));
+  const f=collect();
+  const value=result();
+  value.devices[1]!.model='T8160-C';
+  value.issues[0]!.deviceModel='T8410C';
+  value.issues[0]!.deviceType=31;
+  value.issues[0]!.context={firmware:'3.3.4.4',hardware:'1',parentStatus:'present',parentId:'PRIVATE_BASE',parentModel:'T8030',parentFirmware:'3.8.7.4'};
+  value.issues[1]!.deviceModel='T8410PRIVATE0001';
+  f.reporter.inventory(value,'accepted',undefined,true,new Map(),new Map());
+  const rows=f.rows();
+  assert.equal(rows.find(r=>r.event==='device'&&r.ref===2).model,'T8160-C');
+  assert.deepEqual(rows.filter(r=>r.event==='issue').map(r=>[r.model,r.device_type,r.parent_model]),
+    [['T8410C',31,'T8030'],['unavailable',96,'unavailable']]);
   assert.doesNotMatch(f.lines.join('\n'),/PRIVATE/);
 });
 

@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.8.45 - 2026-10-12
+
+- Bridge 0.8.36 pins client 0.29.2, which admits exactly two more pairs under a
+  HomeBase 3. Bridge 0.8.35 and earlier reject both as `unsupported_device`.
+  `T8160-C`/type 19 was reported on [issue #149][149], and the Eufy app shows
+  that camera as a regular eufyCam 3. It uses the H3 media policy with the
+  actual HomeBase 3 owner and firmware checks. It does not join the closed
+  model-only policy of the original T8160.
+- The second pair, `T8410C`/type 31, the Indoor Cam Pan&Tilt 2K in Eufy's
+  HomeBase guide, is admitted on public evidence. Eufy's [HomeBase compatibility
+  guide][149-eufy] lists `T8410C` as supported on HomeBase 3, and public reports
+  show `T8410C` with type 31 under a T8030 on the 3.3.x firmware line. `T8410C`
+  is the likely model of the two type 31 rows on issue #149, which showed
+  `model=unavailable`, but that is not verified. Owners use Pan & Tilt names for
+  both `T8410` and `T8410C`, so the received model code, not the product name,
+  decides which route applies. Under a HomeBase 3, `T8410C` uses the `T8410`
+  policy: the indoor camera route with H3 media and the same owner and firmware
+  checks. Unlike `T8410`, it is not admitted to the experimental standalone
+  route. A standalone `T8410C`, with an empty or self parent, is now reported as
+  `relationship=standalone` with `standalone_transport_unverified` instead of
+  `unsupported_device`. Home Assistant then creates it as a camera whose
+  snapshot, live view and recordings are unsupported, also with
+  `experimental_standalone` on. No type-only or prefix match is added.
+- Diagnostics now show an unhyphenated catalogue code such as `T8410C`,
+  `T8W11C` or `T8419N` as received, next to the hyphen form such as `T8113-Z`.
+  This applies to the bridge's `Eufy discovery:` rows and `Eufy backend:` line,
+  its live video and audio rows and the integration's **Download
+  diagnostics**. The bound stays at eight characters, so serial numbers and
+  free text still show as `unavailable`. Nothing is trimmed, truncated or taken
+  from a serial number. If the reporter's type 31 string is another catalogue
+  code, the next report shows it.
+- Coverage of both new pairs is software only. Hardware results for `T8160-C`
+  and `T8410C` remain pending in the client's model matrix. This is
+  experimental software support. The standalone `T8410` route from 0.8.44 is
+  unchanged.
+
+Upgrade: update the bridge app to 0.8.36 and the HACS integration to 0.8.45,
+then restart Home Assistant. Keep the same token and session. No configuration
+migration is needed. Integration 0.8.44 still works with bridge 0.8.36, but its
+download shows such model codes as `unavailable`. Rollback: restore the bridge
+0.8.35 app backup and integration 0.8.44.
+
+[149]: https://github.com/keesmod/ha-eufy-cam/issues/149
+[149-eufy]: https://service.eufy.com/eu/article-description/eufy-Security-Complete-HomeBase-Compatibility-Guide
+
 ## 0.8.44 - 2026-10-12
 
 - Bridge 0.8.35 pins client 0.29.1, which also admits a standalone Indoor Cam
