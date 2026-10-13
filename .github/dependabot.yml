@@ -3,7 +3,6 @@ updates:
   - package-ecosystem: npm
     directories:
       - /bridge
-      - /ha_app
       - /frontend
     schedule:
       interval: weekly

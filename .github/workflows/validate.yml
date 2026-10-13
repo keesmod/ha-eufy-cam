@@ -17,6 +17,8 @@ concurrency:
 jobs:
   dependency-security:
     uses: ./.github/workflows/dependency-security.yml
+  home-assistant-checks:
+    uses: ./.github/workflows/home-assistant-checks.yml
   release-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -30,6 +32,7 @@ jobs:
       - name: Check versions, release notes, dependency pins and changed components
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: python3 scripts/release.py check
   home-assistant:
     runs-on: ubuntu-latest
@@ -44,27 +47,16 @@ jobs:
       - run: uv run ruff format --check custom_components tests
       - run: uv run mypy custom_components
       - run: uv run pytest --cov=custom_components.eufy_viewer --cov-report=term-missing --cov-fail-under=95
-  hacs:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa # main, 2026-09-10
-        with:
-          category: integration
   app-package:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - run: python3 scripts/prepare_ha_app.py
-      - run: git diff --exit-code -- ha_app
-      - run: docker build -t eufy-viewer-app:test ./ha_app
-  hassfest:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: home-assistant/actions/hassfest@a7c616ce81ccda50150bf1595786c71b1883fabb # master, 2026-09-10
+      # The store folders are frozen release outputs. Build the candidate app
+      # from bridge/ and app/ instead.
+      - name: Stage the candidate app build context
+        run: python3 scripts/prepare_ha_app.py --stage
+      - run: docker build -t eufy-viewer-app:test artifacts/ha_app/eufy_viewer_bridge
   bridge:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -117,7 +109,7 @@ jobs:
       - run: npm test
         working-directory: frontend
   release-package:
-    needs: [dependency-security, release-checks, home-assistant, hacs, hassfest, app-package, bridge, card]
+    needs: [dependency-security, home-assistant-checks, release-checks, home-assistant, app-package, bridge, card]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -138,7 +130,7 @@ jobs:
           compression-level: 0
   ci:
     if: ${{ always() }}
-    needs: [dependency-security, release-checks, home-assistant, hacs, hassfest, app-package, bridge, card, release-package]
+    needs: [dependency-security, home-assistant-checks, release-checks, home-assistant, app-package, bridge, card, release-package]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

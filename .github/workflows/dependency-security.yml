@@ -20,8 +20,6 @@ jobs:
         include:
           - component: bridge
             directory: bridge
-          - component: ha-app
-            directory: ha_app
           - component: frontend
             directory: frontend
     steps:
@@ -41,6 +39,55 @@ jobs:
         with:
           name: dependency-audit-${{ matrix.component }}
           path: ${{ matrix.directory }}/npm-audit.json
+          if-no-files-found: error
+          retention-days: 14
+  store-folders:
+    # The store folders ha_app and ha_app_beta change only in a release PR or
+    # a beta cut, so an advisory there must not block other pull requests. A
+    # called workflow sees its caller's github context, so Validate and Release
+    # runs skip these steps and only the daily schedule and a direct dispatch
+    # of this workflow audit the folders. Renaming this workflow disables this
+    # audit. The conditions sit on the steps so that the skipped job still
+    # succeeds for the ci check.
+    name: npm / store folders
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      STANDALONE: ${{ github.workflow == 'Dependency security' }}
+    steps:
+      - if: ${{ env.STANDALONE == 'true' }}
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - if: ${{ env.STANDALONE == 'true' }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Audit the stable store folder without installing packages
+        if: ${{ env.STANDALONE == 'true' }}
+        working-directory: ha_app
+        timeout-minutes: 3
+        run: npm audit --package-lock-only --ignore-scripts --include=dev --include=optional --include=peer --json > npm-audit.json
+      - name: Audit the beta store folder without installing packages
+        id: beta
+        if: ${{ always() && env.STANDALONE == 'true' && hashFiles('ha_app_beta/package-lock.json') != '' }}
+        working-directory: ha_app_beta
+        timeout-minutes: 3
+        run: npm audit --package-lock-only --ignore-scripts --include=dev --include=optional --include=peer --json > npm-audit.json
+      - name: Keep the stable audit report even when vulnerabilities are found
+        if: ${{ always() && env.STANDALONE == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dependency-audit-ha-app
+          path: ha_app/npm-audit.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Keep the beta audit report even when vulnerabilities are found
+        if: ${{ always() && steps.beta.outcome != 'skipped' && env.STANDALONE == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dependency-audit-ha-app-beta
+          path: ha_app_beta/npm-audit.json
           if-no-files-found: error
           retention-days: 14
   python:

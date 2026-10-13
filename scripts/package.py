@@ -43,7 +43,9 @@ def members(root=ROOT):
         "scripts/",
         "tests/",
         ".github/",
+        "app/",
         "ha_app/",
+        "ha_app_beta/",
     )
     source = {p for p in tracked if p.startswith(source_roots)}
     source.update(
