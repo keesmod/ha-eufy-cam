@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import type { DiscoveryResult, Diagnostic, CameraCapabilities } from '@keesmod/eufy-mega-client';
+import type { DiscoveryResult, Diagnostic, CameraCapabilities, StationLookupObservation } from '@keesmod/eufy-mega-client';
 import {
   DiscoveryDiagnostics, diagnosticCode, diagnosticModel, diagnosticReleaseVersion, diagnosticSoftware, diagnosticVersion,
 } from '../src/discovery-diagnostics.js';
@@ -218,6 +218,117 @@ test('repeated failures at one stage are recorded once, and the latest record is
   f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'lookup',inventoryAddress:true});
   const rows=f.reporter.report().recent_events.filter(row=>row.event==='station_connection');
   assert.deepEqual(rows.map(row=>row.stage??row.status),['lookup','station_found','lookup','connected','lookup']);
+});
+
+// What the local lookup of one attempt saw, as client 0.30.0 reports it (#152).
+const silentLookup: StationLookupObservation = {
+  rounds: 3, broadcastTargets: 2, broadcastEnabled: true, sendErrors: 0, datagrams: 0, otherHeaders: 0,
+  ownReplies: 0, accountReplies: 0, foreignReplies: 0, nearReplies: 0, inventoryReply: 'none',
+  inventoryAddressOnSubnet: true, inventoryAddressShared: false,
+};
+const lookupKeys = (row: Record<string, unknown>) =>
+  Object.keys(row).filter(key => key.startsWith('lookup_') || key.startsWith('inventory_address_'));
+
+test('the local lookup of an attempt is reported as flat fields on its error and connected records (#152)', () => {
+  const f=collect();
+  f.reporter.prepare(result());
+  f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'lookup',inventoryAddress:true,lookup:silentLookup});
+  // A HomeBase's successful connect is reported by the refresh_state record after it.
+  f.reporter.station('PRIVATE_BASE','refresh_state','connected',undefined,{stage:'encryption_ready',inventoryAddress:true,
+    lookup:{...silentLookup,rounds:1,broadcastTargets:0,datagrams:2,otherHeaders:1,ownReplies:1,ownRound:0,inventoryReply:'own'}});
+  const [failed,connected]=f.reporter.report().recent_events.filter(row=>row.event==='station_connection');
+  assert.deepEqual(Object.fromEntries(lookupKeys(failed!).map(key=>[key,failed![key]])),{
+    lookup_rounds:3, lookup_broadcast_targets:2, lookup_broadcast_enabled:true, lookup_send_errors:0,
+    lookup_datagrams:0, lookup_other_headers:0, lookup_own_replies:0, lookup_account_replies:0,
+    lookup_foreign_replies:0, lookup_near_replies:0, lookup_inventory_reply:'none',
+    inventory_address_on_subnet:true, inventory_address_shared:false,
+  });
+  assert.deepEqual([failed!.stage,failed!.inventory_address,failed!.phase],['lookup',true,'connect']);
+  assert.deepEqual([connected!.phase,connected!.status,connected!.stage],['refresh_state','connected',undefined]);
+  assert.deepEqual([connected!.lookup_own_replies,connected!.lookup_own_round,connected!.lookup_inventory_reply,connected!.lookup_datagrams],[1,0,'own',2]);
+  // The log line carries the same record as the download.
+  assert.deepEqual(f.rows().filter(row=>row.event==='station_connection'),f.reporter.report().recent_events.filter(row=>row.event==='station_connection'));
+  assert.ok(f.rows().every(row=>!('lookup' in row)));
+  assert.equal(failed!.schema,2);
+});
+
+test('hostile lookup values are left out, the rest of the record stays (#152)', () => {
+  const hostile = {
+    rounds:100, broadcastTargets:17, broadcastEnabled:'true', sendErrors:-1, datagrams:1.5, otherHeaders:'3',
+    ownReplies:0, ownRound:4, accountReplies:Infinity, foreignReplies:1000, nearReplies:Number.NaN,
+    inventoryReply:'PRIVATE_192.168.1.2', inventoryAddressOnSubnet:1, inventoryAddressShared:null,
+    did:'PRIVATE_DID', address:'192.168.1.2', port:32108, serial:'PRIVATE_SERIAL',
+  } as unknown as StationLookupObservation;
+  const f=collect();
+  f.reporter.prepare(result());
+  f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'lookup',inventoryAddress:true,lookup:hostile});
+  let [row]=f.reporter.report().recent_events.filter(r=>r.event==='station_connection');
+  assert.deepEqual(lookupKeys(row!),['lookup_own_replies']);
+  assert.deepEqual([row!.stage,row!.inventory_address,row!.reason],['lookup',true,'device_request_timeout']);
+  // An own round without an own reply is not reported, nor one out of range.
+  for (const [ownReplies,ownRound,expected] of [[0,3,undefined],[2,100,undefined],[2,99,99]] as const) {
+    const g=collect();
+    g.reporter.prepare(result());
+    g.reporter.station('PRIVATE_BASE','connect','connected',undefined,{stage:'encryption_ready',lookup:{...silentLookup,ownReplies,ownRound}});
+    assert.equal(g.reporter.report().recent_events[0]!.lookup_own_round,expected);
+  }
+  // A value that is no object, or one that cannot be read, adds no field and never throws.
+  const throwing = new Proxy({}, {get:()=>{throw new Error('PRIVATE_TOKEN');}}) as StationLookupObservation;
+  for (const lookup of ['PRIVATE_TOKEN', 7, null, throwing] as unknown as StationLookupObservation[]) {
+    const g=collect();
+    g.reporter.prepare(result());
+    assert.doesNotThrow(()=>g.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'lookup',lookup}));
+    [row]=g.reporter.report().recent_events;
+    assert.deepEqual(lookupKeys(row!),[]);
+    assert.equal(row!.stage,'lookup');
+  }
+  assert.doesNotMatch(JSON.stringify(f.reporter.report())+f.lines.join('\n'),/PRIVATE|192\.168|32108/);
+});
+
+test('a record without a lookup observation has no lookup fields (#152)', () => {
+  const f=collect();
+  f.reporter.prepare(result());
+  f.reporter.station('PRIVATE_BASE','connect','error','connection_busy',{stage:'none'});
+  f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'lookup',inventoryAddress:false});
+  f.reporter.station('PRIVATE_BASE','refresh_state','connected',undefined,{stage:'encryption_ready'});
+  f.reporter.station('PRIVATE_BASE','observation','disconnected');
+  const rows=f.reporter.report().recent_events.filter(row=>row.event==='station_connection');
+  assert.equal(rows.length,4);
+  for (const row of rows) assert.deepEqual(lookupKeys(row),[]);
+});
+
+test('a changed lookup outcome is recorded, changed counts alone repeat the previous record (#152)', () => {
+  const f=collect();
+  f.reporter.prepare(result());
+  const fail=(lookup?:Partial<StationLookupObservation>)=>f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',
+    {stage:'lookup',inventoryAddress:true,...(lookup?{lookup:{...silentLookup,...lookup}}:{})});
+  fail();
+  fail({});
+  fail({rounds:5});
+  fail({rounds:7,broadcastTargets:3});
+  fail({datagrams:4,accountReplies:4});
+  fail({datagrams:9,accountReplies:6});
+  fail({datagrams:9,accountReplies:6,inventoryReply:'account'});
+  // An attempt without an observation repeats the previous failure.
+  fail();
+  f.reporter.station('PRIVATE_BASE','observation','connected');
+  fail({});
+  const rows=f.reporter.report().recent_events.filter(row=>row.event==='station_connection');
+  assert.deepEqual(rows.map(row=>[row.status,row.lookup_datagrams,row.lookup_account_replies,row.lookup_inventory_reply]),[
+    ['error',undefined,undefined,undefined],
+    ['error',0,0,'none'],
+    ['error',4,4,'none'],
+    ['error',9,6,'account'],
+    ['connected',undefined,undefined,undefined],
+    ['error',0,0,'none'],
+  ]);
+  // A connected record with the lookup follows the session's own connected observation.
+  const g=collect();
+  g.reporter.prepare(result());
+  g.reporter.station('PRIVATE_BASE','observation','connected');
+  g.reporter.station('PRIVATE_BASE','connect','connected',undefined,{stage:'encryption_ready',lookup:{...silentLookup,datagrams:1,ownReplies:1,ownRound:0,inventoryReply:'own'}});
+  g.reporter.station('PRIVATE_BASE','observation','connected');
+  assert.deepEqual(g.reporter.report().recent_events.map(row=>[row.phase,row.lookup_own_replies]),[['observation',undefined],['connect',1]]);
 });
 
 test('model codes with a short suffix are reported as received, serials never', () => {

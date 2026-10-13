@@ -48,6 +48,8 @@ _ENUMS = {
     ),
     "phase": set("authentication events connect refresh_state observation".split()),
     "stage": set("none lookup station_found session_open encryption_ready".split()),
+    # The class of the first reply from the inventory address, bridge 0.8.38.
+    "lookup_inventory_reply": set("none own account foreign near".split()),
     "operation": set("inventory login region key_exchange verification".split()),
     "scope": {"public_discovery_result"},
     "baseline": {"present", "absent", "unavailable"},
@@ -71,12 +73,25 @@ _NUMBERS = {
         ).split(),
         (0, 100),
     ),
+    # What the local lookup of a station connection attempt saw, bridge 0.8.38.
+    "lookup_rounds": (0, 99),
+    "lookup_broadcast_targets": (0, 16),
+    "lookup_own_round": (0, 99),
+    **dict.fromkeys(
+        (
+            "lookup_send_errors lookup_datagrams lookup_other_headers "
+            "lookup_own_replies lookup_account_replies lookup_foreign_replies "
+            "lookup_near_replies"
+        ).split(),
+        (0, 999),
+    ),
 }
 _BOOLEANS = set(
     (
         "station_connected owner_connected push_connected available "
         "inventory_available truncated unchanged inventory_address "
-        "experimental_standalone"
+        "experimental_standalone lookup_broadcast_enabled "
+        "inventory_address_on_subnet inventory_address_shared"
     ).split()
 )
 _VERSIONS = set("firmware hardware parent_firmware node".split())

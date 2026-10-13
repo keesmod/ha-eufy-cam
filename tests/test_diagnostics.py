@@ -790,6 +790,97 @@ def test_station_connection_stage_and_suffixed_models_survive_download():
         assert _fields({**row, "model": model})["model"] == "unavailable"
 
 
+_LOOKUP_COUNTS = (
+    "lookup_send_errors lookup_datagrams lookup_other_headers lookup_own_replies "
+    "lookup_account_replies lookup_foreign_replies lookup_near_replies"
+).split()
+
+
+def test_station_connection_lookup_fields_survive_download_within_their_bounds():
+    # Bridge 0.8.38 with client 0.30.0 reports what the attempt's lookup saw (#152).
+    row = {
+        "event": "station_connection",
+        "phase": "connect",
+        "status": "error",
+        "reason": "device_request_timeout",
+        "model": "T8410",
+        "stage": "lookup",
+        "inventory_address": True,
+        "lookup_rounds": 3,
+        "lookup_broadcast_targets": 2,
+        "lookup_broadcast_enabled": True,
+        "lookup_send_errors": 0,
+        "lookup_datagrams": 4,
+        "lookup_other_headers": 1,
+        "lookup_own_replies": 1,
+        "lookup_own_round": 2,
+        "lookup_account_replies": 1,
+        "lookup_foreign_replies": 1,
+        "lookup_near_replies": 0,
+        "lookup_inventory_reply": "account",
+        "inventory_address_on_subnet": False,
+        "inventory_address_shared": True,
+    }
+    assert _fields(row) == row
+    edges = {
+        "lookup_rounds": 99,
+        "lookup_broadcast_targets": 16,
+        "lookup_own_round": 99,
+        **dict.fromkeys(_LOOKUP_COUNTS, 999),
+    }
+    assert _fields({**row, **edges}) == {**row, **edges}
+    for reply in ("none", "own", "account", "foreign", "near"):
+        assert _fields({**row, "lookup_inventory_reply": reply}) == {
+            **row,
+            "lookup_inventory_reply": reply,
+        }
+    integers = [-1, 1.0, "3", True, None, [1], {"value": 1}]
+    hostile = {
+        "lookup_rounds": [100, *integers],
+        "lookup_broadcast_targets": [17, *integers],
+        "lookup_own_round": [100, *integers],
+        **{key: [1000, 2**53, *integers] for key in _LOOKUP_COUNTS},
+        **{
+            key: [1, 0, "true", "PRIVATE", None, [True]]
+            for key in (
+                "lookup_broadcast_enabled",
+                "inventory_address_on_subnet",
+                "inventory_address_shared",
+            )
+        },
+        "lookup_inventory_reply": ["NONE", "own ", "PRIVATE_192.168.1.2", 1, None],
+    }
+    for key, values in hostile.items():
+        for value in values:
+            assert _fields({**row, key: value}) == {**row, key: None}, (key, value)
+    # An older bridge sends none of them, and none are added.
+    stage_only = {
+        key: value
+        for key, value in row.items()
+        if not key.startswith(("lookup_", "inventory_address_"))
+    }
+    assert _fields(stage_only) == stage_only
+    # The observation never arrives as an object, and unknown lookup keys are dropped.
+    result = support_report(
+        {
+            "schema": 2,
+            "generated_at": STAMP,
+            "last_discovery": [],
+            "recent_events": [
+                {
+                    **row,
+                    "lookup": {"did": "PRIVATE_DID", "address": "192.168.1.2"},
+                    "lookup_did": "PRIVATE_DID",
+                    "lookup_address": "192.168.1.2",
+                }
+            ],
+        }
+    )
+    assert result["recent_events"] == [row]
+    assert "PRIVATE" not in json.dumps(result)
+    assert "192.168" not in json.dumps(result)
+
+
 def test_unhyphenated_catalogue_codes_survive_download_but_serials_never():
     # Issue #149: a rejected Indoor Cam row showed only "unavailable".
     for model in ("T8410C", "T8160-C", "T8W11C", "T8419N", "T8410AB", "T8410ABC"):
