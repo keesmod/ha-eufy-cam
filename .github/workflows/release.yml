@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Stable version from the package metadata, without v
+        description: Release version from the repository metadata (X.Y.Z or X.Y.Z-beta.N), without v
         type: string
         required: true
       publish:

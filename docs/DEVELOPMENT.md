@@ -1,6 +1,13 @@
 # Development
 
-The app's `src`, package manifests and `tsconfig.json` are generated from `bridge` by `scripts/prepare_ha_app.py`. Edit the files in `bridge`, then run that script to update the app build files.
+Edit the bridge in `bridge/` and the other app files in `app/`: `app_config.json` (the app configuration without a version), `Dockerfile`, `bootstrap.mjs`, `README.md` and `CHANGELOG.md`. `scripts/prepare_ha_app.py` generates the store folders `ha_app/` and `ha_app_beta/` from both. They stay frozen between releases, see [store folders](RELEASING.md#store-folders-and-what-a-merge-publishes).
+
+The generator inserts the bridge version into `config.json`. The beta channel gets its own slug, name, stage and description and a notice at the top of `README.md`. In the store `CHANGELOG.md`, the folder version's section starts with the exact `## <version>` line that Home Assistant uses for update notes. To build the candidate app locally, stage it into the ignored `artifacts/` folder:
+
+```sh
+python3 scripts/prepare_ha_app.py --stage
+docker build -t eufy-viewer-app:test artifacts/ha_app/eufy_viewer_bridge
+```
 
 Baseline: Python 3.14.2+, Node 24+, FFmpeg. Tests run against Home Assistant 2026.10.0. The minimum supported release stays 2026.9.0. Dependencies are locked in `uv.lock`, `bridge/package-lock.json` and `frontend/package-lock.json`.
 
@@ -42,17 +49,13 @@ Edit `frontend/eufy-viewer-card.ts`, `frontend/eufy-events-card.ts` or their sha
 
 ## Pull requests and releases
 
-For a change that users need to receive through an update, include the version
-bump, changelog entry and installation or upgrade instructions in the PR. Name
-the affected components and their target versions. Documentation-only changes
-can state that no release is needed.
-
-For integration or bundled-card changes, keep the version in
-`custom_components/eufy_viewer/manifest.json`, `pyproject.toml` and the project's
-`uv.lock` entry aligned. Update the card resource examples to that version.
-Only bump the bridge when it changes; keep its package files, generated app
-files, `ha_app/config.json` and app changelog aligned. For an integration-only
-release, state which existing bridge version to use.
+For a change that users need to receive through an update, set the candidate
+versions and add the changelog entry and installation or upgrade instructions in
+the PR, following the [candidate rules](RELEASING.md#versions-and-candidates).
+Name the affected components and their target versions. Only change the bridge
+version when the bridge changes. For an integration-only change, state which
+existing bridge version to use. Documentation-only changes can state that no
+release is needed.
 
 The required `ci` check covers release metadata, workflow validation, HA tests,
 HACS, hassfest, app packaging, bridge tests, the card and verified release ZIPs.
@@ -60,9 +63,64 @@ After merging, verify it on `main`. Use **Actions → Release** for a rehearsal 
 then explicit publication. See [the release flow](RELEASING.md) for the complete
 procedure, checksums, acceptance evidence and failed-run recovery.
 
-Merging a PR does not publish a release. HACS users receive a version after the
-Release workflow publishes and verifies it. Pure CI/documentation changes do not
-need a new product version or a Home Assistant deployment.
+Merging a runtime PR publishes nothing. HACS users receive a version after the
+Release workflow publishes and verifies it. Only a stable release PR or a beta
+cut changes a store folder and so updates an app. Pure CI/documentation changes
+do not need a new product version or a Home Assistant deployment.
+
+## Maintainer bench
+
+The maintainer checks each stable release on a Home Assistant OS bench running
+the stable app with slug `e35bd336_eufy_viewer_bridge`. After the release PR
+merges, back up the app, then reload the store and update it:
+
+```sh
+ha backups new --app e35bd336_eufy_viewer_bridge --name "eufy-viewer-bridge before X.Y.Z"
+ha store reload
+ha apps update e35bd336_eufy_viewer_bridge
+ha apps logs e35bd336_eufy_viewer_bridge
+```
+
+The log's `Eufy discovery:` summary should list the expected cameras and
+stations. Once the GitHub release is public, select **Update information** for
+the repository in HACS, update the integration and restart Home Assistant.
+
+To test the beta app against the existing integration entry, the bench copies
+only the stable app's bridge identity into the beta app. This is for the
+maintainer bench only. Users follow [beta testing](INSTALLATION.md#beta-testing)
+with a separate entry. Never copy credentials or sessions. The beta app signs in
+to Eufy on its own.
+
+Supervisor 2026.07.4 and later names app containers `app_<slug>`, previously
+`addon_<slug>`. Confirm the names with
+`docker ps --format '{{.Names}}' | grep eufy_viewer_bridge`.
+
+1. Back up Home Assistant and both apps. Read the identity from the running
+   stable app. Stop here if the check reports no identity:
+
+   ```sh
+   ID=$(docker exec app_e35bd336_eufy_viewer_bridge cat /data/eufy/bridge-id)
+   test -n "$ID" || echo "No bridge identity was read. Stop here."
+   ```
+
+2. Turn off **Start on boot** on the stable app and stop it. Start the beta app
+   once with the same configuration and token, so that it creates `/data/eufy`.
+3. Replace the beta app's identity, owned by uid 1000 with mode 600, and
+   restart it. The copy runs only with a non-empty `ID`:
+
+   ```sh
+   test -n "$ID" &&
+     printf %s "$ID" | docker exec -i app_e35bd336_eufy_viewer_bridge_beta sh -c \
+       'umask 077 && cat > /data/eufy/bridge-id.new && chown 1000:1000 /data/eufy/bridge-id.new && mv /data/eufy/bridge-id.new /data/eufy/bridge-id'
+   ha apps restart e35bd336_eufy_viewer_bridge_beta
+   ```
+
+4. The existing entry now reaches the beta app. It asks to reauthenticate,
+   because the beta app has no Eufy session yet.
+
+To return, turn off **Start on boot** on the beta app and stop it, then start
+the stable app with **Start on boot** on. The entry reconnects with the same
+identity. Reauthenticate if Home Assistant asks.
 
 ## Real WebRTC acceptance tests
 
@@ -205,7 +263,7 @@ capabilities as separate evidence.
 For a new field, record its source, purpose, sensitivity, validation bounds,
 missing-value meaning and required component versions. Update the appropriate
 library API docs, this contract and the collection guide. Change canonical bridge
-source first and regenerate `ha_app` with `scripts/prepare_ha_app.py`.
+source in `bridge/`. The store folders follow at the next release or beta cut.
 
 Test the public-library to bridge/logger/download path and the independent HA
 filter. Cover hostile values, missing context, anonymous correlation, accepted

@@ -1,0 +1,28 @@
+{
+  "name": "Eufy Security Viewer Bridge",
+  "slug": "eufy_viewer_bridge",
+  "description": "Lokale Eufy-camera bridge met kijkersbewaking en stoppen bij sluiten",
+  "url": "https://github.com/keesmod/ha-eufy-cam",
+  "arch": [
+    "amd64",
+    "aarch64"
+  ],
+  "startup": "application",
+  "boot": "manual",
+  "init": false,
+  "host_network": true,
+  "timeout": 20,
+  "options": {
+    "token": "",
+    "diagnostics": false
+  },
+  "schema": {
+    "token": "password",
+    "backend": "str?",
+    "diagnostics": "bool?",
+    "live_max_bitrate": "str?",
+    "live_max_streams_per_station": "int(1,4)?",
+    "live_max_seconds_mains": "int(120,3600)?",
+    "experimental_standalone": "bool?"
+  }
+}

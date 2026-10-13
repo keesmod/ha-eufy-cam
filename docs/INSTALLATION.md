@@ -1,7 +1,9 @@
 # Detailed installation and troubleshooting
 
-Return to the [quick start](../README.md). Existing installations should follow
-the [upgrade and recovery guide](MEGA_MIGRATION.md) before changing the bridge.
+Return to the [quick start](../README.md). To update an existing installation,
+follow the [upgrade steps](../README.md#upgrading). Installations from before
+0.8.0 follow the [upgrade and recovery guide](MEGA_MIGRATION.md) before changing
+the bridge.
 
 
 Choose **one** bridge installation method, then install the integration and cards.
@@ -25,7 +27,7 @@ The bridge comes from the Home Assistant **app store**, separate from HACS. Olde
    https://github.com/keesmod/ha-eufy-cam
    ```
 
-3. Find **Eufy Security Viewer Bridge** in the new repository and select **Install**. The first installation builds the container and can take several minutes.
+3. Find **Eufy Security Viewer Bridge** in the new repository and select **Install**. The first installation builds the container and can take several minutes. The repository can also list **Eufy Security Viewer Bridge (beta)**, marked **Experimental**. Install it only for [beta testing](#beta-testing).
 4. Open the app's **Configuration** tab. Set `token` to a unique, randomly generated secret of at least 32 characters, then save. A password manager can generate one. This token connects Home Assistant to the bridge, it is separate from your Eufy password. Keep it for step 2.
 5. Start the app and enable **Start on boot**. Check its **Logs** tab if it fails to start.
 6. The current HAOS app uses the bridge URL `http://127.0.0.1:8063`. It shares the HA host network and listens only on loopback. Older apps used `http://HOSTNAME:8080`, reconfigure the existing integration entry when upgrading.
@@ -104,6 +106,52 @@ Live WebRTC video uses Home Assistant's [go2rtc integration](https://www.home-as
 For missing devices or failed setup, follow the [diagnostic collection guide](DISCOVERY_DIAGNOSTICS.md) for required versions, a complete startup excerpt or one HA download, and privacy checks.
 
 If the problem remains, [report a bug](https://github.com/keesmod/ha-eufy-cam/issues/new?template=bug_report.yml) with your HA installation type, both component versions and the error. Follow the [support guidance](../.github/SUPPORT.md) before sharing logs.
+
+## Beta testing
+
+Betas are prereleases such as `v0.8.47-beta.1` for opt-in testing before a stable release. They can still contain faults. Their [release notes](https://github.com/keesmod/ha-eufy-cam/releases) name the issues they address and the bridge version they need. Test a beta only with a recent backup, and report the result on that issue.
+
+### Integration beta through HACS
+
+1. Open **HACS**, find **Eufy Security Viewer**, open its three-dot menu and select **Redownload**.
+2. Open **Need a different version?**, select the pre-release tag and download it. Restart Home Assistant.
+
+Alternatively, enable the **Pre-release** switch entity. HACS creates it disabled on the repository's device in the HACS integration. While it is on, HACS offers betas as updates. HACS refreshes custom repositories every 48 hours. To see a new beta sooner, select **Update information** in the repository's three-dot menu.
+
+To return, first turn off the **Pre-release** switch if you turned it on, so HACS stops offering betas. Turning it off does not downgrade an installed beta. Then redownload and select the stable tag, or wait for the stable release, which HACS offers as an update. A beta that changes only the integration works with the stable app. When its notes name a newer bridge, use the beta app below.
+
+### Beta bridge app
+
+The app store repository can also offer **Eufy Security Viewer Bridge (beta)**. It is a separate app with its own `/data`, Eufy session and bridge identity. It updates when a beta brings a new bridge version, and at a stable release that brings a new bridge. After a stable release it runs that stable bridge until the next beta with a new bridge. Both apps listen on `127.0.0.1:8063`, so never run both. Install the beta integration together with the beta app.
+
+The existing integration entry does not accept the beta app. It fails with "Cannot connect", and **Reconfigure** reports that the endpoint belongs to a different bridge. The beta app gets its own integration entry instead.
+
+To switch to the beta app:
+
+1. Back up Home Assistant, including the stable app.
+2. In the stable app, turn off **Start on boot** and select **Stop**.
+3. Open **Settings → Devices & services → Eufy Security Viewer**. In the three-dot menu of the existing entry, select **Disable**. Do not delete it. It is your way back.
+4. Install **Eufy Security Viewer Bridge (beta)**. Give it the same configuration as the stable app, including the same `token`. Start it and turn on **Start on boot**.
+5. Install the beta integration through HACS as described above and restart Home Assistant.
+6. Select **Add integration → Eufy Security Viewer**. Enter `http://127.0.0.1:8063` and the token, then sign in with your Eufy account. Your camera entities keep their entity IDs.
+
+To return to the stable app:
+
+1. In the beta app, turn off **Start on boot** and select **Stop**.
+2. Disable the beta integration entry.
+3. Turn off the **Pre-release** switch if you turned it on, then redownload the stable integration tag in HACS and restart Home Assistant.
+4. Start the stable app and turn on **Start on boot**.
+5. Enable the original entry. Reauthenticate with Eufy if Home Assistant asks.
+
+### Docker beta
+
+A Docker bridge keeps its data volume and identity, so the existing integration entry stays. Follow the [Docker update steps](DOCKER.md#update-the-docker-bridge) with the beta tag, or start from a new checkout:
+
+```sh
+git clone --branch v0.8.47-beta.1 --depth 1 https://github.com/keesmod/ha-eufy-cam.git
+```
+
+Keep the previous image and the volume backup to return to the stable bridge.
 
 
 

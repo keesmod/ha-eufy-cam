@@ -1233,7 +1233,7 @@ previous files to roll back, preserving bridge data and Home Assistant identitie
   Back up both components before installation and restore their previous files
   to roll back, preserving credentials and entity identities.
 
-## 0.8.11 - Unreleased
+## 0.8.11 - 2026-09-14
 
 - Restore the software live encoder defaults by removing the 4 Mbit/s target,
   maximum rate and 1 Mbit VBV limit introduced in the previous candidate.

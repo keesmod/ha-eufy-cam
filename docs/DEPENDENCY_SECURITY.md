@@ -1,12 +1,21 @@
 # Dependency security
 
-The **Dependency security** workflow audits all locked npm packages in `bridge`, `ha_app` and `frontend`,
+The **Dependency security** workflow audits all locked npm packages in `bridge` and `frontend`,
 including direct, transitive, development, optional and peer dependencies.
 It also audits every package in the Python `uv.lock`, including all platform
 entries, against the OSV database.
 It runs daily at 05:17 UTC and can be started manually from Actions.
 Validate calls the same workflow for each PR, push and release run.
 The required `ci` check and release packaging depend on its success.
+
+The store folders `ha_app` and, when present, `ha_app_beta` are audited only in
+the workflow's own daily and manual runs. They change only in a release PR or
+beta cut, so an advisory there must not block other PRs. A called workflow
+sees its caller's name, so Validate and Release runs skip these steps and the
+job still succeeds. Renaming the workflow disables this audit. Fix a reported
+advisory in `bridge`. The store folders follow at the next release or beta cut
+that changes the bridge version. For a development-only fix, the release PR
+raises the bridge as described in [the release guide](RELEASING.md#batch-release-run).
 
 The audit reads the lockfile without installing packages or executing their
 lifecycle scripts. Any reported vulnerability or audit error fails the check.
@@ -32,13 +41,13 @@ independent of the weekly version-update schedule, its cooldown and PR limit.
 
 ## Weekly version updates
 
-Dependabot checks all three npm package roots every Monday at 09:00
+Dependabot checks the `bridge` and `frontend` npm package roots every Monday at 09:00
 `Europe/Amsterdam`. It proposes patch and minor updates that have been published
 for at least seven days, with at most five open version-update PRs. Regular major
 upgrades require separate manual review and are not proposed by this flow.
 
 The version group uses `group-by: dependency-name` to update the same dependency
-across the bridge, app and frontend together when their constraints allow it.
+across the bridge and frontend together when their constraints allow it.
 Security fixes keep their existing group. The `allow.update-types` restriction
 and cooldown apply only to ordinary version updates; they do not suppress a
 security fix that requires a major upgrade. See [GitHub's Dependabot options](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference).
@@ -48,19 +57,20 @@ on Home Assistant remain controlled steps. Neither the daily security audit nor
 the required CI and release gates are relaxed for Dependabot.
 
 For any dependency PR, review the changes and applicable advisories, preserve exact
-lockfile integrity, and complete [the normal release requirements](RELEASING.md).
-Production dependency changes require the bridge and integration version bumps,
-changelog and appropriate acceptance tests. Keep `bridge` canonical and
-regenerate the app with `python3 scripts/prepare_ha_app.py`; generated-file
-checks remain mandatory even for bot PRs. Regenerate the frontend build when its
-dependencies change. A bot PR may need these generated files, version bumps and
-release notes before its checks pass.
+lockfile integrity, and follow [the Dependabot rules](RELEASING.md#dependabot).
+Development-only updates merge as they are once CI passes. Production dependency
+changes need bridge and integration candidates, changelog lines and appropriate
+acceptance tests, so an agent PR supersedes the bot PR. Keep `bridge` canonical.
+Dependency PRs never regenerate the store folders, and security PRs against
+them are closed. A frontend update that changes the rebuilt card bundle is
+handled like a production update.
 
 The GitHub-hosted Mega tarball stays pinned to an exact release and checksum.
 It has no npm registry entry, so Dependabot's version resolver gets a 404 if it
 tries to update `@keesmod/eufy-mega-client` as an npm package. That package is
 excluded from ordinary Dependabot version proposals. A change to Mega itself
-must be released in its own repository first, then pinned and tested here.
+must be released in its own repository first, then pinned with
+`scripts/bump_client.py` and tested here.
 The full lockfile security audit, library repository scans, and required release
 URL/integrity checks still apply. No advisory is dismissed by this configuration.
 

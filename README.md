@@ -142,6 +142,10 @@ For installations already on 0.8.0 or newer:
 Keep your existing integration, token, bridge data and backup. Do not run two
 Eufy Security Viewer bridges for the same installation at once.
 
+Home Assistant offers a bridge app update only with a stable release, together
+with the integration update in HACS. Want to test a fix before its release? See
+[beta testing](docs/INSTALLATION.md#beta-testing).
+
 ## Compatibility and help
 
 You can install or upgrade without maintainer test results for your exact

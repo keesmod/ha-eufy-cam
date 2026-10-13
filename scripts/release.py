@@ -1,7 +1,31 @@
 """Release checks and immutable GitHub publication. Uses only Python's stdlib.
 
-The common driver is also kept in ha-eufy-cam; repository details live in
-release_project.py. Keep driver fixes and their tests in sync in both repos.
+This driver, scripts/tests/test_release.py, scripts/check_workflows.py and
+.github/workflows/release.yml are byte-identical in eufy-mega-client and
+ha-eufy-cam. Keep driver fixes and their tests in sync in both repos. Release
+versions are X.Y.Z or X.Y.Z-beta.N. A beta is published as a GitHub prerelease
+that never becomes the latest release.
+
+Repository details live in release_project.py, which provides these hooks.
+Each raises ValueError when a rule fails.
+
+- metadata(root): component versions, including "repository" and the release
+  "version". They become the manifest components.
+- changelog(root, version): the substantive release notes. A beta version
+  reads the section of its X.Y.Z stable part.
+- check_changes(root, base, meta): pull request rules against the base commit.
+- check_release(root, meta): rules for an explicitly requested release
+  (preflight, rehearsal and publication).
+- runtime_changed(root, rev): whether shipped runtime differs between rev and
+  HEAD. Used by the main push backstop, which needs a checkout with tags.
+- asset_names(meta): the release archive names.
+- build(root, folder): writes those archives into folder.
+- verify_archives(folder, meta): checks the archive contents.
+
+release_project.py must not import this module at module level, because this
+module imports it before its own definitions exist. Hooks may import release
+inside a function to use parse_version, version_key, is_prerelease,
+stable_part, GitHub and published.
 """
 
 import argparse
@@ -18,7 +42,9 @@ from urllib.parse import quote
 import release_project as project
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = re.compile(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)")
+VERSION = re.compile(
+    r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-beta\.([1-9][0-9]*))?"
+)
 COMMIT = re.compile(r"[0-9a-f]{40}")
 
 
@@ -39,27 +65,80 @@ def command(*args, cwd=ROOT, input=None):
     ).stdout.strip()
 
 
-def version_tuple(version):
-    require(
-        isinstance(version, str) and VERSION.fullmatch(version),
-        "Use a stable X.Y.Z version",
+def parse_version(version):
+    """Return (major, minor, patch, beta), with beta None for X.Y.Z."""
+    match = isinstance(version, str) and VERSION.fullmatch(version)
+    require(match, "Use an X.Y.Z or X.Y.Z-beta.N version")
+    major, minor, patch, beta = match.groups()
+    return int(major), int(minor), int(patch), None if beta is None else int(beta)
+
+
+def version_key(version):
+    """Semver precedence: X.Y.Z-beta.N sorts below X.Y.Z."""
+    major, minor, patch, beta = parse_version(version)
+    return (major, minor, patch) + ((1, 0) if beta is None else (0, beta))
+
+
+def is_prerelease(version):
+    return parse_version(version)[3] is not None
+
+
+def stable_part(version):
+    major, minor, patch, _ = parse_version(version)
+    return f"{major}.{minor}.{patch}"
+
+
+def published(github, version):
+    """Whether a tag or any release uses v<version>.
+
+    Errors other than 404 are fatal. Drafts are listed only to callers with
+    push access.
+    """
+    parse_version(version)
+    tag = "v" + version
+    return github.tag_commit(tag) is not None or github.release(tag) is not None
+
+
+def check_push_backstop(root, version):
+    """Reject a main push that adds runtime changes under a tagged version.
+
+    PR checks pass while the version is unpublished, and another run may
+    publish it before the merge. A tag at HEAD keeps reruns green.
+    """
+    tag = "v" + version
+    if command("git", "tag", "--list", tag, cwd=root) != tag:
+        return
+    tagged = command(
+        "git", "rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}", cwd=root
     )
-    return tuple(map(int, version.split(".")))
+    require(
+        tagged == command("git", "rev-parse", "HEAD", cwd=root)
+        or not project.runtime_changed(root, tagged),
+        f"Runtime changes were merged under published version {version}; "
+        "open a PR that raises the version",
+    )
 
 
 def metadata(root=ROOT, requested=None, base=None):
     result = project.metadata(root)
-    version_tuple(result["version"])
+    parse_version(result["version"])
     if requested is not None:
-        version_tuple(requested)
+        parse_version(requested)
         require(
             result["version"] == requested,
             "Requested version differs from repository metadata",
         )
     project.changelog(root, result["version"])
+    if requested is not None:
+        project.check_release(root, result)
     if base:
         require(COMMIT.fullmatch(base), "Invalid base commit")
         project.check_changes(root, base, result)
+    elif (
+        os.environ.get("GITHUB_EVENT_NAME") == "push"
+        and os.environ.get("GITHUB_REF") == "refs/heads/main"
+    ):
+        check_push_backstop(root, result["version"])
     return result
 
 
@@ -222,15 +301,28 @@ class GitHub:
         if result is not None:
             return self.remember_release(tag, result)
         # Only initial discovery of an existing release needs tag/list lookup.
+        for candidate in self.releases():
+            if candidate["tag_name"] == tag:
+                self.remember_release(tag, candidate)
+                return self.release(tag)
+        return None
+
+    def releases(self):
+        """Yield every release page by page, drafts included for push access."""
         page = 1
         while True:
             releases = self.api(f"/releases?per_page=100&page={page}")
-            for candidate in releases:
-                if candidate["tag_name"] == tag:
-                    self.remember_release(tag, candidate)
-                    return self.release(tag)
+            require(
+                isinstance(releases, list)
+                and all(
+                    isinstance(r, dict) and isinstance(r.get("tag_name"), str)
+                    for r in releases
+                ),
+                "Invalid release inventory",
+            )
+            yield from releases
             if len(releases) < 100:
-                return None
+                return
             page += 1
 
     def download(self, tag, folder):
@@ -259,6 +351,7 @@ class GitHub:
     def create(self, tag, commit, notes):
         # Keep the POST response, including the authoritative release ID. Never
         # retry creation: an uncertain response requires inspection on rerun.
+        prerelease = is_prerelease(tag.removeprefix("v"))
         result = self.api(
             "/releases",
             {
@@ -267,13 +360,13 @@ class GitHub:
                 "name": tag,
                 "body": notes.read_text(),
                 "draft": True,
-                "prerelease": False,
+                "prerelease": prerelease,
             },
         )
         self.remember_release(tag, result)
         require(
             result.get("draft") is True
-            and result.get("prerelease") is False
+            and result.get("prerelease") is prerelease
             and result.get("target_commitish") == commit,
             "Created release does not match the draft candidate",
         )
@@ -294,12 +387,19 @@ class GitHub:
         )
 
     def publish(self, tag):
+        # A beta never replaces the latest stable release.
+        prerelease = is_prerelease(tag.removeprefix("v"))
         result = self.api(
             "/releases/" + str(self.release_ids[tag]),
-            {"draft": False, "make_latest": "true"},
+            {"draft": False, "make_latest": "false" if prerelease else "true"},
             method="PATCH",
         )
-        return self.remember_release(tag, result)
+        self.remember_release(tag, result)
+        require(
+            result.get("prerelease") is prerelease,
+            "Published release has the wrong prerelease flag",
+        )
+        return result
 
 
 def check_remote(github, meta, commit):
@@ -316,16 +416,24 @@ def check_remote(github, meta, commit):
     release = github.release(tag)
     if release:
         require(
-            tagged == commit and not release["prerelease"],
-            "Existing release does not match this stable candidate",
+            tagged == commit
+            and release.get("prerelease") is is_prerelease(meta["version"]),
+            "Existing release does not match this candidate's commit or prerelease flag",
         )
-    latest = github.api("/releases/latest", missing=True)
-    if latest and latest["tag_name"] != tag:
-        require(
-            version_tuple(meta["version"])
-            > version_tuple(latest["tag_name"].removeprefix("v")),
-            "New stable releases must advance the latest version",
-        )
+    # Every public release counts, prereleases included. Tags outside the
+    # version grammar are ignored.
+    others = [
+        r["tag_name"][1:]
+        for r in github.releases()
+        if r.get("draft") is not True
+        and r["tag_name"] != tag
+        and r["tag_name"].startswith("v")
+        and VERSION.fullmatch(r["tag_name"][1:])
+    ]
+    require(
+        all(version_key(meta["version"]) > version_key(v) for v in others),
+        "New releases must advance the highest published version",
+    )
     return tag, release
 
 
@@ -361,6 +469,11 @@ def release_notes(meta, commit, acceptance):
         ),
         body,
     )
+    if is_prerelease(meta["version"]):
+        body = (
+            f"This is a prerelease of {stable_part(meta['version'])} "
+            "for opt-in testing.\n\n" + body
+        )
     return (
         body + f"\n\nSource commit: `{commit}`\n\nValidation: {acceptance.strip()}\n\n"
         "Download checksums and exact component versions are included in the release assets.\n"
@@ -431,7 +544,7 @@ def publish(folder, requested, manifest_digest, acceptance, github=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("action", choices=["check", "build", "verify", "publish"])
     parser.add_argument("--version")
     parser.add_argument("--base")
