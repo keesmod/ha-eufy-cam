@@ -23,7 +23,8 @@
   start command reached the camera, for example a standalone camera on the
   experimental route that does not complete its connection
   ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). Until now
-  such a camera stayed in `stopping` until a bridge restart. It could not be
+  a camera that never connects stayed in `stopping` until a bridge restart,
+  because its recovery attempt could not connect either. It could not be
   started again, recording requests on every camera were refused with
   `live_stopping`, and new live starts on other cameras were refused while its
   recovery attempt ran. A start that fails after the start command keeps the

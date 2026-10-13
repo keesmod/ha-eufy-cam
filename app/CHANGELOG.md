@@ -12,10 +12,10 @@
 - Release a camera at once when its live start fails before the client library
   reported `start_issued`, for example a standalone camera on the experimental
   route that does not complete its connection
-  ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). Such a
-  camera no longer stays in `stopping` until a bridge restart, so it can be
-  started again, recording requests are no longer refused with `live_stopping`
-  and no recovery attempt blocks other live starts. After `start_issued` a
+  ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). A camera
+  that never connects no longer stays in `stopping` until a bridge restart, so
+  it can be started again, recording requests are no longer refused with
+  `live_stopping` and no recovery attempt blocks other live starts. After `start_issued` a
   failed start keeps the quarantine until the device confirms its stop.
 
 Upgrade: keep the same token and session. Update the integration to 0.8.47 to
