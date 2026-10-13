@@ -6,9 +6,10 @@ action, loaded-card versions, recording evidence and missing/stale indicators.
 For a live view that switches to `Live video without sound`, integration 0.8.9
 adds `live_playback` to the Home Assistant integration diagnostic download.
 After one attempt, close the view and download diagnostics from the integration's
-three-dot menu. This also supplies the numeric integration and HA versions.
-No bridge restart, session reset or repeated login is needed to collect this
-report. The card must have loaded the updated integration resource.
+three-dot menu. This also supplies the integration and HA versions. Since
+integration 0.8.47 a beta integration version such as `0.8.47-beta.1` appears
+as received. No bridge restart, session reset or repeated login is needed to
+collect this report. The card must have loaded the updated integration resource.
 
 The report keeps the last eight WebRTC attempts per integration in memory.
 The download includes an attempt for the bridge's configured live session cap
