@@ -264,9 +264,11 @@ without an inventory address, and `inventory_address_on_subnet` also when the
 host's interfaces cannot be read. None of the values proves a cause on its own.
 Integration 0.8.47 adds at most one fixed sentence to the `owner_connection` or
 `standalone_connection` finding of an attempt that failed at `lookup`, and keeps
-the previous text without the fields. Integration 0.8.46 or older drops the
-fields, and bridge 0.8.37 or older sends none. The schema stays `2` because the
-fields are additive.
+the previous text without the fields. When that sentence names a near reply for
+a HomeBase, the `owner_connection` finding also leaves out "The bridge host did
+not reach the HomeBase on its LAN", because a reply did reach the bridge.
+Integration 0.8.46 or older drops the fields, and bridge 0.8.37 or older sends
+none. The schema stays `2` because the fields are additive.
 
 ### Bounds and compatibility
 

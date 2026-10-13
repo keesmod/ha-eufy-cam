@@ -29,8 +29,9 @@
   assessment adds one fixed sentence on what the lookup saw. Examples are that
   no reply of any kind reached the bridge, that the device at the inventory LAN
   address answered with an ID outside this account, or that other devices in
-  this account answered the broadcast but this camera did not. Without these
-  fields the text stays the same.
+  this account answered the broadcast but this camera did not. For a HomeBase
+  with a near reply it no longer says the bridge host did not reach the
+  HomeBase. Without these fields the text stays the same.
 - Bridge 0.8.38 releases a camera at once when its live start fails before the
   start command was issued, for example a standalone camera on the
   experimental route that does not complete its connection
