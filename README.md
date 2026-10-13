@@ -242,3 +242,9 @@ still depend on the model and connection. See [known results and limitations](do
 For more detail: [events and notifications](docs/NOTIFICATIONS.md),
 [playback and recovery](docs/USAGE.md), [development](docs/DEVELOPMENT.md),
 and [release process](docs/RELEASING.md).
+
+## Support this project
+
+If this project is useful to you, consider
+[buying me a coffee](https://buymeacoffee.com/keesmod) to support its maintenance
+and development. Contributions are optional.
