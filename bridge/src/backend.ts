@@ -124,7 +124,11 @@ export interface Backend extends EventEmitter {
   inventory(): CameraInfo[];
   hasCamera(serial: string): boolean;
   canStartLive(serial: string): LiveAdmission;
-  /** `onProgress` receives the library's start stages for the camera's live video row. */
+  /**
+   * `onProgress` receives the library's start stages for the camera's live video
+   * row. It must report `start_issued` before START reaches the device, because
+   * the live hub releases a camera whose start failed without that stage.
+   */
   startLive(serial: string, maxDurationMs?: number, onProgress?: (progress: LiveStartProgress) => void): Promise<void>;
   /** Upper bound in milliseconds for one live session of this camera, 120000 unless the backend allows more. */
   liveBoundMs?(serial: string): number;

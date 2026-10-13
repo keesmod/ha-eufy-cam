@@ -19,6 +19,15 @@
 - Bridge 0.8.38 reports its own and the client library's beta versions the same
   way in its `Eufy discovery:` log lines. The client pin stays 0.29.2 and the
   report schema stays 2.
+- Bridge 0.8.38 releases a camera at once when its live start fails before the
+  start command reached the camera, for example a standalone camera on the
+  experimental route that does not complete its connection
+  ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). Until now
+  such a camera stayed in `stopping` until a bridge restart. It could not be
+  started again, recording requests on every camera were refused with
+  `live_stopping`, and new live starts on other cameras were refused while its
+  recovery attempt ran. A start that fails after the start command keeps the
+  existing quarantine until the device confirms its stop.
 
 Upgrade: update the HACS integration to 0.8.47 and the bridge app to 0.8.38,
 then restart Home Assistant. Keep the same token and session. No configuration

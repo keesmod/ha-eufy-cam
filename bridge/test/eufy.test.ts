@@ -242,6 +242,34 @@ test('a start without media keeps the library\'s start stages in the camera\'s l
   }
 });
 
+test('a failed start releases the camera only when the library never issued START', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'eufy-viewer-test-'));
+  const backend = fixtureBackend();
+  let issue = false;
+  // A camera that never connects fails before START. After START the device
+  // may be streaming, so the camera waits for a confirmed stop.
+  backend.startLive = async (_serial, _bound, onProgress) => {
+    if (issue) for (const stage of ['session_ready', 'start_issued'] as const) onProgress?.({ stage, elapsedMs: 1 });
+    throw new Error('device_request_timeout');
+  };
+  const bridge = new Eufy(new Storage(directory), 'mega', false, () => backend);
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  try {
+    await bridge.login({ username: 'test@example.invalid', password: 'fixture-only', country: 'NL' });
+    bridge.hub.attach('CAM1', { bufferedAmount: 0, send: () => {}, close: () => {} });
+    await settle();
+    assert.equal(bridge.hub.quarantined, 0);
+    assert.equal(bridge.supportReport().live_video![0]!.state, 'failed');
+    issue = true;
+    assert.equal(bridge.hub.attach('CAM1', { bufferedAmount: 0, send: () => {}, close: () => {} }), true);
+    await settle();
+    assert.equal(bridge.hub.quarantined, 1);
+    bridge.hub.stopped('CAM1');
+  } finally {
+    await bridge.close(); await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('refusing reauthentication during a viewer leaves the connected session intact', async () => {
   const bridge = new Eufy(new Storage('/unused'));
   bridge.auth = { state: 'connected' };
