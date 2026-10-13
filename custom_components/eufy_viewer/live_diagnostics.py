@@ -11,7 +11,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
-from .recording_diagnostics import version
+from .recording_diagnostics import release_version
 
 # Late audio evidence per attempt: the furthest fixed stage reached, in order,
 # and the first fixed reason it ended while its video session continued.
@@ -120,7 +120,7 @@ def browser_report(raw: Any) -> dict[str, Any]:
         return {}
     result: dict[str, Any] = {}
     if "card_version" in raw:
-        result["card_version"] = version(raw["card_version"])
+        result["card_version"] = release_version(raw["card_version"])
     for key, values in ENUMS.items():
         value = raw.get(key)
         if isinstance(value, str) and value in values:
@@ -144,7 +144,7 @@ def browser_report(raw: Any) -> dict[str, Any]:
         vol.Required("type"): "eufy_viewer/live_diagnostics",
         vol.Required("subscription"): vol.All(int, vol.Range(min=1)),
         vol.Required("report"): {
-            vol.Optional("card_version"): vol.All(str, vol.Length(max=19)),
+            vol.Optional("card_version"): vol.All(str, vol.Length(max=24)),
             **{vol.Optional(key): vol.In(values) for key, values in ENUMS.items()},
             **{
                 vol.Optional(key): vol.All(int, vol.Range(min=low, max=high))

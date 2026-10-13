@@ -18,11 +18,13 @@ from custom_components.eufy_viewer.diagnostics import (
     audio_report,
     support_report,
 )
+from custom_components.eufy_viewer.recording_diagnostics import release_version
 
 from .conftest import STATE
 from .test_config_flow import DATA
 
 STAMP = "2026-09-11T12:00:00.000Z"
+MANIFEST = Path(__file__).parents[1] / "custom_components/eufy_viewer/manifest.json"
 
 
 def test_audio_evidence_is_bounded_and_contains_no_payload_or_identifiers():
@@ -192,7 +194,8 @@ async def test_download_without_successful_setup(hass, failure):
     assert result["active_viewers"] == 0
     assert result["bridge_available"] is None
     assert result["home_assistant"] != "unavailable"
-    assert result["integration"] != "unavailable"
+    # Also a candidate such as 0.8.47-beta.1, as loaded by Home Assistant.
+    assert result["integration"] == json.loads(MANIFEST.read_text())["version"]
     assert "PRIVATE" not in json.dumps(result) and DATA["token"] not in json.dumps(
         result
     )
@@ -323,6 +326,55 @@ def test_machine_codes_survive_download_without_enumerating_codes(code):
     )
     assert result["last_discovery"] == [row]
     assert result["recent_events"] == [row]
+
+
+# The bridge applies the same release and numeric version bounds.
+_VERSION_CASES = json.loads(
+    (Path(__file__).parent / "fixtures" / "diagnostic-versions.json").read_text()
+)
+
+
+def test_bridge_and_library_may_be_betas_but_device_versions_stay_numeric():
+    for value in _VERSION_CASES["release"]["accepted"]:
+        assert release_version(value) == value
+    for value in _VERSION_CASES["release"]["rejected"]:
+        assert release_version(value) == "unavailable", value
+    for value in _VERSION_CASES["numeric"]["accepted"]:
+        assert _version(value) == value
+    for value in _VERSION_CASES["numeric"]["rejected"]:
+        assert _version(value) == "unavailable", value
+    software = {
+        "bridge": "0.8.38-beta.1",
+        "library": "0.30.0-beta.1",
+        "node": "24.21.0-beta.1",
+        "platform": "linux",
+        "arch": "arm64",
+    }
+    beta = "3.3.4.4-beta.1"
+    result = support_report(
+        {
+            "schema": 2,
+            "software": software,
+            "last_discovery": [
+                {"event": "summary", "software": software},
+                {"event": "device", "firmware": beta, "hardware": "1-beta.1"},
+                {"event": "issue", "firmware": beta, "parent_firmware": beta},
+            ],
+            "recent_events": [{"event": "connection", "software": software}],
+        }
+    )
+    expected = {**software, "node": "unavailable"}
+    assert result["software"] == expected
+    assert result["last_discovery"][0]["software"] == expected
+    assert result["recent_events"][0]["software"] == expected
+    assert result["last_discovery"][1:] == [
+        {"event": "device", "firmware": "unavailable", "hardware": "unavailable"},
+        {"event": "issue", "firmware": "unavailable", "parent_firmware": "unavailable"},
+    ]
+    assert audio_report({"firmware": beta, "owner_firmware": beta}) == {
+        "firmware": "unavailable",
+        "owner_firmware": "unavailable",
+    }
 
 
 @pytest.mark.parametrize("value", _CODE_CASES["rejected"])

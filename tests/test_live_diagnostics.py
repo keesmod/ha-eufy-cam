@@ -188,6 +188,37 @@ async def test_only_owner_can_report_and_reports_never_ack(
     await hass.async_block_till_done()
 
 
+async def test_a_beta_card_version_is_reported_within_the_release_bound(
+    hass, hass_ws_client, rtc_setup
+):
+    socket, _, session, _ = rtc_setup
+    client, viewer = await open_viewer(hass, hass_ws_client)
+    await ready(client, socket)
+    session.get = Mock(return_value=ReportResponse(b"{}"))
+    msg = {"id": 2, "type": "eufy_viewer/live_diagnostics", "subscription": 1}
+    # The longest accepted release version has 24 characters.
+    longest = "9999.9999.9999-beta.9999"
+    for index, (trigger, card, accepted) in enumerate(
+        (
+            ("startup", "0.8.47-beta.1", "0.8.47-beta.1"),
+            ("playing", longest, longest),
+            ("unmuted", "0.8.47-rc.1", "unavailable"),
+        )
+    ):
+        report = {"trigger": trigger, "card_version": card}
+        await client.send_json({**msg, "id": 2 + index, "report": report})
+        assert (await client.receive_json())["result"]["accepted"]
+        assert viewer.playback_evidence["browser"][-1]["card_version"] == accepted
+    report = {"trigger": "fallback", "card_version": longest + "9"}
+    await client.send_json({**msg, "id": 9, "report": report})
+    assert not (await client.receive_json())["success"]
+    assert browser_report({"card_version": "0.8.47-beta.1\n"}) == {
+        "card_version": "unavailable"
+    }
+    await client.close()
+    await hass.async_block_till_done()
+
+
 @pytest.mark.parametrize("audio_failure", [None, "http", "oversized"])
 async def test_relay_counters_include_the_late_audio_stream(
     hass, hass_ws_client, rtc_setup, audio_failure

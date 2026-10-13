@@ -52,12 +52,20 @@ NUMBERS = {
 }
 
 
-def version(value: Any) -> str:
-    """Version numbers only, never arbitrary build strings."""
+def release_version(value: Any) -> str:
+    """A release version, never an arbitrary build string.
+
+    The integration, loaded card, bridge and client library share this bound:
+    numeric dotted parts with an optional -beta.N suffix, at most 24 characters.
+    Firmware, hardware and other software versions stay numeric.
+    """
     return (
         str(value)
         if isinstance(value, str)
-        and re.fullmatch(r"[0-9]{1,4}(?:\.[0-9]{1,4}){0,3}", value)
+        and len(value) <= 24
+        and re.fullmatch(
+            r"[0-9]{1,4}(?:\.[0-9]{1,4}){0,3}(?:-beta\.[1-9][0-9]{0,3})?", value
+        )
         else "unavailable"
     )
 
@@ -88,7 +96,7 @@ def project_attempt(raw: Any) -> dict[str, Any]:
         if type(raw.get(key)) is bool:
             result[key] = raw[key]
     if "card_version" in raw:
-        result["card_version"] = version(raw["card_version"])
+        result["card_version"] = release_version(raw["card_version"])
     media = raw.get("media")
     if isinstance(media, dict):
         result["media"] = {
@@ -207,7 +215,7 @@ class PlaybackObservation:
         self.data: dict[str, Any] = {
             "attempt": secrets.randbelow(2**48 - 1) + 1,
             "format": output_format,
-            "card_version": version(card_version),
+            "card_version": release_version(card_version),
             "stage": "preparing",
             "outcome": "active",
             "events": [],

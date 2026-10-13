@@ -16,7 +16,7 @@ from .const import CONF_TOKEN, CONF_URL, DOMAIN, LIVE_BOUND_DEFAULT_SECONDS
 from .coordinator import EufyConfigEntry
 from .diagnostic_assessment import assess
 from .live_diagnostics import LATE_AUDIO_END_REASONS, LATE_AUDIO_STAGES, browser_report
-from .recording_diagnostics import recording_report
+from .recording_diagnostics import recording_report, release_version
 
 _CODE_FIELDS = {"outcome", "code", "reason", "relationship_reason"}
 # Live evidence stays downloadable for the bridge's session cap plus this grace,
@@ -79,7 +79,10 @@ _BOOLEANS = set(
         "experimental_standalone"
     ).split()
 )
-_VERSIONS = set("firmware hardware parent_firmware bridge library node".split())
+_VERSIONS = set("firmware hardware parent_firmware node".split())
+# Bridge and client library releases may carry a -beta.N suffix. Device and Node
+# versions stay numeric.
+_RELEASE_VERSIONS = {"bridge", "library"}
 _MODELS = {"model", "parent_model"}
 
 
@@ -114,6 +117,7 @@ def _fields(raw: Any) -> dict[str, Any]:
         | _NUMBERS.keys()
         | _BOOLEANS
         | _VERSIONS
+        | _RELEASE_VERSIONS
         | _MODELS
         | {"timestamp"}
     ):
@@ -139,6 +143,8 @@ def _fields(raw: Any) -> dict[str, Any]:
             result[key] = value if type(value) is bool else None
         elif key in _VERSIONS:
             result[key] = _version(value)
+        elif key in _RELEASE_VERSIONS:
+            result[key] = release_version(value)
         elif key in _MODELS:
             # A received model code such as T8113-Z or T8410C, the same bound as
             # the bridge. Serials and free text never match, and the value is
@@ -611,7 +617,7 @@ async def async_get_config_entry_diagnostics(
         if coordinator
         else {"schema": 1, "attempts": [], "expired": 0},
         "home_assistant": _version(HA_VERSION),
-        "integration": _version(integration.version),
+        "integration": release_version(integration.version),
         "entry_state": entry.state.value,
         "bridge_available": coordinator.last_update_success if coordinator else None,
         "account_connected": coordinator.data.auth == "connected"
