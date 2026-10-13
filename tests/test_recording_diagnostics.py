@@ -923,12 +923,18 @@ _OWNER_LOOKUP = (
     "at its inventory LAN address or by broadcast. The bridge host did not reach "
     "the HomeBase on its LAN."
 )
-_FORMAT = "A lookup reply carried this {device}'s ID in a different format."
+_FORMAT = (
+    "A lookup reply carried this {device}'s ID in a different format, and the "
+    "lookup did not accept it."
+)
 _SEND = "Some lookup requests could not be sent from the bridge host."
 _FOREIGN = (
     "The device at the inventory LAN address answered with an ID outside this account."
 )
 _SHARED = "The inventory LAN address belongs to another device in this account."
+_DUPLICATE = (
+    "The inventory lists the same LAN address for another device in this account."
+)
 _ACCOUNT = (
     "Other devices in this account answered the broadcast, but this {device} did not."
 )
@@ -974,7 +980,7 @@ def _lookup_failure(device_ref=5, **lookup):
             },
             _SHARED,
         ),
-        ({"inventory_address_shared": True}, _SHARED),
+        ({"inventory_address_shared": True}, _DUPLICATE),
         ({"lookup_account_replies": 2, "lookup_datagrams": 2}, _ACCOUNT),
         (
             {
@@ -1011,7 +1017,6 @@ def test_standalone_lookup_fields_add_one_fixed_sentence_in_order(lookup, senten
 @pytest.mark.parametrize(
     ("lookup", "sentence"),
     [
-        ({"lookup_near_replies": 1, "lookup_datagrams": 1}, _FORMAT),
         ({"lookup_account_replies": 1, "lookup_datagrams": 1}, _ACCOUNT),
         ({}, "No reply of any kind reached the bridge during the 3 lookup rounds."),
     ],
@@ -1025,6 +1030,24 @@ def test_owner_lookup_fields_add_one_fixed_sentence_for_the_homebase(lookup, sen
 @pytest.mark.parametrize(
     "lookup",
     [
+        {"lookup_near_replies": 1, "lookup_datagrams": 1},
+        {"lookup_inventory_reply": "near", "lookup_foreign_replies": 1},
+    ],
+)
+def test_owner_near_reply_does_not_call_the_homebase_unreached(lookup):
+    # A reply with the HomeBase's ID in another format did reach the bridge.
+    finding = _owner_finding(_owner_report([_lookup_failure(device_ref=1, **lookup)]))
+    assert finding["observation"] == (
+        "Owner connection was not established. No HomeBase answered the local "
+        "lookup at its inventory LAN address or by broadcast. A lookup reply "
+        "carried this HomeBase's ID in a different format, and the lookup did "
+        "not accept it."
+    )
+
+
+@pytest.mark.parametrize(
+    "lookup",
+    [
         # An own reply, or datagrams that were no lookup replies, name nothing.
         {"lookup_own_replies": 1, "lookup_own_round": 0, "lookup_datagrams": 1},
         {"lookup_other_headers": 2, "lookup_datagrams": 2},
@@ -1032,6 +1055,22 @@ def test_owner_lookup_fields_add_one_fixed_sentence_for_the_homebase(lookup, sen
         {"lookup_foreign_replies": 1, "lookup_own_replies": 1, "lookup_datagrams": 2},
         # Values the download replaced are no evidence.
         dict.fromkeys(_SILENT_LOOKUP),
+        # A replaced count blocks the only-foreign sentence.
+        {
+            "lookup_foreign_replies": 3,
+            "lookup_datagrams": 3,
+            "lookup_near_replies": None,
+        },
+        {
+            "lookup_foreign_replies": 3,
+            "lookup_datagrams": 3,
+            "lookup_account_replies": None,
+        },
+        {
+            "lookup_foreign_replies": 3,
+            "lookup_datagrams": 3,
+            "lookup_own_replies": None,
+        },
     ],
 )
 def test_lookup_fields_without_a_matching_observation_keep_the_text(lookup):

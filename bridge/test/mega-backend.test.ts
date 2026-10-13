@@ -874,6 +874,7 @@ test('an opted-in standalone camera connects once at discovery and never becomes
     if (id === 'WALL') {
       value?.onProgress?.({ stage: 'lookup', elapsedMs: 0, inventoryAddress: false });
       value?.onProgress?.({ stage: 'encryption_ready', elapsedMs: 900 });
+      value?.onLookup?.({ rounds: 1, broadcastTargets: 1, broadcastEnabled: true, sendErrors: 0, datagrams: 1, otherHeaders: 0, ownReplies: 1, ownRound: 0, accountReplies: 0, foreignReplies: 0, nearReplies: 0, inventoryReply: 'none' });
       // Like the library, the session reports itself before the connect resolves.
       const session = { id: 'WALL', connected: true, guardMode: null, currentMode: null, alarm: false, alarmDelay: 0, armDelay: 0, commandEncryption: 'lan-derived' as const };
       f.client.emit('station', session);
@@ -895,7 +896,15 @@ test('an opted-in standalone camera connects once at discovery and never becomes
     assert.equal(row.station_status, 'not_applicable');
     assert.deepEqual(row.descriptor, { did: true, license: true, admin_user: true, lan_address: false });
     const events = report.recent_events.filter((r) => r.event === 'station_connection' && r.model === 'T84A1');
-    assert.deepEqual(events.map((r) => r.status), ['connected']);
+    // The session's own connected observation comes first. The connect record
+    // that follows carries the lookup of that attempt (#152).
+    assert.deepEqual(
+      events.map((r) => [r.phase, r.status, r.stage, r.lookup_rounds, r.lookup_own_replies, r.lookup_own_round, r.lookup_inventory_reply]),
+      [
+        ['observation', 'connected', undefined, undefined, undefined, undefined, undefined],
+        ['connect', 'connected', undefined, 1, 1, 0, 'none'],
+      ],
+    );
     assert.equal((f.backend as any).stationStates.has('WALL'), false);
     // Its session is no HomeBase: no alarm entity and no idle reconnect.
     f.client.emit('station', { id: 'WALL', connected: false });
@@ -995,6 +1004,7 @@ test('discovery connects pass onLookup, and each lookup reaches the log line and
 });
 test('the idle reconnect of a HomeBase records its lookup like a discovery connect (#152)', async () => {
   const f = fixture();
+  const connect = f.client.connectStation;
   try {
     await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
     let options: any;
@@ -1010,6 +1020,33 @@ test('the idle reconnect of a HomeBase records its lookup like a discovery conne
     const failure = f.backend.supportReport().recent_events.filter((r) => r.event === 'station_connection').at(-1)!;
     assert.deepEqual([failure.phase, failure.status, failure.stage], ['connect', 'error', 'lookup']);
     assert.deepEqual([failure.lookup_rounds, failure.lookup_broadcast_enabled], [0, false]);
+    // A successful idle reconnect reports its lookup on the refresh_state record.
+    f.client.connectStation = async (_id: string, value?: any) => {
+      value?.onLookup?.({ ...lookupSeen, rounds: 1, datagrams: 1, ownReplies: 1, ownRound: 0, inventoryReply: 'own' });
+      return connect();
+    };
+    await (f.backend as unknown as { refresh(): Promise<void> }).refresh();
+    const restored = f.backend.supportReport().recent_events.filter((r) => r.event === 'station_connection').at(-1)!;
+    assert.deepEqual([restored.phase, restored.status, restored.stage], ['refresh_state', 'connected', undefined]);
+    assert.deepEqual([restored.lookup_rounds, restored.lookup_own_replies, restored.lookup_inventory_reply], [1, 1, 'own']);
+  } finally {
+    await f.backend.close();
+  }
+});
+test('a HomeBase refresh_state failure carries the lookup of the connect before it (#152)', async () => {
+  const f = fixture();
+  const connect = f.client.connectStation;
+  f.client.connectStation = async (_id: string, value?: any) => {
+    value?.onProgress?.({ stage: 'lookup', elapsedMs: 0, inventoryAddress: true });
+    value?.onLookup?.({ ...lookupSeen, rounds: 1, datagrams: 1, ownReplies: 1, ownRound: 0, inventoryReply: 'own' });
+    return connect();
+  };
+  f.client.refreshStationState = async () => { throw new EufyError('device_request_timeout'); };
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    const failure = f.backend.supportReport().recent_events.find((r) => r.event === 'station_connection' && r.status === 'error')!;
+    assert.deepEqual([failure.phase, failure.status, failure.stage], ['refresh_state', 'error', undefined]);
+    assert.deepEqual([failure.lookup_rounds, failure.lookup_own_replies, failure.lookup_inventory_reply], [1, 1, 'own']);
   } finally {
     await f.backend.close();
   }

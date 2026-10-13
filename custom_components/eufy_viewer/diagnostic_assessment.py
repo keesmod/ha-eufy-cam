@@ -105,7 +105,7 @@ def _start_observation(start: dict[str, Any], failed: bool) -> str:
 _CONNECTION_STAGES = {
     "lookup": (
         "Owner connection was not established. No HomeBase answered the local "
-        "lookup{target}. The bridge host did not reach the HomeBase on its LAN."
+        "lookup{target}.{reach}"
     ),
     "station_found": (
         "Owner connection was not established. The HomeBase answered the local "
@@ -116,6 +116,12 @@ _CONNECTION_STAGES = {
         "session but the command key was not established."
     ),
 }
+_UNREACHED = " The bridge host did not reach the HomeBase on its LAN."
+# A near reply is not the device's own reply by the exact ID comparison (#152).
+_NEAR = (
+    " A lookup reply carried this {device}'s ID in a different format, and the "
+    "lookup did not accept it."
+)
 # An opted-in standalone camera is its own owner. Its connect says how far its
 # own session got, whatever the reason, so the next protocol step is visible.
 _STANDALONE_STAGES = {
@@ -276,14 +282,19 @@ def _lookup_observed(row: dict[str, Any], device: str) -> str:
     if row.get("lookup_broadcast_enabled") is False or (errors or 0) > 0:
         return " Some lookup requests could not be sent from the bridge host."
     if reply == "near" or (near or 0) > 0:
-        return f" A lookup reply carried this {device}'s ID in a different format."
+        return _NEAR.format(device=device)
     if reply == "foreign":
         return (
             " The device at the inventory LAN address answered with an ID outside "
             "this account."
         )
-    if reply == "account" or row.get("inventory_address_shared") is True:
+    if reply == "account":
         return " The inventory LAN address belongs to another device in this account."
+    if row.get("inventory_address_shared") is True:
+        return (
+            " The inventory lists the same LAN address for another device in this "
+            "account."
+        )
     if (account or 0) > 0:
         return (
             " Other devices in this account answered the broadcast, but this "
@@ -302,9 +313,13 @@ def _lookup_observed(row: dict[str, Any], device: str) -> str:
 
 
 def _connection_stage(row: dict[str, Any]) -> str:
-    return _CONNECTION_STAGES[row["stage"]].format(
-        target=_lookup_target(row)
-    ) + _lookup_observed(row, "HomeBase")
+    observed = _lookup_observed(row, "HomeBase")
+    # A near reply reached the bridge, so the HomeBase is not called unreached.
+    reach = "" if observed == _NEAR.format(device="HomeBase") else _UNREACHED
+    return (
+        _CONNECTION_STAGES[row["stage"]].format(target=_lookup_target(row), reach=reach)
+        + observed
+    )
 
 
 def _failed_connection(support: dict[str, Any], discovery: list[Any]) -> Any:

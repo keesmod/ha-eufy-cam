@@ -246,6 +246,13 @@ test('the local lookup of an attempt is reported as flat fields on its error and
   assert.deepEqual([failed!.stage,failed!.inventory_address,failed!.phase],['lookup',true,'connect']);
   assert.deepEqual([connected!.phase,connected!.status,connected!.stage],['refresh_state','connected',undefined]);
   assert.deepEqual([connected!.lookup_own_replies,connected!.lookup_own_round,connected!.lookup_inventory_reply,connected!.lookup_datagrams],[1,0,'own',2]);
+  // Every reply class in the fixed set passes through unchanged.
+  for (const inventoryReply of ['none','own','account','foreign','near'] as const) {
+    const g=collect();
+    g.reporter.prepare(result());
+    g.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'lookup',inventoryAddress:true,lookup:{...silentLookup,inventoryReply}});
+    assert.equal(g.reporter.report().recent_events[0]!.lookup_inventory_reply,inventoryReply);
+  }
   // The log line carries the same record as the download.
   assert.deepEqual(f.rows().filter(row=>row.event==='station_connection'),f.reporter.report().recent_events.filter(row=>row.event==='station_connection'));
   assert.ok(f.rows().every(row=>!('lookup' in row)));
@@ -281,6 +288,8 @@ test('hostile lookup values are left out, the rest of the record stays (#152)', 
     [row]=g.reporter.report().recent_events;
     assert.deepEqual(lookupKeys(row!),[]);
     assert.equal(row!.stage,'lookup');
+    assert.ok(!('lookup' in row!));
+    assert.doesNotMatch(JSON.stringify(g.reporter.report())+g.lines.join('\n'),/PRIVATE/);
   }
   assert.doesNotMatch(JSON.stringify(f.reporter.report())+f.lines.join('\n'),/PRIVATE|192\.168|32108/);
 });
@@ -329,6 +338,37 @@ test('a changed lookup outcome is recorded, changed counts alone repeat the prev
   g.reporter.station('PRIVATE_BASE','connect','connected',undefined,{stage:'encryption_ready',lookup:{...silentLookup,datagrams:1,ownReplies:1,ownRound:0,inventoryReply:'own'}});
   g.reporter.station('PRIVATE_BASE','observation','connected');
   assert.deepEqual(g.reporter.report().recent_events.map(row=>[row.phase,row.lookup_own_replies]),[['observation',undefined],['connect',1]]);
+});
+
+test('a changed boolean alone is a new lookup outcome (#152)', () => {
+  const f=collect();
+  f.reporter.prepare(result());
+  const fail=(lookup:Partial<StationLookupObservation>)=>f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',
+    {stage:'lookup',inventoryAddress:true,lookup:{...silentLookup,...lookup}});
+  fail({});
+  fail({broadcastEnabled:false});
+  fail({broadcastEnabled:false,rounds:9});
+  fail({broadcastEnabled:false,inventoryAddressShared:true});
+  const rows=f.reporter.report().recent_events.filter(row=>row.event==='station_connection');
+  assert.deepEqual(rows.map(row=>[row.lookup_broadcast_enabled,row.inventory_address_shared]),[[true,false],[false,false],[false,true]]);
+});
+
+test('each lookup count keeps its bounds and leaves out the value past them (#152)', () => {
+  const bounds = [
+    ['rounds','lookup_rounds',99], ['broadcastTargets','lookup_broadcast_targets',16],
+    ['sendErrors','lookup_send_errors',999], ['datagrams','lookup_datagrams',999],
+    ['otherHeaders','lookup_other_headers',999], ['ownReplies','lookup_own_replies',999],
+    ['accountReplies','lookup_account_replies',999], ['foreignReplies','lookup_foreign_replies',999],
+    ['nearReplies','lookup_near_replies',999],
+  ] as const;
+  for (const [key,field,max] of bounds) {
+    for (const [value,expected] of [[0,0],[max,max],[max+1,undefined],[-1,undefined]]) {
+      const f=collect();
+      f.reporter.prepare(result());
+      f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'lookup',lookup:{...silentLookup,[key]:value}});
+      assert.equal(f.reporter.report().recent_events[0]![field],expected,`${key} ${value}`);
+    }
+  }
 });
 
 test('model codes with a short suffix are reported as received, serials never', () => {

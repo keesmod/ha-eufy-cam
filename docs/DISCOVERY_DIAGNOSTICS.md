@@ -366,9 +366,10 @@ this order:
 |---|---|
 | `lookup_rounds=0` | No lookup request left the bridge |
 | `lookup_broadcast_enabled=false` or `lookup_send_errors` above 0 | Some lookup requests could not be sent from the bridge host |
-| `lookup_inventory_reply=near` or `lookup_near_replies` above 0 | A reply carried the camera's ID in a different format |
+| `lookup_inventory_reply=near` or `lookup_near_replies` above 0 | A reply carried the camera's ID in a different format, and the lookup did not accept it |
 | `lookup_inventory_reply=foreign` | The device at the inventory LAN address answered with an ID outside the account |
-| `lookup_inventory_reply=account` or `inventory_address_shared=true` | The inventory LAN address belongs to another device in the account |
+| `lookup_inventory_reply=account` | The inventory LAN address belongs to another device in the account |
+| `inventory_address_shared=true` | The inventory lists the same LAN address for another device in the account |
 | `lookup_account_replies` above 0 | Other devices in the account answered the broadcast, but the camera did not |
 | `lookup_datagrams=0` | No reply of any kind reached the bridge during the `lookup_rounds` rounds |
 | Only `lookup_foreign_replies` above 0 | Only devices outside the account answered |
