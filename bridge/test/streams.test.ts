@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { StreamHub, STATION_LIMIT_CLOSE_CODE, type Peer } from "../src/streams.js";
+import { StartNotIssued, StreamHub, STATION_LIMIT_CLOSE_CODE, type Peer } from "../src/streams.js";
 import { JpegFramer } from "../src/jpeg.js";
 
 function fixture() {
@@ -34,6 +34,43 @@ test("late start after close is stopped; quarantined camera cannot be restarted"
   assert.equal(hub.started("a"), false); assert.equal(stops.length, 2);
   assert.equal(hub.attach("a", peer()), false); assert.equal(starts.length, 1);
   hub.stopped("a"); assert.equal(hub.attach("a", peer()), true); assert.equal(starts.length, 2);
+});
+test("a start that failed before START reached the device releases the camera without a stop", async () => {
+  let now = 0; let starts = 0; const events: string[] = [], stops: string[] = [], disposed: string[] = [];
+  const hub = new StreamHub({
+    diagnostic: (_serial, event) => { events.push(event); },
+    start: async () => { starts++; throw new StartNotIssued(new Error("device_request_timeout")); },
+    stop: async s => { stops.push(s); }, disposeMedia: s => { disposed.push(s); }, recover: async () => [],
+  }, () => now);
+  const p = fixture().peer(); assert.equal(hub.attach("b", p), true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(hub.active, 0); assert.equal(hub.quarantined, 0);
+  assert.deepEqual(p.closed, ["Camera start failed"]); assert.deepEqual(events, ["stream_failure"]); assert.deepEqual(disposed, ["b"]);
+  for (now = 3000; now <= 30_000; now += 3000) hub.tick();
+  assert.deepEqual(stops, []); assert.equal(hub.recoveryMetrics.recovery_attempts, 0);
+  assert.equal(hub.attach("b", fixture().peer()), true); assert.equal(starts, 2);
+});
+test("a viewer leaving during a start that never reached the device leaves no quarantine", async () => {
+  let now = 0; let recoveries = 0; let fail!: (error: unknown) => void; const stops: string[] = [];
+  const hub = new StreamHub({
+    start: () => new Promise<void>((_resolve, reject) => { fail = reject; }),
+    stop: async s => { stops.push(s); }, disposeMedia: () => {}, recover: async () => { recoveries++; return []; },
+  }, () => now);
+  const p = fixture().peer(); hub.attach("b", p); hub.detach("b", p);
+  assert.equal(hub.quarantined, 1); assert.deepEqual(stops, ["b"]);
+  fail(new StartNotIssued(new Error("cancelled"))); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(hub.quarantined, 0);
+  for (now = 3000; now <= 30_000; now += 3000) hub.tick();
+  assert.deepEqual(stops, ["b"]); assert.equal(recoveries, 0);
+  assert.equal(hub.attach("b", fixture().peer()), true);
+});
+test("a start that failed after START reached the device stays quarantined until its stop is confirmed", async () => {
+  const stops: string[] = [];
+  const hub = new StreamHub({ start: async () => { throw new Error("device_request_timeout"); }, stop: async s => { stops.push(s); }, disposeMedia: () => {} }, () => 0);
+  hub.attach("b", fixture().peer()); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(hub.quarantined, 1); assert.deepEqual(stops, ["b"]);
+  assert.equal(hub.attach("b", fixture().peer()), false);
+  hub.stopped("b"); assert.equal(hub.attach("b", fixture().peer()), true);
 });
 test("absolute cap wins over active acknowledgements", () => {
   const { hub, time, peer, stops } = fixture(); const p = peer(); hub.attach("a", p);

@@ -9,6 +9,14 @@
   suffix is accepted, with at most 24 characters. Firmware, hardware and Node
   versions stay numeric. The client pin stays 0.29.2 and the report schema
   stays 2.
+- Release a camera at once when its live start fails before the client library
+  reported `start_issued`, for example a standalone camera on the experimental
+  route that does not complete its connection
+  ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). A camera
+  that never connects no longer stays in `stopping` until a bridge restart, so
+  it can be started again, recording requests are no longer refused with
+  `live_stopping` and no recovery attempt blocks other live starts. After `start_issued` a
+  failed start keeps the quarantine until the device confirms its stop.
 
 Upgrade: keep the same token and session. Update the integration to 0.8.47 to
 keep beta versions in **Download diagnostics**. Integration 0.8.46 still works

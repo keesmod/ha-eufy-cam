@@ -163,8 +163,11 @@ were discovered with a complete `descriptor`. `did`, `license`, `admin_user` and
 rows stayed unsupported with `standalone_transport_unverified`, and the bridge
 made no session attempt. The cause is that client 0.29.0 admitted only the
 `T84A1` to the experimental route. Client 0.29.1, included in bridge 0.8.35,
-also admits a standalone T8410. The session result on these cameras is still
-unknown. Reported, not independently reproduced.
+also admits a standalone T8410. Reported, not independently reproduced. On
+2026-10-13 the same reporter had live video working on the camera with firmware
+2.3.2.4. Live video failed on the one with 2.3.1.6, and its event log had
+`device_request_timeout`. Its connection stage was not reported yet. See the
+[model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-standalone-t8410-result-2026-10-13).
 
 On 2026-10-09 the reporter of [issue #149][149] ran integration 0.8.42 and
 bridge 0.8.33 with client 0.28.2 on Home Assistant 2026.10.0, with a T8030 on
