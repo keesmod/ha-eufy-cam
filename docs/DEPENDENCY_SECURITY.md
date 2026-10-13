@@ -60,7 +60,8 @@ Development-only updates merge as they are once CI passes. Production dependency
 changes need bridge and integration candidates, changelog lines and appropriate
 acceptance tests, so an agent PR supersedes the bot PR. Keep `bridge` canonical.
 Dependency PRs never regenerate the store folders, and security PRs against
-them are closed. Regenerate the frontend build when its dependencies change.
+them are closed. A frontend update that changes the rebuilt card bundle is
+handled like a production update.
 
 The GitHub-hosted Mega tarball stays pinned to an exact release and checksum.
 It has no npm registry entry, so Dependabot's version resolver gets a 404 if it

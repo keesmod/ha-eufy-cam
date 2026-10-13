@@ -178,7 +178,7 @@ whose merge updates the stable app, and both GitHub releases.
 7. Follow up with the reporters of every issue referenced since the previous
    stable tag. Collect them from `git log --format=%B vPREVIOUS..HEAD`, with
    `refs #N` and `refs <repo>#N`, and from the changelog links.
-8. Lift the freeze.
+8. Lift the freeze. The run is complete.
 
 ## Betas
 
@@ -220,9 +220,14 @@ the camera release PR. An advisory in a transitive dependency of the bridge can
 be fixed in `bridge/package-lock.json` without a client release. That is a
 production lock change, so it needs bridge and integration candidates.
 
+When main pins a client beta, the pin cannot be reverted, because the client pin
+never decreases. Release a client stable at or above that beta from client main,
+with unwanted client work reverted there first, and pin it in the camera release
+PR. This also applies when the fix is only in the camera.
+
 ## Merge freeze and recovery
 
-From the approval of a batch or hotfix run until its last publication, only the
+From the approval of a batch or hotfix run until the run is complete, only the
 release PRs of that run merge to main. Publication uses only the commit that was
 rehearsed. When a run stops with `main advanced`, compare the rehearsed commit
 with current main. If only documentation changed, rehearse and publish current
@@ -238,9 +243,13 @@ next release PR without delay.
 ## Dependabot
 
 - Development-only updates, such as bridge `devDependencies` and the frontend
-  tooling, change no runtime. They merge as they are once `ci` passes. The
-  bridge ZIP may then carry newer development dependencies than the store
-  folder with the same bridge version.
+  test tooling, merge as they are once `ci` passes. The bridge ZIP may then
+  carry newer development dependencies than the store folder with the same
+  bridge version.
+- TypeScript in `frontend/` compiles the shipped card. When an update changes
+  the rebuilt bundle, the card job fails. That is an integration runtime change,
+  so an agent PR supersedes it with the rebuilt bundle, an integration candidate
+  and a changelog line, as for a production update.
 - A production update changes the bridge runtime and cannot pass the candidate
   rules on its own. An agent PR supersedes it with the same update, candidate
   versions and changelog lines. Then close the Dependabot PR.
