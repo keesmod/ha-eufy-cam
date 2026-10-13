@@ -8,7 +8,7 @@
   showed such a version as `unavailable` in bridge 0.8.37. Only a `-beta.N`
   suffix is accepted, with at most 24 characters. Firmware, hardware and Node
   versions stay numeric. The report schema stays 2.
-- Pin client 0.30.0-beta.1 and record what the local lookup of each station
+- Pin client 0.30.0 and record what the local lookup of each station
   connection attempt saw
   ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). A failed
   `connect` record, the `connect` record of a connected experimental standalone

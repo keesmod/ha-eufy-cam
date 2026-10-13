@@ -981,6 +981,32 @@ def _lookup_failure(device_ref=5, **lookup):
             _SHARED,
         ),
         ({"inventory_address_shared": True}, _DUPLICATE),
+        (
+            {
+                "lookup_near_replies": 1,
+                "lookup_inventory_reply": "foreign",
+                "lookup_foreign_replies": 1,
+                "lookup_datagrams": 2,
+            },
+            _FORMAT,
+        ),
+        (
+            {
+                "lookup_inventory_reply": "account",
+                "inventory_address_shared": True,
+                "lookup_account_replies": 1,
+                "lookup_datagrams": 1,
+            },
+            _SHARED,
+        ),
+        (
+            {
+                "inventory_address_shared": True,
+                "lookup_account_replies": 2,
+                "lookup_datagrams": 2,
+            },
+            _DUPLICATE,
+        ),
         ({"lookup_account_replies": 2, "lookup_datagrams": 2}, _ACCOUNT),
         (
             {

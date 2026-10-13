@@ -19,7 +19,7 @@
 - Bridge 0.8.38 reports its own and the client library's beta versions the same
   way in its `Eufy discovery:` log lines. The report schema stays 2.
 - **Download diagnostics** keeps what the local lookup of a station connection
-  attempt saw, from bridge 0.8.38 with client 0.30.0-beta.1
+  attempt saw, from bridge 0.8.38 with client 0.30.0
   ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). The new
   `station_connection` fields are counts, booleans and one reply class, such as
   `lookup_rounds`, `lookup_datagrams`, `lookup_account_replies` and

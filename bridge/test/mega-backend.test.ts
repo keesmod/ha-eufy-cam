@@ -1029,6 +1029,15 @@ test('the idle reconnect of a HomeBase records its lookup like a discovery conne
     const restored = f.backend.supportReport().recent_events.filter((r) => r.event === 'station_connection').at(-1)!;
     assert.deepEqual([restored.phase, restored.status, restored.stage], ['refresh_state', 'connected', undefined]);
     assert.deepEqual([restored.lookup_rounds, restored.lookup_own_replies, restored.lookup_inventory_reply], [1, 1, 'own']);
+    // A refresh_state failure after a successful idle connect carries that connect's lookup.
+    const refreshState = f.client.refreshStationState;
+    f.client.refreshStationState = async () => { throw new EufyError('device_request_timeout'); };
+    f.client.emit('station', { id: 'BASE', connected: false });
+    await (f.backend as unknown as { refresh(): Promise<void> }).refresh();
+    f.client.refreshStationState = refreshState;
+    const refreshFailure = f.backend.supportReport().recent_events.filter((r) => r.event === 'station_connection').at(-1)!;
+    assert.deepEqual([refreshFailure.phase, refreshFailure.status, refreshFailure.stage], ['refresh_state', 'error', undefined]);
+    assert.deepEqual([refreshFailure.lookup_rounds, refreshFailure.lookup_own_replies, refreshFailure.lookup_inventory_reply], [1, 1, 'own']);
   } finally {
     await f.backend.close();
   }
