@@ -150,7 +150,8 @@ Issue runs end with a candidate or a beta, not with a stable release. One
 approval covers the whole run: the client stable release, the camera release PR
 whose merge updates the stable app, and both GitHub releases.
 
-1. Start the merge freeze in both repositories.
+1. Start the merge freeze in both repositories, at the run approval. A hotfix
+   has already started it.
 2. When the client has an unreleased candidate, release it first with its
    [release guide](https://github.com/keesmod/eufy-mega-client/blob/main/docs/RELEASING.md):
    release PR, rehearsal and publication.
@@ -209,11 +210,12 @@ See [beta testing](INSTALLATION.md#beta-testing).
 ## Hotfix lane
 
 A hotfix is a stable release of current main between batch runs, with its own
-run approval. There are no release branches. Work that must not ship is reverted
-first, in an ordinary PR under the candidate rules. Land the fix as a candidate,
-or with a small fix directly in the release PR, then follow the batch release
-run. `--release` also resets an existing `ha_app_beta/` to the stable bridge, so
-beta testers run the hotfix until the next beta cut.
+run approval. There are no release branches. The freeze starts at the hotfix
+approval. Revert work that must not ship first, in an ordinary PR under the
+candidate rules, and land the fix as a candidate or directly in the release PR.
+Then continue with the batch release run from step 2. `--release` also resets an
+existing `ha_app_beta/` to the stable bridge, so beta testers run the hotfix
+until the next beta cut.
 
 When the fix is in the client, release the client first and pin that version in
 the camera release PR. An advisory in a transitive dependency of the bridge can
@@ -228,10 +230,12 @@ PR. This also applies when the fix is only in the camera.
 ## Merge freeze and recovery
 
 From the approval of a batch or hotfix run until the run is complete, only the
-release PRs of that run merge to main. Publication uses only the commit that was
-rehearsed. When a run stops with `main advanced`, compare the rehearsed commit
-with current main. If only documentation changed, rehearse and publish current
-main. A runtime change after the approval needs a new approval.
+PRs of that run merge to main: its release PRs and, in a hotfix, its revert and
+fix candidate PRs. Publication uses only the commit that was rehearsed. When a
+run stops with `main advanced`, compare the rehearsed commit with current main.
+If only documentation changed, rehearse and publish current main. A runtime
+change after the approval, other than the run's own revert and fix PRs, needs a
+new approval.
 
 A tag created at a superseded commit uses up its version, because tags never
 move. A runtime PR merged after a release PR has to raise the version, so the

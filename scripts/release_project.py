@@ -496,6 +496,13 @@ def check_changes(root, base, meta):
         and (integration_changed or changed_stores)
         and published(version)
     ):
+        # An ha_app change already implies a plain version, so the next valid
+        # step is a release PR at the next plain patch.
+        if "ha_app" in changed_stores:
+            raise ValueError(
+                f"Version {version} is published. An ha_app update needs a release "
+                f"PR at {release.stable_part(following(version))}"
+            )
         raise ValueError(
             f"Version {version} is published. Raise the version to {following(version)}"
         )

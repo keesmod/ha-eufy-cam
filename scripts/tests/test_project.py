@@ -554,8 +554,12 @@ class ProjectTests(unittest.TestCase):
         self.regenerate("ha_app")
         self.check()
         self.published.return_value = True
-        self.rejected(r"Version 0\.8\.46 is published")
+        self.rejected(r"Version 0\.8\.46 is published\. .*release PR at 0\.8\.47$")
         self.published.assert_called_with("0.8.46")
+        self.set_integration("0.8.47")
+        self.add_notes("CHANGELOG.md", "0.8.47", "2026-10-20")
+        self.set_readme("0.8.47")
+        self.check()
 
     def test_release_pr_rejected_with_a_beta_bridge(self):
         self.open_candidate()

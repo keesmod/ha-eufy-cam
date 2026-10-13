@@ -120,7 +120,7 @@ To return, redownload and select the stable tag, or wait for the stable release,
 
 ### Beta bridge app
 
-The app store repository can also offer **Eufy Security Viewer Bridge (beta)**. It is a separate app with its own `/data`, Eufy session and bridge identity. It updates with each beta. After a stable release it runs that stable bridge until the next beta. Both apps listen on `127.0.0.1:8063`, so never run both. Install the beta integration together with the beta app.
+The app store repository can also offer **Eufy Security Viewer Bridge (beta)**. It is a separate app with its own `/data`, Eufy session and bridge identity. It updates when a beta brings a new bridge version, and at a stable release that brings a new bridge. After a stable release it runs that stable bridge until the next beta with a new bridge. Both apps listen on `127.0.0.1:8063`, so never run both. Install the beta integration together with the beta app.
 
 The existing integration entry does not accept the beta app. It fails with "Cannot connect", and **Reconfigure** reports that the endpoint belongs to a different bridge. The beta app gets its own integration entry instead.
 

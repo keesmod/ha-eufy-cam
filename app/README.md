@@ -18,7 +18,7 @@ The app provides `amd64` and `aarch64` builds. Only `amd64` has been tested on h
 
 ## Updates and private data
 
-Update this app through Home Assistant and the integration through HACS. Home Assistant offers an app update only when a release changes the app: the stable app with a stable release, the beta app with a beta. Update both components to the versions listed in the release notes. See the [upgrade steps](https://github.com/keesmod/ha-eufy-cam#upgrading) and, for opt-in testing, [beta testing](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/INSTALLATION.md#beta-testing).
+Update this app through Home Assistant and the integration through HACS. Home Assistant offers an app update only when a release brings a new bridge version: the stable app at a stable release, the beta app at such a beta and at a stable release. Update both components to the versions listed in the release notes. See the [upgrade steps](https://github.com/keesmod/ha-eufy-cam#upgrading) and, for opt-in testing, [beta testing](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/INSTALLATION.md#beta-testing).
 
 The app stores its bridge identity, Eufy credentials and session in `/data/eufy`. Back up the app and keep the same token when updating. Do not attach its data or token to support reports.
 
