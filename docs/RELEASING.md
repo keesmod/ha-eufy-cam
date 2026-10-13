@@ -96,7 +96,7 @@ CI looks up its tag and every page of GitHub releases with the workflow token.
 A failed lookup fails the check. The release workflow creates the tag before its
 draft, so the tag lookup also covers drafts that a read-only token cannot list.
 A version above the base needs no lookup, because main never falls below a
-published version. Each rejection names the next valid candidate.
+published version. Each version rejection names the next valid candidate.
 
 ## Prepare a pull request
 
@@ -216,9 +216,12 @@ A hotfix is a stable release of current main between batch runs, with its own
 run approval. There are no release branches. The freeze starts at the hotfix
 approval. Revert work that must not ship first, in an ordinary PR under the
 candidate rules, and land the fix as a candidate or directly in the release PR.
-Then continue with the batch release run from step 2. `--release` also resets an
-existing `ha_app_beta/` to the stable bridge, so beta testers run the hotfix
-until the next beta cut.
+Then continue with the batch release run from step 3. Release the client first
+only in the two cases below, with the client's
+[hotfix lane](https://github.com/keesmod/eufy-mega-client/blob/main/docs/RELEASING.md#hotfix-lane),
+so that unrelated client candidate work stays unpublished. `--release` also
+resets an existing `ha_app_beta/` to the stable bridge, so beta testers run the
+hotfix until the next beta cut.
 
 When the fix is in the client, release the client first and pin that version in
 the camera release PR. An advisory in a transitive dependency of the bridge can
@@ -240,14 +243,21 @@ and check whether the tag `v<version>` exists. If only documentation changed and
 the tag does not exist yet, rehearse and publish current main. A stop just
 before the draft becomes public comes after the tag was created, so that version
 is used up. A runtime change after the approval, other than the run's own revert
-and fix PRs, needs a new approval.
+and fix PRs, needs a new approval. Before the release PR merges, such a change
+joins the same `X.Y.Z` batch under the candidate rules. It keeps the version
+while that beta is unpublished, raises `N` after a published beta, or goes
+directly into the release PR.
 
 A tag created at a superseded commit uses up its version, because tags never
 move. A runtime PR merged after a release PR has to raise the version, so the
 dated version can no longer be published from main. Versions never decrease.
 Release the newer version instead and keep the unpublished section as history.
-The merged camera release PR has already updated the stable app, so open the
-next release PR without delay.
+The release notes contain only the new version's `CHANGELOG.md` section, so that
+section carries the user-visible changes and upgrade steps of the unpublished
+section, including its bridge app update. Its rollback names the last published
+stable integration and the bridge that the stable app already runs. The merged
+camera release PR has already updated the stable app, so open the next release
+PR without delay.
 
 ## Dependabot
 
@@ -384,11 +394,13 @@ Use Python 3.11+ and Node.js 24. GitHub uses bounded Ubuntu jobs.
 python3 scripts/check_workflows.py
 python3 -m unittest discover -s scripts/tests -v
 python3 scripts/release.py check
-python3 scripts/release.py check --base "$(git rev-parse origin/main)"
+python3 scripts/release.py check --base "$(git merge-base origin/main HEAD)"
 ```
 
-With `--base`, the pull request rules run against that commit. The published
-lookup and the client pin verification need an authenticated `gh` session.
+With `--base`, the pull request rules run against that commit. This
+approximates CI, which checks the pull request's merge commit against main.
+Rebase onto `origin/main` first for an exact result. The published lookup and
+the client pin verification need an authenticated `gh` session.
 
 From a clean committed checkout, build the complete local bundle into a new
 empty directory, then verify it:

@@ -372,6 +372,56 @@ class ProjectTests(unittest.TestCase):
                 change()
                 self.rejected(pattern + " cannot go below base version")
 
+    def test_decrease_names_the_next_candidate(self):
+        def plain_integration():
+            self.set_integration("0.8.45")
+            self.set_readme("0.8.45")
+
+        def stable_app():
+            self.edit_json(
+                "ha_app/config.json", lambda data: data.update(version="0.8.36")
+            )
+
+        def decreases(*cases):
+            for change, message in cases:
+                with self.subTest(message=message):
+                    self.git("reset", "-q", "--hard", self.base)
+                    change()
+                    self.rejected(f"^{re.escape(message)}$")
+
+        decreases(
+            (
+                plain_integration,
+                "Integration version cannot go below base version 0.8.46. "
+                "Raise the version, for example to 0.8.47-beta.1",
+            ),
+            (
+                lambda: self.set_pin("0.29.1"),
+                "Client pin version cannot go below base version 0.29.2. Keep 0.29.2",
+            ),
+        )
+        self.git("reset", "-q", "--hard", self.base)
+        self.open_candidate()
+        self.set_bridge("0.8.38-beta.2")
+        self.check()
+        self.base = self.commit()
+        decreases(
+            (
+                lambda: self.set_integration("0.8.46"),
+                "Integration version cannot go below base version 0.8.47-beta.1. "
+                "Keep 0.8.47-beta.1, or 0.8.47-beta.2 if it is published",
+            ),
+            (
+                lambda: self.set_bridge("0.8.38-beta.1"),
+                "Bridge version cannot go below base version 0.8.38-beta.2. "
+                "Keep 0.8.38-beta.2, or 0.8.38-beta.3 if it is published",
+            ),
+            (
+                stable_app,
+                "ha_app version cannot go below base version 0.8.37. Keep 0.8.37",
+            ),
+        )
+
     def test_plain_version_only_in_a_release_pr(self):
         self.open_candidate(bridge=False)
         self.set_integration("0.8.47")

@@ -91,21 +91,27 @@ maintainer bench only. Users follow [beta testing](INSTALLATION.md#beta-testing)
 with a separate entry. Never copy credentials or sessions. The beta app signs in
 to Eufy on its own.
 
+Supervisor 2026.07.4 and later names app containers `app_<slug>`, previously
+`addon_<slug>`. Confirm the names with
+`docker ps --format '{{.Names}}' | grep eufy_viewer_bridge`.
+
 1. Back up Home Assistant and both apps. Read the identity from the running
-   stable app:
+   stable app. Stop here if the check reports no identity:
 
    ```sh
-   ID=$(docker exec addon_e35bd336_eufy_viewer_bridge cat /data/eufy/bridge-id)
+   ID=$(docker exec app_e35bd336_eufy_viewer_bridge cat /data/eufy/bridge-id)
+   test -n "$ID" || echo "No bridge identity was read. Stop here."
    ```
 
 2. Turn off **Start on boot** on the stable app and stop it. Start the beta app
    once with the same configuration and token, so that it creates `/data/eufy`.
 3. Replace the beta app's identity, owned by uid 1000 with mode 600, and
-   restart it:
+   restart it. The copy runs only with a non-empty `ID`:
 
    ```sh
-   printf %s "$ID" | docker exec -i addon_e35bd336_eufy_viewer_bridge_beta sh -c \
-     'umask 077 && cat > /data/eufy/bridge-id.new && chown 1000:1000 /data/eufy/bridge-id.new && mv /data/eufy/bridge-id.new /data/eufy/bridge-id'
+   test -n "$ID" &&
+     printf %s "$ID" | docker exec -i app_e35bd336_eufy_viewer_bridge_beta sh -c \
+       'umask 077 && cat > /data/eufy/bridge-id.new && chown 1000:1000 /data/eufy/bridge-id.new && mv /data/eufy/bridge-id.new /data/eufy/bridge-id'
    ha apps restart e35bd336_eufy_viewer_bridge_beta
    ```
 

@@ -410,7 +410,17 @@ def check_changes(root, base, meta):
         if current is None:
             raise ValueError(f"Store folder {name} cannot be removed")
         if key(current) < key(previous):
-            raise ValueError(f"{name} version cannot go below base version {previous}")
+            # Store folders change only through prepare_ha_app.py, and the client
+            # pin moves only to a newer verified release, so both keep the base.
+            if name not in ("Integration", "Bridge"):
+                hint = f"Keep {previous}"
+            elif beta(previous):
+                hint = f"Keep {previous}, or {following(previous)} if it is published"
+            else:
+                hint = f"Raise the version, for example to {following(previous)}"
+            raise ValueError(
+                f"{name} version cannot go below base version {previous}. {hint}"
+            )
     paths = changed_paths(root, base)
     integration_changed, bridge_changed = runtime(paths, old, new)
     changed_stores = [f for f in STORE if any(p.startswith(f + "/") for p in paths)]
