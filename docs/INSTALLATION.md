@@ -1,7 +1,9 @@
 # Detailed installation and troubleshooting
 
-Return to the [quick start](../README.md). Existing installations should follow
-the [upgrade and recovery guide](MEGA_MIGRATION.md) before changing the bridge.
+Return to the [quick start](../README.md). To update an existing installation,
+follow the [upgrade steps](../README.md#upgrading). Installations from before
+0.8.0 follow the [upgrade and recovery guide](MEGA_MIGRATION.md) before changing
+the bridge.
 
 
 Choose **one** bridge installation method, then install the integration and cards.

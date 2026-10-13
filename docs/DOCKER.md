@@ -84,7 +84,7 @@ Never attach the data volume or environment file to a support report.
 
 ## Update the Docker bridge
 
-Before these steps, update and restart the HA integration. A bridge older than 0.8.0 also needs the integration's migration-ready notification first, or without HA the migration helper from [the short guide](MEGA_MIGRATION.md). These steps then update the Docker bridge to the release in the example. Run them from your existing checkout and keep the original `bridge.env`. If you used a different container name, volume name, image tag or port mapping, use those values instead of the examples below.
+Update the bridge first with these steps, then update and restart the HA integration, as in the [upgrade steps](../README.md#upgrading). A bridge older than 0.8.0 is the exception: update and restart the integration first and wait for its migration-ready notification, or without HA run the migration helper from [the short guide](MEGA_MIGRATION.md). These steps update the Docker bridge to the release in the example. Run them from your existing checkout and keep the original `bridge.env`. If you used a different container name, volume name, image tag or port mapping, use those values instead of the examples below.
 
 1. Close all live viewers and recording dialogs.
 2. Download and build the new release while the old container is still available:

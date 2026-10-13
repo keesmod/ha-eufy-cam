@@ -374,7 +374,7 @@ updating. Restore its previous files to roll back while keeping its data and tok
   Back up the bridge and integration files before updating. Restore the previous
   files to roll back without changing data, token, credentials or entity identities.
 
-## 0.8.10 - Unreleased
+## 0.8.10 - 2026-09-14
 
 - Remove the software live bitrate and VBV limit from the previous candidate.
   Restore the original software encoder defaults while retaining diagnostics
