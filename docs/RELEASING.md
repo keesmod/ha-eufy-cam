@@ -160,6 +160,11 @@ whose merge updates the stable app, and both GitHub releases.
      pin changes. A stable camera release needs a stable client pin.
    - Set the plain integration and bridge versions, the stable parts of the
      candidates, with the recipe above.
+   - When the release PR itself changes the bridge runtime, with a new client
+     pin or a lock advisory fix, and main has no bridge candidate, set the
+     bridge to the next plain patch above the `ha_app` version. Add a dated
+     `## X.Y.Z - YYYY-MM-DD` section to `app/CHANGELOG.md` and run
+     `python3 scripts/prepare_ha_app.py --release`.
    - Date the heading in `CHANGELOG.md` and, for a new bridge, in
      `app/CHANGELOG.md`. Each section ends with one Upgrade and Rollback
      paragraph that names the previous stable versions.

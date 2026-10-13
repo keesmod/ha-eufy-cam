@@ -140,7 +140,9 @@ def main():
         "npm version X --no-git-tag-version in bridge/, keep or open an unpublished "
         "integration candidate, and describe the client change in the "
         "app/CHANGELOG.md and CHANGELOG.md sections. A beta client pin needs beta "
-        "bridge and integration versions. A stable release needs a stable pin."
+        "bridge and integration versions. A stable release needs a stable pin. "
+        "In a release PR the bridge version is plain, with a dated app/CHANGELOG.md "
+        "section and prepare_ha_app.py --release."
     )
 
 

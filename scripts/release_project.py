@@ -478,6 +478,15 @@ def check_changes(root, base, meta):
     if bridge_changed:
         top = max(old_stores.values(), key=key)
         if key(bridge) <= key(top):
+            # A release PR needs a plain bridge, so name the stable part.
+            if release_pr:
+                plain = release.stable_part(following(top))
+                raise ValueError(
+                    f"Bridge runtime changes need a bridge version above the store "
+                    f"version {top}. In a release PR, raise the bridge to {plain}, "
+                    f"add a dated '## {plain} - YYYY-MM-DD' section to "
+                    "app/CHANGELOG.md and run prepare_ha_app.py --release"
+                )
             raise ValueError(
                 f"Bridge runtime changes need a bridge version above the store "
                 f"version {top}. Raise the bridge to {following(top)}"

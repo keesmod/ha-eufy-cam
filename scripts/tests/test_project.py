@@ -618,6 +618,39 @@ class ProjectTests(unittest.TestCase):
         self.regenerate("ha_app")
         self.rejected("ha_app is the stable app and needs a plain version")
 
+    def test_release_pr_bridge_change_without_a_bridge_candidate(self):
+        self.open_candidate(bridge=False)
+        url = bump_client.url("0.29.3")
+        changes = {
+            "client pin": lambda: self.set_pin("0.29.3"),
+            "lock advisory": lambda: self.edit_json(
+                "bridge/package-lock.json",
+                lambda data: data["packages"]["node_modules/ws"].update(
+                    integrity=INTEGRITY
+                ),
+            ),
+        }
+        verified = {"url": url, "integrity": INTEGRITY}
+        for name, change in changes.items():
+            with (
+                self.subTest(change=name),
+                patch.object(bump_client, "verify", return_value=verified),
+            ):
+                self.git("reset", "-q", "--hard", self.base)
+                self.git("clean", "-qfd")
+                self.prepare_release(bridge=None)
+                change()
+                self.rejected(
+                    r"above the store version 0\.8\.37\. In a release PR, raise the "
+                    r"bridge to 0\.8\.38, add a dated '## 0\.8\.38 - YYYY-MM-DD' "
+                    r"section to app/CHANGELOG\.md and run prepare_ha_app\.py "
+                    r"--release$"
+                )
+                self.set_bridge("0.8.38")
+                self.add_notes("app/CHANGELOG.md", "0.8.38", "2026-10-20")
+                self.regenerate("ha_app")
+                self.check()
+
     def test_stable_app_update_needs_a_plain_integration(self):
         self.open_candidate()
         self.set_bridge("0.8.38")
