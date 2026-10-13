@@ -180,7 +180,8 @@ whose merge updates the stable app, and both GitHub releases.
    [development](DEVELOPMENT.md#maintainer-bench).
 7. Follow up with the reporters of every issue referenced since the previous
    stable tag. Collect them from `git log --format=%B vPREVIOUS..HEAD`, with
-   `refs #N` and `refs <repo>#N`, and from the changelog links.
+   `refs #N` and `refs <repo>#N`, and from the changelog links. When the run
+   released the client, do the same in eufy-mega-client for its range.
 8. Lift the freeze. The run is complete.
 
 ## Betas
@@ -234,10 +235,12 @@ PR. This also applies when the fix is only in the camera.
 From the approval of a batch or hotfix run until the run is complete, only the
 PRs of that run merge to main: its release PRs and, in a hotfix, its revert and
 fix candidate PRs. Publication uses only the commit that was rehearsed. When a
-run stops with `main advanced`, compare the rehearsed commit with current main.
-If only documentation changed, rehearse and publish current main. A runtime
-change after the approval, other than the run's own revert and fix PRs, needs a
-new approval.
+run stops with `main advanced`, compare the rehearsed commit with current main
+and check whether the tag `v<version>` exists. If only documentation changed and
+the tag does not exist yet, rehearse and publish current main. A stop just
+before the draft becomes public comes after the tag was created, so that version
+is used up. A runtime change after the approval, other than the run's own revert
+and fix PRs, needs a new approval.
 
 A tag created at a superseded commit uses up its version, because tags never
 move. A runtime PR merged after a release PR has to raise the version, so the
@@ -288,10 +291,11 @@ next release PR without delay.
    once more. Only the publish job has repository write access.
 
 The main branch must still point at the candidate when publication begins and
-immediately before the draft becomes public. If it advanced, rerun from current
-main. A new version must be newer than every public release, betas included.
-Reusing an existing tag at another commit is rejected. A merge or a pushed tag
-alone does not publish a release.
+immediately before the draft becomes public. If it advanced and the tag does not
+exist yet, rerun from current main. An existing tag uses up its version, as
+described under the merge freeze. A new version must be newer than every public
+release, betas included. Reusing an existing tag at another commit is rejected.
+A merge or a pushed tag alone does not publish a release.
 
 ## Hardware coverage and release scope
 
