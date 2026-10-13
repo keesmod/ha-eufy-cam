@@ -165,7 +165,7 @@ made no session attempt. The cause is that client 0.29.0 admitted only the
 `T84A1` to the experimental route. Client 0.29.1, included in bridge 0.8.35,
 also admits a standalone T8410. Reported, not independently reproduced. On
 2026-10-13 the same reporter had live video working on the camera with firmware
-2.3.2.4, while live video on the one with 2.3.1.6 failed with
+2.3.2.4. Live video failed on the one with 2.3.1.6, and its event log had
 `device_request_timeout`. Its connection stage was not reported yet. See the
 [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-standalone-t8410-result-2026-10-13).
 

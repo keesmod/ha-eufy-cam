@@ -410,8 +410,8 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   `T8410`** can try their own local session with the opt-in
   `experimental_standalone` option, the T84A1 from bridge 0.8.34 and the T8410
   from bridge 0.8.35. On 2026-10-13 a reporter had a snapshot and live video
-  working on a standalone T8410 with firmware 2.3.2.4, while live video on one
-  with firmware 2.3.1.6 failed with `device_request_timeout`
+  working on a standalone T8410 with firmware 2.3.2.4, while live video failed
+  on one with firmware 2.3.1.6, and its event log had `device_request_timeout`
   ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). No T84A1
   result is recorded yet. See
   [experimental standalone cameras](USAGE.md#experimental-standalone-cameras).
