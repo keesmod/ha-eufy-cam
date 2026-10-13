@@ -166,7 +166,9 @@ whose merge updates the stable app, and both GitHub releases.
    - Run `python3 scripts/prepare_ha_app.py --release` when the bridge version
      changed. It writes `ha_app/` and an existing `ha_app_beta/` at the stable
      bridge. An integration-only release keeps both folders.
-   - Set the README card resource to `?v=X.Y.Z` and add the Upgrading text.
+   - Set the README card resource to `?v=X.Y.Z` and replace the current-release
+     summary in the README Upgrading section. History lives in `CHANGELOG.md`
+     and the release notes.
 
    It normally changes nothing else. CI runs the release checks on it.
 4. Collect the acceptance evidence before the merge, for example from testers of

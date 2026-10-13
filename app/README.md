@@ -22,4 +22,4 @@ Update this app through Home Assistant and the integration through HACS. Home As
 
 The app stores its bridge identity, Eufy credentials and session in `/data/eufy`. Back up the app and keep the same token when updating. Do not attach its data or token to support reports.
 
-Live viewing starts when you open a viewer. Closing the last viewer stops the camera stream, and a watchdog ends sessions when viewers disappear. A power or network failure can prevent a stop command from reaching the camera. See the [streaming limits](https://github.com/keesmod/ha-eufy-cam#honest-snapshot-and-streaming-limits).
+Live viewing starts when you open a viewer. Closing the last viewer stops the camera stream, and a watchdog ends sessions when viewers disappear. A power or network failure can prevent a stop command from reaching the camera. See the [streaming limits](https://github.com/keesmod/ha-eufy-cam/blob/main/docs/USAGE.md#honest-snapshot-and-streaming-limits).
