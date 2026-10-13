@@ -320,6 +320,31 @@ def test_healthy_partial_and_missing_samples_do_not_become_faults():
     assert "recording_bridge_correlation_unavailable" in partial["missing_evidence"]
 
 
+@pytest.mark.parametrize(
+    ("integration", "card", "flagged"),
+    [
+        ("0.8.47-beta.1", "0.8.47-beta.1", False),
+        ("0.8.47", "0.8.47", False),
+        ("0.8.47-beta.2", "0.8.47-beta.1", True),
+        ("0.8.47", "0.8.47-beta.2", True),
+        ("0.8.47-beta.1", "unavailable", True),
+        ("unavailable", "unavailable", True),
+    ],
+)
+def test_loaded_card_must_be_the_integration_build_including_its_beta(
+    integration, card, flagged
+):
+    # A beta card keeps its suffix through the recording projection.
+    assert project_attempt({"card_version": card})["card_version"] == card
+    assert PlaybackDiagnostics().begin("h264", card).snapshot()["card_version"] == card
+    for sample in (
+        {"live_playback": [{"browser": [{"card_version": card}]}]},
+        {"recording_playback": {"attempts": [{"card_version": card}]}},
+    ):
+        missing = assess({"integration": integration, **sample})["missing_evidence"]
+        assert ("loaded_card_version_missing_or_different" in missing) is flagged
+
+
 def test_live_projection_keeps_late_audio_ice_but_removes_arbitrary_stored_text():
     result = playback_report(
         {

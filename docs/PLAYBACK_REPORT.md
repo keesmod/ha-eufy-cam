@@ -39,9 +39,14 @@ information. Review that wrapper and the report before sharing the JSON.
 
 `card_version` identifies the actual loaded card build. It is recorded in live
 browser samples and recording preparation requests. Compare it with the
-integration version before attributing missing fields to a camera. An older
-card or bridge remains compatible. Missing versions and optional schema fields
-stay unavailable. The download does not turn missing counters into zero.
+integration version before attributing missing fields to a camera. Since
+integration 0.8.47 the download keeps a beta `card_version` and `integration`
+such as `0.8.47-beta.1`. The versions compare exactly, so a `0.8.47-beta.1` card
+under integration `0.8.47-beta.2` counts as a different card. When the
+integration version is `unavailable`, the assessment records
+`loaded_card_version_missing_or_different` for every sample. An older card or
+bridge remains compatible. Missing versions and optional schema fields stay
+unavailable. The download does not turn missing counters into zero.
 
 A bridge recording `attempt` is a random integer below 2^48. It is unrelated to
 a camera, user or stored recording ID. HA assigns its own `attempt` and records

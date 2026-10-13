@@ -302,6 +302,17 @@ def _failed_connection(support: dict[str, Any], discovery: list[Any]) -> Any:
     return named[-1][1] if named else None
 
 
+def _card_differs(row: dict[str, Any], report: dict[str, Any]) -> bool:
+    """Whether a sample's loaded card is not known to be the integration's build.
+
+    The versions compare exactly, so a 0.8.47-beta.1 card under integration
+    0.8.47-beta.2 differs. An unavailable integration version matches no card,
+    not even an unavailable card version.
+    """
+    integration = report.get("integration")
+    return integration == "unavailable" or row.get("card_version") != integration
+
+
 def assess(report: dict[str, Any]) -> dict[str, Any]:
     """Only inspect the projected report. Findings never contain upstream text."""
     findings: list[dict[str, Any]] = []
@@ -494,7 +505,7 @@ def assess(report: dict[str, Any]) -> dict[str, Any]:
         if not browser:
             missing.add("live_browser_sample_unavailable")
         for row in browser:
-            if row.get("card_version") != report.get("integration"):
+            if _card_differs(row, report):
                 missing.add("loaded_card_version_missing_or_different")
             if row.get("ice") == "failed":
                 add(
@@ -586,7 +597,7 @@ def assess(report: dict[str, Any]) -> dict[str, Any]:
         attempt = row.get("attempt")
         if row.get("bridge_attempt") not in bridge_attempts:
             missing.add("recording_bridge_correlation_unavailable")
-        if row.get("card_version") != report.get("integration"):
+        if _card_differs(row, report):
             missing.add("loaded_card_version_missing_or_different")
         events = {e["event"] for e in row.get("events", [])}
         if "client_disconnect" in events:

@@ -54,9 +54,19 @@ export const diagnosticVersion = (value: unknown): string =>
   /^[0-9]{1,4}(?:\.[0-9]{1,4}){0,3}$/.test(value)
     ? value
     : 'unavailable';
+// The bridge and client library release versions: the numeric form above,
+// optionally with a -beta.N suffix such as 0.8.38-beta.1, at most 24 characters.
+// The HA download applies the same bound. Firmware, hardware and Node versions
+// stay numeric.
+export const diagnosticReleaseVersion = (value: unknown): string =>
+  typeof value === 'string' &&
+  value.length <= 24 &&
+  /^[0-9]{1,4}(?:\.[0-9]{1,4}){0,3}(?:-beta\.[1-9][0-9]{0,3})?$/.test(value)
+    ? value
+    : 'unavailable';
 function packageVersion(path: string): string {
   try {
-    return diagnosticVersion(
+    return diagnosticReleaseVersion(
       JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')).version,
     );
   } catch {

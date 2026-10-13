@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import type { DiscoveryResult, Diagnostic, CameraCapabilities } from '@keesmod/eufy-mega-client';
-import { DiscoveryDiagnostics, diagnosticCode, diagnosticModel, diagnosticSoftware } from '../src/discovery-diagnostics.js';
+import {
+  DiscoveryDiagnostics, diagnosticCode, diagnosticModel, diagnosticReleaseVersion, diagnosticSoftware, diagnosticVersion,
+} from '../src/discovery-diagnostics.js';
 
 const result = (): DiscoveryResult => ({
   devices: [
@@ -349,4 +351,37 @@ test('the summary carries the experimental_standalone option and no other record
     on.filter(row => row.relationship === 'standalone').map(row => [row.model, row.relationship_reason, row.relationship_transport]),
     [['T8410C', 'standalone_transport_unverified', null], ['T84A1', null, 'experimental']],
   );
+});
+
+// The HA download applies the same release and numeric version bounds.
+const versionCases = JSON.parse(readFileSync(
+  new URL('../../tests/fixtures/diagnostic-versions.json', import.meta.url), 'utf8',
+)) as Record<'release' | 'numeric', { accepted: string[]; rejected: unknown[] }>;
+
+test('bridge and library versions may be betas, device and Node versions stay numeric', () => {
+  for (const value of versionCases.release.accepted) assert.equal(diagnosticReleaseVersion(value), value, value);
+  for (const value of versionCases.release.rejected)
+    assert.equal(diagnosticReleaseVersion(value), 'unavailable', JSON.stringify(value));
+  for (const value of versionCases.numeric.accepted) assert.equal(diagnosticVersion(value), value, value);
+  for (const value of versionCases.numeric.rejected)
+    assert.equal(diagnosticVersion(value), 'unavailable', JSON.stringify(value));
+  // Both package versions go through the release bound, such as a 0.8.38-beta.1 bridge.
+  const installed = (path: string) => JSON.parse(readFileSync(new URL(path, import.meta.url), 'utf8')).version;
+  const software = diagnosticSoftware();
+  assert.equal(software.bridge, installed('../package.json'));
+  assert.equal(software.library, installed('../node_modules/@keesmod/eufy-mega-client/package.json'));
+  assert.equal(software.node, diagnosticVersion(process.versions.node));
+  const f = collect();
+  const value = result();
+  value.devices[1]!.firmware = '0.2.1.8-beta.1';
+  value.devices[1]!.hardware = '1-beta.1';
+  value.issues[0]!.context = {firmware:'3.3.4.4-beta.1',parentStatus:'present',parentId:'PRIVATE_BASE',parentModel:'T8030',parentFirmware:'3.8.7.4-beta.1'};
+  f.reporter.inventory(value, 'accepted', undefined, true, new Map(), new Map());
+  const rows = f.rows();
+  assert.deepEqual(rows[0].software, software);
+  const camera = rows.find(row => row.event === 'device' && row.ref === 2);
+  assert.deepEqual([camera.firmware, camera.hardware], ['unavailable', 'unavailable']);
+  const issue = rows.find(row => row.event === 'issue');
+  assert.deepEqual([issue.firmware, issue.parent_firmware], ['unavailable', 'unavailable']);
+  assert.doesNotMatch(f.lines.join('\n'), /PRIVATE/);
 });

@@ -230,7 +230,19 @@ capabilities as separate evidence.
   number longer than eight characters never matches. Any other value becomes
   `unavailable`. Device types are integers from 0 through 65535. Numeric dotted
   versions contain one to four
-  components of one to four digits, with a maximum length of 19. Do not coerce,
+  components of one to four digits, with a maximum length of 19. Firmware,
+  hardware, parent and owner firmware, camera software, Node and Home Assistant
+  versions use only this form. Release versions may add a `-beta.N` suffix with
+  N from 1 through 9999, with a maximum length of 24. They are the bridge and
+  library versions in `software`, which the bridge checks with
+  `diagnosticReleaseVersion` and the HA download rechecks with `release_version`,
+  and the download's `integration` and `card_version` values, which the
+  integration checks with `release_version`. The live
+  diagnostics websocket accepts a `card_version` of at most 24 characters. Since
+  bridge 0.8.38 and integration 0.8.47 a beta such as `0.8.38-beta.1` appears as
+  received. Older versions show it as `unavailable`. In the assessment an
+  `unavailable` integration version matches no loaded card. Both validators
+  share the cases in `tests/fixtures/diagnostic-versions.json`. Do not coerce,
   trim, truncate or infer rejected values. Use fixed enum allowlists for structural values.
 - `code`, `reason`, `relationship_reason` and `outcome` accept complete machine
   identifiers matching `[a-z][a-z0-9]*(?:_[a-z0-9]+)*`, at most 64 characters.

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.38 - Unreleased
+
+- Report a beta bridge or client library version such as `0.8.38-beta.1` as
+  received in the `software` field of the discovery `summary` and `connection`
+  records. The `Eufy discovery:` log lines and the bridge's diagnostics download
+  showed such a version as `unavailable` in bridge 0.8.37. Only a `-beta.N`
+  suffix is accepted, with at most 24 characters. Firmware, hardware and Node
+  versions stay numeric. The client pin stays 0.29.2 and the report schema
+  stays 2.
+
+Upgrade: keep the same token and session. Update the integration to 0.8.47 to
+keep beta versions in **Download diagnostics**. Integration 0.8.46 still works
+but shows a beta bridge or library version as `unavailable`. Rollback: restore
+the 0.8.37 app backup and integration 0.8.46.
+
 ## 0.8.37 - 2026-10-13
 
 - Record whether `experimental_standalone` is on as `experimental_standalone`

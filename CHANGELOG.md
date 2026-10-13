@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.8.47 - Unreleased
+
+- **Download diagnostics** now shows beta versions such as integration
+  `0.8.47-beta.1`, bridge `0.8.38-beta.1` or a client library beta as received.
+  Integration 0.8.46 and bridge 0.8.37 accept only numeric versions and show a
+  beta as `unavailable`. This applies to `integration`, the bridge and library
+  in `support.software` and the loaded card's `card_version` in live and
+  recording samples. Only a `-beta.N` suffix is accepted, with at most 24
+  characters. Other suffixes and build strings still show as `unavailable`.
+- Firmware, hardware, camera software, Node and Home Assistant versions stay
+  numeric only.
+- The assessment compares the loaded card with the integration exactly. A
+  `0.8.47-beta.1` card under integration `0.8.47-beta.2` is reported as
+  `loaded_card_version_missing_or_different`. So is every card when the
+  integration version is `unavailable`, which previously matched an
+  `unavailable` card version.
+- Bridge 0.8.38 reports its own and the client library's beta versions the same
+  way in its `Eufy discovery:` log lines. The client pin stays 0.29.2 and the
+  report schema stays 2.
+
+Upgrade: update the HACS integration to 0.8.47 and the bridge app to 0.8.38,
+then restart Home Assistant. Keep the same token and session. No configuration
+migration is needed. Integration 0.8.46 still works with bridge 0.8.38, but its
+download shows a beta bridge or library version as `unavailable`. Rollback:
+restore the bridge 0.8.37 app backup and integration 0.8.46.
+
 ## 0.8.46 - 2026-10-13
 
 - Bridge 0.8.37 records the `experimental_standalone` option in the discovery
