@@ -26,12 +26,14 @@
   `lookup_inventory_reply`, never an ID or address. Each value is checked
   against its bound, and any other value becomes `null`.
 - When a standalone camera or a HomeBase fails its connection at `lookup`, the
-  assessment adds one fixed sentence on what the lookup saw. Examples are that
-  no reply of any kind reached the bridge, that the device at the inventory LAN
-  address answered with an ID outside this account, or that other devices in
-  this account answered the broadcast but this camera did not. For a HomeBase
-  with a near reply it no longer says the bridge host did not reach the
-  HomeBase. Without these fields the text stays the same.
+  assessment can add one fixed sentence on what the lookup saw. Examples are
+  that no reply of any kind reached the bridge, that the device at the
+  inventory LAN address answered with an ID outside this account, or that
+  other devices in this account answered the broadcast but this camera did
+  not. With a near reply it says that no reply was accepted instead of that
+  the device did not answer, and for a HomeBase it no longer says the bridge
+  host did not reach the HomeBase. Without these fields, or when none of the
+  listed observations applies, the text stays the same.
 - Bridge 0.8.38 releases a camera at once when its live start fails before the
   start command was issued, for example a standalone camera on the
   experimental route that does not complete its connection

@@ -105,7 +105,7 @@ def _start_observation(start: dict[str, Any], failed: bool) -> str:
 _CONNECTION_STAGES = {
     "lookup": (
         "Owner connection was not established. No HomeBase answered the local "
-        "lookup{target}.{reach}"
+        "lookup{target}. The bridge host did not reach the HomeBase on its LAN."
     ),
     "station_found": (
         "Owner connection was not established. The HomeBase answered the local "
@@ -116,11 +116,19 @@ _CONNECTION_STAGES = {
         "session but the command key was not established."
     ),
 }
-_UNREACHED = " The bridge host did not reach the HomeBase on its LAN."
 # A near reply is not the device's own reply by the exact ID comparison (#152).
+# It did reach the bridge, so the stage sentence says no reply was accepted.
 _NEAR = (
     " A lookup reply carried this {device}'s ID in a different format, and the "
     "lookup did not accept it."
+)
+_OWNER_NEAR = (
+    "Owner connection was not established. No HomeBase gave an accepted reply "
+    "to the local lookup{target}."
+)
+_STANDALONE_NEAR = (
+    "The experimental standalone camera gave no accepted reply to the local "
+    "lookup{target}."
 )
 # An opted-in standalone camera is its own owner. Its connect says how far its
 # own session got, whatever the reason, so the next protocol step is visible.
@@ -180,9 +188,14 @@ def _standalone_connections(
     for ref in sorted(failing):
         row = latest.get(ref)
         if row and row.get("stage") in _STANDALONE_STAGES:
+            template = (
+                _STANDALONE_NEAR
+                if _near_reply(row)
+                else _STANDALONE_STAGES[row["stage"]]
+            )
             findings.append(
                 (
-                    _STANDALONE_STAGES[row["stage"]].format(
+                    template.format(
                         target=_lookup_target(row),
                         reason=row.get("reason") or "unclassified_error",
                     )
@@ -255,6 +268,14 @@ def _lookup_target(row: dict[str, Any]) -> str:
     )
 
 
+def _near_reply(row: dict[str, Any]) -> bool:
+    """Whether a reply with the device's ID in another format reached the lookup."""
+    near = row.get("lookup_near_replies")
+    return row.get("stage") == "lookup" and (
+        row.get("lookup_inventory_reply") == "near" or (type(near) is int and near > 0)
+    )
+
+
 def _lookup_observed(row: dict[str, Any], device: str) -> str:
     """One sentence on what an attempt that failed at lookup saw, or nothing.
 
@@ -281,7 +302,7 @@ def _lookup_observed(row: dict[str, Any], device: str) -> str:
         return " No lookup request left the bridge."
     if row.get("lookup_broadcast_enabled") is False or (errors or 0) > 0:
         return " Some lookup requests could not be sent from the bridge host."
-    if reply == "near" or (near or 0) > 0:
+    if _near_reply(row):
         return _NEAR.format(device=device)
     if reply == "foreign":
         return (
@@ -313,12 +334,9 @@ def _lookup_observed(row: dict[str, Any], device: str) -> str:
 
 
 def _connection_stage(row: dict[str, Any]) -> str:
-    observed = _lookup_observed(row, "HomeBase")
-    # A near reply reached the bridge, so the HomeBase is not called unreached.
-    reach = "" if observed == _NEAR.format(device="HomeBase") else _UNREACHED
-    return (
-        _CONNECTION_STAGES[row["stage"]].format(target=_lookup_target(row), reach=reach)
-        + observed
+    template = _OWNER_NEAR if _near_reply(row) else _CONNECTION_STAGES[row["stage"]]
+    return template.format(target=_lookup_target(row)) + _lookup_observed(
+        row, "HomeBase"
     )
 
 

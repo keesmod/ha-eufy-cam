@@ -923,6 +923,14 @@ _OWNER_LOOKUP = (
     "at its inventory LAN address or by broadcast. The bridge host did not reach "
     "the HomeBase on its LAN."
 )
+_STANDALONE_NEAR_LOOKUP = (
+    "The experimental standalone camera gave no accepted reply to the local "
+    "lookup at its inventory LAN address or by broadcast."
+)
+_OWNER_NEAR_LOOKUP = (
+    "Owner connection was not established. No HomeBase gave an accepted reply to "
+    "the local lookup at its inventory LAN address or by broadcast."
+)
 _FORMAT = (
     "A lookup reply carried this {device}'s ID in a different format, and the "
     "lookup did not accept it."
@@ -957,12 +965,6 @@ def _lookup_failure(device_ref=5, **lookup):
             "No lookup request left the bridge.",
         ),
         ({"lookup_broadcast_enabled": False}, _SEND),
-        ({"lookup_send_errors": 2, "lookup_near_replies": 1}, _SEND),
-        ({"lookup_near_replies": 1, "lookup_datagrams": 1}, _FORMAT),
-        (
-            {"lookup_inventory_reply": "near", "lookup_foreign_replies": 1},
-            _FORMAT,
-        ),
         (
             {
                 "lookup_inventory_reply": "foreign",
@@ -981,15 +983,6 @@ def _lookup_failure(device_ref=5, **lookup):
             _SHARED,
         ),
         ({"inventory_address_shared": True}, _DUPLICATE),
-        (
-            {
-                "lookup_near_replies": 1,
-                "lookup_inventory_reply": "foreign",
-                "lookup_foreign_replies": 1,
-                "lookup_datagrams": 2,
-            },
-            _FORMAT,
-        ),
         (
             {
                 "lookup_inventory_reply": "account",
@@ -1043,6 +1036,46 @@ def test_standalone_lookup_fields_add_one_fixed_sentence_in_order(lookup, senten
 @pytest.mark.parametrize(
     ("lookup", "sentence"),
     [
+        # Send errors still come first, and the near reply still reached the bridge.
+        ({"lookup_send_errors": 2, "lookup_near_replies": 1}, _SEND),
+        ({"lookup_near_replies": 1, "lookup_datagrams": 1}, _FORMAT),
+        (
+            {"lookup_inventory_reply": "near", "lookup_foreign_replies": 1},
+            _FORMAT,
+        ),
+        (
+            {
+                "lookup_near_replies": 1,
+                "lookup_inventory_reply": "foreign",
+                "lookup_foreign_replies": 1,
+                "lookup_datagrams": 2,
+            },
+            _FORMAT,
+        ),
+    ],
+)
+def test_standalone_near_reply_says_no_reply_was_accepted(lookup, sentence):
+    # A reply with the camera's ID in another format arrived, so the camera is
+    # not said to have not answered (#152).
+    (finding,) = _standalone_findings(_standalone_report([_lookup_failure(**lookup)]))
+    expected = f"{_STANDALONE_NEAR_LOOKUP} {sentence.format(device='camera')}"
+    assert finding["observation"] == expected
+    assert ";" not in finding["observation"]
+
+
+def test_near_reply_without_an_inventory_address_names_the_missing_address():
+    row = {**_lookup_failure(lookup_near_replies=1), "inventory_address": False}
+    (finding,) = _standalone_findings(_standalone_report([row]))
+    assert finding["observation"] == (
+        "The experimental standalone camera gave no accepted reply to the local "
+        "lookup, and the inventory had no LAN address for it. "
+        + _FORMAT.format(device="camera")
+    )
+
+
+@pytest.mark.parametrize(
+    ("lookup", "sentence"),
+    [
         ({"lookup_account_replies": 1, "lookup_datagrams": 1}, _ACCOUNT),
         ({}, "No reply of any kind reached the bridge during the 3 lookup rounds."),
     ],
@@ -1054,21 +1087,31 @@ def test_owner_lookup_fields_add_one_fixed_sentence_for_the_homebase(lookup, sen
 
 
 @pytest.mark.parametrize(
-    "lookup",
+    ("lookup", "sentence"),
     [
-        {"lookup_near_replies": 1, "lookup_datagrams": 1},
-        {"lookup_inventory_reply": "near", "lookup_foreign_replies": 1},
+        ({"lookup_near_replies": 1, "lookup_datagrams": 1}, _FORMAT),
+        (
+            {"lookup_inventory_reply": "near", "lookup_foreign_replies": 1},
+            _FORMAT,
+        ),
+        # The data decide, also when a send error names the sentence.
+        (
+            {
+                "lookup_send_errors": 1,
+                "lookup_near_replies": 1,
+                "lookup_datagrams": 1,
+            },
+            _SEND,
+        ),
+        ({"lookup_broadcast_enabled": False, "lookup_inventory_reply": "near"}, _SEND),
     ],
 )
-def test_owner_near_reply_does_not_call_the_homebase_unreached(lookup):
+def test_owner_near_reply_does_not_call_the_homebase_unreached(lookup, sentence):
     # A reply with the HomeBase's ID in another format did reach the bridge.
     finding = _owner_finding(_owner_report([_lookup_failure(device_ref=1, **lookup)]))
-    assert finding["observation"] == (
-        "Owner connection was not established. No HomeBase answered the local "
-        "lookup at its inventory LAN address or by broadcast. A lookup reply "
-        "carried this HomeBase's ID in a different format, and the lookup did "
-        "not accept it."
-    )
+    expected = f"{_OWNER_NEAR_LOOKUP} {sentence.format(device='HomeBase')}"
+    assert finding["observation"] == expected
+    assert "did not reach" not in finding["observation"]
 
 
 @pytest.mark.parametrize(
@@ -1110,8 +1153,8 @@ def test_lookup_text_is_unchanged_without_the_fields_and_at_other_stages():
     assert finding["observation"] == _STANDALONE_LOOKUP
     owner = _owner_finding(_owner_report([{**plain, "device_ref": 1}]))
     assert owner["observation"] == _OWNER_LOOKUP
-    # Only a failure at lookup gets a lookup sentence.
-    found = {**_lookup_failure(), "stage": "station_found"}
+    # Only a failure at lookup gets a lookup sentence, also with a near reply.
+    found = {**_lookup_failure(lookup_near_replies=1), "stage": "station_found"}
     (finding,) = _standalone_findings(_standalone_report([found]))
     assert finding["observation"] == (
         "The experimental standalone camera answered the local lookup but did not "

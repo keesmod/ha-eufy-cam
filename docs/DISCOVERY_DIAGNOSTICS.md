@@ -374,6 +374,8 @@ this order:
 | `lookup_datagrams=0` | No reply of any kind reached the bridge during the `lookup_rounds` rounds |
 | Only `lookup_foreign_replies` above 0 | Only devices outside the account answered |
 
+With a near reply the assessment says that the camera or HomeBase gave no
+accepted reply, not that it did not answer, also when a send error comes first.
 `inventory_address_on_subnet=false` says the inventory address lies outside
 every local subnet of the bridge host. None of these values proves a cause on
 its own. A connected attempt carries the same fields, on the `connect` record of
