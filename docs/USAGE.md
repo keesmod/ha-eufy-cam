@@ -28,7 +28,9 @@ On the tested HB3, increasing the SDK's existing query limit retrieved 105 datab
 
 ### Card options
 
-The visual editor sets these. In YAML:
+The visual editor sets these. Its **Live view** choice offers **Popup dialog
+(default)** or **Inside the card, for several live cameras**. The **Start live
+automatically** switch appears once the inside option is selected. In YAML:
 
 ```yaml
 type: custom:eufy-viewer-card
@@ -151,10 +153,10 @@ With the option on, the bridge connects to each admitted camera at every
 discovery, normally at startup, over the same local lookup and command key it
 uses for a HomeBase. Each camera that does not answer adds up to 20 seconds to
 startup. The camera's snapshot, live view and recordings are offered as
-experimental features and work only if that session works. No physical
-standalone camera has confirmed this yet, so a failure is expected and useful
-evidence. Recordings that would need a cloud key cannot be downloaded, and the
-camera's detection events, guard mode and alarm state are not part of this test.
+experimental features and work only if that session works. No standalone
+hardware result is recorded yet, so a failure is expected and useful evidence.
+Recordings that would need a cloud key cannot be downloaded, and the camera's
+detection events, guard mode and alarm state are not part of this test.
 
 To test it, update the app and the integration, set `experimental_standalone`
 to true in the app's configuration, restart the app, wait for the startup
@@ -176,10 +178,10 @@ Turn the option off again to return to the previous behavior.
 
 | Component | Runtime requirements |
 |---|---|
-| Integration | Home Assistant ≥ 2026.9.0, built-in `camera`, `http`, `lovelace`, `websocket_api`, `go2rtc-client` 0.4.0 or newer (installed automatically), HA-managed `go2rtc` for WebRTC |
+| Integration | Home Assistant ≥ 2026.9.0, built-in `camera`, `http`, `lovelace`, `web_rtc`, `websocket_api`, `go2rtc-client` 0.4.0 or newer (installed automatically), HA-managed `go2rtc` for WebRTC |
 | Card | Bundled JavaScript, Home Assistant frontend and a modern browser, no separate frontend runtime package |
 | Bridge | Node.js 24, FFmpeg and tini, all included in the app/container |
-| Bridge libraries | `@keesmod/eufy-mega-client` 0.28.0 from its checksum-pinned GitHub release and `ws` 8.21.3. Mega retains MIT and Apache-2.0 attribution. Dependencies are pinned by `bridge/package-lock.json`. |
+| Bridge libraries | `@keesmod/eufy-mega-client` from its checksum-pinned GitHub release and `ws`. The release notes name the bundled client version. Mega retains MIT and Apache-2.0 attribution. Dependencies are pinned by `bridge/package-lock.json`. |
 | External services | Eufy account with camera access, Eufy cloud/push connectivity and local connectivity to camera/HomeBase |
 
 No MQTT, separately installed RTSP server, existing Eufy integration or `eufy-security-ws` app is required. WebRTC uses HA's managed go2rtc and its FFmpeg audio conversion. Upgrade the bridge and integration together for the new transport. A dedicated shared Eufy account is recommended for ongoing use. Simultaneous operation with another Eufy client using the same account has only been briefly observed, not long-term validated. TypeScript, Playwright and Python test tools are development-only dependencies.
@@ -208,7 +210,7 @@ its existing data volume. Remove it or set it to `false` afterward.
 From bridge 0.8.20 the live WebRTC encoder is bounded at 4 Mbit/s. Change it
 with the optional app option `live_max_bitrate` (Docker: `EUFY_LIVE_MAX_BITRATE`),
 for example `2500k` for a weaker WiFi viewer or `8M` for a wired one. Values
-between `200k` and `50M` are accepted; other values stop the bridge at startup.
+between `200k` and `50M` are accepted. Other values stop the bridge at startup.
 The cap applies at the camera's announced frame rate, so a HomeBase that delivers
 more frames than it announces uses proportionally more. Live audio no longer
 depends on the camera sending audio within three seconds: it is delivered on its

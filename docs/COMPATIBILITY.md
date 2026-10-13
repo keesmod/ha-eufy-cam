@@ -12,6 +12,10 @@ Keep versions, firmware, topology, date and source with every result. Partial
 reports count, and historical evidence keeps its original date after upgrades.
 See the [shared policy](https://github.com/keesmod/eufy-mega-client/blob/main/docs/COMMUNITY_VALIDATION.md)
 and [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md).
+Camera models recognized after the
+[dated 0.7.1 acceptance](#dated-071-hardware-acceptance), based on owner reports
+or public evidence, are listed under [community results](#community-results).
+The model matrix also lists models with software evidence only.
 
 The historical results below come from one maintainer installation. The dated
 0.7.1 acceptance now records exact models and firmware. These results do not
@@ -20,16 +24,19 @@ certify whole camera families or additional installations.
 | Component or feature | Confirmed evidence | Still to confirm |
 |---|---|---|
 | Home Assistant | 2026.9.0 | Later releases and other installations |
-| HomeBase | HomeBase 3, T8030, firmware 3.8.6.0 | Other firmware, HomeBase 2 and standalone storage |
-| Cameras and snapshots | Four camera entities available; all four snapshots returned successfully | Exact camera models and wider combinations |
-| Stored recordings | H.264/AAC and native H.265/AAC `hvc1` playback. T8213 doorbell 1600×2300 clips played to completion in the macOS app, including a 49-second clip and seeking. H.264 compatibility conversion also decoded successfully. | Other HEVC profiles, installations and large archives; audible output was not independently assessed |
-| Events browsing | Date/camera filters, calendar presence, stored previews, previous/next playback; 95 known-camera files on a tested day | Other retention windows and firmware limits |
-| Live WebRTC | Hardware video at 1920×1080; automated video/audio decoding tests | Audible output on each camera, physical iPhone background behavior and remote routes |
-| Home Assistant macOS app | App 2026.9.0 build 2026.2874: native H.265 recording playback through both cards; JPEG live playback after client capability detection; 249 decoded frames and confirmed stream cleanup | JPEG has no audio; other macOS app versions |
+| HomeBase | HomeBase 3, T8030, firmware 3.8.6.0 | Other HomeBase 3 firmware and standalone storage |
+| Cameras and snapshots | Four camera entities available. All four snapshots returned successfully | Exact camera models and wider combinations |
+| Stored recordings | H.264/AAC and native H.265/AAC `hvc1` playback. T8213 doorbell 1600×2300 clips played to completion in the macOS app, including a 49-second clip and seeking. H.264 compatibility conversion also decoded successfully. | Other HEVC profiles, installations and large archives. Audible output was not independently assessed |
+| Events browsing | Date/camera filters, calendar presence, stored previews, previous/next playback. 95 known-camera files on a tested day | Other retention windows and firmware limits |
+| Live WebRTC | Hardware video at 1920×1080. Automated video/audio decoding tests | Audible output on each camera, physical iPhone background behavior and remote routes |
+| Home Assistant macOS app | App 2026.9.0 build 2026.2874: native H.265 recording playback through both cards. JPEG live playback after client capability detection. 249 decoded frames and confirmed stream cleanup | JPEG has no audio. Other macOS app versions |
 | Home Assistant iOS app | Maintainer user report on 2026-09-09: live image starts in about 3 seconds | App/iOS versions and independent reproduction |
-| Windows Chrome | Maintainer user report on 2026-09-09: live image starts in about 6 seconds; stored recordings in 3–5 seconds | Browser version, clip details and independent reproduction |
+| Windows Chrome | Maintainer user report on 2026-09-09: live image starts in about 6 seconds, stored recordings in 3–5 seconds | Browser version, clip details and independent reproduction |
 | Bridge app | amd64 tested on hardware | aarch64 hardware acceptance |
 | Viewer cleanup | Normal close, cancellation and zero remaining active/quarantined streams in live validation | Long-term battery measurements and physical stop during a hard host/network failure |
+
+Older HomeBase models and HomeBase Mini are not supported by the client. See its
+[topology inventory](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#topology-inventory).
 
 Detailed evidence: [0.3.0 validation](VALIDATION_0.3.md). Model support in the underlying SDK alone does not count as a successful installation report.
 
@@ -346,9 +353,9 @@ features you use, with the date and exact known versions.
 1. Follow the [installation instructions](../README.md#installation). Record the integration and bridge versions separately.
 2. Confirm your cameras appear and show their latest received snapshots. An older snapshot is expected when no new image has arrived.
 3. Close live viewers. In **Eufy Events**, choose a date with a recording you already see in the Eufy app, preferably yesterday. Confirm the camera/time is listed and play that existing clip through to the end.
-4. Check the camera filter and, if another clip exists, **Next recording** and **Previous recording**. Open the calendar and check a known recording day; calendar marks describe the whole HomeBase.
+4. Check the camera filter and, if another clip exists, **Next recording** and **Previous recording**. Open the calendar and check a known recording day. Calendar marks describe the whole HomeBase.
 5. Close recordings. Open **Watch live**, optionally enable sound, then close it. Confirm you return to the snapshot. Report sound as untested if you could not hear it.
-6. If practical, leave the dashboard or background your phone during viewing. Note any continuing playback or failure when returning. Visual closure alone does not prove the physical camera stopped; report bridge diagnostics if available.
+6. If practical, leave the dashboard or background your phone during viewing. Note any continuing playback or failure when returning. Visual closure alone does not prove the physical camera stopped. Report bridge diagnostics if available.
    Also note any supported real event you observed and whether the same devices
    recovered after a normal restart. Do not provoke network or device failures.
 7. [Submit a compatibility report](https://github.com/keesmod/ha-eufy-cam/issues/new?template=compatibility.yml) with model numbers, firmware, browser/phone and each outcome. No serial numbers, account details or footage are needed.
@@ -369,3 +376,41 @@ observed working live video with no audio. Its exact app/component versions and
 route were not specified. Keep that result alongside the remote Cloudflare
 failure. The requested 0.7.1 retest, audio diagnosis and session recovery remain
 open. These scoped reports do not establish full T8134 acceptance.
+
+Camera models that later releases recognize after owner reports or public
+evidence are listed below with their current status. Exact versions, firmware,
+topology and sources are in
+[discovery diagnostics](DISCOVERY_DIAGNOSTICS.md#interpret-the-report) and the
+Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md).
+
+- **Wired Cam C31 `T817L`, type 10031**, recognized from bridge 0.8.30. An owner
+  reported a snapshot, live video with audio, recording playback and a person
+  event behind a HomeBase 3 on integration 0.8.38. Other event types were not
+  reported. Reported, not independently reproduced.
+- **eufyCam 2C `T8113-V`, type 8**, recognized from bridge 0.8.33. An owner
+  reported a snapshot, live view, recording playback and motion events behind a
+  HomeBase 3 on integration 0.8.42. Audio and other event types were not
+  reported. Reported, not independently reproduced.
+- **eufyCam 2C `T8113-Z`, type 8**, recognized from bridge 0.8.29. Before that
+  release an owner reported snapshots, live view and HomeBase recordings behind
+  a HomeBase 3 with a local test profile. Reported, not independently
+  reproduced.
+- **Video Doorbell C30 `T8224`, type 96**, recognized from bridge 0.8.26 after
+  a shared discovery report. The reporter has not yet confirmed the C30 on
+  that bridge.
+- **eufyCam 3 `T8160-C`, type 19**, and **Indoor Cam Pan&Tilt 2K `T8410C`,
+  type 31**, recognized behind a HomeBase 3 from bridge 0.8.36. `T8160-C` was
+  reported. `T8410C` is admitted on public evidence. Both have software tests
+  only, and hardware results are pending. A standalone `T8410C` appears as a
+  camera whose snapshot, live view and recordings are unsupported, also with
+  `experimental_standalone` on. Owners use Pan & Tilt names for both `T8410`
+  and `T8410C`, so check the model code in **Download diagnostics**, not the
+  product name.
+- **Standalone Wall Light Cam S100 `T84A1` and Indoor Cam 2K Pan & Tilt
+  `T8410`** can try their own local session with the opt-in
+  `experimental_standalone` option, the T84A1 from bridge 0.8.34 and the T8410
+  from bridge 0.8.35. No standalone hardware result is recorded here yet. See
+  [experimental standalone cameras](USAGE.md#experimental-standalone-cameras).
+- **Standalone Floodlight Cam 2K `T8424`, type 39**, is recognized as a
+  standalone camera from bridge 0.8.29, without a connection route for its
+  snapshot, live view or recordings, also with `experimental_standalone` on.

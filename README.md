@@ -1,17 +1,45 @@
 # Eufy Security Viewer
 
-View Eufy camera snapshots, watch live video with optional sound, and browse
-existing HomeBase recordings in Home Assistant. This is an independent project,
-not affiliated with Eufy or Anker.
+View snapshots, watch live video with optional sound, and browse existing
+HomeBase recordings in Home Assistant, for Eufy cameras connected to a
+HomeBase 3 (T8030). This is an independent project, not affiliated with Eufy or
+Anker.
 
 [Install](#installation) · [Upgrade](#upgrading) · [Compatibility and help](#compatibility-and-help)
 
 ![Home Assistant dashboard with Eufy recordings, private areas obscured](docs/media/ha-dashboard-demo.gif)
 
+## What you get
+
+- A camera entity for each supported Eufy camera, showing the latest received
+  snapshot. The integration never wakes a camera to refresh it.
+- Live video after a tap on the **Eufy Security Viewer** card, through WebRTC
+  with optional sound. When WebRTC is unavailable or fails, the card shows JPEG
+  video without sound.
+- The **Eufy Events** card to browse and play existing HomeBase recordings
+  across your cameras.
+- Camera event entities, battery sensors, and HomeBase alarm and Guard Mode
+  entities for automations. See [events and notifications](docs/NOTIFICATIONS.md).
+
+Talkback, PTZ control, recording live video, HLS and permanent RTSP streams are
+not provided.
+See [snapshot and streaming limits](docs/USAGE.md#honest-snapshot-and-streaming-limits).
+
 ## Before you start
 
-You need Home Assistant **2026.9.0 or newer**, [HACS](https://hacs.xyz/docs/use/download/download/),
-and a Eufy account that can see your cameras in the Eufy app.
+- Home Assistant **2026.9.0 or newer** and [HACS](https://hacs.xyz/docs/use/download/download/).
+- Eufy cameras connected to a HomeBase 3 (T8030) for snapshots, live view and
+  recordings. Other HomeBase models, such as HomeBase 2 or HomeBase Mini, and
+  NVR setups are not supported. Cameras without a HomeBase normally show these
+  features as unsupported, but two models can try an
+  [experimental standalone option](docs/USAGE.md#experimental-standalone-cameras).
+- A Eufy account that can see your cameras in the Eufy app. A dedicated Eufy
+  account with shared access to your cameras is recommended. A Eufy cloud
+  recording subscription is not needed for the tested HomeBase recordings.
+- A 64-bit Intel/AMD (amd64) or 64-bit ARM (aarch64) machine for the Home
+  Assistant OS app. Only amd64 is tested on hardware. Testing on a 64-bit
+  Raspberry Pi is pending, and there is no 32-bit ARM build.
+  [Check compatibility](docs/COMPATIBILITY.md).
 
 Install both parts:
 
@@ -20,15 +48,14 @@ Install both parts:
 - **Eufy Security Viewer** adds the integration and dashboard cards through HACS.
   HACS does not install or update the bridge.
 
-Bridge builds are available for 64-bit Intel/AMD and ARM machines. Raspberry Pi hardware
-validation is still pending. A Eufy cloud recording subscription is not needed
-for the tested HomeBase recordings. [Check compatibility](docs/COMPATIBILITY.md).
-
 ## Installation
 
 Already installed? Follow the [upgrade guide](#upgrading) instead.
 
 ### 1. Install the bridge on Home Assistant OS
+
+Using Home Assistant Container or a separate bridge machine? Follow the
+[Docker instructions](docs/DOCKER.md), then continue with step 2.
 
 1. Open **Settings → Apps → Install app → ⋮ → Repositories** and add:
 
@@ -38,11 +65,9 @@ Already installed? Follow the [upgrade guide](#upgrading) instead.
 
 2. Install **Eufy Security Viewer Bridge**.
 3. In its configuration, set `token` to a unique random secret of at least
-   32 characters. Keep it for the next step. This is not your Eufy password.
+   32 characters. A password manager can generate one. Keep it for the next
+   step. This is not your Eufy password.
 4. Start the app and enable **Start on boot**.
-
-Using Home Assistant Container or a separate bridge machine? Follow the
-[Docker instructions](docs/DOCKER.md), then continue below.
 
 ### 2. Install and connect the HACS integration
 
@@ -50,7 +75,7 @@ Using Home Assistant Container or a separate bridge machine? Follow the
    **Integration**.
 2. Download **Eufy Security Viewer** and restart Home Assistant.
 3. Open **Settings → Devices & services → Add integration → Eufy Security Viewer**.
-4. Enter `http://127.0.0.1:8063` for the HAOS app on this HA machine, or the bridge
+4. Enter `http://127.0.0.1:8063` for the Home Assistant OS app, or the bridge
    address from your Docker setup. Enter the token you saved above.
 5. Sign in with your Eufy email, password and two-letter country code, such as
    `NL`. Complete any verification step and check that your cameras appear.
@@ -64,28 +89,18 @@ Viewer**. Pick a camera. Add **Eufy Events** to browse recordings across cameras
 The cards are included with the integration.
 
 Tap a camera to watch live video and enable sound if wanted. Close the viewer
-when finished. Idle images are the latest received snapshots and may be old.
+when finished.
+
 By default the live view opens as a popup and one camera per HomeBase is live
-at a time. For a surveillance-style view, set the card's live view to **Inside
-the card** in the editor, or in YAML:
+at a time. To watch several cameras at once:
 
-```yaml
-type: custom:eufy-viewer-card
-entity: camera.front_door
-live_mode: inline
-```
+- Set **Live view** to **Inside the card** in each card's editor.
+- For cameras on the same HomeBase, also raise the bridge option
+  `live_max_streams_per_station` (default 1). See
+  [live cameras per HomeBase](docs/USAGE.md#live-cameras-per-homebase) for the
+  value that suits your host.
 
-Each inline card still starts with a tap and stops when you close it or leave
-the page. Add `live_autostart: true` to an inline card to start it without a
-tap when the view opens and keep it live while you scroll past it, with pause,
-resume and stop controls on the card.
-Raise the bridge option `live_max_streams_per_station` to let more than one
-camera on the same HomeBase be live at once. Three concurrent eufyCam 3 are
-verified through the bridge on one HomeBase 3, but each stream adds transcoding
-load, so on a low-core host without hardware acceleration keep the option at 2
-for a browser dashboard. See
-[card options](docs/USAGE.md#card-options) and
-[live cameras per HomeBase](docs/USAGE.md#live-cameras-per-homebase).
+See [card options](docs/USAGE.md#card-options) for YAML and automatic live start.
 
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
@@ -97,151 +112,71 @@ See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 ## Upgrading
 
-The **0.8.46** integration and bridge **0.8.37** keep client **0.29.2**. With
-`experimental_standalone` on, a standalone camera that the client keeps at
-`standalone_transport_unverified` because it does not admit its model to the
-experimental route, such as a standalone `T8410C`, is now named by its model
-code in the bridge log and explained as
-`standalone_admission` in **Download diagnostics**. On
-[#152](https://github.com/keesmod/ha-eufy-cam/issues/152) such a camera looked
-like a failed attempt. Nothing changes with the option off. Update both parts.
-Integration 0.8.45 still works with bridge 0.8.37 but leaves the new field out
-of its download.
+<!-- Keep this section to the current release pair. Version history belongs in CHANGELOG.md and the GitHub release notes. -->
 
-The **0.8.45** integration and bridge **0.8.36** include client **0.29.2**,
-which recognizes the eufyCam 3 reported as `T8160-C` with type 19 behind a
-HomeBase 3 on [issue #149](https://github.com/keesmod/ha-eufy-cam/issues/149).
-On public evidence it also recognizes the Indoor Cam Pan&Tilt 2K `T8410C` with
-type 31 behind a HomeBase 3. `T8160-C` and `T8410C` both use the HomeBase 3
-media route with its owner and firmware checks, and neither has hardware results
-yet. Owners use Pan & Tilt names for both `T8410` and `T8410C`, so the model
-code in the diagnostics, not the product name, tells which one a camera is. A
-standalone `T8410C` now appears as a camera with
-`standalone_transport_unverified` instead of `unsupported_device`, and its
-snapshot, live view and recordings stay unsupported, also with
-`experimental_standalone` on. Bridge diagnostics and **Download diagnostics**
-now also show an unhyphenated model code such as `T8410C` instead of
-`unavailable`. Update both parts. Integration 0.8.44 still works with bridge
-0.8.36, but its download shows such models as `unavailable`.
-
-The **0.8.44** integration and bridge **0.8.35** include client **0.29.1**.
-With `experimental_standalone`, a standalone Indoor Cam 2K Pan & Tilt `T8410`
-now also tries its own local session. On
-[#152](https://github.com/keesmod/ha-eufy-cam/issues/152) bridge 0.8.34 left
-two such cameras at `standalone_transport_unverified` without an attempt. It is
-not yet confirmed on a camera. See
-[experimental standalone cameras](docs/USAGE.md#experimental-standalone-cameras).
-Nothing changes for HomeBase cameras or with the option off.
-
-The **0.8.43** integration and bridge **0.8.34** include client **0.29.0**.
-The new app option `experimental_standalone` (off by default) lets a standalone
-Wall Light Cam S100 `T84A1` try its own local session for snapshots, live view
-and recordings. Update the integration before turning it on. It is a test for
-[client #142](https://github.com/keesmod/eufy-mega-client/issues/142) and not
-yet confirmed on a camera. See
-[experimental standalone cameras](docs/USAGE.md#experimental-standalone-cameras).
-Nothing changes for HomeBase cameras.
-
-The **0.8.42** integration and bridge **0.8.33** include client **0.28.2**,
-which recognizes the reported eufyCam 2C `T8113-V` with type 8 behind a
-HomeBase 3. It uses the same media route as `T8113` and `T8113-Z`. A T8113-V
-owner reported discovery, a snapshot, live view, recording playback and motion
-events working on this release. Audio and other event types were not reported
-yet. Standalone `T84A1` media remained blocked by the missing standalone
-authentication and transport route in that release.
-
-The **0.8.41** integration and bridge **0.8.32** update the bridge's `ws` and
-`uint8array-extras` packages. Home Assistant 2026.9.0 or newer is still
-required.
-The **0.8.40** integration is tested against Home Assistant 2026.10.0 and still
-supports 2026.9.0 or newer. Nothing changes on the dashboard or in the bridge.
-The **0.8.39** integration and bridge **0.8.31** update the live evidence the
-bridge logs at startup. Nothing else changes.
-The **0.8.38** integration and bridge **0.8.30** include client **0.28.0**,
-which discovers the Wired Cam C31 `T817L` under a HomeBase 3. A C31 owner
-reported snapshots, live view with audio, recordings and a person event working
-on this release. Other event types were not reported yet.
-The **0.8.37** integration and bridge **0.8.29** include client **0.26.0**,
-which discovers eufyCam 2C cameras reported as `T8113-Z`, recognizes the
-Floodlight Cam 2K `T8424` as a standalone camera, also looks for the HomeBase
-by broadcast on every external IPv4 interface of the host, and records how far a
-failed HomeBase connection got.
-The **0.8.36** integration puts the inline live controls in the compact
-toolbar below the video at every card width, so they no longer cover the
-camera's own timestamp on a wide card.
-The **0.8.35** integration and bridge **0.8.28** include client **0.21.0**,
-so a live start without video says in the diagnostics download how far it got.
-The **0.8.34** integration and bridge **0.8.27** keep live video running when
-a camera changes its frame size mid-stream, where the video sync used to drop
-every frame until the card switched to the JPEG fallback.
-The **0.8.33** integration and bridge **0.8.26** include client **0.18.1**,
-which discovers a Video Doorbell C30 that Eufy reports with device type 96.
-The **0.8.32** integration and bridge **0.8.25** add FFmpeg's progress
-counters from the live encoder to the bridge video row, so a download after
-a stalled encoder says whether its decoder, its video sync or the encoder
-itself stopped. The **0.8.31** integration and bridge **0.8.24** add a bridge video row per
-live attempt and a go2rtc sample at the fallback to the diagnostics download,
-so a download after a fallback says where the video stopped. The **0.8.30**
-integration shows each camera's battery level next to its
-name on the card, with an icon whose fill and colour follow the level. The
-**0.8.29** integration adds the browser's decoder name and its freeze,
-pause, decode and assembly counters to every live playback sample in the
-diagnostics download. The **0.8.28** integration and bridge **0.8.23** keep live diagnostics for the
-bridge's session cap plus fifteen minutes, so a long session is still in a
-download taken after its end, and the option `live_max_seconds_mains` is
-verified on a mains powered camera. The **0.8.27** integration lets the Home
-Assistant viewer follow the bridge's longer session cap for a camera without a
-battery value. The **0.8.26** integration and bridge **0.8.22** bring client
-**0.14.0**: with `live_max_streams_per_station` above 1 the HomeBase's primary
-session stays free, so guard mode commands and snapshots work while cameras
-are live, and the bridge option `live_max_seconds_mains` (120 to 3600 seconds,
-default 120) raises the live session cap only for cameras without a battery
-value. Battery cameras keep two minutes. 0.8.25 keeps an inline card with `live_autostart: true` live while
-it is scrolled out of view, 0.8.24 moved the inline live controls below the
-video on narrow cards, and 0.8.23 added `live_mode: inline` and the optional
-`live_autostart: true`. Update the integration to **0.8.46** and the bridge to
-**0.8.37**, then refresh the dashboard.
-See the [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest)
-for changes and any version-specific instructions.
+The current release is integration **0.8.46** with bridge **0.8.37**, which
+bundles the [Eufy Mega client](https://github.com/keesmod/eufy-mega-client)
+library **0.29.2**. Update both parts. The
+[release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest) list
+the changes and any version-specific steps. Earlier versions are described in
+the [GitHub releases](https://github.com/keesmod/ha-eufy-cam/releases) and the
+integration [CHANGELOG.md](CHANGELOG.md).
 
 **Upgrading from before 0.8.0?** Follow the
-[migration and recovery instructions](docs/MEGA_MIGRATION.md) before updating
-the bridge. These cover the removal of the old backend and the required
-integration-first preparation.
+[migration and recovery instructions](docs/MEGA_MIGRATION.md) instead of the
+steps below. That upgrade removes the old backend, and the integration must be
+updated before the bridge.
 
 For installations already on 0.8.0 or newer:
 
 1. Close live viewers and recordings. Back up Home Assistant and the bridge's
    private data.
-2. Update **Eufy Security Viewer** in HACS and restart Home Assistant.
-3. If your bridge is older than 0.8.22, update **Eufy Security Viewer Bridge**
-   through the HA app store, or follow the
+2. In **Settings → Apps**, update **Eufy Security Viewer Bridge** to the
+   version named in the release notes. For Docker, follow the
    [Docker update steps](docs/DOCKER.md#update-the-docker-bridge).
+3. Update **Eufy Security Viewer** in HACS and restart Home Assistant.
 4. Reload your dashboard and check snapshots, live video, recordings and events.
-   If you manage card resources in YAML, use the current resource URL above.
+   If you manage card resources in YAML, use the resource URL under
+   [3. Add the dashboard cards](#3-add-the-dashboard-cards).
 
 Keep your existing integration, token, bridge data and backup. Do not run two
-bridges for the same installation at once.
+Eufy Security Viewer bridges for the same installation at once.
 
 ## Compatibility and help
 
-You can upgrade without us having tested your exact camera. Available functions
-still depend on the model and connection. See [known results and limitations](docs/COMPATIBILITY.md).
+You can install or upgrade without maintainer test results for your exact
+camera. Available functions still depend on the model and connection. The
+[known results and limitations](docs/COMPATIBILITY.md) separate confirmed
+behavior, owner reports and models recognized in software only.
 
-- **Live video falls back without sound?** Download the integration diagnostics after one attempt. See [live playback diagnostics](docs/LIVE_DIAGNOSTICS.md).
-- **Recording or player error?** Use **Download diagnostics** at the error or in the integration menu. See [the playback report](docs/PLAYBACK_REPORT.md).
-- **Missing devices or failed setup?** Collect a [complete diagnostic report](docs/DISCOVERY_DIAGNOSTICS.md).
-- **Something does not work?** Check [troubleshooting](docs/INSTALLATION.md#troubleshooting).
-  For live video or sound, see [playback and connection requirements](docs/USAGE.md#honest-snapshot-and-streaming-limits).
+- **Something does not work?** Check
+  [troubleshooting](docs/INSTALLATION.md#troubleshooting). For failed setup or
+  missing devices, collect a [complete diagnostic report](docs/DISCOVERY_DIAGNOSTICS.md).
+- **Live video falls back without sound?** Check the WebRTC requirements under
+  [snapshot and streaming limits](docs/USAGE.md#honest-snapshot-and-streaming-limits).
+  Then follow [live playback diagnostics](docs/LIVE_DIAGNOSTICS.md) to download
+  the integration diagnostics after one attempt.
+- **Recording or player error?** Use **Download diagnostics** at the error or in
+  the integration menu. See [the playback report](docs/PLAYBACK_REPORT.md).
 - **Share your experience:** [report working or failing features](https://github.com/keesmod/ha-eufy-cam/issues/new?template=compatibility.yml).
   Partial results help. Reporting is voluntary.
-- **An existing issue matches your problem?** Add your results there. Otherwise,
+- **Found a bug?** Add your results to a matching existing issue, or
   [report a bug](https://github.com/keesmod/ha-eufy-cam/issues/new?template=bug_report.yml).
   [Remove private information](.github/SUPPORT.md#safe-diagnostics) before sharing logs.
 
-For more detail: [events and notifications](docs/NOTIFICATIONS.md),
-[playback and recovery](docs/USAGE.md), [development](docs/DEVELOPMENT.md),
-and [release process](docs/RELEASING.md).
+## Documentation
+
+For users:
+
+- [Playback, recovery and technical details](docs/USAGE.md)
+- [Detailed installation and troubleshooting](docs/INSTALLATION.md)
+- [Run the bridge in Docker](docs/DOCKER.md)
+- [Camera events and recognized people](docs/NOTIFICATIONS.md)
+- [Compatibility and community testing](docs/COMPATIBILITY.md)
+- [Experimental NVIDIA acceleration for the Docker bridge](docs/NVIDIA.md)
+
+For contributors: [architecture](docs/ARCHITECTURE.md),
+[development](docs/DEVELOPMENT.md) and [release process](docs/RELEASING.md).
 
 ## Support this project
 
