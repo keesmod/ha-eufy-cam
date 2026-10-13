@@ -231,7 +231,7 @@ arrived and were not accepted. The fields are flat on the record:
 | `lookup_datagrams` | 0 to 999 | Datagrams received while the lookup ran |
 | `lookup_other_headers` | 0 to 999 | Of those, datagrams that are no lookup reply |
 | `lookup_own_replies` | 0 to 999 | Replies with the station's own ID |
-| `lookup_own_round` | 0 to 99 | Only with an own reply: the latest round sent when the first one arrived |
+| `lookup_own_round` | 0 to 99 | Only with an own reply: the latest round sent when the first one arrived, counted from 0, so 0 is the first round |
 | `lookup_account_replies` | 0 to 999 | Replies with the ID of another device or station in the inventory |
 | `lookup_foreign_replies` | 0 to 999 | Replies with an ID outside the inventory |
 | `lookup_near_replies` | 0 to 999 | Replies whose ID matches the own ID only after the client's normalization |
@@ -269,6 +269,10 @@ the finding says that the device gave no accepted reply instead of that it did
 not answer, and the `owner_connection` finding leaves out "The bridge host did
 not reach the HomeBase on its LAN", because a reply with the device's ID did
 reach the bridge. This holds also when a send error names the added sentence.
+Without a near reply, when `lookup_inventory_reply` is `account` or
+`lookup_account_replies` is above 0, the `owner_connection` finding says that
+this HomeBase did not answer instead of that no HomeBase answered, because the
+device that answered can be another HomeBase.
 Integration 0.8.46 or older drops the fields, and bridge 0.8.37 or older sends
 none. The schema stays `2` because the fields are additive.
 

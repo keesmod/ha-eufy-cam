@@ -126,6 +126,12 @@ _OWNER_NEAR = (
     "Owner connection was not established. No HomeBase gave an accepted reply "
     "to the local lookup{target}."
 )
+# Another device in this account can be a HomeBase that answered the same
+# broadcast, so the stage sentence speaks for this HomeBase only.
+_OWNER_ACCOUNT = (
+    "Owner connection was not established. This HomeBase did not answer the "
+    "local lookup{target}. The bridge host did not reach the HomeBase on its LAN."
+)
 _STANDALONE_NEAR = (
     "The experimental standalone camera gave no accepted reply to the local "
     "lookup{target}."
@@ -276,6 +282,15 @@ def _near_reply(row: dict[str, Any]) -> bool:
     )
 
 
+def _account_reply(row: dict[str, Any]) -> bool:
+    """Whether another device in this account answered the lookup."""
+    account = row.get("lookup_account_replies")
+    return row.get("stage") == "lookup" and (
+        row.get("lookup_inventory_reply") == "account"
+        or (type(account) is int and account > 0)
+    )
+
+
 def _lookup_observed(row: dict[str, Any], device: str) -> str:
     """One sentence on what an attempt that failed at lookup saw, or nothing.
 
@@ -334,7 +349,13 @@ def _lookup_observed(row: dict[str, Any], device: str) -> str:
 
 
 def _connection_stage(row: dict[str, Any]) -> str:
-    template = _OWNER_NEAR if _near_reply(row) else _CONNECTION_STAGES[row["stage"]]
+    template = (
+        _OWNER_NEAR
+        if _near_reply(row)
+        else _OWNER_ACCOUNT
+        if _account_reply(row)
+        else _CONNECTION_STAGES[row["stage"]]
+    )
     return template.format(target=_lookup_target(row)) + _lookup_observed(
         row, "HomeBase"
     )

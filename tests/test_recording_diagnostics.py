@@ -931,6 +931,11 @@ _OWNER_NEAR_LOOKUP = (
     "Owner connection was not established. No HomeBase gave an accepted reply to "
     "the local lookup at its inventory LAN address or by broadcast."
 )
+_OWNER_ACCOUNT_LOOKUP = (
+    "Owner connection was not established. This HomeBase did not answer the local "
+    "lookup at its inventory LAN address or by broadcast. The bridge host did not "
+    "reach the HomeBase on its LAN."
+)
 _FORMAT = (
     "A lookup reply carried this {device}'s ID in a different format, and the "
     "lookup did not accept it."
@@ -1076,7 +1081,6 @@ def test_near_reply_without_an_inventory_address_names_the_missing_address():
 @pytest.mark.parametrize(
     ("lookup", "sentence"),
     [
-        ({"lookup_account_replies": 1, "lookup_datagrams": 1}, _ACCOUNT),
         ({}, "No reply of any kind reached the bridge during the 3 lookup rounds."),
     ],
 )
@@ -1084,6 +1088,29 @@ def test_owner_lookup_fields_add_one_fixed_sentence_for_the_homebase(lookup, sen
     finding = _owner_finding(_owner_report([_lookup_failure(device_ref=1, **lookup)]))
     expected = f"{_OWNER_LOOKUP} {sentence.format(device='HomeBase')}"
     assert finding["observation"] == expected
+
+
+@pytest.mark.parametrize(
+    ("lookup", "sentence"),
+    [
+        ({"lookup_account_replies": 1, "lookup_datagrams": 1}, _ACCOUNT),
+        (
+            {
+                "lookup_inventory_reply": "account",
+                "lookup_account_replies": 1,
+                "lookup_datagrams": 1,
+            },
+            _SHARED,
+        ),
+    ],
+)
+def test_owner_account_reply_speaks_for_this_homebase_only(lookup, sentence):
+    # Another device in this account can be a HomeBase that answered the same
+    # broadcast, so no HomeBase is said to have stayed silent (#152).
+    finding = _owner_finding(_owner_report([_lookup_failure(device_ref=1, **lookup)]))
+    expected = f"{_OWNER_ACCOUNT_LOOKUP} {sentence.format(device='HomeBase')}"
+    assert finding["observation"] == expected
+    assert "No HomeBase answered" not in finding["observation"]
 
 
 @pytest.mark.parametrize(

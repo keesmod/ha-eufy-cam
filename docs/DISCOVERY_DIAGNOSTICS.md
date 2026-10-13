@@ -376,6 +376,8 @@ this order:
 
 With a near reply the assessment says that the camera or HomeBase gave no
 accepted reply, not that it did not answer, also when a send error comes first.
+When another device in the account answered, the HomeBase assessment says that
+this HomeBase did not answer instead of that no HomeBase answered.
 `inventory_address_on_subnet=false` says the inventory address lies outside
 every local subnet of the bridge host. None of these values proves a cause on
 its own. A connected attempt carries the same fields, on the `connect` record of

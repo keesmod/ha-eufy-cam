@@ -64,6 +64,11 @@ class ProjectTests(unittest.TestCase):
         self.set_integration("0.8.46")
         self.set_readme("0.8.46")
         self.set_bridge("0.8.37")
+        # The fixture base pins a stable client whatever the repository pins.
+        self.set_pin(
+            "0.29.2",
+            "sha512-/ssrdAxFv7fRY54ENAuTetYJcW78M2ukna/lNx0Ybg2i4nxVtEew1wIPKeBOF6ROk60Fa+TeGEI82UQ6qQDctg==",
+        )
         self.git("init", "-q")
         self.regenerate("ha_app")
         self.base = self.commit()
