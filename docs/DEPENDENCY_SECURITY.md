@@ -13,7 +13,9 @@ the workflow's own daily and manual runs. They change only in a release PR or
 beta cut, so an advisory there must not block other PRs. A called workflow
 sees its caller's name, so Validate and Release runs skip these steps and the
 job still succeeds. Renaming the workflow disables this audit. Fix a reported
-advisory in `bridge`. The store folders follow at the next release or beta cut.
+advisory in `bridge`. The store folders follow at the next release or beta cut
+that changes the bridge version. For a development-only fix, the release PR
+raises the bridge as described in [the release guide](RELEASING.md#batch-release-run).
 
 The audit reads the lockfile without installing packages or executing their
 lifecycle scripts. Any reported vulnerability or audit error fails the check.

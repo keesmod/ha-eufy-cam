@@ -180,6 +180,11 @@ whose merge updates the stable app, and both GitHub releases.
    - Run `python3 scripts/prepare_ha_app.py --release` when the bridge version
      changed. It writes `ha_app/` and an existing `ha_app_beta/` at the stable
      bridge. An integration-only release keeps both folders.
+   - To bring a development-only lock fix, such as a store-folder advisory, into
+     the store folders when main has no bridge candidate, raise the bridge to
+     the next plain patch above the `ha_app` version, add a dated
+     `## X.Y.Z - YYYY-MM-DD` section to `app/CHANGELOG.md` and run
+     `prepare_ha_app.py --release`.
    - Set the README card resource to `?v=X.Y.Z` and replace the current-release
      summary in the README Upgrading section. History lives in `CHANGELOG.md`
      and the release notes.
@@ -287,7 +292,9 @@ PR without delay.
   rules on its own. An agent PR supersedes it with the same update, candidate
   versions and changelog lines. Then close the Dependabot PR.
 - Close security PRs against `ha_app/` or `ha_app_beta/`. Fix the advisory in
-  `bridge/`, and the store folders follow at the next release or beta cut.
+  `bridge/`. The store folders follow at the next release or beta cut that
+  changes the bridge version. A development-only fix does not raise the bridge
+  on its own, so use the release PR step for that case.
 
 ## Rehearse and publish
 

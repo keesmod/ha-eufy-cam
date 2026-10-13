@@ -880,6 +880,17 @@ class ProjectTests(unittest.TestCase):
         with patch.object(bump_client, "verify", return_value=verified):
             self.rejected("differs from the verified client release")
 
+    def test_changed_client_integrity_is_verified(self):
+        self.open_candidate()
+        other = "sha512-" + base64.b64encode(bytes([1]) * 64).decode()
+        url = self.set_pin("0.29.2", integrity=other)
+        self.extend_notes("CHANGELOG.md", "0.8.47")
+        self.extend_notes("app/CHANGELOG.md", "0.8.38")
+        verified = {"url": url, "integrity": INTEGRITY}
+        with patch.object(bump_client, "verify", return_value=verified) as verify:
+            self.rejected("differs from the verified client release")
+        verify.assert_called_once_with("0.29.2")
+
     # Archives
 
     def test_archive_cannot_include_untracked_local_files(self):

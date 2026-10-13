@@ -413,6 +413,9 @@ def check_changes(root, base, meta):
     old_version = old.json(MANIFEST)["version"]
     old_bridge = old.json("bridge/package.json")["version"]
     old_client = client_pin(old.json("bridge/package.json"))[0]
+    old_integrity = old.json("bridge/package-lock.json")["packages"][
+        "node_modules/@keesmod/eufy-mega-client"
+    ]["integrity"]
     old_stores, stores = store_versions(old), store_versions(new)
     for name, current, previous in (
         ("Integration", version, old_version),
@@ -520,8 +523,9 @@ def check_changes(root, base, meta):
                 + release.stable_part(bridge)
                 + " section"
             )
-    # Network checks run last. A changed client pin must be a verified release.
-    if meta["mega_client"] != old_client:
+    # Network checks run last. A changed client pin, including a changed lock
+    # integrity under the same version, must be a verified release.
+    if (meta["mega_client"], meta["mega_integrity"]) != (old_client, old_integrity):
         import bump_client
 
         verified = bump_client.verify(meta["mega_client"])
