@@ -96,7 +96,11 @@ CI looks up its tag and every page of GitHub releases with the workflow token.
 A failed lookup fails the check. The release workflow creates the tag before its
 draft, so the tag lookup also covers drafts that a read-only token cannot list.
 A version above the base needs no lookup, because main never falls below a
-published version. Each version rejection names the next valid candidate.
+published version. Rejections of a version below the base, the README card
+version or a store version name the next valid version. So do rejections of a
+closed batch, a plain integration version in a runtime PR, a plain bridge version
+other than the `ha_app/` version, a published version and a bridge runtime
+change without a newer bridge.
 
 ## Prepare a pull request
 
@@ -165,6 +169,11 @@ whose merge updates the stable app, and both GitHub releases.
      bridge to the next plain patch above the `ha_app` version. Add a dated
      `## X.Y.Z - YYYY-MM-DD` section to `app/CHANGELOG.md` and run
      `python3 scripts/prepare_ha_app.py --release`.
+   - When main has no integration candidate, for example in a hotfix right after
+     a stable release, set the integration to the next plain patch with the
+     recipe above, including `uv lock` and `npm run build` for the card bundle.
+     Add a dated `## X.Y.Z - YYYY-MM-DD` section to `CHANGELOG.md` and set the
+     README card resource to `?v=X.Y.Z`.
    - Date the heading in `CHANGELOG.md` and, for a new bridge, in
      `app/CHANGELOG.md`. Each section ends with one Upgrade and Rollback
      paragraph that names the previous stable versions.

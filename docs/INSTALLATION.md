@@ -116,7 +116,7 @@ Betas are prereleases such as `v0.8.47-beta.1` for opt-in testing before a stabl
 
 Alternatively, enable the **Pre-release** switch entity. HACS creates it disabled on the repository's device in the HACS integration. While it is on, HACS offers betas as updates. HACS refreshes custom repositories every 48 hours. To see a new beta sooner, select **Update information** in the repository's three-dot menu.
 
-To return, redownload and select the stable tag, or wait for the stable release, which HACS offers as an update. Turning the switch off does not downgrade an installed beta. A beta that changes only the integration works with the stable app. When its notes name a newer bridge, use the beta app below.
+To return, first turn off the **Pre-release** switch if you turned it on, so HACS stops offering betas. Turning it off does not downgrade an installed beta. Then redownload and select the stable tag, or wait for the stable release, which HACS offers as an update. A beta that changes only the integration works with the stable app. When its notes name a newer bridge, use the beta app below.
 
 ### Beta bridge app
 
@@ -137,7 +137,7 @@ To return to the stable app:
 
 1. In the beta app, turn off **Start on boot** and select **Stop**.
 2. Disable the beta integration entry.
-3. Redownload the stable integration tag in HACS and restart Home Assistant.
+3. Turn off the **Pre-release** switch if you turned it on, then redownload the stable integration tag in HACS and restart Home Assistant.
 4. Start the stable app and turn on **Start on boot**.
 5. Enable the original entry. Reauthenticate with Eufy if Home Assistant asks.
 

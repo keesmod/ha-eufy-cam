@@ -141,8 +141,8 @@ def main():
         "integration candidate, and describe the client change in the "
         "app/CHANGELOG.md and CHANGELOG.md sections. A beta client pin needs beta "
         "bridge and integration versions. A stable release needs a stable pin. "
-        "In a release PR the bridge version is plain, with a dated app/CHANGELOG.md "
-        "section and prepare_ha_app.py --release."
+        "In a release PR the bridge and integration versions are plain, with dated "
+        "app/CHANGELOG.md and CHANGELOG.md sections and prepare_ha_app.py --release."
     )
 
 

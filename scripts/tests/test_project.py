@@ -258,12 +258,28 @@ class ProjectTests(unittest.TestCase):
 
     def test_version_relations(self):
         self.set_bridge("0.8.38")
-        self.rejected("must equal the ha_app version")
+        self.rejected(
+            r"must equal the ha_app version\. Use bridge 0\.8\.38-beta\.1 until the "
+            r"release PR, or run prepare_ha_app\.py --release in a release PR$"
+        )
         self.set_bridge("0.8.37-beta.1")
-        self.rejected("ha_app <= ha_app_beta <= bridge")
+        self.rejected(
+            r"^Bridge version 0\.8\.37-beta\.1 is below store version 0\.8\.37\. "
+            r"Raise the bridge, for example to 0\.8\.38-beta\.1$"
+        )
         self.set_bridge("0.8.37")
+        self.regenerate("ha_app_beta")
+        self.edit_json(
+            "ha_app_beta/config.json", lambda data: data.update(version="0.8.37-beta.1")
+        )
+        self.rejected("ha_app <= ha_app_beta <= bridge")
+        shutil.rmtree(self.root / "ha_app_beta")
         self.set_readme("0.8.47")
-        self.rejected("README card resource")
+        self.rejected(
+            r"^Integration version 0\.8\.46 is below the released card version "
+            r"0\.8\.47 in README\.md\. Raise the integration version, for example to "
+            r"0\.8\.48-beta\.1\. README changes only in a release PR$"
+        )
         self.set_integration("0.8.47-beta.1")
         self.set_readme("0.8.47-beta.1")
         self.rejected("README card resource")
@@ -373,9 +389,13 @@ class ProjectTests(unittest.TestCase):
                 self.rejected(pattern + " cannot go below base version")
 
     def test_decrease_names_the_next_candidate(self):
-        def plain_integration():
+        def lowered_readme():
             self.set_integration("0.8.45")
             self.set_readme("0.8.45")
+
+        def bridge_change():
+            self.write("bridge/src/index.ts", "export const a = 1;\n")
+            self.set_bridge("0.8.37-beta.1")
 
         def stable_app():
             self.edit_json(
@@ -389,11 +409,27 @@ class ProjectTests(unittest.TestCase):
                     change()
                     self.rejected(f"^{re.escape(message)}$")
 
+        # At a plain base the README card version equals the base version, so
+        # the README relation rejects first and names the candidate.
         decreases(
+            *(
+                (
+                    lambda version=version: self.set_integration(version),
+                    f"Integration version {version} is below the released card "
+                    "version 0.8.46 in README.md. Raise the integration version, "
+                    "for example to 0.8.47-beta.1. README changes only in a release PR",
+                )
+                for version in ("0.8.45", "0.8.46-beta.1")
+            ),
             (
-                plain_integration,
+                lowered_readme,
                 "Integration version cannot go below base version 0.8.46. "
                 "Raise the version, for example to 0.8.47-beta.1",
+            ),
+            (
+                bridge_change,
+                "Bridge version 0.8.37-beta.1 is below store version 0.8.37. "
+                "Raise the bridge, for example to 0.8.38-beta.1",
             ),
             (
                 lambda: self.set_pin("0.29.1"),
@@ -650,6 +686,47 @@ class ProjectTests(unittest.TestCase):
                 self.add_notes("app/CHANGELOG.md", "0.8.38", "2026-10-20")
                 self.regenerate("ha_app")
                 self.check()
+
+    def test_release_pr_runtime_change_without_an_integration_candidate(self):
+        # A hotfix right after a stable release lands in the release PR itself.
+        url = bump_client.url("0.29.3")
+        changes = {
+            "bridge source": lambda: self.write(
+                "bridge/src/index.ts", "export const fixed = true;\n"
+            ),
+            "client pin": lambda: self.set_pin("0.29.3"),
+            "lock advisory": lambda: self.edit_json(
+                "bridge/package-lock.json",
+                lambda data: data["packages"]["node_modules/ws"].update(
+                    integrity=INTEGRITY
+                ),
+            ),
+        }
+        verified = {"url": url, "integrity": INTEGRITY}
+        for name, change in changes.items():
+            with (
+                self.subTest(change=name),
+                patch.object(bump_client, "verify", return_value=verified),
+            ):
+                self.git("reset", "-q", "--hard", self.base)
+                self.git("clean", "-qfd")
+                self.published.reset_mock()
+                change()
+                self.set_bridge("0.8.38")
+                self.add_notes("app/CHANGELOG.md", "0.8.38", "2026-10-20")
+                self.regenerate("ha_app")
+                self.rejected(
+                    r"^The 0\.8\.46 batch is closed by its release PR\. An ha_app "
+                    r"update needs a release PR, so raise the integration to "
+                    r"0\.8\.47, add a dated '## 0\.8\.47 - YYYY-MM-DD' section to "
+                    r"CHANGELOG\.md and set the README card resource to \?v=0\.8\.47$"
+                )
+                self.published.assert_not_called()
+                self.set_integration("0.8.47")
+                self.add_notes("CHANGELOG.md", "0.8.47", "2026-10-20")
+                self.set_readme("0.8.47")
+                self.check()
+                self.published.assert_not_called()
 
     def test_stable_app_update_needs_a_plain_integration(self):
         self.open_candidate()

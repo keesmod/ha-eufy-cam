@@ -188,13 +188,20 @@ def metadata(root):
             "Remove version from app/app_config.json. prepare_ha_app.py adds it"
         )
     stores = store_versions(tree)
+    top = max(stores.values(), key=key)
+    if key(bridge_version) < key(top):
+        raise ValueError(
+            f"Bridge version {bridge_version} is below store version {top}. "
+            f"Raise the bridge, for example to {following(top)}"
+        )
     chain = [*stores.values(), bridge_version]
     if any(key(a) > key(b) for a, b in zip(chain, chain[1:])):
         raise ValueError("Versions must satisfy ha_app <= ha_app_beta <= bridge")
     if not beta(bridge_version) and bridge_version != stores["ha_app"]:
         raise ValueError(
             "A plain bridge version is a stable app release and must equal the "
-            "ha_app version. Use an X.Y.Z-beta.N bridge version until the release PR"
+            f"ha_app version. Use bridge {following(top)} until the release PR, "
+            "or run prepare_ha_app.py --release in a release PR"
         )
     if any(
         name == "node_modules/eufy-security-client"
@@ -228,12 +235,18 @@ def metadata(root):
         r"eufy-viewer-card\.js\?v=([0-9A-Za-z.-]+)", (root / "README.md").read_text()
     )
     if not resource_versions or any(
-        not release.VERSION.fullmatch(v) or beta(v) or key(v) > key(version)
-        for v in resource_versions
+        not release.VERSION.fullmatch(v) or beta(v) for v in resource_versions
     ):
         raise ValueError(
             "README card resource examples need a plain version that is not above "
             "the integration version"
+        )
+    card = max(resource_versions, key=key)
+    if key(card) > key(version):
+        raise ValueError(
+            f"Integration version {version} is below the released card version "
+            f"{card} in README.md. Raise the integration version, for example to "
+            f"{following(card)}. README changes only in a release PR"
         )
     changelog(root, bridge_version, "app/CHANGELOG.md")
     return {
@@ -460,6 +473,16 @@ def check_changes(root, base, meta):
     stable = release.stable_part(version)
     if integration_changed and version == old_version:
         if DATED.match(section(old_notes, version) or ""):
+            # An ha_app change already implies a plain version here, so the
+            # next valid step is a release PR at the next plain patch.
+            if "ha_app" in changed_stores:
+                plain = release.stable_part(following(version))
+                raise ValueError(
+                    f"The {stable} batch is closed by its release PR. An ha_app "
+                    f"update needs a release PR, so raise the integration to {plain}, "
+                    f"add a dated '## {plain} - YYYY-MM-DD' section to CHANGELOG.md "
+                    f"and set the README card resource to ?v={plain}"
+                )
             raise ValueError(
                 f"The {stable} batch is closed by its release PR. "
                 f"Raise the version to {following(version, closed=True)}"
