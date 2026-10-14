@@ -126,8 +126,8 @@ _OWNER_NEAR = (
     "Owner connection was not established. No HomeBase gave an accepted reply "
     "to the local lookup{target}."
 )
-# Another device in this account can be a HomeBase that answered the same
-# broadcast, so the stage sentence speaks for this HomeBase only.
+# Another device that answered, in this account or outside it, can be a
+# HomeBase, so the stage sentence speaks for this HomeBase only.
 _OWNER_ACCOUNT = (
     "Owner connection was not established. This HomeBase did not answer the "
     "local lookup{target}. The bridge host did not reach the HomeBase on its LAN."
@@ -283,11 +283,13 @@ def _near_reply(row: dict[str, Any]) -> bool:
 
 
 def _account_reply(row: dict[str, Any]) -> bool:
-    """Whether another device in this account answered the lookup."""
+    """Whether another device, in this account or outside it, answered the lookup."""
     account = row.get("lookup_account_replies")
+    foreign = row.get("lookup_foreign_replies")
     return row.get("stage") == "lookup" and (
-        row.get("lookup_inventory_reply") == "account"
+        row.get("lookup_inventory_reply") in {"account", "foreign"}
         or (type(account) is int and account > 0)
+        or (type(foreign) is int and foreign > 0)
     )
 
 

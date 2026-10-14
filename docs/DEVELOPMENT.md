@@ -269,10 +269,11 @@ the finding says that the device gave no accepted reply instead of that it did
 not answer, and the `owner_connection` finding leaves out "The bridge host did
 not reach the HomeBase on its LAN", because a reply with the device's ID did
 reach the bridge. This holds also when a send error names the added sentence.
-Without a near reply, when `lookup_inventory_reply` is `account` or
-`lookup_account_replies` is above 0, the `owner_connection` finding says that
-this HomeBase did not answer instead of that no HomeBase answered, because the
-device that answered can be another HomeBase.
+Without a near reply, when `lookup_inventory_reply` is `account` or `foreign`,
+or `lookup_account_replies` or `lookup_foreign_replies` is above 0, the
+`owner_connection` finding says that this HomeBase did not answer instead of
+that no HomeBase answered, because the device that answered can be another
+HomeBase.
 Integration 0.8.46 or older drops the fields, and bridge 0.8.37 or older sends
 none. The schema stays `2` because the fields are additive.
 

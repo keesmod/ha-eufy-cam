@@ -32,9 +32,9 @@
   other devices in this account answered the broadcast but this camera did
   not. With a near reply it says that no reply was accepted instead of that
   the device did not answer, and for a HomeBase it no longer says the bridge
-  host did not reach the HomeBase. When another device in this account
-  answered the lookup, the HomeBase finding says that this HomeBase did not
-  answer instead of that no HomeBase answered. Without these fields, or when
+  host did not reach the HomeBase. When another device answered the lookup, in
+  this account or outside it, the HomeBase finding says that this HomeBase did
+  not answer instead of that no HomeBase answered. Without these fields, or when
   none of the listed observations applies, the text stays the same.
 - Bridge 0.8.38 releases a camera at once when its live start fails before the
   start command was issued, for example a standalone camera on the

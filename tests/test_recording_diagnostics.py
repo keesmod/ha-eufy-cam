@@ -1102,11 +1102,23 @@ def test_owner_lookup_fields_add_one_fixed_sentence_for_the_homebase(lookup, sen
             },
             _SHARED,
         ),
+        (
+            {
+                "lookup_inventory_reply": "foreign",
+                "lookup_foreign_replies": 1,
+                "lookup_datagrams": 1,
+            },
+            _FOREIGN,
+        ),
+        (
+            {"lookup_foreign_replies": 3, "lookup_datagrams": 3},
+            "Only devices outside this account answered.",
+        ),
     ],
 )
 def test_owner_account_reply_speaks_for_this_homebase_only(lookup, sentence):
-    # Another device in this account can be a HomeBase that answered the same
-    # broadcast, so no HomeBase is said to have stayed silent (#152).
+    # Another device that answered, in this account or outside it, can be a
+    # HomeBase, so no HomeBase is said to have stayed silent (#152).
     finding = _owner_finding(_owner_report([_lookup_failure(device_ref=1, **lookup)]))
     expected = f"{_OWNER_ACCOUNT_LOOKUP} {sentence.format(device='HomeBase')}"
     assert finding["observation"] == expected
