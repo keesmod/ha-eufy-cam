@@ -180,7 +180,7 @@ selects the record shape:
 | `end` | Report number and number of device/issue rows emitted |
 | `cloud` | Named allowlisted operation, HTTP status, numeric result and elapsed milliseconds |
 | `connection` | Authentication or push-event phase, outcome, push status and software versions |
-| `station_connection` | Report number, anonymous device reference, model, connect/refresh/observation phase, status and validated reason code |
+| `station_connection` | Report number, anonymous device reference, model, connect/refresh/observation phase, status and validated reason code, a failed connect's `stage`, and since bridge 0.8.38 the bounded lookup fields of the connect attempt behind the record |
 | `fault` | Validated error code and report number when available |
 
 `report` groups discovery rows within a backend lifetime. `ref` is one-based in
@@ -213,6 +213,69 @@ must not turn unknown/error states
 into a successful or failed connection. A present parent row does not prove
 support, connectivity or playback. Preserve observed availability and software
 capabilities as separate evidence.
+
+Since bridge 0.8.38 with client 0.30.0, a `station_connection` record can say
+what the local lookup of its connect attempt saw
+([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). The source is
+the client's `connectStation` `onLookup` observation, see the
+[library API](https://github.com/keesmod/eufy-mega-client/blob/main/docs/API.md#station-lookup-observation-0300).
+The purpose is to tell a lookup that received nothing from one whose replies
+arrived and were not accepted. The fields are flat on the record:
+
+| Field | Bound | Meaning |
+|---|---|---|
+| `lookup_rounds` | 0 to 99 | Lookup rounds sent |
+| `lookup_broadcast_targets` | 0 to 16 | Directed broadcast targets of the latest round |
+| `lookup_broadcast_enabled` | boolean | Whether the session socket accepted broadcasts |
+| `lookup_send_errors` | 0 to 999 | Lookup sends that failed |
+| `lookup_datagrams` | 0 to 999 | Datagrams received while the lookup ran |
+| `lookup_other_headers` | 0 to 999 | Of those, datagrams that are no lookup reply |
+| `lookup_own_replies` | 0 to 999 | Replies with the station's own ID |
+| `lookup_own_round` | 0 to 99 | Only with an own reply: the latest round sent when the first one arrived, counted from 0, so 0 is the first round |
+| `lookup_account_replies` | 0 to 999 | Replies with the ID of another device or station in the inventory |
+| `lookup_foreign_replies` | 0 to 999 | Replies with an ID outside the inventory |
+| `lookup_near_replies` | 0 to 999 | Replies whose ID matches the own ID only after the client's normalization |
+| `lookup_inventory_reply` | `none`, `own`, `account`, `foreign`, `near` | Class of the first reply from the inventory LAN address, `none` without one |
+| `inventory_address_on_subnet` | boolean | Only with an inventory address: whether it lies in a subnet of the bridge host |
+| `inventory_address_shared` | boolean | Only with an inventory address: whether another inventory row has the same LAN address |
+
+A failed `connect` record carries them next to its `stage`. A successful attempt
+is reported by the record that follows its connect. That is the `connect` record
+of an experimental standalone camera and the `refresh_state` record of a
+HomeBase, whatever its status. On a `refresh_state` record the fields describe
+the local lookup of the connect attempt behind the record, not the refresh. The
+idle reconnect of a disconnected HomeBase writes the same records and records
+its lookup the same way. `observation` records never carry them.
+
+The values are counts, booleans and one enum. They contain no DID, address,
+port, serial or interface name. The client compares each reply's DID with the
+inventory's DIDs inside its process and keeps only counts. The bridge revalidates
+every value at its logging boundary, leaves out an integer outside its bound, a
+value that is not a real boolean and a reply class outside the fixed set, and
+never serializes the observation object. The `Eufy discovery:` log lines and the
+bridge download carry the same records. The HA download applies the same bounds
+and replaces any other value with `null`.
+
+A missing field means no observation, for example from an older bridge or
+client, an attempt that ended before `lookup`, such as one refused with
+`connection_busy`, or a station that was already connected. `lookup_own_round`
+is absent without an own reply. The two `inventory_address_` fields are absent
+without an inventory address, and `inventory_address_on_subnet` also when the
+host's interfaces cannot be read. None of the values proves a cause on its own.
+Integration 0.8.47 adds at most one fixed sentence to the `owner_connection` or
+`standalone_connection` finding of an attempt that failed at `lookup`, and keeps
+the previous text without the fields. When the lookup fields show a near reply,
+the finding says that the device gave no accepted reply instead of that it did
+not answer, and the `owner_connection` finding leaves out "The bridge host did
+not reach the HomeBase on its LAN", because a reply with the device's ID did
+reach the bridge. This holds also when a send error names the added sentence.
+Without a near reply, when `lookup_inventory_reply` is `account` or `foreign`,
+or `lookup_account_replies` or `lookup_foreign_replies` is above 0, the
+`owner_connection` finding says that this HomeBase did not answer instead of
+that no HomeBase answered, because the device that answered can be another
+HomeBase.
+Integration 0.8.46 or older drops the fields, and bridge 0.8.37 or older sends
+none. The schema stays `2` because the fields are additive.
 
 ### Bounds and compatibility
 
@@ -258,7 +321,12 @@ capabilities as separate evidence.
 - Unchanged discovery logs emit only summary/end with `unchanged=true` and zero
   emitted rows. The download still contains complete rows. Repeated identical
   connection states and consecutive identical generic faults are suppressed.
-  Error phases and changes of state remain distinguishable.
+  Error phases and changes of state remain distinguishable. Since bridge 0.8.38
+  a `station_connection` record with lookup fields repeats the previous record
+  only when its coarse lookup class is the same as well. The class is whether
+  each count is zero, plus each boolean and the reply class, so changed counts
+  alone add no record and a changed outcome does. A record without lookup
+  fields does not end a repeat.
 - `custom_components/eufy_viewer/diagnostics.py` revalidates keys and values before
   exporting them. Unknown fields are omitted and invalid values become safe
   sentinels. Its bridge request has a 1 MiB response bound and a ten-second outer
@@ -286,7 +354,8 @@ not open live camera streams or access production accounts.
 
 Existing coverage lives in `bridge/test/discovery-diagnostics.test.ts`,
 `bridge/test/live-video-diagnostics.test.ts`, `bridge/test/mega-backend.test.ts`,
-`bridge/test/server.test.ts`, `tests/test_diagnostics.py` and
+`bridge/test/server.test.ts`, `tests/test_diagnostics.py`,
+`tests/test_recording_diagnostics.py` for the assessment and
 `tests/test_live_diagnostics.py`. Follow [diagnostic release checks](RELEASING.md#diagnostic-release-checks)
 when shipping a change. Markdown and issue-form wording changes alone need no
 runtime version bump, deployment or live-device test.

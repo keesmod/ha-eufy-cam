@@ -116,6 +116,26 @@ _CONNECTION_STAGES = {
         "session but the command key was not established."
     ),
 }
+# A near reply is not the device's own reply by the exact ID comparison (#152).
+# It did reach the bridge, so the stage sentence says no reply was accepted.
+_NEAR = (
+    " A lookup reply carried this {device}'s ID in a different format, and the "
+    "lookup did not accept it."
+)
+_OWNER_NEAR = (
+    "Owner connection was not established. No HomeBase gave an accepted reply "
+    "to the local lookup{target}."
+)
+# Another device that answered, in this account or outside it, can be a
+# HomeBase, so the stage sentence speaks for this HomeBase only.
+_OWNER_ACCOUNT = (
+    "Owner connection was not established. This HomeBase did not answer the "
+    "local lookup{target}. The bridge host did not reach the HomeBase on its LAN."
+)
+_STANDALONE_NEAR = (
+    "The experimental standalone camera gave no accepted reply to the local "
+    "lookup{target}."
+)
 # An opted-in standalone camera is its own owner. Its connect says how far its
 # own session got, whatever the reason, so the next protocol step is visible.
 _STANDALONE_STAGES = {
@@ -174,12 +194,18 @@ def _standalone_connections(
     for ref in sorted(failing):
         row = latest.get(ref)
         if row and row.get("stage") in _STANDALONE_STAGES:
+            template = (
+                _STANDALONE_NEAR
+                if _near_reply(row)
+                else _STANDALONE_STAGES[row["stage"]]
+            )
             findings.append(
                 (
-                    _STANDALONE_STAGES[row["stage"]].format(
+                    template.format(
                         target=_lookup_target(row),
                         reason=row.get("reason") or "unclassified_error",
-                    ),
+                    )
+                    + _lookup_observed(row, "camera"),
                     "support.recent_events.station_connection",
                 )
             )
@@ -248,8 +274,93 @@ def _lookup_target(row: dict[str, Any]) -> str:
     )
 
 
+def _near_reply(row: dict[str, Any]) -> bool:
+    """Whether a reply with the device's ID in another format reached the lookup."""
+    near = row.get("lookup_near_replies")
+    return row.get("stage") == "lookup" and (
+        row.get("lookup_inventory_reply") == "near" or (type(near) is int and near > 0)
+    )
+
+
+def _account_reply(row: dict[str, Any]) -> bool:
+    """Whether another device, in this account or outside it, answered the lookup."""
+    account = row.get("lookup_account_replies")
+    foreign = row.get("lookup_foreign_replies")
+    return row.get("stage") == "lookup" and (
+        row.get("lookup_inventory_reply") in {"account", "foreign"}
+        or (type(account) is int and account > 0)
+        or (type(foreign) is int and foreign > 0)
+    )
+
+
+def _lookup_observed(row: dict[str, Any], device: str) -> str:
+    """One sentence on what an attempt that failed at lookup saw, or nothing.
+
+    Bridge 0.8.38 with client 0.30.0 adds the lookup fields. The first
+    observation that applies in this fixed order is named. Without the fields,
+    or with values the download replaced by None, the text stays unchanged.
+    """
+    if row.get("stage") != "lookup":
+        return ""
+
+    def count(key: str) -> int | None:
+        value = row.get(key)
+        return value if type(value) is int else None
+
+    rounds, errors, datagrams = (
+        count(key)
+        for key in ("lookup_rounds", "lookup_send_errors", "lookup_datagrams")
+    )
+    own, account, foreign, near = (
+        count(f"lookup_{key}_replies") for key in ("own", "account", "foreign", "near")
+    )
+    reply = row.get("lookup_inventory_reply")
+    if rounds == 0:
+        return " No lookup request left the bridge."
+    if row.get("lookup_broadcast_enabled") is False or (errors or 0) > 0:
+        return " Some lookup requests could not be sent from the bridge host."
+    if _near_reply(row):
+        return _NEAR.format(device=device)
+    if reply == "foreign":
+        return (
+            " The device at the inventory LAN address answered with an ID outside "
+            "this account."
+        )
+    if reply == "account":
+        return " The inventory LAN address belongs to another device in this account."
+    if row.get("inventory_address_shared") is True:
+        return (
+            " The inventory lists the same LAN address for another device in this "
+            "account."
+        )
+    if (account or 0) > 0:
+        return (
+            " Other devices in this account answered the broadcast, but this "
+            f"{device} did not."
+        )
+    if datagrams == 0:
+        during = (
+            "the lookup"
+            if rounds is None
+            else f"the {rounds} lookup round{'' if rounds == 1 else 's'}"
+        )
+        return f" No reply of any kind reached the bridge during {during}."
+    if (foreign or 0) > 0 and own == 0 and account == 0 and near == 0:
+        return " Only devices outside this account answered."
+    return ""
+
+
 def _connection_stage(row: dict[str, Any]) -> str:
-    return _CONNECTION_STAGES[row["stage"]].format(target=_lookup_target(row))
+    template = (
+        _OWNER_NEAR
+        if _near_reply(row)
+        else _OWNER_ACCOUNT
+        if _account_reply(row)
+        else _CONNECTION_STAGES[row["stage"]]
+    )
+    return template.format(target=_lookup_target(row)) + _lookup_observed(
+        row, "HomeBase"
+    )
 
 
 def _failed_connection(support: dict[str, Any], discovery: list[Any]) -> Any:

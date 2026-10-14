@@ -5,6 +5,7 @@ import type {
   DeviceRelationship,
   Diagnostic,
   DiscoveryResult,
+  StationLookupObservation,
   StationState,
 } from '@keesmod/eufy-mega-client';
 import type { MigrationInventory } from './migration.js';
@@ -34,7 +35,62 @@ export const connectionStages: ReadonlySet<string> = new Set(['none', 'lookup', 
 export interface StationConnectionDetail {
   stage: string;
   inventoryAddress?: boolean;
+  /** What the attempt's local lookup saw, from client 0.30.0. Revalidated before it is reported. */
+  lookup?: StationLookupObservation;
 }
+type LookupFields = Record<string, number | boolean | string>;
+const lookupReplies: ReadonlySet<unknown> = new Set(['none', 'own', 'account', 'foreign', 'near']);
+/**
+ * Flat fields for the local lookup of one connection attempt (#152). Each value
+ * is revalidated here. An integer out of its range, a value that is not a real
+ * boolean or a reply class outside the fixed set is left out, and the
+ * observation itself is never serialized.
+ */
+function lookupFields(value: unknown): LookupFields {
+  const fields: LookupFields = {};
+  try {
+    if (!value || typeof value !== 'object') return fields;
+    const lookup = value as Record<string, unknown>;
+    const count = (key: string, raw: unknown, max: number) => {
+      const safe = integer(raw, 0, max);
+      if (safe !== null) fields[key] = safe;
+      return safe;
+    };
+    const bool = (key: string, raw: unknown) => {
+      if (typeof raw === 'boolean') fields[key] = raw;
+    };
+    count('lookup_rounds', lookup.rounds, 99);
+    count('lookup_broadcast_targets', lookup.broadcastTargets, 16);
+    bool('lookup_broadcast_enabled', lookup.broadcastEnabled);
+    count('lookup_send_errors', lookup.sendErrors, 999);
+    count('lookup_datagrams', lookup.datagrams, 999);
+    count('lookup_other_headers', lookup.otherHeaders, 999);
+    const own = count('lookup_own_replies', lookup.ownReplies, 999);
+    // The round of the first own reply exists only with an own reply.
+    if (own !== null && own > 0) count('lookup_own_round', lookup.ownRound, 99);
+    count('lookup_account_replies', lookup.accountReplies, 999);
+    count('lookup_foreign_replies', lookup.foreignReplies, 999);
+    count('lookup_near_replies', lookup.nearReplies, 999);
+    if (lookupReplies.has(lookup.inventoryReply))
+      fields.lookup_inventory_reply = lookup.inventoryReply as string;
+    bool('inventory_address_on_subnet', lookup.inventoryAddressOnSubnet);
+    bool('inventory_address_shared', lookup.inventoryAddressShared);
+    return fields;
+  } catch {
+    // Diagnostics never alter discovery. A value that cannot be read is omitted.
+    return {};
+  }
+}
+/**
+ * The coarse outcome of a lookup for the repeat check: whether each count is
+ * zero, and each boolean and the reply class. Changed counts alone are a repeat.
+ */
+const lookupClass = (fields: LookupFields): string | null =>
+  Object.keys(fields).length === 0
+    ? null
+    : JSON.stringify(
+        Object.entries(fields).map(([key, value]) => [key, typeof value === 'number' ? value > 0 : value]),
+      );
 /** An opted-in standalone camera that is its own experimental owner. */
 export const experimentalOwner = (
   relationship: DeviceRelationship | undefined,
@@ -114,6 +170,7 @@ export class DiscoveryDiagnostics {
       status: ConnectionStatus;
       reason: string | null;
       stage: string | null;
+      lookup: string | null;
     }
   >();
   private lastDiscovery: Record<string, unknown>[] = [];
@@ -156,16 +213,23 @@ export class DiscoveryDiagnostics {
           ? detail.stage
           : 'none'
         : null;
+    // The local lookup of the connect attempt behind this record, on a failed
+    // connect and on the record that reports a successful one. For a HomeBase
+    // that is the refresh_state record after its connect.
+    const lookup = detail?.lookup === undefined ? {} : lookupFields(detail.lookup);
+    const outcome = lookupClass(lookup);
     const previous = this.stationEvents.get(ref);
     this.stationOutcomes.set(id, status);
     // Only a repeat of the previous record is left out, so the latest record of
-    // a station is always its latest attempt.
+    // a station is always its latest attempt. A record with lookup fields
+    // repeats it only with the same coarse lookup outcome.
     if (
       previous?.report === this.pendingReport &&
       previous.status === status &&
       previous.reason === code &&
       previous.stage === stage &&
-      (status !== 'error' || previous.phase === phase)
+      (status !== 'error' || previous.phase === phase) &&
+      (outcome === null || previous.lookup === outcome)
     )
       return;
     this.stationEvents.set(ref, {
@@ -174,6 +238,7 @@ export class DiscoveryDiagnostics {
       status,
       reason: code,
       stage,
+      lookup: outcome,
     });
     this.emit({
       event: 'station_connection',
@@ -191,6 +256,7 @@ export class DiscoveryDiagnostics {
               ? { inventory_address: detail.inventoryAddress }
               : {}),
           }),
+      ...lookup,
     });
   }
 

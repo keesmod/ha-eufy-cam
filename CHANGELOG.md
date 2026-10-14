@@ -17,8 +17,25 @@
   integration version is `unavailable`, which previously matched an
   `unavailable` card version.
 - Bridge 0.8.38 reports its own and the client library's beta versions the same
-  way in its `Eufy discovery:` log lines. The client pin stays 0.29.2 and the
-  report schema stays 2.
+  way in its `Eufy discovery:` log lines. The report schema stays 2.
+- **Download diagnostics** keeps what the local lookup of a station connection
+  attempt saw, from bridge 0.8.38 with client 0.30.0
+  ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). The new
+  `station_connection` fields are counts, booleans and one reply class, such as
+  `lookup_rounds`, `lookup_datagrams`, `lookup_account_replies` and
+  `lookup_inventory_reply`, never an ID or address. Each value is checked
+  against its bound, and any other value becomes `null`.
+- When a standalone camera or a HomeBase fails its connection at `lookup`, the
+  assessment can add one fixed sentence on what the lookup saw. Examples are
+  that no reply of any kind reached the bridge, that the device at the
+  inventory LAN address answered with an ID outside this account, or that
+  other devices in this account answered the broadcast but this camera did
+  not. With a near reply it says that no reply was accepted instead of that
+  the device did not answer, and for a HomeBase it no longer says the bridge
+  host did not reach the HomeBase. When another device answered the lookup, in
+  this account or outside it, the HomeBase finding says that this HomeBase did
+  not answer instead of that no HomeBase answered. Without these fields, or when
+  none of the listed observations applies, the text stays the same.
 - Bridge 0.8.38 releases a camera at once when its live start fails before the
   start command was issued, for example a standalone camera on the
   experimental route that does not complete its connection
@@ -33,8 +50,10 @@
 Upgrade: update the HACS integration to 0.8.47 and the bridge app to 0.8.38,
 then restart Home Assistant. Keep the same token and session. No configuration
 migration is needed. Integration 0.8.46 still works with bridge 0.8.38, but its
-download shows a beta bridge or library version as `unavailable`. Rollback:
-restore the bridge 0.8.37 app backup and integration 0.8.46.
+download shows a beta bridge or library version as `unavailable` and drops the
+lookup fields. With bridge 0.8.37 the download has no lookup fields and the
+assessment keeps its previous text. Rollback: restore the bridge 0.8.37 app
+backup and integration 0.8.46.
 
 ## 0.8.46 - 2026-10-13
 

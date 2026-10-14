@@ -9,7 +9,8 @@ No live stream or optional debug logging is needed to generate discovery evidenc
 
 | Collection method | Bridge | Bundled library | HA integration |
 |---|---|---|---|
-| Beta bridge, library and integration versions such as `0.8.38-beta.1` as received instead of `unavailable` | 0.8.38 | 0.29.2 | 0.8.47 for the download |
+| [Lookup fields](#lookup-fields-of-a-connection-attempt) that say what the local lookup of a station connection attempt saw | 0.8.38 | 0.30.0 | 0.8.47 for the download and assessment |
+| Beta bridge, library and integration versions such as `0.8.38-beta.1` as received instead of `unavailable` | 0.8.38 | 0.30.0 | 0.8.47 for the download |
 | Experimental standalone option state, and a log line for each standalone camera the library keeps at `standalone_transport_unverified` with the option on | 0.8.37 | 0.29.2 | 0.8.46 for the download and assessment, none for the log line |
 | Machine error codes without a fixed code list, in logs and download | 0.8.16 | 0.12.2 | 0.8.16 for the download |
 | Current startup logs, including rejected-device firmware and parent context | 0.8.5 | 0.12.2 | No integration update needed to read bridge logs |
@@ -166,7 +167,11 @@ made no session attempt. The cause is that client 0.29.0 admitted only the
 also admits a standalone T8410. Reported, not independently reproduced. On
 2026-10-13 the same reporter had live video working on the camera with firmware
 2.3.2.4. Live video failed on the one with 2.3.1.6, and its event log had
-`device_request_timeout`. Its connection stage was not reported yet. See the
+`device_request_timeout`. A [later download][152-lookup] from bridge 0.8.37
+with client 0.29.2 and integration 0.8.46 showed its connection ending at
+`stage=lookup` with `inventory_address=true`, while the other camera connected.
+Bridge 0.8.38 records what that lookup saw, see
+[lookup fields](#lookup-fields-of-a-connection-attempt). See the
 [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-standalone-t8410-result-2026-10-13).
 
 On 2026-10-09 the reporter of [issue #149][149] ran integration 0.8.42 and
@@ -209,6 +214,7 @@ have software tests only, and hardware results for both remain pending in the
 client's [model matrix][149-matrix].
 
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
+[152-lookup]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6152282566
 [66-update]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6083775017
 [66-result]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6098838866
 [66-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-issue-66-update-0282
@@ -266,8 +272,8 @@ For each HomeBase that failed in the current report it takes the latest failed
 `device_disconnected`) after that HomeBase's last connection in the report, and
 names the latest such attempt that reached one of those three stages. Otherwise
 it keeps the generic text. A failure that repeats the previous record of the
-same HomeBase is not recorded again, so its latest record is always its latest
-attempt.
+same HomeBase is not recorded again, so its latest record has the stage and
+reason of its latest attempt.
 
 The same client version changes the lookup itself. The first lookup still goes
 to the LAN address from the inventory. When that stays silent for a second, the
@@ -346,6 +352,46 @@ recording attempt show whether the camera answers those commands on its own
 storage. The first answered snapshot, recording or live result shows whether
 the camera accepts the command key. Include the complete download in
 [client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
+
+### Lookup fields of a connection attempt
+
+Since bridge 0.8.38 with client 0.30.0 and integration 0.8.47, a camera or
+HomeBase stuck at `stage=lookup` also shows what its lookup saw. The fields are
+on the failed `connect` record in `recent_events` and in the bridge's
+`Eufy discovery:` log lines. They are counts, booleans and one reply class,
+never an ID or address. The assessment names the first row that applies, in
+this order:
+
+| Fields | What they show |
+|---|---|
+| `lookup_rounds=0` | No lookup request left the bridge |
+| `lookup_broadcast_enabled=false` or `lookup_send_errors` above 0 | Some lookup requests could not be sent from the bridge host |
+| `lookup_inventory_reply=near` or `lookup_near_replies` above 0 | A reply carried the camera's ID in a different format, and the lookup did not accept it |
+| `lookup_inventory_reply=foreign` | The device at the inventory LAN address answered with an ID outside the account |
+| `lookup_inventory_reply=account` | The inventory LAN address belongs to another device in the account |
+| `inventory_address_shared=true` | The inventory lists the same LAN address for another device in the account |
+| `lookup_account_replies` above 0 | Other devices in the account answered the broadcast, but the camera did not |
+| `lookup_datagrams=0` | No reply of any kind reached the bridge during the `lookup_rounds` rounds |
+| Only `lookup_foreign_replies` above 0 | Only devices outside the account answered |
+
+With a near reply the assessment says that the camera or HomeBase gave no
+accepted reply, not that it did not answer, also when a send error comes first.
+When another device answered, in the account or outside it, the HomeBase
+assessment says that this HomeBase did not answer instead of that no HomeBase
+answered.
+`inventory_address_on_subnet=false` says the inventory address lies outside
+every local subnet of the bridge host. None of these values proves a cause on
+its own. A connected attempt carries the same fields, on the `connect` record of
+a standalone camera and on the `refresh_state` record that follows a HomeBase's
+connect. Within one report, a later failed attempt of the same HomeBase with the
+same stage, reason and coarse lookup outcome adds no record. The coarse outcome
+is whether each count is above 0, plus each boolean and the reply class. The
+counts, including the round count the assessment quotes, can then come from the
+first such attempt. A standalone camera connects once per report, so its record
+is always its latest attempt. Without the fields the bridge, its client or the
+integration is older, or the attempt ended before its lookup. Integration 0.8.46
+drops them from **Download diagnostics**, so use the bridge log lines in that
+case.
 
 ## Privacy and scope
 

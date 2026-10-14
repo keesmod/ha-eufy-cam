@@ -7,8 +7,22 @@
   records. The `Eufy discovery:` log lines and the bridge's diagnostics download
   showed such a version as `unavailable` in bridge 0.8.37. Only a `-beta.N`
   suffix is accepted, with at most 24 characters. Firmware, hardware and Node
-  versions stay numeric. The client pin stays 0.29.2 and the report schema
-  stays 2.
+  versions stay numeric. The report schema stays 2.
+- Pin client 0.30.0 and record what the local lookup of each station
+  connection attempt saw
+  ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). A failed
+  `connect` record, the `connect` record of a connected experimental standalone
+  camera and the `refresh_state` record that follows a HomeBase's connect carry
+  flat fields such as `lookup_rounds`, `lookup_datagrams`,
+  `lookup_account_replies`, `lookup_foreign_replies`, `lookup_near_replies` and
+  `lookup_inventory_reply`. They appear in the `Eufy discovery:` log lines and
+  the bridge's diagnostics download. They are counts, booleans and one reply
+  class, never an ID, address or port. The bridge checks each value against its
+  bound and leaves out any other. The idle reconnect of a HomeBase records its
+  lookup the same way. A changed lookup outcome is recorded again, changed
+  counts alone are not.
+- The client change is observation only. The lookup's targets, timing, retries
+  and the ID it accepts are unchanged.
 - Release a camera at once when its live start fails before the client library
   reported `start_issued`, for example a standalone camera on the experimental
   route that does not complete its connection
@@ -19,9 +33,10 @@
   failed start keeps the quarantine until the device confirms its stop.
 
 Upgrade: keep the same token and session. Update the integration to 0.8.47 to
-keep beta versions in **Download diagnostics**. Integration 0.8.46 still works
-but shows a beta bridge or library version as `unavailable`. Rollback: restore
-the 0.8.37 app backup and integration 0.8.46.
+keep beta versions and the lookup fields in **Download diagnostics**.
+Integration 0.8.46 still works but shows a beta bridge or library version as
+`unavailable` and drops the lookup fields. Rollback: restore the 0.8.37 app
+backup and integration 0.8.46.
 
 ## 0.8.37 - 2026-10-13
 
