@@ -1114,6 +1114,38 @@ def test_owner_account_reply_speaks_for_this_homebase_only(lookup, sentence):
 
 
 @pytest.mark.parametrize(
+    ("stage", "expected"),
+    [
+        (
+            "station_found",
+            "Owner connection was not established. The HomeBase answered the "
+            "local lookup but did not complete the P2P handshake.",
+        ),
+        (
+            "session_open",
+            "Owner connection was not established. The HomeBase opened the P2P "
+            "session but the command key was not established.",
+        ),
+    ],
+)
+def test_owner_account_reply_after_the_lookup_keeps_the_stage_text(stage, expected):
+    # Other HomeBases can answer the broadcast before this one does, and the
+    # attempt still carries those counts after it passed the lookup (#152).
+    row = {
+        **_lookup_failure(
+            device_ref=1,
+            lookup_own_replies=1,
+            lookup_own_round=0,
+            lookup_account_replies=2,
+            lookup_datagrams=3,
+            lookup_inventory_reply="own",
+        ),
+        "stage": stage,
+    }
+    assert _owner_finding(_owner_report([row]))["observation"] == expected
+
+
+@pytest.mark.parametrize(
     ("lookup", "sentence"),
     [
         ({"lookup_near_replies": 1, "lookup_datagrams": 1}, _FORMAT),
@@ -1302,7 +1334,9 @@ def _reporter_download(lookup):
 def test_reporter_topology_without_a_homebase_explains_connection_and_live_start(
     lookup, sentence
 ):
-    # Issue #152: every camera is standalone. Camera B's assessment was empty.
+    # The #152 topology as described: every camera is standalone. Integration
+    # 0.8.46 already gives these findings for it without lookup fields, so the
+    # empty assessment the reporter saw had another cause.
     support = support_report(_reporter_download(lookup))
     findings = assess({"support": support})["findings"]
     stages = [f["stage"] for f in findings]

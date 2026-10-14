@@ -272,8 +272,8 @@ For each HomeBase that failed in the current report it takes the latest failed
 `device_disconnected`) after that HomeBase's last connection in the report, and
 names the latest such attempt that reached one of those three stages. Otherwise
 it keeps the generic text. A failure that repeats the previous record of the
-same HomeBase is not recorded again, so its latest record is always its latest
-attempt.
+same HomeBase is not recorded again, so its latest record has the stage and
+reason of its latest attempt.
 
 The same client version changes the lookup itself. The first lookup still goes
 to the LAN address from the inventory. When that stays silent for a second, the
@@ -382,9 +382,15 @@ this HomeBase did not answer instead of that no HomeBase answered.
 every local subnet of the bridge host. None of these values proves a cause on
 its own. A connected attempt carries the same fields, on the `connect` record of
 a standalone camera and on the `refresh_state` record that follows a HomeBase's
-connect. Without the fields the bridge, its client or the integration is older,
-or the attempt ended before its lookup. Integration 0.8.46 drops them from
-**Download diagnostics**, so use the bridge log lines in that case.
+connect. Within one report, a later failed attempt of the same HomeBase with the
+same stage, reason and coarse lookup outcome adds no record. The coarse outcome
+is whether each count is above 0, plus each boolean and the reply class. The
+counts, including the round count the assessment quotes, can then come from the
+first such attempt. A standalone camera connects once per report, so its record
+is always its latest attempt. Without the fields the bridge, its client or the
+integration is older, or the attempt ended before its lookup. Integration 0.8.46
+drops them from **Download diagnostics**, so use the bridge log lines in that
+case.
 
 ## Privacy and scope
 
