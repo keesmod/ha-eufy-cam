@@ -129,16 +129,18 @@ Cameras that are not connected to a HomeBase normally show their snapshot, live
 and recording features as unsupported with `standalone_transport_unverified`.
 From bridge 0.8.34 the app option `experimental_standalone: true` (Docker:
 `EUFY_EXPERIMENTAL_STANDALONE=true`) lets a standalone Wall Light Cam S100
-`T84A1` or Indoor Cam 2K Pan & Tilt `T8410` try its own local session. The
-T8410 needs bridge 0.8.35 or newer. The option is off by default. Only these
-two models are included, and no other camera or HomeBase changes. Update the
+`T84A1`, Indoor Cam 2K Pan & Tilt `T8410` or Indoor Cam Pan&Tilt 2K `T8410C`
+try its own local session. The T8410 needs bridge 0.8.35 or newer and the
+T8410C bridge 0.8.38 or newer. The option is off by default. Only these three
+models are included, and no other camera or HomeBase changes. Update the
 integration to 0.8.43 or newer before turning it on.
 
 Any other standalone camera that the bundled library keeps at
-`standalone_transport_unverified`, including a standalone `T8410C`, stays there
-with the option on, because the library admits only these two models to the
-experimental route. From bridge 0.8.37 the app log names its model in a line
-beginning with `Eufy experimental standalone:`, and from integration 0.8.46
+`standalone_transport_unverified` stays there with the option on, because the
+library admits only these models to the experimental route. So does a
+standalone `T8410C` on bridge 0.8.36 or 0.8.37, whose client 0.29.2 admits
+only the T84A1 and T8410. From bridge 0.8.37 the app log names its model in a
+line beginning with `Eufy experimental standalone:`, and from integration 0.8.46
 **Download diagnostics** explains it under `standalone_admission`. That is not
 a failed connection attempt. The bridge makes no attempt for such a camera. Two
 other cases get neither, with the option on or off. A camera whose model the
@@ -157,7 +159,10 @@ experimental features and work only if that session works. On
 [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152), live video was
 reported working on two standalone T8410s, with firmware 2.3.2.4 and 2.3.1.6.
 The camera on 2.3.1.6 first ended its connection at the lookup in several runs,
-so a failure is still possible and useful evidence.
+so a failure is still possible and useful evidence. No standalone T8410C result
+is recorded yet. The reported one runs firmware 3.3.4.4, another firmware line
+than the T8410, so the T8410 result does not carry over
+([issue #168](https://github.com/keesmod/ha-eufy-cam/issues/168)).
 Recordings that would need a cloud key cannot be downloaded, and the camera's
 detection events, guard mode and alarm state are not part of this test.
 
