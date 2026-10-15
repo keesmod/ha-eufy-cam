@@ -43,9 +43,8 @@
   off.
 
 Upgrade: keep the same token and session. Update the integration to 0.8.47 to
-keep beta versions and the lookup fields in **Download diagnostics**.
-Integration 0.8.46 still works but shows a beta bridge or library version as
-`unavailable` and drops the lookup fields. Rollback: turn
+keep the lookup fields in **Download diagnostics**. Integration 0.8.46 still
+works but drops the lookup fields. Rollback: turn
 `experimental_standalone` off, which stops the standalone T8410C attempt and
 also takes a standalone T84A1 and T8410 off the experimental route, or restore
 the 0.8.37 app backup and integration 0.8.46, which keeps them on that route
