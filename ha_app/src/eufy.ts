@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { JpegFramer } from './jpeg.js';
-import { StreamHub } from './streams.js';
+import { StartNotIssued, StreamHub } from './streams.js';
 import { StreamDiagnostics } from './diagnostics.js';
 import { MediaRelay } from './media.js';
 import { LiveVideoDiagnostics, type LiveVideoObservation } from './live-video-diagnostics.js';
@@ -94,8 +94,8 @@ export class Eufy extends EventEmitter {
     bound: (serial) => this.backend?.liveBoundMs?.(serial) ?? 120_000,
     recover: (serial) => this.recoverStation(serial),
     start: async (serial) => {
-      if (this.recordings.busy) throw new Error('Recording operation in progress');
-      if (!this.backend?.connected) throw new Error('Disconnected');
+      if (this.recordings.busy) throw new StartNotIssued(new Error('Recording operation in progress'));
+      if (!this.backend?.connected) throw new StartNotIssued(new Error('Disconnected'));
       // The row exists before the session's first mark, so it carries start.
       const row = this.liveVideo.begin(this.backend.inventory().find(camera => camera.serial === serial)?.model ?? '');
       this.liveVideoRows.get(serial)?.finish('closed');
@@ -103,11 +103,18 @@ export class Eufy extends EventEmitter {
       this.diagnostics.begin(serial);
       this.metrics.start_requests++;
       this.metrics.last_start_request = new Date().toISOString();
+      // The library reports start_issued before it hands START to a session.
+      // A failure without it, such as a camera that never connects, left
+      // nothing on the device to stop.
+      let issued = false;
       try {
-        await this.backend.startLive(serial, this.backend.liveBoundMs?.(serial), progress => row.startStage(progress));
+        await this.backend.startLive(serial, this.backend.liveBoundMs?.(serial), progress => {
+          if (progress.stage === 'start_issued') issued = true;
+          row.startStage(progress);
+        });
       } catch (error) {
         row.finish('failed');
-        throw error;
+        throw issued ? error : new StartNotIssued(error);
       }
       row.correlate(this.backend?.audioAttempt?.(serial));
     },

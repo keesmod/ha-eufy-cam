@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.8.38
+2026-10-15
+
+- Report a beta bridge or client library version such as `0.8.38-beta.1` as
+  received in the `software` field of the discovery `summary` and `connection`
+  records. The `Eufy discovery:` log lines and the bridge's diagnostics download
+  showed such a version as `unavailable` in bridge 0.8.37. Only a `-beta.N`
+  suffix is accepted, with at most 24 characters. Firmware, hardware and Node
+  versions stay numeric. The report schema stays 2.
+- Pin client 0.30.0 and record what the local lookup of each station
+  connection attempt saw
+  ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). A failed
+  `connect` record, the `connect` record of a connected experimental standalone
+  camera and the `refresh_state` record that follows a HomeBase's connect carry
+  flat fields such as `lookup_rounds`, `lookup_datagrams`,
+  `lookup_account_replies`, `lookup_foreign_replies`, `lookup_near_replies` and
+  `lookup_inventory_reply`. They appear in the `Eufy discovery:` log lines and
+  the bridge's diagnostics download. They are counts, booleans and one reply
+  class, never an ID, address or port. The bridge checks each value against its
+  bound and leaves out any other. The idle reconnect of a HomeBase records its
+  lookup the same way. A changed lookup outcome is recorded again, changed
+  counts alone are not.
+- The lookup observation changes nothing in the lookup. Its targets, timing,
+  retries and the ID it accepts are unchanged.
+- Release a camera at once when its live start fails before the client library
+  reported `start_issued`, for example a standalone camera on the experimental
+  route that does not complete its connection
+  ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). A camera
+  that never connects no longer stays in `stopping` until a bridge restart, so
+  it can be started again, recording requests are no longer refused with
+  `live_stopping` and no recovery attempt blocks other live starts. After `start_issued` a
+  failed start keeps the quarantine until the device confirms its stop.
+- Client 0.30.0 also admits a standalone Indoor Cam Pan&Tilt 2K `T8410C`/type
+  31 to the experimental route
+  ([issue #168](https://github.com/keesmod/ha-eufy-cam/issues/168)). With
+  `experimental_standalone` on, the bridge now connects a standalone T8410C at
+  every discovery, normally at startup, as it does for the T8410, and no longer
+  names it in an `Eufy experimental standalone:` line. Each standalone T8410C
+  that does not answer adds up to 20 seconds to startup. The startup log names
+  all three models. Nothing changes for HomeBase cameras or with the option
+  off.
+
+Upgrade: keep the same token and session. Update the integration to 0.8.47 to
+keep the lookup fields in **Download diagnostics**. Integration 0.8.46 still
+works but drops the lookup fields. Rollback: turn
+`experimental_standalone` off, which stops the standalone T8410C attempt and
+also takes a standalone T84A1 and T8410 off the experimental route, or restore
+the 0.8.37 app backup and integration 0.8.46, which keeps them on that route
+with the option on.
+
 ## 0.8.37 - 2026-10-13
 
 - Record whether `experimental_standalone` is on as `experimental_standalone`
@@ -374,7 +424,7 @@ updating. Restore its previous files to roll back while keeping its data and tok
   Back up the bridge and integration files before updating. Restore the previous
   files to roll back without changing data, token, credentials or entity identities.
 
-## 0.8.10 - Unreleased
+## 0.8.10 - 2026-09-14
 
 - Remove the software live bitrate and VBV limit from the previous candidate.
   Restore the original software encoder defaults while retaining diagnostics
