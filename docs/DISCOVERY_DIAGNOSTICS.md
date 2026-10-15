@@ -445,7 +445,8 @@ When "Show recordings" fails:
    that day.
 5. If a list appears, play one recording and also paste
    `data.support.recording.attempts` and `data.recording_playback.attempts`.
-   An attempt's `cause` is the client's code behind its `error`.
+   An attempt's `cause` is the client's code behind its `error`, or `transfer_`
+   plus the client's reason when a download's transfer ended incomplete.
 
 The fields that tell the cases apart:
 
