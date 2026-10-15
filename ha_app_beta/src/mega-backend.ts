@@ -11,19 +11,16 @@ import {
   type StationState,
   type LiveStream,
   type LiveStartProgress,
-  type StationConnectionProgress,
-  type StationLookupObservation,
   type AuthState as MegaAuth,
 } from '@keesmod/eufy-mega-client';
 import { Storage } from './storage.js';
 import { migrationInventory, verifyInventory, type MigrationInventory } from './migration.js';
 import {
   DiscoveryDiagnostics,
-  connectionStages as knownConnectionStages,
+  connectionAttempt as connectionStages,
   diagnosticCode,
   experimentalOwner,
   diagnosticModel,
-  type StationConnectionDetail,
 } from './discovery-diagnostics.js';
 import { RecordingTranscoder } from './recording-media.js';
 import { MegaRecordings } from './mega-recordings.js';
@@ -76,32 +73,6 @@ export function experimentalStandalone(value?: string): boolean {
   if (text === '' || text === 'false') return false;
   if (text === 'true') return true;
   throw new Error('EUFY_EXPERIMENTAL_STANDALONE must be true or false');
-}
-/**
- * Records the last stage a station connection reached and what its local lookup
- * saw, for the diagnostic record of that attempt.
- */
-function connectionStages(): {
-  detail: StationConnectionDetail;
-  onProgress: (progress: StationConnectionProgress) => void;
-  onLookup: (observation: StationLookupObservation) => void;
-} {
-  const detail: StationConnectionDetail = { stage: 'none' };
-  return {
-    detail,
-    onProgress: (progress) => {
-      // A stage a newer library adds keeps the last known one.
-      if (!knownConnectionStages.has(progress.stage)) return;
-      detail.stage = progress.stage;
-      if (typeof progress.inventoryAddress === 'boolean')
-        detail.inventoryAddress = progress.inventoryAddress;
-    },
-    // Observation only (#152). The diagnostics revalidate each value before
-    // they report it, and the library ignores anything this throws.
-    onLookup: (observation) => {
-      detail.lookup = observation;
-    },
-  };
 }
 function discoveryDetail(issue: DiscoveryIssue): string | undefined {
   if (issue.code !== 'unsupported_device') return undefined;
@@ -241,6 +212,8 @@ export class MegaBackend extends EventEmitter implements Backend {
           throw new RecordingError('capability_unavailable', 503);
       },
       recordingMedia,
+      // Each recording operation on its owner, in recent_events and on the log line (#152).
+      (owner, report) => this.discoveryDiagnostics.recording(owner, report),
     );
     this.stations = new MegaStations(
       () => this.client,
