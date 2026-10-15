@@ -61,14 +61,25 @@ test('stop recovery message distinguishes closed viewers from active viewers', a
   await expect(page.locator('.record-status')).toHaveText('The previous live session is still stopping. Wait a moment and load the date again.');
   await page.route('**/api/eufy_viewer/**', route => route.fulfill({status:409,json:{error:'secret token'}}));
   await page.getByRole('button',{name:'Show recordings',exact:true}).click();
-  await expect(page.locator('.record-status')).toHaveText('HomeBase recording unavailable. Load the date again.');
+  await expect(page.locator('.record-status')).toHaveText('Recording unavailable. Load the date again.');
+});
+
+test('list texts name the camera rather than a HomeBase, in English and Dutch', async ({ page }) => {
+  await page.getByRole('button',{name:'Recordings',exact:true}).click();
+  await expect(page.locator('.record-status')).toHaveText('1 recordings returned · Device time');
+  await page.route('**/api/eufy_viewer/**', route => route.fulfill({status:503,json:{error:'recording_unavailable'}}));
+  await page.getByRole('button',{name:'Show recordings',exact:true}).click();
+  await expect(page.locator('.record-status')).toHaveText('Recordings are unavailable for this camera right now. Try again shortly.');
+  await page.evaluate(()=>{ card.hass={...card._hass,language:'nl'}; });
+  await page.getByRole('button',{name:'Opnames tonen',exact:true}).click();
+  await expect(page.locator('.record-status')).toHaveText('Opnames zijn nu niet beschikbaar voor deze camera. Probeer het zo opnieuw.');
 });
 
  test('failed native video reports an error and releases the prepared recording', async ({page})=>{
   await page.route('**/api/eufy_viewer/playback/*?authSig=*',r=>r.fulfill({status:404}));
   await page.getByRole('button',{name:'Recordings',exact:true}).click();
   await page.locator('.record-row').click();
-  await expect(page.locator('.record-status')).toHaveText('HomeBase recording unavailable. Load the date again.');
+  await expect(page.locator('.record-status')).toHaveText('Recording unavailable. Load the date again.');
   await expect.poll(()=>page.evaluate(()=>released.length)).toBe(1);
   expect(await page.locator('.record-video').getAttribute('src')).toBeNull();
  });
@@ -89,7 +100,7 @@ test('stop recovery message distinguishes closed viewers from active viewers', a
   await page.evaluate(()=>{const timer=window.setTimeout;window.setTimeout=(fn,delay,...args)=>timer(fn,delay===20000?50:delay,...args);});
   await page.getByRole('button',{name:'Recordings',exact:true}).click();
   await page.locator('.record-row').click();
-  await expect(page.locator('.record-status')).toHaveText('HomeBase recording unavailable. Load the date again.');
+  await expect(page.locator('.record-status')).toHaveText('Recording unavailable. Load the date again.');
   await expect.poll(()=>page.evaluate(()=>released.length)).toBe(1);
   expect(await page.locator('.record-video').getAttribute('src')).toBeNull();
  });
@@ -120,7 +131,7 @@ for(const code of [2,3,4]) test(`native media error ${code}: retry only decoding
   },code);
   await page.getByRole('button',{name:'Recordings',exact:true}).click();
   await page.locator('.record-row').click();
-  if(code===2) await expect(page.locator('.record-status')).toHaveText('HomeBase recording unavailable. Load the date again.');
+  if(code===2) await expect(page.locator('.record-status')).toHaveText('Recording unavailable. Load the date again.');
   else await expect.poll(()=>page.locator('.record-video').evaluate(v=>v.currentTime)).toBeGreaterThan(0);
   const requests=await page.evaluate(()=>urls.filter(p=>p.includes('/playback')&&!p.includes('/api/eufy_viewer/playback/')));
   expect(requests.length).toBe(code===2?1:2);

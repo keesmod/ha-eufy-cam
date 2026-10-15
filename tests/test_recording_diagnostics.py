@@ -2,6 +2,7 @@
 
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -126,6 +127,60 @@ def test_projection_bounds_private_fields_versions_and_expiration():
     for value in (None, [], "", "PRIVATE", "0", str(2**48), "1\n", "1" * 50):
         assert attempt_header(value) is None
     assert attempt_header(str(2**48 - 1)) == 2**48 - 1
+
+
+_CODE_CASES = json.loads(
+    (Path(__file__).parent / "fixtures" / "diagnostic-codes.json").read_text()
+)
+
+
+def test_attempt_cause_and_result_code_are_bounded_codes():
+    # Bridge 0.8.39 keeps the client's cause next to the bridge error (#152).
+    row = {
+        "attempt": 7,
+        "age_ms": 10,
+        "stage": "download",
+        "outcome": "failed",
+        "error": "recording_unavailable",
+        "cause": "recording_cipher_unavailable",
+        "result_code": -104,
+    }
+    assert project_attempt(row) == row
+    for code in _CODE_CASES["accepted"]:
+        assert project_attempt({**row, "cause": code})["cause"] == code
+    for value in (-999999, 0, 999999):
+        assert project_attempt({**row, "result_code": value})["result_code"] == value
+    # Null means the bridge had no cause or code, an older bridge sends neither.
+    assert project_attempt({**row, "cause": None, "result_code": None}) == {
+        **row,
+        "cause": None,
+        "result_code": None,
+    }
+    older = {key: row[key] for key in row if key not in ("cause", "result_code")}
+    assert project_attempt(older) == older
+    for value in _CODE_CASES["rejected"]:
+        if value is not None:
+            assert project_attempt({**row, "cause": value}) == {
+                key: row[key] for key in row if key != "cause"
+            }, value
+    for value in (-1000000, 1000000, 2**53, 1.0, "-104", True, [1], {"code": 1}):
+        assert project_attempt({**row, "result_code": value}) == {
+            key: row[key] for key in row if key != "result_code"
+        }, value
+    # The bridge's attempts reach the download with both fields, nothing else.
+    result = support_report(
+        {
+            "schema": 2,
+            "last_discovery": [],
+            "recent_events": [],
+            "recording": {
+                "schema": 1,
+                "attempts": [{**row, "cause_detail": "PRIVATE", "serial": "PRIVATE"}],
+            },
+        }
+    )
+    assert result["recording"]["attempts"] == [row]
+    assert "PRIVATE" not in json.dumps(result)
 
 
 def test_attempt_retention_snapshot_isolation_and_no_ownership():

@@ -2,13 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter, once } from 'node:events';
 import { Readable, PassThrough } from 'node:stream';
-import { writeFileSync, existsSync } from 'node:fs';
+import { writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { RecordingDiagnostics } from '../src/recording-diagnostics.js';
 import { RecordingTranscoder } from '../src/recording-media.js';
 import { MegaRecordings } from '../src/mega-recordings.js';
 import { createBridge } from '../src/server.js';
 import { StreamHub } from '../src/streams.js';
+import { RecordingError } from '../src/errors.js';
+import { EufyError } from '@keesmod/eufy-mega-client';
 process.env.EUFY_DATA_DIR = tmpdir();
 
 test('bounded reports expire without retaining upstream text or identity and snapshots do not mutate ownership', () => {
@@ -100,4 +102,67 @@ test('HTTP headers correlate success and admission failure without starting anot
     assert.equal(Number(failed.headers.get('X-Eufy-Recording-Attempt')),row.attempt);
     assert.equal(row.stage,'admission');assert.equal(row.error,'recording_unavailable');assert.equal(f.counts().downloads,1);
   }finally{server.emit('shutdown');server.closeAllConnections();server.close();await once(server,'close');}
+});
+
+const codeCases = JSON.parse(readFileSync(
+  new URL('../../tests/fixtures/diagnostic-codes.json', import.meta.url), 'utf8',
+)) as { accepted: string[]; rejected: unknown[] };
+/** How run() answers a client error: the bridge's own error with the client's as its cause. */
+const answered = (cause: unknown) => Object.assign(new RecordingError('recording_unavailable', 503), { cause });
+
+test('attempt rows keep the bounded client cause and result code next to the bridge error (#152)', () => {
+  const reports = new RecordingDiagnostics(() => 0);
+  const finish = (error?: unknown, outcome: 'failed' | 'completed' | 'cancelled' = 'failed') => {
+    const row = reports.begin('h264');
+    row.finish(outcome, error);
+    return JSON.parse(JSON.stringify(row.snapshot()));
+  };
+  let row = finish(answered(new EufyError('recording_cipher_unavailable')));
+  assert.deepEqual([row.error, row.cause, row.result_code], ['recording_unavailable', 'recording_cipher_unavailable', null]);
+  row = finish(answered(new EufyError('history_rejected', -1100)));
+  assert.deepEqual([row.cause, row.result_code], ['history_rejected', -1100]);
+  row = finish(answered(new EufyError('cancelled')), 'cancelled');
+  assert.deepEqual([row.outcome, row.cause], ['cancelled', 'cancelled']);
+  // A bridge refusal has no client cause.
+  for (const refusal of [new RecordingError('recording_busy', 409), new RecordingError('recording_unavailable', 503)]) {
+    row = finish(refusal);
+    assert.deepEqual([row.error, row.cause, row.result_code], [refusal.code, null, null]);
+  }
+  // An error that reaches the attempt without the bridge answer is its own cause.
+  row = finish(new EufyError('device_not_found'));
+  assert.deepEqual([row.error, row.cause], ['unclassified', 'device_not_found']);
+  // An error that is no EufyError, or a code outside the bound, is unclassified_error.
+  for (const error of [new TypeError('PRIVATE_TOKEN'), Object.assign(new Error('/PRIVATE/path'), { code: 'ENOSPC' }), { code: 'PRIVATE_TOKEN' }])
+    assert.equal(finish(answered(error)).cause, 'unclassified_error');
+  for (const code of codeCases.accepted) assert.equal(finish(answered({ code })).cause, code);
+  for (const code of codeCases.rejected) assert.equal(finish(answered({ code })).cause, 'unclassified_error', JSON.stringify(code));
+  for (const remote of [-999999, 0, 999999]) assert.equal(finish(answered(new EufyError('x', remote))).result_code, remote);
+  for (const remote of [-1000000, 1000000, 2 ** 53, 1.5, '-104', true, null])
+    assert.equal(finish(answered({ code: 'history_rejected', remoteCode: remote })).result_code, null, String(remote));
+  // A completed attempt carries neither field.
+  row = finish(undefined, 'completed');
+  assert.deepEqual(['error' in row, 'cause' in row, 'result_code' in row], [false, false, false]);
+  assert.doesNotMatch(JSON.stringify(reports.report()), /PRIVATE/);
+});
+
+test('a failed download keeps the client cause on its attempt and the 503 body unchanged (#152)', async () => {
+  const media = new RecordingTranscoder('nvidia', () => {}, () => { throw new Error('no conversion expected'); });
+  const client = { connected: true,
+    listRecordings: async () => ({ complete: true, returned: 1, recordings: [{ id: 'PRIVATE', deviceId: 'CAM', stationId: 'BASE', start: '2026-10-15T10:00:00', end: '2026-10-15T10:00:01' }] }),
+    downloadRecording: async () => { throw new EufyError('device_request_timeout', -104); } };
+  const recordings = new MegaRecordings(() => client as any, () => [{ id: 'CAM', kind: 'camera', stationId: 'BASE' }] as any, () => false, undefined, media);
+  const id = (await recordings.list('CAM', '2026-10-15', new AbortController().signal)).recordings[0]!.id;
+  const hub = new StreamHub({ start: async () => {}, stop: async () => {}, disposeMedia: () => {} });
+  const fake = Object.assign(new EventEmitter(), { recordings, hasCamera: (s: string) => s === 'CAM', hub });
+  const server = createBridge(fake as any, 't'.repeat(32), 'synthetic');
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/v1/recordings/CAM/${id}/video`, { headers: { Authorization: 'Bearer ' + 't'.repeat(32) } });
+    assert.equal(response.status, 503);
+    assert.equal(await response.text(), '{"error":"recording_unavailable"}');
+    const row = recordings.diagnostics.report().attempts.at(-1)!;
+    assert.equal(Number(response.headers.get('X-Eufy-Recording-Attempt')), row.attempt);
+    assert.deepEqual([row.outcome, row.stage, row.error, row.cause, row.result_code], ['failed', 'download', 'recording_unavailable', 'device_request_timeout', -104]);
+  } finally { server.emit('shutdown'); server.closeAllConnections(); server.close(); await once(server, 'close'); }
 });

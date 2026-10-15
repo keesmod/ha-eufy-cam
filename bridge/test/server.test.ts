@@ -396,3 +396,56 @@ for (const optIn of [false, true]) for (const audioFirst of [false, true]) test(
     assert.equal((await fetch(base+messages[0].path+'/audio')).status,404);
   } finally {ws.terminate();server.emit('shutdown');server.closeAllConnections();server.close();await once(server,'close');}
 });
+
+test('failed recording requests keep the exact 503 body and leave a recording_query row in the download (#152)', async () => {
+  const { MegaRecordings } = await import('../src/mega-recordings.js');
+  const { DiscoveryDiagnostics } = await import('../src/discovery-diagnostics.js');
+  const { EufyError } = await import('@keesmod/eufy-mega-client');
+  const diagnostics = new DiscoveryDiagnostics(() => {});
+  diagnostics.inventory({
+    devices: [{ id: 'CAM123', stationId: 'CAM123', kind: 'camera', model: 'T8410', name: 'PRIVATE_NAME', firmware: '2.3.2.4', hardware: '1', battery: null }],
+    relationships: [{ deviceId: 'CAM123', kind: 'standalone', ownerId: 'CAM123', transport: 'experimental', descriptor: { did: true, license: true, adminUser: true, lanAddress: true } }],
+    issues: [],
+  }, 'accepted', undefined, true, new Map(), new Map(), true);
+  let connected = true;
+  const silent = (options: any) => {
+    options.onObservation({ operation: 'list', owner: 'standalone', sessionOpen: true, stage: 'query', code: 'device_request_timeout',
+      remoteCode: null, elapsedMs: 15053, pages: [{ limit: 100, elapsedMs: 15050, answered: false, ackCode: null, resultCode: null, rows: null }],
+      unhandledReplies: 0, unhandledReason: null, unhandledResultCode: null, rowClasses: null });
+    throw new EufyError('device_request_timeout');
+  };
+  const client = { get connected() { return connected; },
+    listRecordings: async (_id: string, _day: string, _cameras: string[], options: any) => silent(options),
+    recordingCalendar: async (_id: string, _month: string, options: any) => silent(options) };
+  const recordings = new MegaRecordings(() => client as any, () => [{ id: 'CAM123', kind: 'camera', stationId: 'CAM123' }] as any,
+    () => false, undefined, undefined, (owner, report) => diagnostics.recording(owner, report));
+  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123',
+    pictures: new Map(), recordings, supportReport: () => diagnostics.report(),
+    hub: new StreamHub({ start: async () => {}, stop: async () => {}, disposeMedia: () => {} }) });
+  const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const base = `http://127.0.0.1:${address.port}`;
+  const headers = { Authorization: `Bearer ${token}` };
+  try {
+    for (const path of ['/v1/recordings/CAM123?date=2026-10-15', '/v1/recordings?cameras=CAM123&date=2026-10-15', '/v1/recording-days?cameras=CAM123&month=2026-10']) {
+      const response = await fetch(base + path, { headers });
+      assert.equal(response.status, 503, path);
+      assert.equal(response.headers.get('content-type'), 'application/json');
+      assert.equal(await response.text(), '{"error":"recording_unavailable"}', path);
+    }
+    connected = false;
+    const refused = await fetch(base + '/v1/recordings/CAM123?date=2026-10-15', { headers });
+    assert.equal(refused.status, 503);
+    assert.equal(await refused.text(), '{"error":"recording_unavailable"}');
+    const report = await (await fetch(base + '/v1/diagnostics', { headers })).json() as { recent_events: Record<string, unknown>[] };
+    const rows = report.recent_events.filter((row) => row.event === 'recording_query');
+    // The second list is a repeat of the first and left out.
+    assert.deepEqual(rows.map((row) => [row.query, row.owner, row.reason, row.query_stage, row.returned]), [
+      ['list', 'standalone', 'device_request_timeout', 'query', 503],
+      ['calendar', 'standalone', 'device_request_timeout', 'query', 503],
+      ['list', 'standalone', 'client_disconnected', 'admission', 503],
+    ]);
+    assert.doesNotMatch(JSON.stringify(report), /CAM123|PRIVATE/);
+  } finally { server.emit('shutdown'); server.closeAllConnections(); server.close(); await once(server, 'close'); }
+});

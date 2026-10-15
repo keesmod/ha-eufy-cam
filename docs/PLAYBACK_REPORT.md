@@ -70,6 +70,24 @@ frame counter. Failure events preserve fixed categories, timeout scope and the
 applicable output, conversion, hardware-progress and cleanup limits. The operation
 limit covers the source transfer, conversion and delivery together.
 
+A failed or cancelled attempt has the bridge's `error`, such as
+`recording_unavailable`. Since bridge 0.8.39 with integration 0.8.48 it also has
+`cause`, the client's machine code behind that error, such as
+`recording_cipher_unavailable` or `device_request_timeout`, and `result_code`,
+that error's numeric result between -999999 and 999999. A download whose
+transfer ended incomplete has `cause` set to `transfer_` plus the client's
+reason, one of `cancelled`, `connection_lost`, `timeout`, `rejected` or
+`too_large`, with `result_code` `null`. Both are `null` when the bridge failed
+without a client error or transfer reason, for example when it refused the
+request itself. An error that is not a client error, or a code outside the
+bound, is `unclassified_error`. Older bridges and integrations leave both
+fields out. HA's own `recording_playback` attempts do not carry them.
+
+`support.recording` covers video attempts only. Since bridge 0.8.39 a recording
+list, calendar or thumbnail, and the download behind a video attempt, can also
+leave a `recording_query` record in `support.recent_events`, see
+[failed recordings](DISCOVERY_DIAGNOSTICS.md#failed-recordings).
+
 `source_cancel_confirmed` means the library's transfer cancellation/cleanup call
 resolved. `files_removed` means the bridge removed its temporary workspace.
 Neither observation proves physical camera behavior or GPU idle state.

@@ -167,7 +167,7 @@ The bridge's Bearer-authenticated `GET /v1/diagnostics` returns:
 | `schema` | Report format version, currently integer `2` |
 | `generated_at` | Download generation time in UTC ISO format with milliseconds |
 | `last_discovery` | Complete latest summary, device/issue rows and end record |
-| `recent_events` | At most 100 recent cloud, connection, station-connection and fault records |
+| `recent_events` | At most 100 recent cloud, connection, station-connection, recording query and fault records |
 
 Records carry `diagnostic=discovery`, `schema=2` and a UTC `timestamp`. An `event`
 selects the record shape:
@@ -181,6 +181,7 @@ selects the record shape:
 | `cloud` | Named allowlisted operation, HTTP status, numeric result and elapsed milliseconds |
 | `connection` | Authentication or push-event phase, outcome, push status and software versions |
 | `station_connection` | Report number, anonymous device reference, model, connect/refresh/observation phase, status and validated reason code, a failed connect's `stage`, and since bridge 0.8.38 the bounded lookup fields of the connect attempt behind the record |
+| `recording_query` | Since bridge 0.8.39 with client 0.30.1, one recording operation on its owner: report number, the owner's anonymous reference and model, operation, owner type, status, reason and result code, how far it got, the device's answer to its last query page, database replies the session could not use, row counts of an answered list and the HTTP status the bridge answered with |
 | `fault` | Validated error code and report number when available |
 
 `report` groups discovery rows within a backend lifetime. `ref` is one-based in
@@ -277,6 +278,90 @@ HomeBase.
 Integration 0.8.46 or older drops the fields, and bridge 0.8.37 or older sends
 none. The schema stays `2` because the fields are additive.
 
+### Recording query records
+
+Since bridge 0.8.39 with client 0.30.1, `recent_events` and the `Eufy
+discovery:` log lines carry a `recording_query` record for recording operations
+([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). Integration
+0.8.48 keeps it in **Download diagnostics**. The purpose is to tell apart why
+a list, calendar, thumbnail or download failed, because the bridge answers
+`recording_unavailable` for almost every cause. The source is the client's
+`onObservation` report of each operation, see the
+[library API](https://github.com/keesmod/eufy-mega-client/blob/main/docs/API.md#recording-operation-observation-0301),
+plus the `onProgress` and `onLookup` callbacks of the owner's connection when
+the operation has to connect.
+
+The bridge records an operation on an experimental standalone owner except a
+successful thumbnail, and a failed operation on any owner. A HomeBase success
+is not recorded, so its recordings and the events timeline do not fill the
+ring. A request can run one operation per owner, so a timeline over several
+HomeBases can add one record per failed owner. Two bridge cases have no client
+report. When the bridge's client is not connected, each owner of the request
+gets a record with reason `client_disconnected`. When a request ends with the
+generic `recording_unavailable` and no client report explains it, for example
+`client_closed` before the client's recording access or an error of the bridge
+before the first operation, the owner of the latest operation, or else each
+owner of the request, gets a record with that error's code or
+`unclassified_error`. Such records have `query_stage=admission`,
+`session_open=null` and the values of an operation that sent no page. Bridge
+refusals with their own answer, such as `live_busy`, `recording_busy`,
+`capability_unavailable` or a 400 input error, and a failure after a completed
+operation, such as a video conversion, add no record. The
+[playback attempt](PLAYBACK_REPORT.md#recording-stages-and-limits) keeps the
+latter.
+
+| Field | Source | Bound | Meaning |
+|---|---|---|---|
+| `report`, `device_ref`, `model` | Bridge | As `station_connection` | The discovery report and the anonymous reference and model of the operation's owner. That is the camera itself on the experimental standalone route and else its HomeBase. An owner outside the latest inventory gets no record |
+| `query` | Bridge | `list`, `calendar`, `thumbnail`, `download` | The client operation. The events timeline uses `list` |
+| `owner` | Client `owner`, else the bridge's inventory | `standalone`, `station` | `standalone` for an experimental standalone owner. The client reports `station` for an unknown or expired recording ID |
+| `status` | Client `code` | `completed`, `error` | `error` for every failure, including a bridge case without a client report |
+| `reason` | Client `code`, else the bridge | Machine code | `null` on success. The client's `unexpected_error`, an error that is no `EufyError`, becomes `unclassified_error` |
+| `result_code` | Client `remoteCode`, else the error's | -999999 to 999999 | The error's numeric result, such as the database result of `history_rejected`. `null` without one |
+| `session_open` | Client `sessionOpen` | Boolean | Whether the owner's session was connected when the operation started. `null` without a client report |
+| `query_stage` | Client `stage` | `admission`, `connect`, `query`, `validate`, `transfer` | The last stage reached, see the library API. `admission` without a client report |
+| `stage`, `inventory_address`, `lookup_*`, `inventory_address_*` | Connection callbacks | As `station_connection` | Only when the operation connected the owner: the last connection stage and the lookup of that attempt |
+| `elapsed_ms` | Client `elapsedMs`, else the bridge's own timing | 0 to 3600000 | Milliseconds of the operation. A download ends when its transfer starts |
+| `pages` | Client `pages` | 0 to 4 | Query pages sent. A calendar sends one, a thumbnail or download none |
+| `query_limit` | Last page `limit` | 0 to 10000 | Rows requested by the last page. 0 for a calendar and without a page |
+| `query_answered` | Last page `answered` | Boolean | Whether the last page was answered. `false` without a page |
+| `ack_code` | Last page `ackCode` | -999999 to 999999 | The session's command result for the last page's query command. `null` without one |
+| `query_result_code` | Last page `resultCode` | -999999 to 999999 | The answer's database result (mIntRet). `null` without an answer |
+| `query_rows` | Last page `rows` | 0 to 10000 | Rows in the last page's answer. `null` without an answer |
+| `unhandled_replies` | Client `unhandledReplies` | 0 to 99 | Database replies the owner's session could not dispatch during the operation |
+| `unhandled_reason` | Client `unhandledReason` | `unknown_cmd`, `parse_error` | Why the latest of those was not dispatched. `null` without one |
+| `unhandled_result_code` | Client `unhandledResultCode` | -999999 to 999999 | The database result of the latest of those. `null` without one |
+| `rows_own`, `rows_other_device`, `rows_station_mismatch` | Client `rowClasses` | 0 to 10000 | A list's latest answered page divided into rows of the owner's cameras, of other devices, and of the owner's cameras with another station or no valid path. 0 without an answered list page |
+| `rows_invalid_time`, `rows_other_day`, `rows_cipher_id` | Client `rowClasses` | 0 to 10000 | Rows of that page with an invalid time, with a start on another day, and with a cipher ID of any value. 0 without an answered list page |
+| `returned` | Bridge | 100 to 599 | The HTTP status of the bridge's answer to the request, 200 on success. When a video fails after its 200 headers were sent, the bridge closes the response and the record says 503 |
+
+A record carries every field except `stage`, `inventory_address` and the lookup
+fields, which appear only when the operation connected. `null` means that the
+value was not observed or failed its bound. A missing record means an older
+bridge, client or integration, a case the bridge does not record, or a repeat.
+Some readings of a list that failed with `device_request_timeout` at `query`:
+`ack_code=null` and no unhandled reply is a silent device, a non-zero
+`ack_code` a refusal in the device's command result, `unhandled_reason=unknown_cmd`
+with `unhandled_result_code=-6006` an answer without an inner command, and
+`parse_error` an answer the session could not parse. `history_rejected` at
+`validate` carries the database result in `result_code` and
+`query_result_code`. `rows_cipher_id` above 0 says that a download from a
+standalone owner will be refused with `recording_cipher_unavailable`. None of
+these values proves a cause on its own.
+
+The client observes only. Its queries, page sizes, timeouts, error codes and
+the session close after a failed or cancelled operation are unchanged, and so
+are the bridge's HTTP status codes and bodies. The values are bounded scalars
+and fixed enums without an ID, serial, DID, path, name or address. The bridge
+revalidates each value at its logging boundary, sets an integer outside its
+bound, a value that is not a real boolean and an enum outside its set to
+`null`, and never serializes the observation object. The HA download applies
+the same bounds and replaces any other value with `null`. Only this record's
+`elapsed_ms` allows one hour, other records keep two minutes. The shared cases
+are in `tests/fixtures/recording-query.json`. Integration 0.8.47 or older drops
+the record, and bridge 0.8.38 or older sends none. The assessment adds no
+finding for it yet. The schema stays `2` because the record is additive.
+
 ### Bounds and compatibility
 
 - Retain at most 99 device rows and 99 issue rows plus summary/end, and at most
@@ -326,7 +411,12 @@ none. The schema stays `2` because the fields are additive.
   only when its coarse lookup class is the same as well. The class is whether
   each count is zero, plus each boolean and the reply class, so changed counts
   alone add no record and a changed outcome does. A record without lookup
-  fields does not end a repeat.
+  fields does not end a repeat. Since bridge 0.8.39 a `recording_query`
+  record repeats the previous record of the same owner and `query` in the same
+  report when every value except `elapsed_ms` is the same, with `query_rows`,
+  `unhandled_replies`, each `rows_` count and each lookup count reduced to
+  whether it is zero. A changed outcome, such as another `ack_code` or reason,
+  adds a record.
 - `custom_components/eufy_viewer/diagnostics.py` revalidates keys and values before
   exporting them. Unknown fields are omitted and invalid values become safe
   sentinels. Its bridge request has a 1 MiB response bound and a ten-second outer

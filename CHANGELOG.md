@@ -1,5 +1,58 @@
 # Changelog
 
+## 0.8.48 - Unreleased
+
+- **Download diagnostics** keeps a `recording_query` record in
+  `support.recent_events` for recording operations, from bridge 0.8.39 with
+  client 0.30.1 ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)).
+  On 2026-10-15 "Show recordings" failed on a standalone T8410 on the
+  experimental route while live view worked, and no download or log said why.
+  The bridge answered `recording_unavailable` for almost every cause and
+  recorded nothing.
+- A camera on the experimental standalone route gets a record for each list,
+  calendar and download and for each failed thumbnail. A HomeBase gets one only
+  for a failed operation, so its recordings and the events timeline do not fill
+  the 100 recent events. The bridge also records its own refusal when its client
+  is not connected, as `client_disconnected`.
+- The record says how far the operation got (`query_stage`), why it failed
+  (`reason`, `result_code`), what the device answered to the last query page
+  (`ack_code`, `query_answered`, `query_result_code`, `query_rows`), how many
+  database replies the session could not use (`unhandled_replies`,
+  `unhandled_reason`, `unhandled_result_code`), and the HTTP status the bridge
+  answered with (`returned`). An answered list also counts its rows by class,
+  including rows with a cipher ID (`rows_cipher_id`). An operation that had to
+  connect carries the connection `stage` and the lookup fields of that attempt.
+  The record has no ID, path, name or address. Each value is checked against its
+  bound, and any other value becomes `null`. The record's `elapsed_ms` allows
+  up to one hour, other records keep two minutes. The assessment adds no finding
+  for it yet.
+- A recording attempt in `support.recording.attempts` keeps the client's code
+  behind the bridge error as `cause`, with its numeric `result_code`, for
+  example `recording_cipher_unavailable` behind `recording_unavailable`. A
+  transfer that ended incomplete gives `transfer_` plus the client's reason,
+  such as `transfer_connection_lost`. `null` means the bridge failed without a
+  client error or transfer reason.
+- The recordings dialog no longer names a HomeBase, because the camera can be a
+  standalone camera. A failed list now shows "Recordings are unavailable for
+  this camera right now. Try again shortly." instead of "The HomeBase connection
+  is unavailable. Try again shortly.", and the dialog says "Loading
+  recordings…", "Recording unavailable. Load the date again." and "Device time".
+  The Dutch texts change the same way. The cause of a failure is in the new
+  record, not in the text.
+- Client 0.30.1 only observes the operation. Its queries, page sizes, timeouts
+  and error codes are unchanged, and a failed or cancelled operation still
+  closes the owner's session. The bridge's HTTP answers keep their status codes
+  and bodies. Standalone recordings stay unconfirmed: the cause of the
+  2026-10-15 failure is still unknown, and these records are meant to show it.
+
+Upgrade: update the HACS integration to 0.8.48 and the bridge app to 0.8.39,
+then restart Home Assistant. Keep the same token and session. No configuration
+migration is needed. Integration 0.8.47 still works with bridge 0.8.39, but its
+download drops the `recording_query` records and the attempt `cause` and
+`result_code`. The bridge's `Eufy discovery:` log lines still carry the
+records. With bridge 0.8.38 the download has no such records. Rollback: restore
+the bridge 0.8.38 app backup and integration 0.8.47.
+
 ## 0.8.47 - 2026-10-15
 
 - **Download diagnostics** now shows beta versions such as integration

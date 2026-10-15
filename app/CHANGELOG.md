@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.8.39 - Unreleased
+
+- Pin client 0.30.1 and record recording operations as `recording_query`
+  records in the `Eufy discovery:` log lines and the bridge's diagnostics
+  download ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)).
+  On 2026-10-15 "Show recordings" failed on a standalone T8410 on the
+  experimental route with `recording_unavailable`, and nothing said why. The
+  bridge passes each list, calendar, thumbnail and download its signal and
+  three callbacks. Client 0.30.1 reports through them what the operation saw.
+- A camera on the experimental standalone route gets a record for each list,
+  calendar and download and for each failed thumbnail. A HomeBase gets one only
+  for a failed operation, so its recordings and the events timeline do not fill
+  the 100 recent events. When the bridge's client is not connected, each owner
+  of the request gets a record with reason `client_disconnected`. A failure the
+  client did not report, such as `client_closed`, keeps its code, and an error
+  that is no client error is `unclassified_error`.
+- The record has the stage the operation reached, its reason and numeric
+  result, the device's answer to the last query page, the database replies the
+  session could not use, row counts of an answered list including rows with a
+  cipher ID, the connection stage and lookup fields when the operation had to
+  connect, the elapsed time and the HTTP status the bridge answered with. It
+  has no ID, path, name or address. The bridge checks each value against its
+  bound. A repeat of the previous record of the same owner and query in a
+  report adds no record, changed times or counts alone are a repeat.
+- A recording attempt in the diagnostics download keeps the client's code
+  behind its `error` as `cause`, with the numeric `result_code`, for example
+  `recording_cipher_unavailable` behind `recording_unavailable`. A transfer that
+  ended incomplete gives `transfer_` plus the client's reason, such as
+  `transfer_connection_lost`.
+- Observation only. The HTTP status codes and bodies of every recording
+  request stay the same, and so do the client's queries, page sizes, timeouts
+  and error codes. A failed or cancelled operation still closes the owner's
+  session.
+
+Upgrade: keep the same token and session. Update the integration to 0.8.48 to
+keep the `recording_query` records and the attempt `cause` in **Download
+diagnostics**, and for recording texts that no longer name a HomeBase.
+Integration 0.8.47 still works but drops the records and the cause. The log
+lines still carry the records. Rollback: restore the 0.8.38 app backup and
+integration 0.8.47.
+
 ## 0.8.38 - 2026-10-15
 
 - Report a beta bridge or client library version such as `0.8.38-beta.1` as
