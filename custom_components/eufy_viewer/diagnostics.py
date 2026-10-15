@@ -16,7 +16,7 @@ from .const import CONF_TOKEN, CONF_URL, DOMAIN, LIVE_BOUND_DEFAULT_SECONDS
 from .coordinator import EufyConfigEntry
 from .diagnostic_assessment import assess
 from .live_diagnostics import LATE_AUDIO_END_REASONS, LATE_AUDIO_STAGES, browser_report
-from .recording_diagnostics import recording_report, release_version
+from .recording_diagnostics import diagnostic_code, recording_report, release_version
 
 _CODE_FIELDS = {"outcome", "code", "reason", "relationship_reason"}
 # Live evidence stays downloadable for the bridge's session cap plus this grace,
@@ -24,7 +24,10 @@ _CODE_FIELDS = {"outcome", "code", "reason", "relationship_reason"}
 EVIDENCE_GRACE_SECONDS = 900
 _ENUMS = {
     "event": set(
-        "summary device issue end cloud connection station_connection fault".split()
+        (
+            "summary device issue end cloud connection station_connection fault "
+            "recording_query"
+        ).split()
     ),
     "diagnostic": {"discovery"},
     "kind": {"camera", "station", "unavailable"},
@@ -43,7 +46,7 @@ _ENUMS = {
     "status": set(
         (
             "not_checked connected disconnected error not_applicable "
-            "experimental unsupported unavailable"
+            "experimental unsupported unavailable completed"
         ).split()
     ),
     "phase": set("authentication events connect refresh_state observation".split()),
@@ -55,6 +58,11 @@ _ENUMS = {
     "baseline": {"present", "absent", "unavailable"},
     "platform": {"linux", "darwin", "win32", "other"},
     "arch": {"x64", "arm64", "arm", "other"},
+    # A recording query of the bridge, its owner and how far it got, bridge 0.8.39.
+    "query": {"list", "calendar", "thumbnail", "download"},
+    "owner": {"standalone", "station"},
+    "query_stage": set("admission connect query validate transfer".split()),
+    "unhandled_reason": {"unknown_cmd", "parse_error"},
 }
 _NUMBERS = {
     **dict.fromkeys("ref owner_ref device_ref".split(), (1, 99)),
@@ -85,13 +93,33 @@ _NUMBERS = {
         ).split(),
         (0, 999),
     ),
+    # What the device answered to a recording query, bridge 0.8.39. The row
+    # counts are of a query page, not the discovery rows counted in rows.
+    "pages": (0, 4),
+    "query_limit": (0, 10000),
+    "unhandled_replies": (0, 99),
+    "returned": (100, 599),
+    **dict.fromkeys(
+        "ack_code query_result_code unhandled_result_code".split(), (-999999, 999999)
+    ),
+    **dict.fromkeys(
+        (
+            "query_rows rows_own rows_other_device rows_station_mismatch "
+            "rows_invalid_time rows_other_day rows_cipher_id"
+        ).split(),
+        (0, 10000),
+    ),
 }
+# The elapsed time of a recording query may include a download. Other rows keep
+# the two-minute bound of a cloud request.
+_EVENT_NUMBERS = {"recording_query": {"elapsed_ms": (0, 3600000)}}
 _BOOLEANS = set(
     (
         "station_connected owner_connected push_connected available "
         "inventory_available truncated unchanged inventory_address "
         "experimental_standalone lookup_broadcast_enabled "
-        "inventory_address_on_subnet inventory_address_shared"
+        "inventory_address_on_subnet inventory_address_shared "
+        "session_open query_answered"
     ).split()
 )
 _VERSIONS = set("firmware hardware parent_firmware node".split())
@@ -126,6 +154,8 @@ def _fields(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return {}
     result: dict[str, Any] = {}
+    event = raw.get("event")
+    bounds = _EVENT_NUMBERS.get(event, {}) if isinstance(event, str) else {}
     for key in (
         _ENUMS.keys()
         | _CODE_FIELDS
@@ -140,19 +170,13 @@ def _fields(raw: Any) -> dict[str, Any]:
             continue
         value = raw[key]
         if key in _CODE_FIELDS:
-            result[key] = (
-                value
-                if isinstance(value, str)
-                and len(value) <= 64
-                and re.fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*", value)
-                else None
-            )
+            result[key] = diagnostic_code(value)
         elif key in _ENUMS:
             result[key] = (
                 value if isinstance(value, str) and value in _ENUMS[key] else None
             )
         elif key in _NUMBERS:
-            low, high = _NUMBERS[key]
+            low, high = bounds.get(key, _NUMBERS[key])
             result[key] = value if type(value) is int and low <= value <= high else None
         elif key in _BOOLEANS:
             result[key] = value if type(value) is bool else None

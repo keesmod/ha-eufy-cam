@@ -9,6 +9,7 @@ No live stream or optional debug logging is needed to generate discovery evidenc
 
 | Collection method | Bridge | Bundled library | HA integration |
 |---|---|---|---|
+| [Recording query records](#failed-recordings) that say how a recording list, calendar, thumbnail or download ended | 0.8.39 | 0.30.1 | 0.8.48 for the download |
 | [Lookup fields](#lookup-fields-of-a-connection-attempt) that say what the local lookup of a station connection attempt saw | 0.8.38 | 0.30.0 | 0.8.47 for the download and assessment |
 | Beta bridge, library and integration versions such as `0.8.38-beta.1` as received instead of `unavailable` | 0.8.38 | 0.30.0 | 0.8.47 for the download |
 | Experimental standalone option state, and a log line for each standalone camera the library keeps at `standalone_transport_unverified` with the option on | 0.8.37 | 0.29.2 | 0.8.46 for the download and assessment, none for the log line |
@@ -369,7 +370,10 @@ same `stage` values as a HomeBase. The assessment reports such a camera as
 After a connected result, the media rows and a snapshot, live view and
 recording attempt show whether the camera answers those commands on its own
 storage. The first answered snapshot, recording or live result shows whether
-the camera accepts the command key. Include the complete download in
+the camera accepts the command key. A live view or snapshot shows that in the
+viewer. Before bridge 0.8.39 a failed recording list left no record, so only
+[recording query records](#failed-recordings) from bridge 0.8.39 show how a
+recording attempt ended. Include the complete download in
 [client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
 
 ### Lookup fields of a connection attempt
@@ -411,6 +415,57 @@ is always its latest attempt. Without the fields the bridge, its client or the
 integration is older, or the attempt ended before its lookup. Integration 0.8.46
 drops them from **Download diagnostics**, so use the bridge log lines in that
 case.
+
+### Failed recordings
+
+Since bridge 0.8.39 with client 0.30.1 and integration 0.8.48, a recording
+operation leaves a `recording_query` record in `recent_events` and in the
+bridge's `Eufy discovery:` log lines
+([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). A camera on
+the experimental standalone route gets one for each list, calendar and
+download and for each failed thumbnail, a HomeBase only for a failed
+operation. The dialog's text, such as "Recordings are unavailable for this
+camera right now. Try again shortly.", does not say why. The record does.
+
+When "Show recordings" fails:
+
+1. Check the versions in the app log. The `Eufy discovery:` line with
+   `"event":"connection"` shows them in its `software` field.
+2. Open the recordings for the day once and wait for the result without
+   pressing the button again. Note how many seconds it took. A second press
+   while the first load runs cancels it, which closes the camera's session and
+   makes the next load connect again.
+3. Within 15 minutes, use **Download diagnostics**. Paste `data.integration`,
+   `data.support.software`, `data.cameras`, every `data.support.recent_events`
+   object whose `event` is `recording_query`, `station_connection` or `fault`
+   from those minutes, and `data.assessment`. Without integration 0.8.48, paste
+   the app log lines beginning with `Eufy discovery:` that contain
+   `"event":"recording_query"`.
+4. Say whether the Eufy app shows event clips or only a continuous timeline for
+   that day.
+5. If a list appears, play one recording and also paste
+   `data.support.recording.attempts` and `data.recording_playback.attempts`.
+   An attempt's `cause` is the client's code behind its `error`.
+
+The fields that tell the cases apart:
+
+| Fields | What they show |
+|---|---|
+| `query_stage=admission` with `reason=station_busy` or `client_disconnected` | The bridge or client refused before connecting. Another operation held the camera, or the bridge's client was not connected |
+| `query_stage=connect` with `stage` and lookup fields | The camera's connection failed at that `stage`, read as in [lookup fields](#lookup-fields-of-a-connection-attempt). `connection_busy` means another connection was in flight |
+| `reason=device_request_timeout` at `query`, `query_answered=false`, `ack_code=null`, `unhandled_replies=0` | The camera stayed silent to the query for 15 seconds |
+| The same with a non-zero `ack_code` | The camera refused the query command with that code |
+| The same with `unhandled_reason=unknown_cmd` | The camera answered without a usable inner command, its code is `unhandled_result_code`, for example -6006 |
+| The same with `unhandled_reason=parse_error` | The camera answered with something the session could not parse |
+| `reason=history_rejected` at `validate` | The camera answered and rejected the query with the database result in `result_code` |
+| `reason=device_disconnected` at `query` | The session closed while the query waited |
+| `reason=cancelled` | The request was cancelled, by a second press or after the bridge's 60-second bound |
+| `status=completed` with `rows_cipher_id` above 0 | The list worked, but downloads from a standalone camera will be refused with `recording_cipher_unavailable` |
+
+`session_open=false` means the operation had to connect the camera first. A
+repeat of the same outcome for the same camera and operation in one report adds
+no record. None of these values proves a cause on its own. The field reference
+is in the [report contract](DEVELOPMENT.md#recording-query-records).
 
 ## Privacy and scope
 

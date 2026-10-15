@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import type { DiscoveryResult, Diagnostic, CameraCapabilities, StationLookupObservation } from '@keesmod/eufy-mega-client';
+import type { DiscoveryResult, Diagnostic, CameraCapabilities, RecordingObservation, StationLookupObservation } from '@keesmod/eufy-mega-client';
 import {
   DiscoveryDiagnostics, diagnosticCode, diagnosticModel, diagnosticReleaseVersion, diagnosticSoftware, diagnosticVersion,
+  type RecordingQueryReport,
 } from '../src/discovery-diagnostics.js';
 
 const result = (): DiscoveryResult => ({
@@ -535,4 +536,195 @@ test('bridge and library versions may be betas, device and Node versions stay nu
   const issue = rows.find(row => row.event === 'issue');
   assert.deepEqual([issue.firmware, issue.parent_firmware], ['unavailable', 'unavailable']);
   assert.doesNotMatch(f.lines.join('\n'), /PRIVATE/);
+});
+
+// Recording query rows of bridge 0.8.39 (#152), shared with the HA download tests.
+type QueryRow = Record<string, any>;
+const queryRows = (JSON.parse(readFileSync(
+  new URL('../../tests/fixtures/recording-query.json', import.meta.url), 'utf8',
+)) as { rows: Record<string, QueryRow> }).rows;
+const lookupNames = {
+  rounds: 'lookup_rounds', broadcastTargets: 'lookup_broadcast_targets', broadcastEnabled: 'lookup_broadcast_enabled',
+  sendErrors: 'lookup_send_errors', datagrams: 'lookup_datagrams', otherHeaders: 'lookup_other_headers',
+  ownReplies: 'lookup_own_replies', ownRound: 'lookup_own_round', accountReplies: 'lookup_account_replies',
+  foreignReplies: 'lookup_foreign_replies', nearReplies: 'lookup_near_replies', inventoryReply: 'lookup_inventory_reply',
+  inventoryAddressOnSubnet: 'inventory_address_on_subnet', inventoryAddressShared: 'inventory_address_shared',
+} as const;
+/** The client observation and connection a fixture row stands for, in the client's own names. */
+function queryReport(row: QueryRow): RecordingQueryReport {
+  const pages = Array.from({ length: row.pages }, (_, index) => index < row.pages - 1
+    ? { limit: 100, elapsedMs: 800, answered: true, ackCode: 0, resultCode: 0, rows: 100 }
+    : { limit: row.query_limit, elapsedMs: 900, answered: row.query_answered, ackCode: row.ack_code,
+        resultCode: row.query_result_code, rows: row.query_rows });
+  const lookup = Object.fromEntries(Object.entries(lookupNames)
+    .filter(([, field]) => field in row).map(([key, field]) => [key, row[field]]));
+  return {
+    query: row.query,
+    observation: {
+      operation: row.query, owner: row.owner, sessionOpen: row.session_open, stage: row.query_stage,
+      code: row.reason, remoteCode: row.result_code, elapsedMs: row.elapsed_ms, pages,
+      unhandledReplies: row.unhandled_replies, unhandledReason: row.unhandled_reason,
+      unhandledResultCode: row.unhandled_result_code,
+      rowClasses: row.query_rows === null ? null : {
+        own: row.rows_own, otherDevice: row.rows_other_device, stationMismatch: row.rows_station_mismatch,
+        invalidTime: row.rows_invalid_time, otherDay: row.rows_other_day, cipherId: row.rows_cipher_id,
+      },
+    },
+    connection: row.stage ? { stage: row.stage, lookup: lookup as unknown as StationLookupObservation } : { stage: 'none' },
+    returned: row.returned,
+  };
+}
+/** An experimental standalone T8410 first, then a HomeBase with its camera. */
+const solo = (): DiscoveryResult => {
+  const value = result();
+  value.devices.unshift({id:'PRIVATE_SOLO',stationId:'PRIVATE_SOLO',kind:'camera',model:'T8410',name:'PRIVATE_NAME',firmware:'2.3.2.4',hardware:'1',battery:null});
+  value.relationships.unshift({deviceId:'PRIVATE_SOLO',kind:'standalone',ownerId:'PRIVATE_SOLO',transport:'experimental',
+    descriptor:{did:true,license:true,adminUser:true,lanAddress:true}});
+  return value;
+};
+const recordingRows = (f: ReturnType<typeof collect>) =>
+  f.reporter.report().recent_events.filter(row => row.event === 'recording_query');
+const withoutEnvelope = ({ diagnostic: _d, schema: _s, timestamp: _t, ...row }: Record<string, unknown>) => row;
+
+test('each shared recording_query fixture row is what the bridge emits for its observation (#152)', () => {
+  for (const [name, expected] of Object.entries(queryRows)) {
+    const f = collect();
+    // The fixture rows belong to the third inventory report.
+    for (let n = 0; n < 3; n++) f.reporter.inventory(solo(), 'accepted', undefined, true, new Map(), new Map());
+    f.lines.length = 0;
+    f.reporter.recording('PRIVATE_SOLO', queryReport(expected));
+    const [row] = recordingRows(f);
+    assert.deepEqual(withoutEnvelope(row!), expected, name);
+    assert.deepEqual(Object.keys(withoutEnvelope(row!)), Object.keys(expected), name);
+    assert.deepEqual([row!.diagnostic, row!.schema, typeof row!.timestamp], ['discovery', 2, 'string']);
+    // The 'Eufy discovery:' log line carries the same record.
+    assert.deepEqual(f.rows(), [row]);
+    assert.doesNotMatch(f.lines.join('\n'), /PRIVATE/);
+  }
+});
+
+test('a recording_query record without a client observation is a failure at admission (#152)', () => {
+  const f = collect();
+  f.reporter.prepare(solo());
+  f.reporter.recording('PRIVATE_SOLO', { query: 'list', reason: 'client_disconnected', elapsedMs: 0, returned: 503 });
+  f.reporter.recording('PRIVATE_BASE', { query: 'calendar', reason: 'client_closed', remoteCode: -7, elapsedMs: 12, returned: 503 });
+  const [standalone, station] = recordingRows(f).map(withoutEnvelope);
+  const neutral = {
+    session_open: null, query_stage: 'admission', pages: 0, query_limit: 0, query_answered: false,
+    ack_code: null, query_result_code: null, query_rows: null, unhandled_replies: 0, unhandled_reason: null,
+    unhandled_result_code: null, rows_own: 0, rows_other_device: 0, rows_station_mismatch: 0,
+    rows_invalid_time: 0, rows_other_day: 0, rows_cipher_id: 0, returned: 503,
+  };
+  assert.deepEqual(standalone, {
+    event: 'recording_query', report: 1, device_ref: 1, model: 'T8410', query: 'list', owner: 'standalone',
+    status: 'error', reason: 'client_disconnected', result_code: null, elapsed_ms: 0, ...neutral,
+  });
+  assert.deepEqual(station, {
+    event: 'recording_query', report: 1, device_ref: 2, model: 'T8030', query: 'calendar', owner: 'station',
+    status: 'error', reason: 'client_closed', result_code: -7, elapsed_ms: 12, ...neutral,
+  });
+  // An owner outside the inventory is not recorded.
+  f.reporter.recording('PRIVATE_UNKNOWN', { query: 'list', reason: 'client_disconnected', returned: 503 });
+  assert.equal(recordingRows(f).length, 2);
+  assert.doesNotMatch(JSON.stringify(f.reporter.report()) + f.lines.join('\n'), /PRIVATE/);
+});
+
+test('hostile recording observations keep only bounded values and never throw (#152)', () => {
+  const base = queryReport(queryRows.completed_with_rows!);
+  const record = (report: RecordingQueryReport) => {
+    const f = collect();
+    f.reporter.prepare(solo());
+    assert.doesNotThrow(() => f.reporter.recording('PRIVATE_SOLO', report));
+    assert.doesNotMatch(JSON.stringify(f.reporter.report()) + f.lines.join('\n'), /PRIVATE|192\.168|mIntRet/);
+    return recordingRows(f)[0];
+  };
+  const hostile = {
+    ...base.observation!,
+    operation: 'PRIVATE', owner: 'homebase', sessionOpen: 'true', stage: 'PRIVATE_STAGE',
+    code: 'PRIVATE_TOKEN', remoteCode: 2 ** 53, elapsedMs: 3600001,
+    pages: [{ limit: 10001, elapsedMs: -1, answered: 1, ackCode: -1000000, resultCode: 1.5, rows: 10001,
+      device_sn: 'PRIVATE_SERIAL', storage_path: '/PRIVATE/path' }],
+    unhandledReplies: 100, unhandledReason: 'PRIVATE', unhandledResultCode: '-6006',
+    rowClasses: { own: -1, otherDevice: 10001, stationMismatch: '1', invalidTime: null, otherDay: 1.5, cipherId: true },
+    serial: 'PRIVATE_SERIAL', did: 'PRIVATE_DID', path: '/PRIVATE/recording.mp4', payload: '{"mIntRet":-6006}',
+  } as unknown as RecordingObservation;
+  const row = record({ ...base, observation: hostile, returned: 600,
+    connection: { stage: 'PRIVATE_192.168.1.2', inventoryAddress: 'yes' as unknown as boolean,
+      lookup: { did: 'PRIVATE_DID', address: '192.168.1.2' } as unknown as StationLookupObservation } })!;
+  assert.deepEqual(withoutEnvelope(row), {
+    event: 'recording_query', report: 1, device_ref: 1, model: 'T8410', query: 'list', owner: null,
+    status: 'error', reason: 'unclassified_error', result_code: null, session_open: null, query_stage: null,
+    stage: 'none', elapsed_ms: null, pages: 1, query_limit: null, query_answered: null, ack_code: null,
+    query_result_code: null, query_rows: null, unhandled_replies: null, unhandled_reason: null,
+    unhandled_result_code: null, rows_own: null, rows_other_device: null, rows_station_mismatch: null,
+    rows_invalid_time: null, rows_other_day: null, rows_cipher_id: null, returned: null,
+  });
+  // The client's name for an error that is not a EufyError is the bridge's unclassified_error.
+  assert.equal(record({ ...base, observation: { ...base.observation!, code: 'unexpected_error' } })!.reason, 'unclassified_error');
+  // More than four pages, pages that are no array and row classes that are no object.
+  const pages = record({ ...base, observation: { ...base.observation!, pages: Array(5).fill(base.observation!.pages[0]) } })!;
+  assert.deepEqual([pages.pages, pages.query_limit, pages.query_rows], [null, 100, 12]);
+  const broken = record({ ...base, observation: { ...base.observation!,
+    pages: 'PRIVATE' as unknown as [], rowClasses: 'PRIVATE' as unknown as null } })!;
+  assert.deepEqual([broken.pages, broken.query_limit, broken.query_answered, broken.ack_code, broken.rows_own],
+    [null, null, null, null, null]);
+  // An observation that cannot be read leaves no record.
+  const throwing = new Proxy({}, { get: () => { throw new Error('PRIVATE_TOKEN'); } }) as RecordingObservation;
+  assert.equal(record({ ...base, observation: throwing }), undefined);
+  assert.equal(record({ ...base, query: 'PRIVATE' as unknown as 'list' })!.query, null);
+});
+
+test('a repeated recording outcome is recorded once per owner, query and report (#152)', () => {
+  const f = collect();
+  f.reporter.inventory(solo(), 'accepted', undefined, true, new Map(), new Map());
+  const silent = queryReport(queryRows.silent_timeout!);
+  const variant = (change: Partial<RecordingObservation>, query: RecordingQueryReport['query'] = 'list') =>
+    ({ ...silent, query, observation: { ...silent.observation!, ...change } });
+  f.reporter.recording('PRIVATE_SOLO', silent);
+  // Another elapsed time alone repeats it.
+  f.reporter.recording('PRIVATE_SOLO', variant({ elapsedMs: 15104 }));
+  // A device ACK code is a new outcome, a later repeat of it is left out.
+  f.reporter.recording('PRIVATE_SOLO', variant({ pages: [{ ...silent.observation!.pages[0]!, ackCode: -104 }] }));
+  f.reporter.recording('PRIVATE_SOLO', variant({ pages: [{ ...silent.observation!.pages[0]!, ackCode: -104, elapsedMs: 1 }] }));
+  // Changed counts alone repeat it, a count that becomes non-zero does not.
+  const rows = (classes: Partial<Record<string, number>>) => ({ rowClasses: { own: 0, otherDevice: 0, stationMismatch: 0, invalidTime: 0, otherDay: 0, cipherId: 0, ...classes } });
+  f.reporter.recording('PRIVATE_SOLO', variant(rows({ own: 2, cipherId: 2 })));
+  f.reporter.recording('PRIVATE_SOLO', variant(rows({ own: 7, cipherId: 7 })));
+  f.reporter.recording('PRIVATE_SOLO', variant(rows({ own: 7, cipherId: 0 })));
+  // Another query of the same owner, and the same outcome on another owner.
+  f.reporter.recording('PRIVATE_SOLO', variant({ operation: 'calendar' }, 'calendar'));
+  f.reporter.recording('PRIVATE_BASE', silent);
+  f.reporter.recording('PRIVATE_SOLO', silent);
+  let recorded = recordingRows(f);
+  assert.deepEqual(recorded.map(row => [row.device_ref, row.query, row.ack_code, row.rows_own, row.rows_cipher_id]), [
+    [1, 'list', null, 0, 0],
+    [1, 'list', -104, 0, 0],
+    [1, 'list', null, 2, 2],
+    [1, 'list', null, 7, 0],
+    [1, 'calendar', null, 0, 0],
+    [2, 'list', null, 0, 0],
+    [1, 'list', null, 0, 0],
+  ]);
+  // A new inventory report records the same outcome again.
+  f.reporter.recording('PRIVATE_SOLO', silent);
+  f.reporter.inventory(solo(), 'accepted', undefined, true, new Map(), new Map());
+  f.reporter.recording('PRIVATE_SOLO', silent);
+  recorded = recordingRows(f);
+  assert.deepEqual(recorded.slice(-1).map(row => [row.report, row.reason]), [[2, 'device_request_timeout']]);
+  assert.equal(recorded.length, 8);
+});
+
+test('recording_query records share the bounded ring of recent events (#152)', () => {
+  const f = collect();
+  f.reporter.prepare(solo());
+  f.reporter.connection('authentication', 'connected', false);
+  const silent = queryReport(queryRows.silent_timeout!);
+  for (let n = 0; n < 150; n++)
+    f.reporter.recording('PRIVATE_SOLO', { ...silent, observation: { ...silent.observation!,
+      pages: [{ ...silent.observation!.pages[0]!, ackCode: -n }] } });
+  const events = f.reporter.report().recent_events;
+  assert.equal(events.length, 100);
+  assert.ok(events.every(row => row.event === 'recording_query'));
+  assert.equal(events.at(-1)!.ack_code, -149);
+  assert.equal(f.lines.length, 151);
 });

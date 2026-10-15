@@ -5,6 +5,8 @@ import type {
   DeviceRelationship,
   Diagnostic,
   DiscoveryResult,
+  RecordingObservation,
+  StationConnectionProgress,
   StationLookupObservation,
   StationState,
 } from '@keesmod/eufy-mega-client';
@@ -37,6 +39,50 @@ export interface StationConnectionDetail {
   inventoryAddress?: boolean;
   /** What the attempt's local lookup saw, from client 0.30.0. Revalidated before it is reported. */
   lookup?: StationLookupObservation;
+}
+/**
+ * Records the last stage a station connection reached and what its local lookup
+ * saw, for the diagnostic record of that attempt.
+ */
+export function connectionAttempt(): {
+  detail: StationConnectionDetail;
+  onProgress: (progress: StationConnectionProgress) => void;
+  onLookup: (observation: StationLookupObservation) => void;
+} {
+  const detail: StationConnectionDetail = { stage: 'none' };
+  return {
+    detail,
+    onProgress: (progress) => {
+      // A stage a newer library adds keeps the last known one.
+      if (!connectionStages.has(progress.stage)) return;
+      detail.stage = progress.stage;
+      if (typeof progress.inventoryAddress === 'boolean')
+        detail.inventoryAddress = progress.inventoryAddress;
+    },
+    // Observation only (#152). The diagnostics revalidate each value before
+    // they report it, and the library ignores anything this throws.
+    onLookup: (observation) => {
+      detail.lookup = observation;
+    },
+  };
+}
+/** A recording request of the bridge, by the client operation it uses (#152). */
+export type RecordingQuery = 'list' | 'calendar' | 'thumbnail' | 'download';
+/** One recording operation of the bridge for the recording_query record (#152). */
+export interface RecordingQueryReport {
+  query: RecordingQuery;
+  /** The client's own report of the operation, revalidated here. Absent when it reported none. */
+  observation?: RecordingObservation;
+  /** Without an observation: the bridge's reason, such as client_disconnected. */
+  reason?: string;
+  /** Without an observation: the numeric remoteCode of the error. */
+  remoteCode?: unknown;
+  /** Without an observation: milliseconds the bridge measured until the failure. */
+  elapsedMs?: number;
+  /** How far the owner's connection got when the operation had to connect. */
+  connection?: StationConnectionDetail;
+  /** The HTTP status the bridge answered the request with. */
+  returned: number;
 }
 type LookupFields = Record<string, number | boolean | string>;
 const lookupReplies: ReadonlySet<unknown> = new Set(['none', 'own', 'account', 'foreign', 'near']);
@@ -103,6 +149,108 @@ const integer = (value: unknown, min: number, max: number): number | null =>
   typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
     ? value
     : null;
+const recordingQueries: ReadonlySet<unknown> = new Set(['list', 'calendar', 'thumbnail', 'download']);
+const recordingOwners: ReadonlySet<unknown> = new Set(['standalone', 'station']);
+const queryStages: ReadonlySet<unknown> = new Set(['admission', 'connect', 'query', 'validate', 'transfer']);
+const unhandledReasons: ReadonlySet<unknown> = new Set(['unknown_cmd', 'parse_error']);
+const rowClasses = [
+  ['own', 'rows_own'],
+  ['otherDevice', 'rows_other_device'],
+  ['stationMismatch', 'rows_station_mismatch'],
+  ['invalidTime', 'rows_invalid_time'],
+  ['otherDay', 'rows_other_day'],
+  ['cipherId', 'rows_cipher_id'],
+] as const;
+/** Counts whose change alone repeats the previous recording_query record. */
+const recordingCounts: ReadonlySet<string> = new Set([
+  'query_rows',
+  'unhandled_replies',
+  ...rowClasses.map(([, field]) => field),
+]);
+const resultCode = (value: unknown) => integer(value, -999999, 999999);
+const record = (value: unknown): Record<string, unknown> | undefined =>
+  value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
+/**
+ * Flat fields of one recording operation (#152): the client's observation, or
+ * the bridge's own reason when the client reported none. Each value is
+ * revalidated. A value out of its bound is null, and nothing else of the
+ * observation is copied. The last page is the one a failure ended on.
+ */
+function recordingFields(value: RecordingQueryReport, standalone: boolean): Record<string, unknown> {
+  const observation = record(value.observation);
+  // Without an observation no client operation reported itself: a bridge refusal
+  // or an error before the client's recording access, always a failure.
+  const pages = !observation ? [] : Array.isArray(observation.pages) ? observation.pages : null;
+  const page = pages?.length ? record(pages.at(-1)) : undefined;
+  const none = pages?.length === 0;
+  const classes = observation ? observation.rowClasses : null;
+  const code = observation ? observation.code : value.reason;
+  const failed = !observation || code !== null;
+  const connection = value.connection;
+  // The stage and lookup of the owner's connection, only when the operation connected.
+  const connected =
+    connection !== undefined && (connection.stage !== 'none' || connection.lookup !== undefined);
+  return {
+    query: recordingQueries.has(value.query) ? value.query : null,
+    owner: observation
+      ? recordingOwners.has(observation.owner) ? observation.owner : null
+      : standalone ? 'standalone' : 'station',
+    status: failed ? 'error' : 'completed',
+    // The client names any error that is not a EufyError unexpected_error.
+    reason: !failed ? null : code === 'unexpected_error' ? 'unclassified_error' : diagnosticCode(code),
+    result_code: resultCode(observation ? observation.remoteCode : value.remoteCode),
+    session_open: observation ? flag(observation.sessionOpen) : null,
+    query_stage: !observation
+      ? 'admission'
+      : queryStages.has(observation.stage) ? observation.stage : null,
+    ...(connected
+      ? {
+          stage: connectionStages.has(connection.stage) ? connection.stage : 'none',
+          ...(typeof connection.inventoryAddress === 'boolean'
+            ? { inventory_address: connection.inventoryAddress }
+            : {}),
+          ...(connection.lookup === undefined ? {} : lookupFields(connection.lookup)),
+        }
+      : {}),
+    elapsed_ms: integer(observation ? observation.elapsedMs : value.elapsedMs, 0, 3600000),
+    pages: pages === null ? null : integer(pages.length, 0, 4),
+    // A query that sent no page reports limit 0 and no answer.
+    query_limit: page ? integer(page.limit, 0, 10000) : none ? 0 : null,
+    query_answered: page ? flag(page.answered) : none ? false : null,
+    ack_code: page ? resultCode(page.ackCode) : null,
+    query_result_code: page ? resultCode(page.resultCode) : null,
+    query_rows: page ? integer(page.rows, 0, 10000) : null,
+    unhandled_replies: observation ? integer(observation.unhandledReplies, 0, 99) : 0,
+    unhandled_reason:
+      observation && unhandledReasons.has(observation.unhandledReason)
+        ? observation.unhandledReason
+        : null,
+    unhandled_result_code: observation ? resultCode(observation.unhandledResultCode) : null,
+    // Rows of the latest answered list page. Without one each count is 0.
+    ...Object.fromEntries(
+      rowClasses.map(([key, field]) => [
+        field,
+        classes === null || classes === undefined ? 0 : integer(record(classes)?.[key], 0, 10000),
+      ]),
+    ),
+    returned: integer(value.returned, 100, 599),
+  };
+}
+/**
+ * The outcome of a recording record for the repeat check: every value except
+ * the elapsed time, with each count reduced to whether it is zero.
+ */
+const recordingClass = (fields: Record<string, unknown>): string =>
+  JSON.stringify(
+    Object.entries(fields)
+      .filter(([key]) => key !== 'elapsed_ms')
+      .map(([key, value]) => [
+        key,
+        typeof value === 'number' && (recordingCounts.has(key) || key.startsWith('lookup_'))
+          ? value > 0
+          : value,
+      ]),
+  );
 export const diagnosticVersion = (value: unknown): string =>
   typeof value === 'string' &&
   value.length <= 19 &&
@@ -177,11 +325,20 @@ export class DiscoveryDiagnostics {
   private recentEvents: Record<string, unknown>[] = [];
   private connections = new Map<string, string>();
   private lastFault = '';
+  /** Experimental standalone owners of the latest inventory, for a record without an observation. */
+  private standaloneOwners = new Set<string>();
+  /** The latest recording_query outcome per owner reference and query. */
+  private recordingEvents = new Map<string, { report: number; outcome: string }>();
   prepare(result: DiscoveryResult): void {
     this.refs = new Map(result.devices.slice(0, 99).map((device, index) => [device.id, index + 1]));
     this.pendingReport = this.sequence + 1;
     this.models = new Map(
       result.devices.slice(0, 99).map((device) => [device.id, model(device.model)]),
+    );
+    this.standaloneOwners = new Set(
+      result.relationships.flatMap((relationship) =>
+        experimentalOwner(relationship) ? [relationship.ownerId] : [],
+      ),
     );
     this.stationOutcomes.clear();
     this.lastFault = '';
@@ -257,6 +414,36 @@ export class DiscoveryDiagnostics {
               : {}),
           }),
       ...lookup,
+    });
+  }
+  /**
+   * One recording operation of the bridge on its owner (#152). The caller
+   * decides which operations are recorded. An owner outside the latest
+   * inventory is not. A repeat of the previous record of the same owner and
+   * query in this report is left out, like a station_connection record:
+   * a changed elapsed time or changed counts alone are a repeat.
+   */
+  recording(id: string, value: RecordingQueryReport): void {
+    const ref = this.refs.get(id);
+    if (ref === undefined) return;
+    let fields: Record<string, unknown>;
+    try {
+      fields = recordingFields(value, this.standaloneOwners.has(id));
+    } catch {
+      // Diagnostics never alter a recording request. An unreadable report is left out.
+      return;
+    }
+    const key = `${ref} ${String(fields.query)}`;
+    const outcome = recordingClass(fields);
+    const previous = this.recordingEvents.get(key);
+    if (previous?.report === this.pendingReport && previous.outcome === outcome) return;
+    this.recordingEvents.set(key, { report: this.pendingReport, outcome });
+    this.emit({
+      event: 'recording_query',
+      report: this.pendingReport,
+      device_ref: ref,
+      model: this.models.get(id) ?? 'unavailable',
+      ...fields,
     });
   }
 

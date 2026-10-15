@@ -49,7 +49,23 @@ NUMBERS = {
     "duration_ms": (0, 120000),
     "source_bytes": (0, 2**31 - 1),
     "output_bytes": (0, 2**31 - 1),
+    # The device's numeric answer behind a failed attempt, bridge 0.8.39.
+    "result_code": (-999999, 999999),
 }
+
+
+def diagnostic_code(value: Any) -> str | None:
+    """A lower-case machine code such as device_request_timeout, never free text.
+
+    The bridge applies the same bound to every reason, code and cause it reports.
+    """
+    return (
+        value
+        if isinstance(value, str)
+        and len(value) <= 64
+        and re.fullmatch(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*", value)
+        else None
+    )
 
 
 def release_version(value: Any) -> str:
@@ -95,6 +111,13 @@ def project_attempt(raw: Any) -> dict[str, Any]:
     for key in ("source_cancel_confirmed", "files_removed", "file_closed"):
         if type(raw.get(key)) is bool:
             result[key] = raw[key]
+    # The client's cause behind the error, bridge 0.8.39. Null means the bridge had
+    # no cause or code to report, an invalid value is left out like any other.
+    if (cause := diagnostic_code(raw.get("cause"))) is not None:
+        result["cause"] = cause
+    for key in ("cause", "result_code"):
+        if key in raw and raw[key] is None:
+            result[key] = None
     if "card_version" in raw:
         result["card_version"] = release_version(raw["card_version"])
     media = raw.get("media")

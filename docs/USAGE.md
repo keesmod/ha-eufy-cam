@@ -166,6 +166,17 @@ than the T8410, so the T8410 result does not carry over
 Recordings that would need a cloud key cannot be downloaded, and the camera's
 detection events, guard mode and alarm state are not part of this test.
 
+Recordings on a standalone camera are not confirmed to work. On 2026-10-15 the
+issue #152 reporter's standalone T8410 on firmware 2.3.2.4 showed live view,
+but "Show recordings" failed with "The HomeBase connection is unavailable. Try
+again shortly." The cause is not known. From bridge 0.8.39 with integration
+0.8.48 the dialog says "Recordings are unavailable for this camera right now.
+Try again shortly." instead, and each recording attempt on a standalone camera
+leaves a `recording_query` record that says how far it got and what the camera
+answered, see [failed recordings](DISCOVERY_DIAGNOSTICS.md#failed-recordings).
+A download refused because it would need a cloud key shows
+`recording_cipher_unavailable` as the `cause` of its playback attempt.
+
 To test it, update the app and the integration, set `experimental_standalone`
 to true in the app's configuration, restart the app, wait for the startup
 result, try a snapshot, live view and a recording, then use **Download

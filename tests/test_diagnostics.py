@@ -881,6 +881,139 @@ def test_station_connection_lookup_fields_survive_download_within_their_bounds()
     assert "192.168" not in json.dumps(result)
 
 
+# Recording query rows of bridge 0.8.39 (#152), shared with the bridge tests.
+_RECORDING_QUERIES = json.loads(
+    (Path(__file__).parent / "fixtures" / "recording-query.json").read_text()
+)["rows"]
+_QUERY_CODES = "ack_code query_result_code unhandled_result_code result_code".split()
+_QUERY_ROWS = (
+    "query_rows rows_own rows_other_device rows_station_mismatch "
+    "rows_invalid_time rows_other_day rows_cipher_id"
+).split()
+
+
+@pytest.mark.parametrize("name", sorted(_RECORDING_QUERIES))
+def test_recording_query_rows_survive_download_unchanged(name):
+    row = {
+        "diagnostic": "discovery",
+        "schema": 2,
+        "timestamp": STAMP,
+        **_RECORDING_QUERIES[name],
+    }
+    result = support_report({"schema": 2, "last_discovery": [], "recent_events": [row]})
+    assert result["recent_events"] == [row]
+
+
+def test_recording_query_fields_keep_their_bounds_and_drop_hostile_values():
+    row = _RECORDING_QUERIES["connect_failed"]
+    highs = {
+        "elapsed_ms": 3600000,
+        "pages": 4,
+        "query_limit": 10000,
+        "unhandled_replies": 99,
+        "returned": 599,
+        **dict.fromkeys(_QUERY_CODES, 999999),
+        **dict.fromkeys(_QUERY_ROWS, 10000),
+    }
+    lows = {
+        "elapsed_ms": 0,
+        "pages": 0,
+        "query_limit": 0,
+        "unhandled_replies": 0,
+        "returned": 100,
+        **dict.fromkeys(_QUERY_CODES, -999999),
+        **dict.fromkeys(_QUERY_ROWS, 0),
+    }
+    for edges in (highs, lows):
+        assert _fields({**row, **edges}) == {**row, **edges}
+    for key, values in {
+        "query": ["list", "calendar", "thumbnail", "download"],
+        "owner": ["standalone", "station"],
+        "status": ["completed", "error"],
+        "query_stage": ["admission", "connect", "query", "validate", "transfer"],
+        "unhandled_reason": ["unknown_cmd", "parse_error"],
+    }.items():
+        for value in values:
+            assert _fields({**row, key: value}) == {**row, key: value}
+    integers = [1.0, "3", True, None, [1], {"value": 1}]
+    hostile = {
+        "elapsed_ms": [-1, 3600001, *integers],
+        "pages": [-1, 5, *integers],
+        "query_limit": [-1, 10001, *integers],
+        "unhandled_replies": [-1, 100, *integers],
+        "returned": [99, 600, *integers],
+        **{key: [-1000000, 1000000, 2**53, *integers] for key in _QUERY_CODES},
+        **{key: [-1, 10001, *integers] for key in _QUERY_ROWS},
+        "session_open": [1, 0, "true", "PRIVATE", None],
+        "query_answered": [1, 0, "false", "PRIVATE", None],
+        "query": ["LIST", "list ", "history", "PRIVATE", 1, None],
+        "owner": ["homebase", "camera", "PRIVATE_T8410", 1, None],
+        "status": ["failed", "Completed", "PRIVATE", 1, None],
+        "query_stage": ["download", "lookup", "PRIVATE", 1, None],
+        "unhandled_reason": ["unknown", "parse error", "PRIVATE", 1, None],
+        "reason": ["PRIVATE_TOKEN", "history rejected", "/data/x", 1, None],
+        "model": ["T8410\nPRIVATE", "PRIVATE_SERIAL"],
+    }
+    for key, values in hostile.items():
+        expected = "unavailable" if key == "model" else None
+        for value in values:
+            assert _fields({**row, key: value}) == {**row, key: expected}, (key, value)
+    # Other rows keep the two-minute elapsed bound of a cloud request.
+    cloud = {"event": "cloud", "operation": "login", "elapsed_ms": 120000}
+    assert _fields(cloud) == cloud
+    for value in (120001, 3600000):
+        assert _fields({**cloud, "elapsed_ms": value})["elapsed_ms"] is None
+    assert _fields({**row, "event": ["recording_query"]})["elapsed_ms"] == 20012
+
+
+def test_recording_query_download_contains_no_identifiers_or_reply_text():
+    row = _RECORDING_QUERIES["completed_with_rows"]
+    private = {
+        "serial": "PRIVATE_SERIAL",
+        "device_sn": "PRIVATE_SERIAL",
+        "station_sn": "PRIVATE_SERIAL",
+        "did": "PRIVATE_DID",
+        "cipher_id": 7,
+        "path": "/PRIVATE/recording.mp4",
+        "payload": '{"mIntRet":-6006,"PRIVATE":1}',
+        "recordings": [{"device_sn": "PRIVATE_SERIAL", "start_time": "PRIVATE"}],
+        "pages_detail": [{"ack": "PRIVATE"}],
+        "lookup": {"address": "192.168.1.2"},
+        "date": "2026-10-15",
+    }
+    result = support_report(
+        {
+            "schema": 2,
+            "last_discovery": [],
+            "recent_events": [
+                {**row, **private},
+                {**row, "event": "recording_query\n", "serial": "PRIVATE_SERIAL"},
+                {**row, "event": "RECORDING_QUERY"},
+            ],
+        }
+    )
+    assert result["recent_events"] == [row]
+    text = json.dumps(result)
+    for value in ("PRIVATE", "192.168", "2026-10-15", "mIntRet", "-6006"):
+        assert value not in text
+
+
+async def test_recording_query_rows_reach_the_download_without_a_finding(hass):
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="PRIVATE", data=DATA)
+    entry.add_to_hass(hass)
+    events = list(_RECORDING_QUERIES.values())
+    with patch(
+        "custom_components.eufy_viewer.api.BridgeClient.request",
+        AsyncMock(
+            return_value={"schema": 2, "last_discovery": [], "recent_events": events}
+        ),
+    ):
+        result = await async_get_config_entry_diagnostics(hass, entry)
+    assert result["support"]["recent_events"] == events
+    assert "recording_query" not in json.dumps(result["assessment"])
+    assert "PRIVATE" not in json.dumps(result)
+
+
 def test_unhyphenated_catalogue_codes_survive_download_but_serials_never():
     # Issue #149: a rejected Indoor Cam row showed only "unavailable".
     for model in ("T8410C", "T8160-C", "T8W11C", "T8419N", "T8410AB", "T8410ABC"):

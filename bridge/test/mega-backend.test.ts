@@ -12,6 +12,8 @@ import {
   type Device,
   type CameraCapabilities,
   type DiscoveryResult,
+  type RecordingObservation,
+  type RecordingOperationOptions,
 } from '@keesmod/eufy-mega-client';
 import { MegaBackend, liveStreamsPerStation, liveMaxSecondsMains, experimentalStandalone } from '../src/mega-backend.js';
 import { Storage } from '../src/storage.js';
@@ -62,9 +64,10 @@ test('recording cancellation before the media handle arrives is counted and rele
         },
       ],
     }),
-    downloadRecording: async (_id: string, signal: AbortSignal) =>
+    // Since client 0.30.1 the bridge passes the options form (#152).
+    downloadRecording: async (_id: string, options: { signal: AbortSignal }) =>
       new Promise((_resolve, reject) => {
-        signal.addEventListener('abort', () => reject(new EufyError('download_cancelled')), {
+        options.signal.addEventListener('abort', () => reject(new EufyError('download_cancelled')), {
           once: true,
         });
         started();
@@ -1377,5 +1380,285 @@ test('an unadmitted standalone row is named before a failing migration baseline 
     assert.doesNotMatch(JSON.stringify(f.backend.supportReport()), /PRIVATE|192\.168\.|SOLO/);
   } finally {
     await f.backend.close();
+  }
+});
+
+// Recording operation observations of client 0.30.1 reach a recording_query record (#152).
+const silentPage = { limit: 100, elapsedMs: 15050, answered: false, ackCode: null, resultCode: null, rows: null };
+const noRows = { own: 0, otherDevice: 0, stationMismatch: 0, invalidTime: 0, otherDay: 0, cipherId: 0 };
+const observed = (change: Partial<RecordingObservation> = {}): RecordingObservation => ({
+  operation: 'list', owner: 'standalone', sessionOpen: true, stage: 'query', code: null, remoteCode: null,
+  elapsedMs: 15053, pages: [silentPage], unhandledReplies: 0, unhandledReason: null, unhandledResultCode: null,
+  rowClasses: null, ...change,
+});
+const wallRecording = {
+  id: 'PRIVATE_RECORDING', deviceId: 'WALL', stationId: 'WALL', start: '2026-10-15T10:00:00',
+  end: '2026-10-15T10:00:10', bytes: 100, thumbnail: true,
+};
+type Operation = (options: RecordingOperationOptions) => Promise<unknown>;
+/** An opted-in standalone T84A1 (WALL, ref 3) and a HomeBase (BASE, ref 1) with its camera. */
+async function recordingBackend(operations: { list?: Operation; calendar?: Operation; thumbnail?: Operation; download?: Operation }) {
+  const f = fixture(undefined, undefined, true);
+  f.client.discoverDevices = async () => standaloneInventory(true);
+  const options: RecordingOperationOptions[] = [];
+  const call = (operation: Operation | undefined, value: unknown) => {
+    const settings = value as RecordingOperationOptions;
+    options.push(settings);
+    return (operation ?? (async () => { throw new Error('unexpected call'); }))(settings);
+  };
+  Object.assign(f.client, {
+    listRecordings: (_id: string, _day: string, _cameras: string[], value: unknown) => call(operations.list, value),
+    recordingCalendar: (_id: string, _month: string, value: unknown) => call(operations.calendar, value),
+    recordingThumbnail: (_id: string, value: unknown) => call(operations.thumbnail, value),
+    downloadRecording: (_id: string, value: unknown) => call(operations.download, value),
+  });
+  await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+  const queries = () => f.backend.supportReport().recent_events.filter((row) => row.event === 'recording_query');
+  return { ...f, options, queries };
+}
+/** The client reports the operation, then fails like it. */
+const fails = (observation: Partial<RecordingObservation>, error: unknown): Operation => async (options) => {
+  options.onObservation?.(observed(observation));
+  throw error;
+};
+const lookupFields = {
+  lookup_rounds: 10, lookup_broadcast_targets: 1, lookup_broadcast_enabled: true, lookup_send_errors: 0,
+  lookup_datagrams: 0, lookup_other_headers: 0, lookup_own_replies: 0, lookup_account_replies: 0,
+  lookup_foreign_replies: 0, lookup_near_replies: 0, lookup_inventory_reply: 'none',
+  inventory_address_on_subnet: true, inventory_address_shared: false,
+};
+const recordingFailures: [string, Operation, [string, number], Record<string, unknown> | null][] = [
+  ['a silent device', fails({ code: 'device_request_timeout' }, new EufyError('device_request_timeout')),
+    ['recording_unavailable', 503], { reason: 'device_request_timeout', query_stage: 'query', session_open: true,
+      pages: 1, query_limit: 100, query_answered: false, ack_code: null, unhandled_replies: 0, query_rows: null }],
+  ['a negative device ACK', fails({ code: 'device_request_timeout', pages: [{ ...silentPage, ackCode: -104 }] }, new EufyError('device_request_timeout')),
+    ['recording_unavailable', 503], { reason: 'device_request_timeout', ack_code: -104, query_answered: false }],
+  ['an answer without an inner command', fails({ code: 'device_request_timeout', pages: [{ ...silentPage, ackCode: 0 }],
+    unhandledReplies: 1, unhandledReason: 'unknown_cmd', unhandledResultCode: -6006 }, new EufyError('device_request_timeout')),
+    ['recording_unavailable', 503], { ack_code: 0, unhandled_replies: 1, unhandled_reason: 'unknown_cmd', unhandled_result_code: -6006 }],
+  ['an unparsable answer', fails({ code: 'device_request_timeout', unhandledReplies: 1, unhandledReason: 'parse_error' }, new EufyError('device_request_timeout')),
+    ['recording_unavailable', 503], { unhandled_replies: 1, unhandled_reason: 'parse_error', unhandled_result_code: null }],
+  ['history_rejected with its mIntRet', fails({ code: 'history_rejected', remoteCode: -1100, stage: 'validate', elapsedMs: 1210,
+    pages: [{ limit: 100, elapsedMs: 1200, answered: true, ackCode: 0, resultCode: -1100, rows: 0 }], rowClasses: noRows },
+    new EufyError('history_rejected', -1100)),
+    ['recording_unavailable', 503], { reason: 'history_rejected', result_code: -1100, query_stage: 'validate',
+      query_answered: true, query_result_code: -1100, query_rows: 0, rows_own: 0, elapsed_ms: 1210 }],
+  ['a session that closed during the query', fails({ code: 'device_disconnected', elapsedMs: 900 }, new EufyError('device_disconnected')),
+    ['recording_unavailable', 503], { reason: 'device_disconnected', query_stage: 'query', session_open: true }],
+  ['a busy owner', fails({ code: 'station_busy', stage: 'admission', pages: [], elapsedMs: 0 }, new EufyError('station_busy')),
+    ['recording_unavailable', 503], { reason: 'station_busy', query_stage: 'admission', pages: 0, query_limit: 0, query_answered: false }],
+  ['a connection already in flight', fails({ code: 'connection_busy', stage: 'connect', sessionOpen: false, pages: [], elapsedMs: 0 }, new EufyError('connection_busy')),
+    ['recording_unavailable', 503], { reason: 'connection_busy', query_stage: 'connect', session_open: false, pages: 0 }],
+  ['a connect that failed at its lookup', async (options) => {
+    options.onProgress?.({ stage: 'lookup', elapsedMs: 0, inventoryAddress: true });
+    options.onLookup?.({ rounds: 10, broadcastTargets: 1, broadcastEnabled: true, sendErrors: 0, datagrams: 0, otherHeaders: 0,
+      ownReplies: 0, accountReplies: 0, foreignReplies: 0, nearReplies: 0, inventoryReply: 'none',
+      inventoryAddressOnSubnet: true, inventoryAddressShared: false });
+    options.onObservation?.(observed({ code: 'device_request_timeout', stage: 'connect', sessionOpen: false, pages: [], elapsedMs: 20012 }));
+    throw new EufyError('device_request_timeout');
+  }, ['recording_unavailable', 503], { reason: 'device_request_timeout', query_stage: 'connect', session_open: false,
+    stage: 'lookup', inventory_address: true, ...lookupFields, elapsed_ms: 20012, pages: 0 }],
+  ['a cancelled query', fails({ code: 'cancelled' }, new EufyError('cancelled')),
+    ['recording_unavailable', 503], { reason: 'cancelled' }],
+  ['an invalid recording row', fails({ code: 'invalid_recording', stage: 'validate', rowClasses: { ...noRows, stationMismatch: 1 } }, new EufyError('invalid_recording')),
+    ['history_incomplete', 503], { reason: 'invalid_recording', rows_station_mismatch: 1, returned: 503 }],
+  ['an error of the client that is no EufyError', fails({ code: 'unexpected_error' }, new TypeError('PRIVATE_TOKEN')),
+    ['recording_unavailable', 503], { reason: 'unclassified_error' }],
+  ['an error before the recording access', async () => { throw new EufyError('client_closed'); },
+    ['recording_unavailable', 503], { reason: 'client_closed', query_stage: 'admission', session_open: null, pages: 0,
+      query_limit: 0, result_code: null }],
+  ['an unexpected error without an observation', async () => { throw new TypeError('PRIVATE_TOKEN'); },
+    ['recording_unavailable', 503], { reason: 'unclassified_error', query_stage: 'admission' }],
+  ['a full disk', async () => { throw Object.assign(new Error('/PRIVATE/path'), { code: 'ENOSPC' }); },
+    ['recording_storage_unavailable', 503], null],
+];
+for (const [name, list, [code, status], expected] of recordingFailures)
+  test(`a standalone list with ${name} answers ${code} ${status} unchanged and records ${expected ? 'it' : 'nothing'} (#152)`, async () => {
+    const f = await recordingBackend({ list });
+    try {
+      await assert.rejects(f.backend.recordings.list('WALL', '2026-10-15', new AbortController().signal), { code, status });
+      const rows = f.queries();
+      if (expected === null) assert.deepEqual(rows, []);
+      else {
+        assert.equal(rows.length, 1);
+        const row = rows[0]!;
+        assert.deepEqual(Object.fromEntries(Object.keys(expected).map((key) => [key, row[key]])), expected);
+        assert.deepEqual([row.device_ref, row.model, row.query, row.owner, row.status, row.returned], [3, 'T84A1', 'list', 'standalone', 'error', status]);
+        assert.ok(Number.isInteger(row.elapsed_ms));
+        // Only an operation that connected carries the connection stage and lookup.
+        if (!('stage' in expected)) assert.equal('stage' in row, false);
+      }
+      assert.doesNotMatch(JSON.stringify(f.backend.supportReport()), /PRIVATE|WALL|BASE|CAM|fixture/);
+    } finally {
+      await f.backend.close();
+    }
+  });
+
+test('each recording call gets the options form with the request signal and the observation callbacks (#152)', async () => {
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => { release = resolve; });
+  const f = await recordingBackend({
+    list: async (options) => {
+      release();
+      await new Promise((_resolve, reject) => options.signal!.addEventListener('abort', () => reject(new EufyError('cancelled')), { once: true }));
+    },
+  });
+  try {
+    const abort = new AbortController();
+    const pending = assert.rejects(f.backend.recordings.list('WALL', '2026-10-15', abort.signal), { code: 'recording_unavailable', status: 503 });
+    await waiting;
+    const [options] = f.options;
+    assert.ok(options?.signal instanceof AbortSignal);
+    assert.equal(options.signal.aborted, false);
+    for (const key of ['onObservation', 'onProgress', 'onLookup'] as const) assert.equal(typeof options[key], 'function', key);
+    abort.abort();
+    await pending;
+    assert.equal(options.signal.aborted, true);
+    // Without an observation from the client the cancelled failure is the bridge's own record.
+    assert.deepEqual(f.queries().map((row) => [row.reason, row.query_stage]), [['cancelled', 'admission']]);
+  } finally {
+    await f.backend.close();
+  }
+});
+
+test('standalone operations are recorded, HomeBase operations only when they fail, thumbnails only on failure (#152)', async () => {
+  let fail = false;
+  const f = await recordingBackend({
+    list: async (options) => {
+      options.onObservation?.(observed({ stage: 'validate', elapsedMs: 1840,
+        pages: [{ limit: 100, elapsedMs: 1800, answered: true, ackCode: 0, resultCode: 0, rows: 12 }],
+        rowClasses: { ...noRows, own: 9, otherDay: 3, cipherId: 9 } }));
+      return { complete: true, returned: 12, recordings: [wallRecording] };
+    },
+    thumbnail: async (options) => {
+      if (fail) return fails({ operation: 'thumbnail', code: 'device_request_timeout', pages: [] }, new EufyError('device_request_timeout'))(options);
+      options.onObservation?.(observed({ operation: 'thumbnail', stage: 'query', pages: [] }));
+      return Buffer.from('jpeg');
+    },
+  });
+  try {
+    const signal = new AbortController().signal;
+    const listed = await f.backend.recordings.list('WALL', '2026-10-15', signal);
+    assert.deepEqual(f.queries().map((row) => [row.device_ref, row.query, row.owner, row.status, row.returned,
+      row.query_rows, row.rows_own, row.rows_other_day, row.rows_cipher_id]), [[3, 'list', 'standalone', 'completed', 200, 12, 9, 3, 9]]);
+    // A HomeBase success is not recorded, its failure is.
+    const base = f.client as unknown as { listRecordings: (...args: unknown[]) => Promise<unknown> };
+    const standalone = base.listRecordings;
+    base.listRecordings = async (...args: unknown[]) => {
+      const options = args[3] as RecordingOperationOptions;
+      options.onObservation?.(observed({ owner: 'station', stage: 'validate', pages: [{ ...silentPage, answered: true, ackCode: 0, resultCode: 0, rows: 0 }], rowClasses: noRows }));
+      return { complete: true, returned: 0, recordings: [] };
+    };
+    await f.backend.recordings.list('CAM', '2026-10-15', signal);
+    assert.equal(f.queries().length, 1);
+    base.listRecordings = async (...args: unknown[]) => fails({ owner: 'station', code: 'device_request_timeout' }, new EufyError('device_request_timeout'))(args[3] as RecordingOperationOptions);
+    await assert.rejects(f.backend.recordings.list('CAM', '2026-10-15', signal), { code: 'recording_unavailable', status: 503 });
+    assert.deepEqual(f.queries().slice(-1).map((row) => [row.device_ref, row.model, row.owner, row.status, row.reason]),
+      [[1, 'T8030', 'station', 'error', 'device_request_timeout']]);
+    base.listRecordings = standalone;
+    // A standalone thumbnail success is not recorded, its failure is.
+    const id = listed.recordings[0]!.id;
+    assert.equal((await f.backend.recordings.thumbnail('WALL', id, signal)).toString(), 'jpeg');
+    assert.equal(f.queries().length, 2);
+    fail = true;
+    await assert.rejects(f.backend.recordings.thumbnail('WALL', id, signal), { code: 'recording_unavailable', status: 503 });
+    assert.deepEqual(f.queries().slice(-1).map((row) => [row.query, row.owner, row.reason, row.pages]),
+      [['thumbnail', 'standalone', 'device_request_timeout', 0]]);
+    assert.doesNotMatch(JSON.stringify(f.backend.supportReport()), /PRIVATE|WALL|BASE|CAM/);
+  } finally {
+    await f.backend.close();
+  }
+});
+
+test('a multi-owner timeline records the failed owner, and a disconnected client records every owner (#152)', async () => {
+  const f = await recordingBackend({});
+  const client = f.client as unknown as { connected: boolean; listRecordings: (...args: unknown[]) => Promise<unknown> };
+  client.listRecordings = async (...args: unknown[]) => {
+    const options = args[3] as RecordingOperationOptions;
+    if (args[0] === 'BASE') {
+      options.onObservation?.(observed({ owner: 'station', stage: 'validate', pages: [{ ...silentPage, answered: true, ackCode: 0, resultCode: 0, rows: 0 }], rowClasses: noRows }));
+      return { complete: true, returned: 0, recordings: [] };
+    }
+    return fails({ code: 'device_request_timeout' }, new EufyError('device_request_timeout'))(options);
+  };
+  try {
+    const signal = new AbortController().signal;
+    await assert.rejects(f.backend.recordings.timeline(['CAM', 'WALL'], '2026-10-15', signal), { code: 'recording_unavailable', status: 503 });
+    assert.deepEqual(f.queries().map((row) => [row.device_ref, row.owner, row.status, row.reason, row.returned]),
+      [[3, 'standalone', 'error', 'device_request_timeout', 503]]);
+    // The bridge refuses before any client call. Each owner gets a record of its own.
+    client.connected = false;
+    await assert.rejects(f.backend.recordings.timeline(['CAM', 'WALL'], '2026-10-15', signal), { code: 'recording_unavailable', status: 503 });
+    await assert.rejects(f.backend.recordings.calendar(['WALL'], '2026-10', signal), { code: 'recording_unavailable', status: 503 });
+    assert.deepEqual(f.queries().slice(1).map((row) => [row.device_ref, row.query, row.owner, row.reason, row.query_stage, row.session_open, row.returned]), [
+      [1, 'list', 'station', 'client_disconnected', 'admission', null, 503],
+      [3, 'list', 'standalone', 'client_disconnected', 'admission', null, 503],
+      [3, 'calendar', 'standalone', 'client_disconnected', 'admission', null, 503],
+    ]);
+    // A bridge refusal with its own answer is not a recording_query record.
+    client.connected = true;
+    const busy = await recordingBackend({});
+    try {
+      (busy.backend.recordings as unknown as { liveBusy: () => string }).liveBusy = () => 'live_busy';
+      await assert.rejects(busy.backend.recordings.list('WALL', '2026-10-15', signal), { code: 'live_busy', status: 409 });
+      assert.deepEqual(busy.queries(), []);
+    } finally {
+      await busy.backend.close();
+    }
+  } finally {
+    await f.backend.close();
+  }
+});
+
+test('a standalone download refusal is recorded with its cause on the record and the playback attempt (#152)', async () => {
+  const f = await recordingBackend({
+    list: async (options) => {
+      options.onObservation?.(observed({ stage: 'validate', pages: [{ ...silentPage, answered: true, ackCode: 0, resultCode: 0, rows: 1 }], rowClasses: { ...noRows, own: 1, cipherId: 1 } }));
+      return { complete: true, returned: 1, recordings: [wallRecording] };
+    },
+    download: fails({ operation: 'download', code: 'recording_cipher_unavailable', stage: 'admission', pages: [], elapsedMs: 0 }, new EufyError('recording_cipher_unavailable')),
+  });
+  try {
+    const signal = new AbortController().signal;
+    const id = (await f.backend.recordings.list('WALL', '2026-10-15', signal)).recordings[0]!.id;
+    await assert.rejects(f.backend.recordings.video('WALL', id, signal, async () => assert.fail('no output')), { code: 'recording_unavailable', status: 503 });
+    assert.deepEqual(f.queries().map((row) => [row.query, row.status, row.reason, row.query_stage, row.rows_cipher_id]), [
+      ['list', 'completed', null, 'validate', 1],
+      ['download', 'error', 'recording_cipher_unavailable', 'admission', 0],
+    ]);
+    const attempt = f.backend.supportReport().recording.attempts.at(-1)!;
+    assert.deepEqual([attempt.outcome, attempt.stage, attempt.error, attempt.cause, attempt.result_code],
+      ['failed', 'download', 'recording_unavailable', 'recording_cipher_unavailable', null]);
+  } finally {
+    await f.backend.close();
+  }
+});
+
+test('recording_query records reach the Eufy discovery: log line as in the download (#152)', async (t) => {
+  const { Eufy } = await import('../src/eufy.js');
+  const { logDiscoveryDiagnostic } = await import('../src/backend-log.js');
+  const f = fixture(undefined, undefined, true);
+  f.client.discoverDevices = async () => standaloneInventory(true);
+  Object.assign(f.client, {
+    listRecordings: (_id: string, _day: string, _cameras: string[], options: RecordingOperationOptions) =>
+      fails({ code: 'device_request_timeout', pages: [{ ...silentPage, ackCode: -104 }] }, new EufyError('device_request_timeout'))(options),
+  });
+  const bridge = new Eufy(f.storage, 'mega', false, () => f.backend);
+  const output = t.mock.method(console, 'info', () => {});
+  bridge.on('discovery_diagnostic', logDiscoveryDiagnostic);
+  try {
+    await bridge.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    await assert.rejects(bridge.recordings.list('WALL', '2026-10-15', new AbortController().signal), { code: 'recording_unavailable', status: 503 });
+    const download = bridge.supportReport().recent_events.filter((row) => row.event === 'recording_query');
+    const logged = output.mock.calls
+      .filter((call) => call.arguments[0] === 'Eufy discovery:')
+      .map((call) => JSON.parse(call.arguments[1] as string))
+      .filter((row) => row.event === 'recording_query');
+    assert.equal(download.length, 1);
+    assert.deepEqual(logged, download);
+    assert.equal(download[0]!.ack_code, -104);
+    assert.doesNotMatch(JSON.stringify(output.mock.calls), /PRIVATE|WALL|BASE|CAM|fixture/);
+  } finally {
+    await bridge.close();
   }
 });
