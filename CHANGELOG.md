@@ -75,8 +75,9 @@ migration is needed. Integration 0.8.46 still works with bridge 0.8.38, but its
 download shows a beta bridge or library version as `unavailable` and drops the
 lookup fields. With bridge 0.8.37 the download has no lookup fields and the
 assessment keeps its previous text. Rollback: turn `experimental_standalone`
-off to stop the standalone T8410C attempt, or restore the bridge 0.8.37 app
-backup and integration 0.8.46.
+off, which stops the standalone T8410C attempt and also takes a standalone T84A1
+and T8410 off the experimental route, or restore the bridge 0.8.37 app backup
+and integration 0.8.46, which keeps them on that route with the option on.
 
 ## 0.8.46 - 2026-10-13
 

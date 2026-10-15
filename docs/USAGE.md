@@ -136,10 +136,11 @@ models are included, and no other camera or HomeBase changes. Update the
 integration to 0.8.43 or newer before turning it on.
 
 Any other standalone camera that the bundled library keeps at
-`standalone_transport_unverified`, including a standalone `T8410C` on bridge
-0.8.36 or 0.8.37, stays there with the option on, because the library admits
-only these models to the experimental route. From bridge 0.8.37 the app log names its model in a line
-beginning with `Eufy experimental standalone:`, and from integration 0.8.46
+`standalone_transport_unverified` stays there with the option on, because the
+library admits only these models to the experimental route. So does a
+standalone `T8410C` on bridge 0.8.36 or 0.8.37, whose client 0.29.2 admits
+only the T84A1 and T8410. From bridge 0.8.37 the app log names its model in a
+line beginning with `Eufy experimental standalone:`, and from integration 0.8.46
 **Download diagnostics** explains it under `standalone_admission`. That is not
 a failed connection attempt. The bridge makes no attempt for such a camera. Two
 other cases get neither, with the option on or off. A camera whose model the
