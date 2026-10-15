@@ -169,11 +169,14 @@ detection events, guard mode and alarm state are not part of this test.
 Recordings on a standalone camera are not confirmed to work. On 2026-10-15 the
 issue #152 reporter's standalone T8410 on firmware 2.3.2.4 showed live view,
 but "Show recordings" failed with "The HomeBase connection is unavailable. Try
-again shortly." The cause is not known. From bridge 0.8.39 with integration
-0.8.48 the dialog says "Recordings are unavailable for this camera right now.
-Try again shortly." instead, and each recording attempt on a standalone camera
-leaves a `recording_query` record that says how far it got and what the camera
-answered, see [failed recordings](DISCOVERY_DIAGNOSTICS.md#failed-recordings).
+again shortly." The cause is not known. From integration 0.8.48 the dialog
+says "Recordings are unavailable for this camera right now. Try again shortly."
+instead. From bridge 0.8.39, each list, calendar and download on a standalone
+camera and each failed thumbnail leaves a `recording_query` record that says
+how far it got and what the camera answered. A repeat of the same outcome for
+the same camera and operation in one report adds no record. Integration 0.8.48
+keeps these records in **Download diagnostics**, see
+[failed recordings](DISCOVERY_DIAGNOSTICS.md#failed-recordings).
 A download refused because it would need a cloud key shows
 `recording_cipher_unavailable` as the `cause` of its playback attempt.
 

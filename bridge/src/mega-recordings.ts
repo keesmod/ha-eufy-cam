@@ -322,7 +322,12 @@ export class MegaRecordings implements BackendRecordings {
           let result;
           try { [, , result] = await Promise.all(downloads); }
           catch (error) { await transfer.cancel(); await Promise.allSettled(downloads); throw error; }
-          if (!result.complete) throw new RecordingError('recording_unavailable', 503);
+          if (!result.complete) {
+            // The HTTP answer stays recording_unavailable. The attempt keeps why the transfer ended (#152).
+            const incomplete = new RecordingError('recording_unavailable', 503);
+            incomplete.cause = { code: `transfer_${result.reason}` };
+            throw incomplete;
+          }
           const metadata = transfer.metadata;
           const codec =
             metadata.videoCodec === 'h264' ? 'h264' : metadata.videoCodec === 'h265' ? 'hevc' : null;

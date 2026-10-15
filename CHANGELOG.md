@@ -28,8 +28,10 @@
   for it yet.
 - A recording attempt in `support.recording.attempts` keeps the client's code
   behind the bridge error as `cause`, with its numeric `result_code`, for
-  example `recording_cipher_unavailable` behind `recording_unavailable`. `null`
-  means the bridge failed without a client error.
+  example `recording_cipher_unavailable` behind `recording_unavailable`. A
+  transfer that ended incomplete gives `transfer_` plus the client's reason,
+  such as `transfer_connection_lost`. `null` means the bridge failed without a
+  client error or transfer reason.
 - The recordings dialog no longer names a HomeBase, because the camera can be a
   standalone camera. A failed list now shows "Recordings are unavailable for
   this camera right now. Try again shortly." instead of "The HomeBase connection

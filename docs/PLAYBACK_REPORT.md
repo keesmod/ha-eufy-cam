@@ -74,8 +74,11 @@ A failed or cancelled attempt has the bridge's `error`, such as
 `recording_unavailable`. Since bridge 0.8.39 with integration 0.8.48 it also has
 `cause`, the client's machine code behind that error, such as
 `recording_cipher_unavailable` or `device_request_timeout`, and `result_code`,
-that error's numeric result between -999999 and 999999. Both are `null` when
-the bridge failed without a client error, for example when it refused the
+that error's numeric result between -999999 and 999999. A download whose
+transfer ended incomplete has `cause` set to `transfer_` plus the client's
+reason, one of `cancelled`, `connection_lost`, `timeout`, `rejected` or
+`too_large`, with `result_code` `null`. Both are `null` when the bridge failed
+without a client error or transfer reason, for example when it refused the
 request itself. An error that is not a client error, or a code outside the
 bound, is `unclassified_error`. Older bridges and integrations leave both
 fields out. HA's own `recording_playback` attempts do not carry them.

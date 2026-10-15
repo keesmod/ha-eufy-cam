@@ -1634,6 +1634,40 @@ test('a standalone download refusal is recorded with its cause on the record and
   }
 });
 
+test('an incomplete standalone transfer keeps its reason as the attempt cause (#152)', async () => {
+  const f = await recordingBackend({
+    list: async (options) => {
+      options.onObservation?.(observed({ stage: 'validate', pages: [{ ...silentPage, answered: true, ackCode: 0, resultCode: 0, rows: 1 }], rowClasses: { ...noRows, own: 1 } }));
+      return { complete: true, returned: 1, recordings: [wallRecording] };
+    },
+    download: async (options) => {
+      options.onObservation?.(observed({ operation: 'download', stage: 'transfer', pages: [], elapsedMs: 0 }));
+      return {
+        video: Readable.from([]),
+        audio: Readable.from([]),
+        metadata: { videoCodec: 'h264' },
+        completed: Promise.resolve({ complete: false, bytes: 0, reason: 'rejected', stopConfirmed: true }),
+        cancel: async () => {},
+      };
+    },
+  });
+  try {
+    const signal = new AbortController().signal;
+    const id = (await f.backend.recordings.list('WALL', '2026-10-15', signal)).recordings[0]!.id;
+    await assert.rejects(f.backend.recordings.video('WALL', id, signal, async () => assert.fail('no output')), { code: 'recording_unavailable', status: 503 });
+    const attempt = f.backend.supportReport().recording.attempts.at(-1)!;
+    assert.deepEqual([attempt.outcome, attempt.stage, attempt.error, attempt.cause, attempt.result_code],
+      ['failed', 'download', 'recording_unavailable', 'transfer_rejected', null]);
+    // The download record reports the started transfer, as the client observed it.
+    assert.deepEqual(f.queries().map((row) => [row.query, row.status, row.reason]), [
+      ['list', 'completed', null],
+      ['download', 'completed', null],
+    ]);
+  } finally {
+    await f.backend.close();
+  }
+});
+
 test('recording_query records reach the Eufy discovery: log line as in the download (#152)', async (t) => {
   const { Eufy } = await import('../src/eufy.js');
   const { logDiscoveryDiagnostic } = await import('../src/backend-log.js');

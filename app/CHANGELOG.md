@@ -26,7 +26,9 @@
   report adds no record, changed times or counts alone are a repeat.
 - A recording attempt in the diagnostics download keeps the client's code
   behind its `error` as `cause`, with the numeric `result_code`, for example
-  `recording_cipher_unavailable` behind `recording_unavailable`.
+  `recording_cipher_unavailable` behind `recording_unavailable`. A transfer that
+  ended incomplete gives `transfer_` plus the client's reason, such as
+  `transfer_connection_lost`.
 - Observation only. The HTTP status codes and bodies of every recording
   request stay the same, and so do the client's queries, page sizes, timeouts
   and error codes. A failed or cancelled operation still closes the owner's
