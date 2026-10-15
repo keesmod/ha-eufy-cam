@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.47 - Unreleased
+## 0.8.47 - 2026-10-15
 
 - **Download diagnostics** now shows beta versions such as integration
   `0.8.47-beta.1`, bridge `0.8.38-beta.1` or a client library beta as received.

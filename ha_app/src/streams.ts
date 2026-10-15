@@ -6,6 +6,16 @@
 export type LiveAdmission = boolean | 'station_limit';
 /** Close code for a viewer refused by the per-station live limit. 1013 stays generic. */
 export const STATION_LIMIT_CLOSE_CODE = 4013;
+/**
+ * A start that failed before START reached the device. No stream runs that a
+ * stop could confirm, so the hub releases the camera instead of quarantining it.
+ */
+export class StartNotIssued extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "StartNotIssued";
+  }
+}
 /** Viewer ownership is independent of HA and of the media encoder. */
 export interface Peer {
   send(frame: Buffer): void;
@@ -59,7 +69,11 @@ export class StreamHub {
       // Insert owner BEFORE invoking start; even synchronous events see ownership.
       camera.viewers.set(peer, { peer, deadline: time + 20_000, outstanding: false });
       const owned = camera;
-      void this.control.start(serial).catch(() => { if (this.cameras.get(serial) === owned) this.end(serial, "Camera start failed"); }).finally(() => { owned.startPending = false; });
+      void this.control.start(serial).catch(error => {
+        if (this.cameras.get(serial) !== owned) return;
+        if (error instanceof StartNotIssued) this.release(serial, owned, "Camera start failed");
+        else this.end(serial, "Camera start failed");
+      }).finally(() => { owned.startPending = false; });
     } else {
       camera.viewers.set(peer, { peer, deadline: this.now() + 10_000, outstanding: false });
     }
@@ -130,6 +144,16 @@ export class StreamHub {
     for (const peer of viewers) peer.close(1000, reason);
     this.control.disposeMedia(serial);
     this.requestStop(serial, camera);
+  }
+
+  /** Ends a camera whose start never reached the device, also after a viewer left. */
+  private release(serial: string, camera: CameraSession, reason: string): void {
+    if (camera.phase !== "stopping") this.control.diagnostic?.(serial, "stream_failure");
+    this.cameras.delete(serial);
+    const viewers = [...camera.viewers.keys()];
+    camera.viewers.clear();
+    for (const peer of viewers) peer.close(1000, reason);
+    this.control.disposeMedia(serial);
   }
 
   private requestStop(serial: string, camera: CameraSession): void {

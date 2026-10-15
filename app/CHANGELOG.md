@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.38 - Unreleased
+## 0.8.38 - 2026-10-15
 
 - Report a beta bridge or client library version such as `0.8.38-beta.1` as
   received in the `software` field of the discovery `summary` and `connection`

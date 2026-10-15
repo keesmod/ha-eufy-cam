@@ -105,7 +105,7 @@ See [card options](docs/USAGE.md#card-options) for YAML and automatic live start
 <details>
 <summary>Cards missing or resources managed in YAML?</summary>
 
-The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.46`.
+The current card resource is `/eufy_viewer/eufy-viewer-card.js?v=0.8.47`.
 See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 </details>
@@ -114,9 +114,9 @@ See [manual card setup](docs/INSTALLATION.md#3-add-the-dashboard-cards).
 
 <!-- Keep this section to the current release pair. Version history belongs in CHANGELOG.md and the GitHub release notes. -->
 
-The current release is integration **0.8.46** with bridge **0.8.37**, which
+The current release is integration **0.8.47** with bridge **0.8.38**, which
 bundles the [Eufy Mega client](https://github.com/keesmod/eufy-mega-client)
-library **0.29.2**. Update both parts. The
+library **0.30.0**. Update both parts. The
 [release notes](https://github.com/keesmod/ha-eufy-cam/releases/latest) list
 the changes and any version-specific steps. Earlier versions are described in
 the [GitHub releases](https://github.com/keesmod/ha-eufy-cam/releases) and the

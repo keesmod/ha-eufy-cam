@@ -12,6 +12,7 @@ import {
   type LiveStream,
   type LiveStartProgress,
   type StationConnectionProgress,
+  type StationLookupObservation,
   type AuthState as MegaAuth,
 } from '@keesmod/eufy-mega-client';
 import { Storage } from './storage.js';
@@ -67,8 +68,8 @@ export function liveMaxSecondsMains(value?: string): number {
 }
 /**
  * Parse EUFY_EXPERIMENTAL_STANDALONE, true or false. Unset keeps it off. With it,
- * a standalone camera whose library profile allows it, T84A1 and T8410 today, opens
- * its own local session. Unverified on hardware.
+ * a standalone camera whose library profile allows it, T84A1, T8410 and T8410C today,
+ * opens its own local session. Unverified on hardware.
  */
 export function experimentalStandalone(value?: string): boolean {
   const text = value?.trim() ?? '';
@@ -76,10 +77,14 @@ export function experimentalStandalone(value?: string): boolean {
   if (text === 'true') return true;
   throw new Error('EUFY_EXPERIMENTAL_STANDALONE must be true or false');
 }
-/** Records the last stage a station connection reached, for its diagnostic record. */
+/**
+ * Records the last stage a station connection reached and what its local lookup
+ * saw, for the diagnostic record of that attempt.
+ */
 function connectionStages(): {
   detail: StationConnectionDetail;
   onProgress: (progress: StationConnectionProgress) => void;
+  onLookup: (observation: StationLookupObservation) => void;
 } {
   const detail: StationConnectionDetail = { stage: 'none' };
   return {
@@ -90,6 +95,11 @@ function connectionStages(): {
       detail.stage = progress.stage;
       if (typeof progress.inventoryAddress === 'boolean')
         detail.inventoryAddress = progress.inventoryAddress;
+    },
+    // Observation only (#152). The diagnostics revalidate each value before
+    // they report it, and the library ignores anything this throws.
+    onLookup: (observation) => {
+      detail.lookup = observation;
     },
   };
 }
@@ -399,12 +409,14 @@ export class MegaBackend extends EventEmitter implements Backend {
         let phase: 'connect' | 'refresh_state' = 'connect';
         const stages = connectionStages();
         try {
-          await client.connectStation(station.id, { onProgress: stages.onProgress });
+          await client.connectStation(station.id, { onProgress: stages.onProgress, onLookup: stages.onLookup });
           phase = 'refresh_state';
           this.stationStates.set(station.id, await client.refreshStationState(station.id));
-          this.discoveryDiagnostics.station(station.id, phase, this.stationStates.get(station.id)!.connected ? 'connected' : 'disconnected');
+          // The refresh_state record reports the connect attempt before it, so
+          // it carries that attempt's lookup. The stage stays on a failed connect.
+          this.discoveryDiagnostics.station(station.id, phase, this.stationStates.get(station.id)!.connected ? 'connected' : 'disconnected', undefined, stages.detail);
         } catch (error) {
-          this.discoveryDiagnostics.station(station.id, phase, 'error', error instanceof EufyError ? error.code : 'connection_failed', phase === 'connect' ? stages.detail : undefined);
+          this.discoveryDiagnostics.station(station.id, phase, 'error', error instanceof EufyError ? error.code : 'connection_failed', stages.detail);
           this.stationStates.set(station.id, {
             id: station.id,
             connected: false,
@@ -427,8 +439,8 @@ export class MegaBackend extends EventEmitter implements Backend {
         if (!experimentalOwner(relationship)) continue;
         const stages = connectionStages();
         try {
-          await client.connectStation(relationship.ownerId, { onProgress: stages.onProgress });
-          this.discoveryDiagnostics.station(relationship.ownerId, 'connect', 'connected');
+          await client.connectStation(relationship.ownerId, { onProgress: stages.onProgress, onLookup: stages.onLookup });
+          this.discoveryDiagnostics.station(relationship.ownerId, 'connect', 'connected', undefined, stages.detail);
         } catch (error) {
           const code = error instanceof EufyError ? error.code : 'connection_failed';
           this.discoveryDiagnostics.station(relationship.ownerId, 'connect', 'error', code, stages.detail);
@@ -469,16 +481,17 @@ export class MegaBackend extends EventEmitter implements Backend {
         for (const [id, state] of this.stationStates) {
           if (state.connected) continue;
           // Error/cancellation cleanup deliberately closes the device session.
-          // Restore station telemetry while idle without waking a camera.
+          // Restore station telemetry while idle without waking a camera. Its
+          // records carry the attempt's stage and lookup like a discovery connect.
           let phase: 'connect' | 'refresh_state' = 'connect';
           const stages = connectionStages();
           try {
-            await this.client.connectStation(id, { onProgress: stages.onProgress });
+            await this.client.connectStation(id, { onProgress: stages.onProgress, onLookup: stages.onLookup });
             phase = 'refresh_state';
             this.stationStates.set(id, await this.client.refreshStationState(id));
-            this.discoveryDiagnostics.station(id, phase, this.stationStates.get(id)!.connected ? 'connected' : 'disconnected');
+            this.discoveryDiagnostics.station(id, phase, this.stationStates.get(id)!.connected ? 'connected' : 'disconnected', undefined, stages.detail);
           } catch (error) {
-            this.discoveryDiagnostics.station(id, phase, 'error', error instanceof EufyError ? error.code : 'connection_failed', phase === 'connect' ? stages.detail : undefined);
+            this.discoveryDiagnostics.station(id, phase, 'error', error instanceof EufyError ? error.code : 'connection_failed', stages.detail);
             throw error;
           }
           this.emit('change');
