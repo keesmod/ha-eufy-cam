@@ -31,7 +31,7 @@ See [snapshot and streaming limits](docs/USAGE.md#honest-snapshot-and-streaming-
 - Eufy cameras connected to a HomeBase 3 (T8030) for snapshots, live view and
   recordings. Other HomeBase models, such as HomeBase 2 or HomeBase Mini, and
   NVR setups are not supported. Cameras without a HomeBase normally show these
-  features as unsupported, but two models can try an
+  features as unsupported, but three models can try an
   [experimental standalone option](docs/USAGE.md#experimental-standalone-cameras).
 - A Eufy account that can see your cameras in the Eufy app. A dedicated Eufy
   account with shared access to your cameras is recommended. A Eufy cloud

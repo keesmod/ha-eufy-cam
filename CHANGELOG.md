@@ -46,13 +46,36 @@
   `live_stopping`, and new live starts on other cameras were refused while its
   recovery attempt ran. A start that fails after the start command was issued
   keeps the existing quarantine until the device confirms its stop.
+- Bridge 0.8.38 pins client 0.30.0, which also admits a standalone Indoor Cam
+  Pan&Tilt 2K `T8410C`/type 31 to the opt-in `experimental_standalone` route
+  ([issue #168](https://github.com/keesmod/ha-eufy-cam/issues/168)). The
+  [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152) reporter has
+  such a camera on firmware 3.3.4.4 without a HomeBase. With the option on, the
+  bridge discovered it with a complete `descriptor` but left it at
+  `standalone_transport_unverified` without a session attempt, because the
+  client admitted only the Wall Light Cam S100 `T84A1` and the Indoor Cam 2K
+  Pan & Tilt `T8410`.
+- With the option on, the bridge now connects a standalone T8410C at every
+  discovery, normally at startup, as it does for the T8410. Each standalone
+  T8410C that does not answer adds up to 20 seconds to discovery. Its snapshot,
+  live view and recordings are offered as experimental features and work only
+  if that session works. No standalone T8410C result is recorded yet.
+- **Download diagnostics** no longer reports such a camera as
+  `standalone_admission`, and the bridge log no longer names it in an
+  `Eufy experimental standalone:` line. A failed attempt appears as a
+  `standalone_connection` finding, as for the T8410.
+- Without the option nothing changes. A T8410C under a HomeBase keeps its
+  HomeBase route, also with the option. No other model is admitted. For this
+  change the bridge changes only the client pin and the startup log text, which
+  now names all three models.
 
 Upgrade: update the HACS integration to 0.8.47 and the bridge app to 0.8.38,
 then restart Home Assistant. Keep the same token and session. No configuration
 migration is needed. Integration 0.8.46 still works with bridge 0.8.38, but its
 download shows a beta bridge or library version as `unavailable` and drops the
 lookup fields. With bridge 0.8.37 the download has no lookup fields and the
-assessment keeps its previous text. Rollback: restore the bridge 0.8.37 app
+assessment keeps its previous text. Rollback: turn `experimental_standalone`
+off to stop the standalone T8410C attempt, or restore the bridge 0.8.37 app
 backup and integration 0.8.46.
 
 ## 0.8.46 - 2026-10-13

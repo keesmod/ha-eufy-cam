@@ -21,8 +21,8 @@
   bound and leaves out any other. The idle reconnect of a HomeBase records its
   lookup the same way. A changed lookup outcome is recorded again, changed
   counts alone are not.
-- The client change is observation only. The lookup's targets, timing, retries
-  and the ID it accepts are unchanged.
+- The lookup observation changes nothing in the lookup. Its targets, timing,
+  retries and the ID it accepts are unchanged.
 - Release a camera at once when its live start fails before the client library
   reported `start_issued`, for example a standalone camera on the experimental
   route that does not complete its connection
@@ -31,12 +31,22 @@
   it can be started again, recording requests are no longer refused with
   `live_stopping` and no recovery attempt blocks other live starts. After `start_issued` a
   failed start keeps the quarantine until the device confirms its stop.
+- Client 0.30.0 also admits a standalone Indoor Cam Pan&Tilt 2K `T8410C`/type
+  31 to the experimental route
+  ([issue #168](https://github.com/keesmod/ha-eufy-cam/issues/168)). With
+  `experimental_standalone` on, the bridge now connects a standalone T8410C at
+  every discovery, normally at startup, as it does for the T8410, and no longer
+  names it in an `Eufy experimental standalone:` line. Each standalone T8410C
+  that does not answer adds up to 20 seconds to startup. The startup log names
+  all three models. Nothing changes for HomeBase cameras or with the option
+  off.
 
 Upgrade: keep the same token and session. Update the integration to 0.8.47 to
 keep beta versions and the lookup fields in **Download diagnostics**.
 Integration 0.8.46 still works but shows a beta bridge or library version as
-`unavailable` and drops the lookup fields. Rollback: restore the 0.8.37 app
-backup and integration 0.8.46.
+`unavailable` and drops the lookup fields. Rollback: turn
+`experimental_standalone` off to stop the standalone T8410C attempt, or restore
+the 0.8.37 app backup and integration 0.8.46.
 
 ## 0.8.37 - 2026-10-13
 

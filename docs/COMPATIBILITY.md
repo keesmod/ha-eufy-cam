@@ -402,19 +402,21 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   type 31**, recognized behind a HomeBase 3 from bridge 0.8.36. `T8160-C` was
   reported. `T8410C` is admitted on public evidence. Both have software tests
   only, and hardware results are pending. A standalone `T8410C` appears as a
-  camera whose snapshot, live view and recordings are unsupported, also with
-  `experimental_standalone` on. Owners use Pan & Tilt names for both `T8410`
-  and `T8410C`, so check the model code in **Download diagnostics**, not the
+  camera whose snapshot, live view and recordings are unsupported. With
+  `experimental_standalone` on it tries its own local session from bridge
+  0.8.38, see below. Owners use Pan & Tilt names for both `T8410` and
+  `T8410C`, so check the model code in **Download diagnostics**, not the
   product name.
-- **Standalone Wall Light Cam S100 `T84A1` and Indoor Cam 2K Pan & Tilt
-  `T8410`** can try their own local session with the opt-in
-  `experimental_standalone` option, the T84A1 from bridge 0.8.34 and the T8410
-  from bridge 0.8.35. A reporter had a snapshot and live video working on a
+- **Standalone Wall Light Cam S100 `T84A1`, Indoor Cam 2K Pan & Tilt `T8410`
+  and Indoor Cam Pan&Tilt 2K `T8410C`** can try their own local session with
+  the opt-in `experimental_standalone` option, the T84A1 from bridge 0.8.34,
+  the T8410 from bridge 0.8.35 and the T8410C from bridge 0.8.38. A reporter had a snapshot and live video working on a
   standalone T8410 with firmware 2.3.2.4 on 2026-10-13, and live video on one
   with firmware 2.3.1.6 on 2026-10-15, after that camera had first ended its
   connection at the lookup
   ([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). No T84A1
-  result is recorded yet. See
+  result and no standalone T8410C result are recorded yet
+  ([issue #168](https://github.com/keesmod/ha-eufy-cam/issues/168)). See
   [experimental standalone cameras](USAGE.md#experimental-standalone-cameras).
 - **Standalone Floodlight Cam 2K `T8424`, type 39**, is recognized as a
   standalone camera from bridge 0.8.29, without a connection route for its

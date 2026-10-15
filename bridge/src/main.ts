@@ -31,7 +31,7 @@ eufy.liveStreamsPerStation = stationLimit;
 eufy.liveMaxSecondsMains = mainsSeconds;
 if (mainsSeconds > 120) console.info(`Eufy live bound: up to ${mainsSeconds} seconds for cameras without a battery value, 120 seconds for battery cameras (verified for 1800 seconds on one mains powered camera)`);
 if (stationLimit > 1) console.info(`Eufy live limit: up to ${stationLimit} concurrent live cameras per HomeBase (3 verified, 4 reported)`);
-if (standalone) console.info("Eufy experimental standalone cameras enabled: a standalone T84A1 or T8410 opens its own local session. Unverified on hardware, see docs/DISCOVERY_DIAGNOSTICS.md");
+if (standalone) console.info("Eufy experimental standalone cameras enabled: a standalone T84A1, T8410 or T8410C opens its own local session. Unverified on hardware, see docs/DISCOVERY_DIAGNOSTICS.md");
 if (eufy.diagnostics.enabled) console.info("Eufy media diagnostics enabled. Disable after troubleshooting.");
 eufy.on("backend_fault", logBackendFault);
 eufy.on("discovery_diagnostic", logDiscoveryDiagnostic);

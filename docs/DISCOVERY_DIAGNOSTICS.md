@@ -197,8 +197,8 @@ under the H3 media policy, which checks the actual HomeBase 3 owner and its
 firmware. It does not join the closed model-only policy of the original T8160.
 The client also admits exactly `T8410C` with type 31 under the HomeBase 3 policy
 of `T8410`: the indoor camera route with H3 media and the same owner and
-firmware checks. Unlike `T8410`, it is not admitted to the opt-in [experimental
-standalone route](#experimental-standalone-cameras). That admission rests on
+firmware checks. Unlike `T8410`, client 0.29.2 does not admit it to the opt-in
+[experimental standalone route](#experimental-standalone-cameras). That admission rests on
 public evidence, not on these rows. Eufy's [HomeBase compatibility
 guide][149-eufy] lists the Indoor Cam Pan&Tilt 2K as `T8410C`, supported on
 HomeBase 3. A [public inventory log][149-mega] shows `T8410C` with type 31 under
@@ -212,12 +212,26 @@ no type-only or prefix match is added. Owners use Pan & Tilt names for both
 which route applies. A standalone `T8410C`, with an empty or self parent, is now
 reported as `relationship=standalone` with
 `relationship_reason=standalone_transport_unverified` instead of
-`unsupported_device`, also with the opt-in. Home Assistant then creates it as a
+`unsupported_device`, on bridge 0.8.36 and 0.8.37 also with the opt-in. Home Assistant then creates it as a
 camera whose snapshot, live view and recordings are unsupported. Both new pairs
 have software tests only, and hardware results for both remain pending in the
 client's [model matrix][149-matrix].
 
+On 2026-10-15 the [issue #152][152] reporter shared the [`device` row][168-row]
+of a standalone Indoor Cam Pan&Tilt 2K `T8410C` on firmware 3.3.4.4 without a
+HomeBase, from bridge 0.8.38-beta.1 with client 0.30.0-beta.1 and integration
+0.8.47-beta.1, with `experimental_standalone` on. It had
+`relationship=standalone`,
+`relationship_reason=standalone_transport_unverified`, no
+`relationship_transport` and a complete `descriptor`, and the bridge made no
+session attempt. Client 0.30.0 also admits exactly a standalone `T8410C`/type
+31 to the experimental route ([issue #168][168]). The first betas, bridge
+0.8.38-beta.1 with client 0.30.0-beta.1, do not include it. No session result
+is recorded yet. Reported, not independently reproduced.
+
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
+[168]: https://github.com/keesmod/ha-eufy-cam/issues/168
+[168-row]: https://github.com/keesmod/ha-eufy-cam/issues/168#issuecomment-6189829101
 [152-lookup]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6152282566
 [66-update]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6083775017
 [66-result]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6098838866
@@ -310,12 +324,13 @@ booleans only. The values themselves are never reported, and a present field
 does not prove that it works.
 
 With the [opt-in](USAGE.md#experimental-standalone-cameras), a standalone
-`T84A1` row, and from bridge 0.8.35 with client 0.29.1 a standalone `T8410`
-row, has `relationship_transport=experimental` and no `relationship_reason`.
-Any other standalone model, including a standalone `T8410C` from bridge 0.8.36,
-or a T8410 on bridge 0.8.34, keeps
-`relationship_transport=null` and `standalone_transport_unverified` without a
-connection attempt, even with the option on.
+`T84A1` row, from bridge 0.8.35 with client 0.29.1 a standalone `T8410` row,
+and from bridge 0.8.38 with client 0.30.0 a standalone `T8410C` row, has
+`relationship_transport=experimental` and no `relationship_reason`. Any other
+standalone model, a T8410 on bridge 0.8.34 or a T8410C on bridge 0.8.36 or
+0.8.37 keeps `relationship_transport=null` and
+`standalone_transport_unverified` without a connection attempt, even with the
+option on.
 
 Since bridge 0.8.37 the `summary` record has `experimental_standalone`, `true`
 when the option is on and `false` when it is off. With `true`, such a standalone
@@ -324,7 +339,7 @@ attempt. The bridge log then has one line per such row, with the model code
 only:
 
 ```
-Eufy experimental standalone: model=T8410C is not admitted to the experimental route. The option is on, but the bundled library allows that route only for specific standalone models, so this camera stays standalone_transport_unverified without a connection attempt.
+Eufy experimental standalone: model=T8400 is not admitted to the experimental route. The option is on, but the bundled library allows that route only for specific standalone models, so this camera stays standalone_transport_unverified without a connection attempt.
 ```
 
 Integration 0.8.46 keeps the field in **Download diagnostics** and reports each
