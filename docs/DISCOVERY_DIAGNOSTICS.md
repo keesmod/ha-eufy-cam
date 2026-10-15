@@ -171,7 +171,11 @@ also admits a standalone T8410. Reported, not independently reproduced. On
 with client 0.29.2 and integration 0.8.46 showed its connection ending at
 `stage=lookup` with `inventory_address=true`, while the other camera connected.
 Bridge 0.8.38 records what that lookup saw, see
-[lookup fields](#lookup-fields-of-a-connection-attempt). See the
+[lookup fields](#lookup-fields-of-a-connection-attempt). A report on
+2026-10-15, with bridge 0.8.38-beta.1, client 0.30.0-beta.1 and integration
+0.8.47-beta.1, gave a failed run of that camera with 38 lookup replies, all from
+other devices in the account, and none from the camera or its inventory
+address. A later run connected, and both cameras streamed live video. See the
 [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-standalone-t8410-result-2026-10-13).
 
 On 2026-10-09 the reporter of [issue #149][149] ran integration 0.8.42 and

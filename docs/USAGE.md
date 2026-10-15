@@ -153,11 +153,11 @@ With the option on, the bridge connects to each admitted camera at every
 discovery, normally at startup, over the same local lookup and command key it
 uses for a HomeBase. Each camera that does not answer adds up to 20 seconds to
 startup. The camera's snapshot, live view and recordings are offered as
-experimental features and work only if that session works. The first reported
-result, on [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152), had
-live video working on a T8410 with firmware 2.3.2.4. Live video failed on one
-with firmware 2.3.1.6, and its event log had `device_request_timeout`. A failure
-is therefore still possible and useful evidence.
+experimental features and work only if that session works. On
+[issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152), live video was
+reported working on two standalone T8410s, with firmware 2.3.2.4 and 2.3.1.6.
+The camera on 2.3.1.6 first ended its connection at the lookup in several runs,
+so a failure is still possible and useful evidence.
 Recordings that would need a cloud key cannot be downloaded, and the camera's
 detection events, guard mode and alarm state are not part of this test.
 
