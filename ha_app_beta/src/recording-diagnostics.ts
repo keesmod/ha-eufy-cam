@@ -1,6 +1,8 @@
 /** Cached scalar observations only. No identifiers, source bytes or stderr survive. */
 import { randomInt } from 'node:crypto';
 import type { RecordingDiagnostic, RecordingFormat, RecordingMedia, RecordingProgress } from './recording-media.js';
+import { diagnosticCode } from './discovery-diagnostics.js';
+import { RecordingError } from './errors.js';
 
 export const RECORDING_RETENTION_MS = 15 * 60_000;
 export const recordingEvents = ['admission', 'download', 'conversion', 'transfer', 'cleanup',
@@ -18,6 +20,10 @@ export interface RecordingAttemptReport {
   outcome: 'active' | 'completed' | 'failed' | 'cancelled';
   stage: 'admission' | 'download' | 'conversion' | 'transfer';
   error?: string;
+  /** The client's error code behind error, null when the bridge failed without one (#152). */
+  cause?: string | null;
+  /** The numeric remoteCode of that error, null without one. */
+  result_code?: number | null;
   source_cancel_confirmed?: boolean;
   files_removed?: boolean;
   source_bytes?: number;
@@ -78,6 +84,12 @@ export class RecordingObservation {
     this.ended = this.now(); this.data.outcome = outcome;
     const code = (error as { code?: unknown })?.code;
     this.data.error = typeof code === 'string' && ['live_busy', 'live_stopping', 'recording_busy', 'recording_expired', 'recording_unavailable', 'recording_storage_unavailable', 'capability_unavailable'].includes(code) ? code : error ? 'unclassified' : undefined;
+    // The bridge answers with its own error and keeps the client's as its cause.
+    // A bridge refusal has none. Any other error is its own cause (#152).
+    const source = !error ? undefined : error instanceof RecordingError ? error.cause : error;
+    const remote = (source as { remoteCode?: unknown } | undefined)?.remoteCode;
+    this.data.cause = !error ? undefined : source === undefined ? null : diagnosticCode((source as { code?: unknown } | null)?.code);
+    this.data.result_code = !error ? undefined : typeof remote === 'number' && Number.isInteger(remote) && remote >= -999999 && remote <= 999999 ? remote : null;
   }
   snapshot(): RecordingAttemptReport {
     return structuredClone({ ...this.data, age_ms: bounded(this.now() - this.started), duration_ms: bounded((this.ended ?? this.now()) - this.started, 120000) });
