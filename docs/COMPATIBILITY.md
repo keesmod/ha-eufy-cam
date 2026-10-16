@@ -400,8 +400,11 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   that bridge.
 - **eufyCam 3 `T8160-C`, type 19**, and **Indoor Cam Pan&Tilt 2K `T8410C`,
   type 31**, recognized behind a HomeBase 3 from bridge 0.8.36. `T8160-C` was
-  reported. `T8410C` is admitted on public evidence. Behind a HomeBase 3 both
-  have software tests only, and hardware results are pending. A standalone
+  reported. `T8410C` is admitted on public evidence. An owner reported all
+  devices, the `T8160-C` and two type 31 Indoor Cam Pan&Tilt 2K included,
+  appearing with snapshots, live view, recordings and events behind a HomeBase 3
+  on integration 0.8.45. Audio and event types were not reported. Reported, not
+  independently reproduced. A standalone
   `T8410C` appears as a camera whose snapshot, live view and recordings are
   unsupported. With `experimental_standalone` on it tries its own local session
   from bridge 0.8.38, and a reported standalone result is listed below. Owners
