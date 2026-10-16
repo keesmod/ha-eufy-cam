@@ -297,22 +297,24 @@ successful thumbnail, and a failed operation on any owner. Since [issue
 standalone owner is the opt-in probe, because the bridge refuses its other
 recording requests before any client call, normally with
 `capability_unavailable`. A HomeBase success is not recorded, so its recordings
-and the events timeline do not fill the
-ring. A request can run one operation per owner, so a timeline over several
-HomeBases can add one record per failed owner. Two bridge cases have no client
-report. When the bridge's client is not connected, each owner of the request
-gets a record with reason `client_disconnected`. When a request ends with the
-generic `recording_unavailable` and no client report explains it, for example
+and the events timeline do not fill the ring. A request can run one operation
+per owner, so a timeline over several HomeBases can add one record per failed
+owner. Three bridge cases have no client report. When the bridge's client is not
+connected, each owner of the request gets a record with reason
+`client_disconnected`. When a request ends with the generic
+`recording_unavailable` and no client report explains it, for example
 `client_closed` before the client's recording access or an error of the bridge
 before the first operation, the owner of the latest operation, or else each
 owner of the request, gets a record with that error's code or
-`unclassified_error`. Such records have `query_stage=admission`,
+`unclassified_error`. When the opt-in probe fails before the client's recording
+access, for example with `operation_outside_hardware_scope` or `client_closed`,
+the probed camera gets a record with that error's code or `unclassified_error`
+and `returned=null`. Such records have `query_stage=admission`,
 `session_open=null` and the values of an operation that sent no page. Bridge
 refusals with their own answer, such as `live_busy`, `recording_busy`,
 `capability_unavailable` or a 400 input error, and a failure after a completed
-operation, such as a video conversion, add no record. The
-[playback attempt](PLAYBACK_REPORT.md#recording-stages-and-limits) keeps the
-latter.
+operation, such as a video conversion, add no record. The [playback
+attempt](PLAYBACK_REPORT.md#recording-stages-and-limits) keeps the latter.
 
 | Field | Source | Bound | Meaning |
 |---|---|---|---|
