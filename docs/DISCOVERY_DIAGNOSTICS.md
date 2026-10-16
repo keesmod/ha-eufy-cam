@@ -568,8 +568,8 @@ How to read a probe record:
 | `reason=device_request_timeout` at `query` with `ack_code=0` and `unhandled_replies=0` | The camera accepted the command but sent no answer within 15 seconds. The session is closed |
 | The same with a non-zero `ack_code` | The camera refused the command with that code |
 | The same with `ack_code=null` | The camera sent neither a command result nor an answer |
-| The same with `unhandled_reason=parse_error` | The camera answered the query in a shape the client cannot read. `unhandled_result_code` is the answer's database result. Only replies to this query or without an inner command are counted |
-| The same with `unhandled_reason=unknown_cmd` | The camera answered without a usable inner command, its code is `unhandled_result_code` |
+| The same with `unhandled_reason=parse_error` | The camera sent a reply the client cannot read, most likely its answer to the probe. `unhandled_result_code` is that reply's database result. An unreadable reply to the latest-info query 10013, which every connection sends, is not counted |
+| The same with `unhandled_reason=unknown_cmd` | The camera replied with an inner command the client does not handle, or without one, its code is `unhandled_result_code` |
 | `query_stage=connect` with `stage` and lookup fields | The session was gone before the probe and its new connection failed, read as in [lookup fields](#lookup-fields-of-a-connection-attempt) |
 | `query_stage=admission` | The client refused before sending, with the reason in `reason`, for example `station_busy`. The bridge itself never refuses a probe |
 | `reason=device_request_failed` at `query` with `pages=0` | The request could not be sent, for example because the library does not list the command for this camera type |
