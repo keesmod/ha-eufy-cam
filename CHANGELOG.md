@@ -55,14 +55,41 @@
   T8410 therefore does not work with the current request. Why the T8410s do
   not answer is not proven, and standalone recordings continue in a follow-up
   issue.
+- **Recordings on an experimental standalone camera** now show as not
+  available instead of failing after a wait, from bridge 0.8.39 with client
+  0.30.1 ([issue #175](https://github.com/keesmod/ha-eufy-cam/issues/175)).
+  The client reports the recordings of a standalone T84A1, T8410 or T8410C on
+  the experimental route as unavailable with reason
+  `standalone_recordings_unverified`. The card disables its Recordings button
+  and shows "Recordings: not available on the standalone camera connection",
+  in Dutch "Opnames: niet beschikbaar via de standalone cameraverbinding". The
+  list no longer waits about 15 seconds before it fails. Snapshot and live view
+  stay available. The events card leaves such a camera out, so the events
+  timeline of a setup that also has a HomeBase no longer fails after the
+  standalone camera's timeout.
+- No known request lists or plays the recordings of a standalone T8410. In the
+  [report of 2026-10-16](https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780)
+  both T8410s acknowledged the list query without answering it, and the T8410C
+  rejected it with `result_code=-1100`. The best next candidate, the database
+  query 10017 in the shape the Eufy app sends, has public results on other
+  standalone models but none on a T84xx camera, and it is not sent. This change
+  adds no device request and changes no payload. HomeBase cameras, their
+  requests and their recordings are unchanged.
+- For such a camera the bridge refuses each recording request before the
+  client, so the standalone `recording_query` records described above no
+  longer appear in **Download diagnostics**. Its device row shows
+  `media.recordings` with `available=false`, `status=unsupported` and
+  `reason=standalone_recordings_unverified`.
 
 Upgrade: update the HACS integration to 0.8.48 and the bridge app to 0.8.39,
 then restart Home Assistant. Keep the same token and session. No configuration
 migration is needed. Integration 0.8.47 still works with bridge 0.8.39, but its
 download drops the `recording_query` records and the attempt `cause` and
-`result_code`. The bridge's `Eufy discovery:` log lines still carry the
-records. With bridge 0.8.38 the download has no such records. Rollback: restore
-the bridge 0.8.38 app backup and integration 0.8.47.
+`result_code`, and a standalone camera's card shows the generic "Recordings:
+unavailable for this camera connection". The bridge's `Eufy discovery:` log
+lines still carry the records. With bridge 0.8.38 the download has no such
+records, and a standalone camera's recordings are offered and fail as before.
+Rollback: restore the bridge 0.8.38 app backup and integration 0.8.47.
 
 ## 0.8.47 - 2026-10-15
 

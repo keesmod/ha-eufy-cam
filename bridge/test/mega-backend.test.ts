@@ -950,6 +950,51 @@ test('a failed standalone connect records its stage and leaves the HomeBase conn
     await f.backend.close();
   }
 });
+// Issue #175: the client refuses recordings on an experimental standalone owner
+// with standalone_recordings_unverified. Its snapshot and live stay available.
+test('standalone_recordings_unverified refuses every recording operation before the client and keeps live (#175)', async () => {
+  const f = fixture(undefined, undefined, true);
+  f.client.discoverDevices = async () => standaloneInventory(true);
+  const homebase = f.client.getCameraCapabilities;
+  const allowed = { available: true, status: 'experimental' as const, reason: null as string | null };
+  const refused = { available: false, status: 'unsupported' as const, reason: 'standalone_recordings_unverified' };
+  f.client.getCameraCapabilities = async (id: string) =>
+    id === 'WALL' ? { snapshot: { ...allowed }, live: { ...allowed }, recordings: { ...refused } } : homebase(id);
+  const call = (name: string) => async () => {
+    f.calls.push(name);
+    return { complete: true, returned: 0, recordings: [] };
+  };
+  Object.assign(f.client, {
+    listRecordings: call('listRecordings'),
+    recordingCalendar: call('recordingCalendar'),
+    recordingThumbnail: call('recordingThumbnail'),
+    downloadRecording: call('downloadRecording'),
+  });
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.deepEqual(f.backend.inventory().find((camera) => camera.serial === 'WALL')?.capabilities?.recordings, refused);
+    const row = f.backend.supportReport().last_discovery.find((r) => r.event === 'device' && r.model === 'T84A1')!;
+    assert.deepEqual((row.media as Record<string, unknown>).recordings, refused);
+    assert.equal(f.backend.canStartLive('WALL'), true);
+    const abort = new AbortController();
+    for (const operation of [
+      () => f.backend.recordings.list('WALL', '2026-10-16', abort.signal),
+      () => f.backend.recordings.calendar(['WALL'], '2026-10', abort.signal),
+      () => f.backend.recordings.thumbnail('WALL', 'missing', abort.signal),
+      () => f.backend.recordings.video('WALL', 'missing', abort.signal, async () => {}),
+    ])
+      await assert.rejects(operation(), { code: 'capability_unavailable', status: 503 });
+    assert.deepEqual(f.calls, []);
+    assert.equal(f.backend.recordings.metrics.queries, 0);
+    assert.equal(f.backend.recordings.metrics.downloads, 0);
+    assert.deepEqual(f.backend.supportReport().recent_events.filter((r) => r.event === 'recording_query'), []);
+    // The HomeBase camera of the same account still reaches the client.
+    await f.backend.recordings.list('CAM', '2026-10-16', abort.signal);
+    assert.deepEqual(f.calls, ['listRecordings']);
+  } finally {
+    await f.backend.close();
+  }
+});
 // What client 0.30.0 reports through onLookup when an attempt's lookup ends (#152).
 const lookupSeen = {
   rounds: 3, broadcastTargets: 2, broadcastEnabled: true, sendErrors: 0, datagrams: 0, otherHeaders: 0,

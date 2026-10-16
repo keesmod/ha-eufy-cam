@@ -154,8 +154,9 @@ in the `Eufy discovery:` report and in **Download diagnostics**, and as an
 With the option on, the bridge connects to each admitted camera at every
 discovery, normally at startup, over the same local lookup and command key it
 uses for a HomeBase. Each camera that does not answer adds up to 20 seconds to
-startup. The camera's snapshot, live view and recordings are offered as
-experimental features and work only if that session works. On
+startup. The camera's snapshot and live view are offered as experimental
+features and work only if that session works. From bridge 0.8.39 with client
+0.30.1 its recordings show as not available, see below. On
 [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152), live video was
 reported working on two standalone T8410s, with firmware 2.3.2.4 and 2.3.1.6.
 The camera on 2.3.1.6 first ended its connection at the lookup in several runs,
@@ -175,13 +176,12 @@ issue #152 reporter's standalone T8410 on firmware 2.3.2.4 showed live view,
 but "Show recordings" failed with "The HomeBase connection is unavailable. Try
 again shortly." The cause was not known at the time. From integration 0.8.48
 the dialog says "Recordings are unavailable for this camera right now. Try
-again shortly." instead. From bridge 0.8.39, each list, calendar and download
-on a standalone camera and each failed thumbnail leaves a `recording_query`
-record that says how far it got and what the camera answered. A repeat of the
-same outcome for the same camera and operation in one report adds no record.
-Integration 0.8.48 keeps these records in **Download diagnostics**, see
-[failed recordings](DISCOVERY_DIAGNOSTICS.md#failed-recordings).
-A download refused because it would need a cloud key shows
+again shortly." instead. Bridge 0.8.39-beta.1 recorded each list, calendar and
+download on a standalone camera and each failed thumbnail as a
+`recording_query` record that says how far it got and what the camera
+answered, and integration 0.8.48-beta.1 kept these records in **Download
+diagnostics**, see [failed recordings](DISCOVERY_DIAGNOSTICS.md#failed-recordings).
+A download refused because it would need a cloud key showed
 `recording_cipher_unavailable` as the `cause` of its playback attempt.
 
 On 2026-10-16 the same reporter opened the recordings of three standalone
@@ -205,12 +205,67 @@ analog
 where a standalone E30 never answered 10006, and the camera's continuous-only
 recording. Which request the camera answers for its continuous timeline is not
 known. The reporter reads the T8410C's -1100 as the result of missing storage.
-Neither reading is proven. Standalone recordings continue in a follow-up issue.
+Neither reading is proven.
+
+From integration 0.8.48 with bridge 0.8.39 and client 0.30.1
+([issue #175](https://github.com/keesmod/ha-eufy-cam/issues/175)), the
+recordings of a standalone T84A1, T8410 or T8410C on the experimental route
+show as not available, with reason `standalone_recordings_unverified`. The
+card disables its Recordings button and shows "Recordings: not available on
+the standalone camera connection", in Dutch "Opnames: niet beschikbaar via de
+standalone cameraverbinding". Opening the recordings no longer waits about 15
+seconds before it fails, because the bridge refuses each list, calendar,
+thumbnail and download before any request reaches the camera. The events card
+leaves such a camera out. Snapshot and live view stay available, and HomeBase
+cameras and their recordings are unchanged. With integration 0.8.47 the card
+shows the generic "Recordings: unavailable for this camera connection"
+instead. In **Download diagnostics** and on the `Eufy discovery:` log line, the
+camera's device row has `media.recordings` with `available=false`,
+`status=unsupported` and `reason=standalone_recordings_unverified`, and no
+`recording_query` record appears for the camera.
+
+No known request lists or plays the recordings of a standalone T8410, so the
+client sends none. The candidates, strongest first:
+
+1. The database query 10017 in the shape the Eufy app sends it, with start
+   time `0` and no device filter. A public report describes an iPhone app
+   capture on a standalone T86P2 that answered it with rows, while the same
+   camera acknowledged 10006 without answering, like the T8410s
+   ([peakwellnv/eufy-bridge](https://github.com/peakwellnv/eufy-bridge/blob/4c21849/docs/RECORDINGS_RESEARCH.md),
+   a public report from a repository without a licence, so nothing is copied
+   from it). A variant with the camera's own serial as device filter is
+   claimed to work on the standalone T8171 and T817L
+   ([mscodemonkey/eufy-mega-security](https://github.com/mscodemonkey/eufy-mega-security/tree/603e668),
+   `first-party-ppcs.ts`, hardware claim). The app's model descriptions
+   declare 10017 for models without an event list command, and the T8410
+   description lacks that command
+   ([alaraun/python-eufy-home-security](https://github.com/alaraun/python-eufy-home-security/tree/a729675),
+   `commands.md`, an app declaration from decompilation, not a hardware
+   result). A standalone E30 answered 10017 while it stayed silent on 10006
+   ([#963](https://github.com/bropat/eufy-security-client/issues/963),
+   reported). None of these covers a T84xx camera, and the reporter's T8410s
+   keep no event clips, so the expected answer is an empty list. A list would
+   not play either, because no evidenced decryption path exists for a
+   standalone camera's recordings. A bounded probe of this request is the next
+   step, in a follow-up issue.
+2. The count-by-date query 10008 and the latest-info query 10013 have public
+   answers from standalone cameras, but they list and play nothing. They are
+   diagnostic only.
+3. The continuous range query 1700 with 6000, and 6001 for playback, fits a
+   continuous timeline. Its only evidence is a HomeBase 3 T8030 with a T8600
+   ([ferryhe/eufy-agent-hub](https://github.com/ferryhe/eufy-agent-hub),
+   reported). Nothing covers a standalone or T84xx camera.
+4. Variants of 10006, with the camera's own serial as device filter, channel
+   255 or extra fields, have HomeBase-only evidence. 10006 stays silent on the
+   standalone T86P2 and E30.
+5. The commands 1041, 1042, 1025 and 1026 are rejected. No public request
+   body, reply or capture exists for them, only their names, and neighbouring
+   command numbers delete a recording or format the microSD card.
 
 To test it, update the app and the integration, set `experimental_standalone`
 to true in the app's configuration, restart the app, wait for the startup
-result, try a snapshot, live view and a recording, then use **Download
-diagnostics** as described in [discovery diagnostics](DISCOVERY_DIAGNOSTICS.md#experimental-standalone-cameras).
+result, try a snapshot and live view, then use **Download diagnostics** as
+described in [discovery diagnostics](DISCOVERY_DIAGNOSTICS.md#experimental-standalone-cameras).
 Turn the option off again to return to the previous behavior.
 
 ## Recovery and maintenance

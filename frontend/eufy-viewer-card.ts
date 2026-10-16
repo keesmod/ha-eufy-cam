@@ -285,6 +285,7 @@ export class EufyViewerCard extends HTMLElement {
   _capabilityReason(reason?: string | null) {
     const nl = this._hass?.language?.startsWith("nl");
     if (reason === "standalone_transport_unverified") return nl ? "standalone cameraverbinding nog niet ondersteund" : "standalone camera transport is not implemented";
+    if (reason === "standalone_recordings_unverified") return nl ? "niet beschikbaar via de standalone cameraverbinding" : "not available on the standalone camera connection";
     if (reason === "camera_media_unverified") return nl ? "media onbewezen voor deze camera en HomeBase-firmware" : "media unverified for this camera and owner firmware";
     if (reason === "invalid_connection_credentials") return nl ? "bruikbare lokale verbindingsgegevens ontbreken" : "usable local connection credentials are missing";
     return nl ? "niet beschikbaar voor deze cameraverbinding" : "unavailable for this camera connection";
