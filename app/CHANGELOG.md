@@ -10,9 +10,9 @@
   bridge passes each list, calendar, thumbnail and download its signal and
   three callbacks. Client 0.30.1 reports through them what the operation saw.
 - A HomeBase gets a record only for a failed operation, so its recordings and
-  the events timeline do not fill the 100 recent events. A camera on the
-  experimental standalone route gets no record of an operation, see the
-  issue #175 entry below. When the bridge's client is not connected, each
+  the events timeline do not fill the 100 recent events. A camera on the experimental standalone route gets no record when its
+  recordings are opened, see the issue #175 entry below. Only the opt-in
+  `standalone_recording_probe` entry below records one, with `query=probe`. When the bridge's client is not connected, each
   owner of the request gets a record with reason `client_disconnected`. A
   failure the client did not report, such as `client_closed`, keeps its code,
   and an error that is no client error is `unclassified_error`.
@@ -74,8 +74,9 @@
   adds up to about 15 seconds plus its connection, and the HomeBase cameras of
   a mixed setup wait too. Turn the option off before you enter your Eufy
   credentials again in Home Assistant, because that login waits for the
-  discovery. A camera that does not answer within 15 seconds has its session
-  closed, and snapshot and live view connect again on demand. The log then
+  discovery. A camera that does not answer within 15 seconds has its session closed. Live
+  view connects again on demand, and the snapshot keeps its last picture until a
+  live view replaces it. The log then
   shows a `station_connection` line with `phase=observation` and
   `status=disconnected` before the probe line, and the camera's device row in
   that report shows `owner_status=disconnected`. The option stays in stable

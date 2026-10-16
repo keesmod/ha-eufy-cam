@@ -12,8 +12,9 @@
 - A HomeBase gets a record only for a failed operation, so its recordings and
   the events timeline do not fill the 100 recent events. The bridge also
   records its own refusal when its client is not connected, as
-  `client_disconnected`, for any owner. A camera on the experimental standalone
-  route gets no record of an operation, see the issue #175 entry below.
+  `client_disconnected`, for any owner. A camera on the experimental standalone route gets no record when its
+  recordings are opened, see the issue #175 entry below. Only the opt-in probe
+  of the issue #178 entry below records one, with `query=probe`.
 - The record says how far the operation got (`query_stage`), why it failed
   (`reason`, `result_code`), what the device answered to the last query page
   (`ack_code`, `query_answered`, `query_result_code`, `query_rows`), how many
@@ -93,7 +94,8 @@
   [discovery diagnostics](docs/DISCOVERY_DIAGNOSTICS.md#standalone-recording-probe).
   The download keeps `query=probe` and the `summary` field
   `standalone_recording_probe`, a strict boolean that is `true` when the option
-  is on. Any other value becomes `null`. The assessment adds no finding.
+  is on. Any other value becomes `null`. The assessment adds no finding for the probe
+  record.
 - The option is off by default and stays in stable releases as a documented
   diagnostic. The probe sends nothing to a HomeBase or to a camera behind one,
   and every other request and payload is unchanged. It only reads. It
@@ -106,7 +108,12 @@
   limit. A camera that does not answer has its session closed after 15
   seconds. A `station_connection` record with `phase=observation` and
   `status=disconnected` then precedes the probe record, and the camera's device
-  row in that report shows `owner_status=disconnected`. See
+  row in that report shows `owner_status=disconnected`. The assessment in
+  **Download diagnostics** then reports that camera as `standalone_connection`
+  with "The experimental standalone camera connected on the local route, and
+  its session later closed." That finding comes from the probe's close, not
+  from a connection fault. An answer, also one with `history_rejected`, adds no
+  finding. See
   [standalone recording probe](docs/USAGE.md#standalone-recording-probe).
 
 Upgrade: update the HACS integration to 0.8.48 and the bridge app to 0.8.39,

@@ -221,8 +221,10 @@ cameras and their recordings are unchanged. With integration 0.8.47 the card
 shows the generic "Recordings: unavailable for this camera connection"
 instead. In **Download diagnostics** and on the `Eufy discovery:` log line, the
 camera's device row has `media.recordings` with `available=false`,
-`status=unsupported` and `reason=standalone_recordings_unverified`, and no
-`recording_query` record appears for the camera.
+`status=unsupported` and `reason=standalone_recordings_unverified`, and no `recording_query` record
+appears for the camera when you open its recordings. Only the opt-in
+[standalone recording probe](#standalone-recording-probe) adds one, with
+`query=probe`.
 
 No known request lists or plays the recordings of a standalone T8410, so the
 client sends none when you open the recordings. The candidates, strongest
@@ -312,12 +314,15 @@ What it costs:
   discovery, and Home Assistant gives up after about a minute with "Cannot
   communicate with the bridge" while the bridge still finishes.
 - When a camera does not answer within 15 seconds, its session is closed, as
-  after any timed-out query. Snapshot and live view connect again when you
-  open them. The app log then shows a `station_connection` line with
-  `"phase":"observation"` and `"status":"disconnected"` just before the probe
-  line, and the camera's device row in that report shows
-  `"owner_status":"disconnected"`. An answer, also a rejection, keeps the
-  session open.
+  after any timed-out query. Live view connects again when you open it.
+  Opening the snapshot does not connect, so it keeps its last picture, if any,
+  until a live view replaces it. The app log then shows a `station_connection`
+  line with `"phase":"observation"` and `"status":"disconnected"` just before
+  the probe line, and the camera's device row in that report shows
+  `"owner_status":"disconnected"`. The assessment in **Download diagnostics**
+  then lists a `standalone_connection` finding saying that the camera connected
+  and its session later closed. That is the probe's close, not a connection
+  fault. An answer, also a rejection, keeps the session open.
 
 Each probed camera leaves one `recording_query` line with `"query":"probe"` in
 the app log, and the discovery `summary` line has

@@ -582,14 +582,24 @@ that fails after that connection closes the session, for example after the
 15-second timeout. A `station_connection` record with `phase=observation` and
 `status=disconnected` then comes just before the probe record, and the
 camera's device row in that report shows `owner_status=disconnected` and
-`owner_connected=false`. An answer, also one with `history_rejected`, keeps the
-session open and the row at `owner_status=connected`. None of these values
+`owner_connected=false`. The assessment then reports the camera as
+`standalone_connection`, connected on the local route with its session later
+closed. With the probe option on, that finding comes from the probe's close and
+does not show a connection fault. An answer, also one with `history_rejected`,
+keeps the session open and the row at `owner_status=connected`. None of these values
 proves a cause on its own. Each model's result, a failure included, goes into the
 [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md).
 
 When the summary has `"standalone_recording_probe":true` but a camera has no
-probe line, its connection in that discovery failed or it is not on the
-experimental route. With `false` or no field the option is off, or the bridge
+probe line, its connection in the login discovery failed or it is not on the
+experimental route. The field says that the option is on, not that this
+discovery probed. A discovery after a cloud reconnect sends no probe, so in a
+download taken after one, `last_discovery` is a newer report than the probe
+records. Match a probe record to its discovery by `report`. A camera that was
+offline at login and connected in a later discovery shows `status=connected` in
+that later report and still has no probe line. The download keeps only the
+latest 100 events, so the probe record can be gone from it while the app log
+still has it. With `false` or no field the option is off, or the bridge
 is older than 0.8.39-beta.3. Integration 0.8.48-beta.1 and beta.2 show
 `query=null` for a probe record and drop the summary field, and integration
 0.8.47 drops the record. The app log lines carry both in full.
