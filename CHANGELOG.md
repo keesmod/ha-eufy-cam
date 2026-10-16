@@ -42,8 +42,19 @@
 - Client 0.30.1 only observes the operation. Its queries, page sizes, timeouts
   and error codes are unchanged, and a failed or cancelled operation still
   closes the owner's session. The bridge's HTTP answers keep their status codes
-  and bodies. Standalone recordings stay unconfirmed: the cause of the
-  2026-10-15 failure is still unknown, and these records are meant to show it.
+  and bodies. On 2026-10-16 the
+  [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152) reporter's
+  records from integration 0.8.48-beta.1 and bridge 0.8.39-beta.1 showed two
+  standalone T8410s on firmware 2.3.x acknowledging the list query
+  (`ack_code=0`) without ever answering it, and a standalone T8410C on firmware
+  3.3.4.4 without a microSD card rejecting it with `result_code=-1100`
+  ([report](https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780)). The same
+  report had a snapshot and live video working on that T8410C
+  ([issue #168](https://github.com/keesmod/ha-eufy-cam/issues/168)).
+  Reported, not independently reproduced. Recording playback on a standalone
+  T8410 therefore does not work with the current request. Why the T8410s do
+  not answer is not proven, and standalone recordings continue in a follow-up
+  issue.
 
 Upgrade: update the HACS integration to 0.8.48 and the bridge app to 0.8.39,
 then restart Home Assistant. Keep the same token and session. No configuration

@@ -178,6 +178,13 @@ Bridge 0.8.38 records what that lookup saw, see
 other devices in the account, and none from the camera or its inventory
 address. A later run connected, and both cameras streamed live video. See the
 [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-standalone-t8410-result-2026-10-13).
+A report on 2026-10-16, with bridge 0.8.39-beta.1, client 0.30.1-beta.1 and
+integration 0.8.48-beta.1, gave two more failed runs of that camera while it
+was unpowered, at startup on 2026-10-15 and at its first recordings attempt.
+Each had 20 lookup rounds, 37 or 38 replies from other devices in the account,
+no own reply and `lookup_inventory_reply=none` ([report][152-records]). After
+power was restored it streamed live video. Whether it was unpowered in the
+earlier failed runs is not known. Reported, not independently reproduced.
 
 On 2026-10-09 the reporter of [issue #149][149] ran integration 0.8.42 and
 bridge 0.8.33 with client 0.28.2 on Home Assistant 2026.10.0, with a T8030 on
@@ -214,9 +221,9 @@ which route applies. A standalone `T8410C`, with an empty or self parent, is now
 reported as `relationship=standalone` with
 `relationship_reason=standalone_transport_unverified` instead of
 `unsupported_device`, on bridge 0.8.36 and 0.8.37 also with the opt-in. Home Assistant then creates it as a
-camera whose snapshot, live view and recordings are unsupported. Both new pairs
-have software tests only, and hardware results for both remain pending in the
-client's [model matrix][149-matrix].
+camera whose snapshot, live view and recordings are unsupported. Behind a HomeBase 3 both new pairs have software tests only, and hardware
+results for both remain pending in the client's [model matrix][149-matrix]. A
+reported standalone `T8410C` result follows below.
 
 On 2026-10-15 the [issue #152][152] reporter shared the [`device` row][168-row]
 of a standalone Indoor Cam Pan&Tilt 2K `T8410C` on firmware 3.3.4.4 without a
@@ -227,10 +234,25 @@ HomeBase, from bridge 0.8.38-beta.1 with client 0.30.0-beta.1 and integration
 `relationship_transport` and a complete `descriptor`, and the bridge made no
 session attempt. Client 0.30.0 also admits exactly a standalone `T8410C`/type
 31 to the experimental route ([issue #168][168]). The first betas, bridge
-0.8.38-beta.1 with client 0.30.0-beta.1, do not include it. No session result
-is recorded yet. Reported, not independently reproduced.
+0.8.38-beta.1 with client 0.30.0-beta.1, do not include it. That report has
+no session result. Reported, not independently reproduced.
+
+In a [report on 2026-10-16][152-records] the same reporter ran integration
+0.8.48-beta.1
+and bridge 0.8.39-beta.1 with client 0.30.1-beta.1 on that camera, with
+`experimental_standalone` on. Its `device` row had
+`relationship_transport=experimental`, no `relationship_reason`,
+`owner_status=connected` and its snapshot, live and recordings rows available
+as experimental. Its startup `station_connection` record was connected after
+one lookup round with the camera's own reply (`lookup_rounds=1`,
+`lookup_own_replies=1`, `lookup_inventory_reply=own`). Live video worked, and
+Home Assistant's camera image returned a current frame. Its recording list was
+rejected with `history_rejected` and `result_code=-1100`, see
+[failed recordings](#failed-recordings). The camera has no microSD card.
+Reported, not independently reproduced.
 
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
+[152-records]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780
 [168]: https://github.com/keesmod/ha-eufy-cam/issues/168
 [168-row]: https://github.com/keesmod/ha-eufy-cam/issues/168#issuecomment-6189829101
 [152-lookup]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6152282566
@@ -456,6 +478,7 @@ The fields that tell the cases apart:
 | `query_stage=connect` with `stage` and lookup fields | The camera's connection failed at that `stage`, read as in [lookup fields](#lookup-fields-of-a-connection-attempt). `connection_busy` means another connection was in flight |
 | `reason=device_request_timeout` at `query`, `query_answered=false`, `ack_code=null`, `unhandled_replies=0` | The camera stayed silent to the query for 15 seconds |
 | The same with a non-zero `ack_code` | The camera refused the query command with that code |
+| The same with `ack_code=0` | The camera accepted the query command but sent no database answer within 15 seconds |
 | The same with `unhandled_reason=unknown_cmd` | The camera answered without a usable inner command, its code is `unhandled_result_code`, for example -6006 |
 | The same with `unhandled_reason=parse_error` | The camera answered with something the session could not parse |
 | `reason=history_rejected` at `validate` | The camera answered and rejected the query with the database result in `result_code` |
@@ -467,6 +490,20 @@ The fields that tell the cases apart:
 repeat of the same outcome for the same camera and operation in one report adds
 no record. None of these values proves a cause on its own. The field reference
 is in the [report contract](DEVELOPMENT.md#recording-query-records).
+
+The [issue #152 report of 2026-10-16][152-records], with bridge 0.8.39-beta.1,
+client 0.30.1-beta.1 and integration 0.8.48-beta.1, is a worked example. On two standalone T8410s with firmware 2.3.2.4 and 2.3.1.6, each list on a
+powered camera ended at
+`query_stage=query` with `reason=device_request_timeout` after about 16
+seconds, `ack_code=0`, `query_answered=false` and `unhandled_replies=0`. The
+camera acknowledged the query command with result 0, but no answer arrived
+within the 15-second page bound. On a standalone T8410C with firmware 3.3.4.4
+and no microSD card, each list ended after about a second at
+`query_stage=validate` with `reason=history_rejected`, `ack_code=0`,
+`query_answered=true`, `result_code=-1100` and `query_rows=0`. The camera
+answered and rejected the query. The reporter reads -1100 as missing storage,
+which is not proven. The first attempt on the 2.3.1.6 camera, made while it was unpowered, ended at `query_stage=connect` with `stage=lookup` and `lookup_own_replies=0`.
+Reported, not independently reproduced.
 
 ## Privacy and scope
 
