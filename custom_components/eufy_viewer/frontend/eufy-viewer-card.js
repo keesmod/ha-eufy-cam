@@ -1,4 +1,4 @@
-const EUFY_VIEWER_CARD_VERSION = "0.8.48-beta.1";
+const EUFY_VIEWER_CARD_VERSION = "0.8.48-beta.2";
 "use strict";
 const recordingModeKey = 'eufy-viewer.recording-mode';
 let recordingMemoryMode = 'auto';
@@ -655,6 +655,8 @@ export class EufyViewerCard extends HTMLElement {
         const nl = this._hass?.language?.startsWith("nl");
         if (reason === "standalone_transport_unverified")
             return nl ? "standalone cameraverbinding nog niet ondersteund" : "standalone camera transport is not implemented";
+        if (reason === "standalone_recordings_unverified")
+            return nl ? "niet beschikbaar via de standalone cameraverbinding" : "not available on the standalone camera connection";
         if (reason === "camera_media_unverified")
             return nl ? "media onbewezen voor deze camera en HomeBase-firmware" : "media unverified for this camera and owner firmware";
         if (reason === "invalid_connection_credentials")

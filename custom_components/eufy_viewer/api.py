@@ -126,6 +126,9 @@ class CameraInfo:
             "standalone_transport_unverified": (
                 "Standalone camera transport is not implemented"
             ),
+            "standalone_recordings_unverified": (
+                "Recordings are not available on the standalone camera connection"
+            ),
             "camera_media_unverified": (
                 "Media is unverified for this camera and owner firmware"
             ),
@@ -253,6 +256,7 @@ class BridgeState:
                         if reason
                         in {
                             "standalone_transport_unverified",
+                            "standalone_recordings_unverified",
                             "camera_media_unverified",
                             "unsupported_station",
                             "invalid_connection_credentials",

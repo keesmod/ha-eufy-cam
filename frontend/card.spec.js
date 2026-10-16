@@ -238,6 +238,27 @@ test('capability status disables media controls and never fetches unsupported sn
   expect(await page.evaluate(() => calls.length)).toBe(0);
 });
 
+test('standalone recordings denied while live is available keep live and never load recordings', async ({ page }) => {
+  await page.evaluate(() => {
+    window.fetches = [];
+    const allowed = { available: true, status: 'experimental', reason: null };
+    card._hass.fetchWithAuth = async path => { fetches.push(path); return new Response('{}', { headers: { 'content-type': 'application/json' } }); };
+    card._hass.states['camera.front'].attributes.capabilities = { snapshot: allowed, live: allowed, recordings: { available: false, status: 'unsupported', reason: 'standalone_recordings_unverified' } };
+    card.hass = card._hass;
+  });
+  await expect(page.getByRole('button', { name: 'Recordings', exact: true })).toBeDisabled();
+  await expect(page.locator('.capability')).toHaveText('Recordings: not available on the standalone camera connection');
+  await expect(page.getByRole('button', { name: 'Watch live' })).toBeEnabled();
+  // Even with the dialog open, the load makes no request.
+  await page.evaluate(async () => { card._recordDialog.showModal(); await card._loadRecordings(); });
+  expect(await page.evaluate(() => fetches)).toEqual([]);
+  expect(await page.evaluate(() => calls.length)).toBe(0);
+  await page.evaluate(() => { card.hass = { ...card._hass, language: 'nl' }; });
+  await expect(page.locator('.capability')).toHaveText('Opnames: niet beschikbaar via de standalone cameraverbinding');
+  expect(await page.evaluate(() => card._recordDialog.open)).toBe(false);
+  await expect(page.getByRole('button', { name: 'Live bekijken' })).toBeEnabled();
+});
+
 test('experimental software does not claim missing hardware verification or start live', async ({ page }) => {
   await page.evaluate(() => {
     card._hass.states['camera.front'].attributes.capabilities = Object.fromEntries(['snapshot', 'live', 'recordings'].map(feature => [feature, { available: true, status: 'experimental', reason: null }]));

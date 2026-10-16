@@ -253,6 +253,34 @@ def test_capabilities_are_optional_and_unknown_fields_are_ignored():
             BridgeState.parse(data)
 
 
+def test_standalone_recordings_reason_passes_while_live_stays_available():
+    # Issue #175: the client refuses recordings, not snapshot or live, on an
+    # experimental standalone owner.
+    data = copy.deepcopy(STATE)
+    data["cameras"][0]["capabilities"] = {
+        "snapshot": {"available": True, "status": "experimental", "reason": None},
+        "live": {"available": True, "status": "experimental", "reason": None},
+        "recordings": {
+            "available": False,
+            "status": "unsupported",
+            "reason": "standalone_recordings_unverified",
+        },
+    }
+    camera = BridgeState.parse(data).cameras["CAM123"]
+    assert camera.permits("snapshot")
+    assert camera.permits("live")
+    assert not camera.permits("recordings")
+    assert camera.capabilities["recordings"] == {
+        "available": False,
+        "status": "unsupported",
+        "reason": "standalone_recordings_unverified",
+    }
+    assert (
+        camera.capability_reason("recordings")
+        == "Recordings are not available on the standalone camera connection"
+    )
+
+
 @pytest.mark.parametrize(
     "value",
     [

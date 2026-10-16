@@ -9,13 +9,13 @@
   experimental route with `recording_unavailable`, and nothing said why. The
   bridge passes each list, calendar, thumbnail and download its signal and
   three callbacks. Client 0.30.1 reports through them what the operation saw.
-- A camera on the experimental standalone route gets a record for each list,
-  calendar and download and for each failed thumbnail. A HomeBase gets one only
-  for a failed operation, so its recordings and the events timeline do not fill
-  the 100 recent events. When the bridge's client is not connected, each owner
-  of the request gets a record with reason `client_disconnected`. A failure the
-  client did not report, such as `client_closed`, keeps its code, and an error
-  that is no client error is `unclassified_error`.
+- A HomeBase gets a record only for a failed operation, so its recordings and
+  the events timeline do not fill the 100 recent events. A camera on the
+  experimental standalone route gets no record of an operation, see the
+  issue #175 entry below. When the bridge's client is not connected, each
+  owner of the request gets a record with reason `client_disconnected`. A
+  failure the client did not report, such as `client_closed`, keeps its code,
+  and an error that is no client error is `unclassified_error`.
 - The record has the stage the operation reached, its reason and numeric
   result, the device's answer to the last query page, the database replies the
   session could not use, row counts of an answered list including rows with a
@@ -29,17 +29,34 @@
   `recording_cipher_unavailable` behind `recording_unavailable`. A transfer that
   ended incomplete gives `transfer_` plus the client's reason, such as
   `transfer_connection_lost`.
-- Observation only. The HTTP status codes and bodies of every recording
-  request stay the same, and so do the client's queries, page sizes, timeouts
+- Observation only for a HomeBase. The HTTP status codes and bodies of its
+  recording requests stay the same, and so do the client's queries, page sizes, timeouts
   and error codes. A failed or cancelled operation still closes the owner's
   session.
+- Pin client 0.30.1, which reports the recordings of an experimental standalone
+  T84A1, T8410 or T8410C as unavailable with reason
+  `standalone_recordings_unverified`
+  ([issue #175](https://github.com/keesmod/ha-eufy-cam/issues/175)). No known
+  request lists or plays the recordings of a standalone T8410. In the
+  [report of 2026-10-16](https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780)
+  both T8410s acknowledged the list query without answering it, and the T8410C
+  rejected it with result -1100. The bridge source is unchanged. Its existing
+  capability check refuses each list, calendar, thumbnail and download for
+  such a camera with `capability_unavailable` (HTTP 503) before any client
+  call. The bridge therefore writes no `recording_query` record of its operations,
+  and the 15-second wait is gone. The device row's
+  `media.recordings` in the `Eufy discovery:` log line and the diagnostics
+  download carries the reason. Snapshot and live view stay available. HomeBase
+  cameras, their requests and their recordings are unchanged, and the client
+  sends no new device request.
 
 Upgrade: keep the same token and session. Update the integration to 0.8.48 to
 keep the `recording_query` records and the attempt `cause` in **Download
-diagnostics**, and for recording texts that no longer name a HomeBase.
-Integration 0.8.47 still works but drops the records and the cause. The log
-lines still carry the records. Rollback: restore the 0.8.38 app backup and
-integration 0.8.47.
+diagnostics**, for recording texts that no longer name a HomeBase, and for the
+standalone recordings text. Integration 0.8.47 still works but drops the
+records and the cause, and shows the generic "Recordings: unavailable for this
+camera connection" on a standalone camera. The log lines still carry the
+records. Rollback: restore the 0.8.38 app backup and integration 0.8.47.
 
 ## 0.8.38 - 2026-10-15
 

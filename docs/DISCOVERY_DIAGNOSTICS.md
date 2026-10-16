@@ -393,10 +393,10 @@ After a connected result, the media rows and a snapshot, live view and
 recording attempt show whether the camera answers those commands on its own
 storage. The first answered snapshot, recording or live result shows whether
 the camera accepts the command key. A live view or snapshot shows that in the
-viewer. Before bridge 0.8.39 a failed recording list left no record, so only
-[recording query records](#failed-recordings) from bridge 0.8.39 show how a
-recording attempt ended. Include the complete download in
-[client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
+viewer. From bridge 0.8.39 with client 0.30.1 the camera's `media.recordings`
+has `reason=standalone_recordings_unverified` and no recording request is
+sent, see [failed recordings](#failed-recordings). Include the complete
+download in [client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
 
 ### Lookup fields of a connection attempt
 
@@ -443,11 +443,24 @@ case.
 Since bridge 0.8.39 with client 0.30.1 and integration 0.8.48, a recording
 operation leaves a `recording_query` record in `recent_events` and in the
 bridge's `Eufy discovery:` log lines
-([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). A camera on
-the experimental standalone route gets one for each list, calendar and
-download and for each failed thumbnail, a HomeBase only for a failed
-operation. The dialog's text, such as "Recordings are unavailable for this
-camera right now. Try again shortly.", does not say why. The record does.
+([issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152)). A HomeBase
+gets one only for a failed operation. The dialog's text, such as "Recordings
+are unavailable for this camera right now. Try again shortly.", does not say
+why. The record does.
+
+A camera on the experimental standalone route gets no such record. From bridge
+0.8.39 with client 0.30.1 its recordings show as not available with reason
+`standalone_recordings_unverified`
+([issue #175](https://github.com/keesmod/ha-eufy-cam/issues/175)). The
+integration and the bridge refuse each of its recording requests with
+`capability_unavailable` before any query, so opening its recordings leaves no
+`recording_query` record and sends the camera nothing. Its camera row on the
+`Eufy discovery:` log line and in **Download diagnostics** has
+`media.recordings` with `available=false`, `status=unsupported` and
+`reason=standalone_recordings_unverified`. Bridge 0.8.39-beta.1 with client
+0.30.1-beta.1 still sent such a camera's queries and recorded each list,
+calendar and download and each failed thumbnail, as in the worked example
+below.
 
 When "Show recordings" fails:
 
