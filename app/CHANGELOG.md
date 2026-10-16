@@ -11,10 +11,11 @@
   three callbacks. Client 0.30.1 reports through them what the operation saw.
 - A HomeBase gets a record only for a failed operation, so its recordings and
   the events timeline do not fill the 100 recent events. A camera on the
-  experimental standalone route gets no record, see the issue #175 entry below. When the bridge's client is not connected, each owner
-  of the request gets a record with reason `client_disconnected`. A failure the
-  client did not report, such as `client_closed`, keeps its code, and an error
-  that is no client error is `unclassified_error`.
+  experimental standalone route gets no record of an operation, see the
+  issue #175 entry below. When the bridge's client is not connected, each
+  owner of the request gets a record with reason `client_disconnected`. A
+  failure the client did not report, such as `client_closed`, keeps its code,
+  and an error that is no client error is `unclassified_error`.
 - The record has the stage the operation reached, its reason and numeric
   result, the device's answer to the last query page, the database replies the
   session could not use, row counts of an answered list including rows with a
@@ -42,8 +43,8 @@
   rejected it with result -1100. The bridge source is unchanged. Its existing
   capability check refuses each list, calendar, thumbnail and download for
   such a camera with `capability_unavailable` (HTTP 503) before any client
-  call. The bridge therefore writes no `recording_query` record of its queries, and the
-  15-second wait is gone. The device row's
+  call. The bridge therefore writes no `recording_query` record of its operations,
+  and the 15-second wait is gone. The device row's
   `media.recordings` in the `Eufy discovery:` log line and the diagnostics
   download carries the reason. Snapshot and live view stay available. HomeBase
   cameras, their requests and their recordings are unchanged, and the client

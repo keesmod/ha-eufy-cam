@@ -12,8 +12,8 @@
 - A HomeBase gets a record only for a failed operation, so its recordings and
   the events timeline do not fill the 100 recent events. The bridge also
   records its own refusal when its client is not connected, as
-  `client_disconnected`. A camera on the experimental standalone route gets no
-  record, see the issue #175 entry below.
+  `client_disconnected`, for any owner. A camera on the experimental standalone
+  route gets no record of an operation, see the issue #175 entry below.
 - The record says how far the operation got (`query_stage`), why it failed
   (`reason`, `result_code`), what the device answered to the last query page
   (`ack_code`, `query_answered`, `query_result_code`, `query_rows`), how many
@@ -76,7 +76,7 @@
   requests and their recordings are unchanged.
 - For such a camera the bridge refuses each recording request with
   `capability_unavailable` before any client call, so **Download diagnostics**
-  has no `recording_query` record of its queries. Its device row shows
+  has no `recording_query` record of its operations. Its device row shows
   `media.recordings` with `available=false`, `status=unsupported` and
   `reason=standalone_recordings_unverified`.
 
