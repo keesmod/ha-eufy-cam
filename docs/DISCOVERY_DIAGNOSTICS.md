@@ -213,18 +213,30 @@ guide][149-eufy] lists the Indoor Cam Pan&Tilt 2K as `T8410C`, supported on
 HomeBase 3. A [public inventory log][149-mega] shows `T8410C` with type 31 under
 a T8030, and an [upstream report][149-upstream] shows `T8410C` with type 31 on
 firmware 3.3.3.2 under a T8030. The reporter's 3.3.4.4 fits that firmware line.
-Whether their type 31 rows carry exactly `T8410C` is not verified. If the string
-differs, bridge 0.8.36 and integration 0.8.45 show it in the next report, as
-long as it fits the widened bound described below. No other type 31 string and
-no type-only or prefix match is added. Owners use Pan & Tilt names for both
+Whether their type 31 rows carry exactly `T8410C` was not verified at that
+release. The result below points to it. No other type 31 string and no
+type-only or prefix match is added. Owners use Pan & Tilt names for both
 `T8410` and `T8410C`, so the received model code, not the product name, decides
 which route applies. A standalone `T8410C`, with an empty or self parent, is now
 reported as `relationship=standalone` with
 `relationship_reason=standalone_transport_unverified` instead of
 `unsupported_device`, on bridge 0.8.36 and 0.8.37 also with the opt-in. Home Assistant then creates it as a
-camera whose snapshot, live view and recordings are unsupported. Behind a HomeBase 3 both new pairs have software tests only, and hardware
-results for both remain pending in the client's [model matrix][149-matrix]. A
-reported standalone `T8410C` result follows below.
+camera whose snapshot, live view and recordings are unsupported.
+
+On 2026-10-16 the reporter [reported][149-result] that after updating to
+integration 0.8.45 and bridge 0.8.36 all devices appeared right away and work
+with snapshots, live view, recordings and events. This includes the `T8160-C`
+and the two type 31 cameras, although the comment names no device, firmware or
+event type separately. Audio, the live stop and cancellation were not reported.
+Client 0.29.2 admits type 31 only as exactly `T8410` or `T8410C`, and `T8410`
+was already admitted when these rows were rejected, so their appearance points
+to exactly `T8410C`. No download shows that code. The reporter also sees
+snapshots that are often out of date and live start times that vary a lot on all
+devices, and finds the Eufy app similar but a bit more stable. An idle view
+shows the latest received snapshot, as described in
+[snapshot and streaming limits](USAGE.md#honest-snapshot-and-streaming-limits).
+This is reported, not independently reproduced, and is recorded in the client's
+[model matrix][149-matrix]. A reported standalone `T8410C` result follows below.
 
 On 2026-10-15 the [issue #152][152] reporter shared the [`device` row][168-row]
 of a standalone Indoor Cam Pan&Tilt 2K `T8410C` on firmware 3.3.4.4 without a
@@ -261,6 +273,7 @@ Reported, not independently reproduced.
 [66-result]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6098838866
 [66-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-issue-66-update-0282
 [149]: https://github.com/keesmod/ha-eufy-cam/issues/149
+[149-result]: https://github.com/keesmod/ha-eufy-cam/issues/149#issuecomment-6214980737
 [149-eufy]: https://service.eufy.com/eu/article-description/eufy-Security-Complete-HomeBase-Compatibility-Guide
 [149-mega]: https://github.com/mscodemonkey/eufy-mega-security/issues/7
 [149-upstream]: https://github.com/bropat/eufy-security-client/issues/722
