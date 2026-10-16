@@ -12,9 +12,10 @@
 - A HomeBase gets a record only for a failed operation, so its recordings and
   the events timeline do not fill the 100 recent events. The bridge also
   records its own refusal when its client is not connected, as
-  `client_disconnected`, for any owner. A camera on the experimental standalone route gets no record when its
-  recordings are opened, see the issue #175 entry below. Only the opt-in probe
-  of the issue #178 entry below records one, with `query=probe`.
+  `client_disconnected`, for any owner. Apart from that refusal, a camera on the
+  experimental standalone route gets no record when its recordings are opened,
+  see the issue #175 entry below. Only the opt-in probe of the issue #178 entry
+  below records an operation on it, with `query=probe`.
 - The record says how far the operation got (`query_stage`), why it failed
   (`reason`, `result_code`), what the device answered to the last query page
   (`ack_code`, `query_answered`, `query_result_code`, `query_rows`), how many

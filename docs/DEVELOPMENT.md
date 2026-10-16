@@ -292,12 +292,12 @@ plus the `onProgress` and `onLookup` callbacks of the owner's connection when
 the operation has to connect.
 
 The bridge records an operation on an experimental standalone owner except a
-successful thumbnail, and a failed operation on any owner. Since
-[issue #175](https://github.com/keesmod/ha-eufy-cam/issues/175) the only
-operation on a standalone owner is the opt-in probe, because the bridge refuses
-its other recording requests with `capability_unavailable` before any client
-call. A HomeBase success
-is not recorded, so its recordings and the events timeline do not fill the
+successful thumbnail, and a failed operation on any owner. Since [issue
+#175](https://github.com/keesmod/ha-eufy-cam/issues/175) the only operation on a
+standalone owner is the opt-in probe, because the bridge refuses its other
+recording requests before any client call, normally with
+`capability_unavailable`. A HomeBase success is not recorded, so its recordings
+and the events timeline do not fill the
 ring. A request can run one operation per owner, so a timeline over several
 HomeBases can add one record per failed owner. Two bridge cases have no client
 report. When the bridge's client is not connected, each owner of the request
@@ -374,8 +374,12 @@ Apart from the standalone refusal of
 probe, the client observes only. Its queries, page sizes, timeouts, error codes
 and the session close after a failed or cancelled operation are unchanged. For
 a HomeBase, the bridge's HTTP status codes and bodies are unchanged too. For an
-experimental standalone camera, the bridge refuses each recording request with
-`capability_unavailable` (503) before any client call. The values are bounded scalars
+experimental standalone camera, the bridge refuses each recording request before
+any client call, with `capability_unavailable` (503). A list or calendar request
+gets the shared refusals first: `recording_busy`, `live_busy` or `live_stopping`
+(409) while a recording operation or live view runs, and `recording_unavailable`
+(503) with a `client_disconnected` record while the bridge's client is not
+connected. The values are bounded scalars
 and fixed enums without an ID, serial, DID, path, name or address. The bridge
 revalidates each value at its logging boundary, sets an integer outside its
 bound, a value that is not a real boolean and an enum outside its set to

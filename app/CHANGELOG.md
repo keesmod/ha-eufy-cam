@@ -10,10 +10,13 @@
   bridge passes each list, calendar, thumbnail and download its signal and
   three callbacks. Client 0.30.1 reports through them what the operation saw.
 - A HomeBase gets a record only for a failed operation, so its recordings and
-  the events timeline do not fill the 100 recent events. A camera on the experimental standalone route gets no record when its
-  recordings are opened, see the issue #175 entry below. Only the opt-in
-  `standalone_recording_probe` entry below records one, with `query=probe`. When the bridge's client is not connected, each
-  owner of the request gets a record with reason `client_disconnected`. A
+  the events timeline do not fill the 100 recent events. Apart from the
+  `client_disconnected` record below, a camera on the experimental standalone
+  route gets no record when its recordings are opened, see the issue #175 entry
+  below. Only the opt-in `standalone_recording_probe` entry below records an
+  operation on it, with `query=probe`. When the bridge's client is not
+  connected, each owner of the request gets a record with reason
+  `client_disconnected`. A
   failure the client did not report, such as `client_closed`, keeps its code,
   and an error that is no client error is `unclassified_error`.
 - The record has the stage the operation reached, its reason and numeric

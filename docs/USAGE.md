@@ -221,8 +221,9 @@ cameras and their recordings are unchanged. With integration 0.8.47 the card
 shows the generic "Recordings: unavailable for this camera connection"
 instead. In **Download diagnostics** and on the `Eufy discovery:` log line, the
 camera's device row has `media.recordings` with `available=false`,
-`status=unsupported` and `reason=standalone_recordings_unverified`, and no `recording_query` record
-appears for the camera when you open its recordings. Only the opt-in
+`status=unsupported` and `reason=standalone_recordings_unverified`, and no
+`recording_query` record appears for the camera when you open its recordings.
+Only the opt-in
 [standalone recording probe](#standalone-recording-probe) adds one, with
 `query=probe`.
 
