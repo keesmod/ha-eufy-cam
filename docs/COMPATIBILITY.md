@@ -424,9 +424,12 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   recordings of a standalone T8410, and none is confirmed on the T8410C or
   T84A1. From bridge 0.8.39 with client 0.30.1 and integration 0.8.48, the
   recordings of all three models on that route therefore show as not
-  available, with reason `standalone_recordings_unverified`, and the bridge
-  sends them no recording request. Snapshot and live view stay experimental
-  ([issue #175](https://github.com/keesmod/ha-eufy-cam/issues/175)). No T84A1
+  available, with reason `standalone_recordings_unverified`, and the bridge sends them no recording request when their recordings are
+  opened. Snapshot and live view stay experimental
+  ([issue #175](https://github.com/keesmod/ha-eufy-cam/issues/175)). Only the
+  opt-in [standalone recording probe](USAGE.md#standalone-recording-probe) from
+  bridge 0.8.39 sends one read-only 10017 query to each such camera at login
+  ([issue #178](https://github.com/keesmod/ha-eufy-cam/issues/178)). No T84A1
   result is recorded yet. See
   [experimental standalone cameras](USAGE.md#experimental-standalone-cameras).
 - **Standalone Floodlight Cam 2K `T8424`, type 39**, is recognized as a

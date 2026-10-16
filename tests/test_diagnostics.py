@@ -927,7 +927,7 @@ def test_recording_query_fields_keep_their_bounds_and_drop_hostile_values():
     for edges in (highs, lows):
         assert _fields({**row, **edges}) == {**row, **edges}
     for key, values in {
-        "query": ["list", "calendar", "thumbnail", "download"],
+        "query": ["list", "calendar", "thumbnail", "download", "probe"],
         "owner": ["standalone", "station"],
         "status": ["completed", "error"],
         "query_stage": ["admission", "connect", "query", "validate", "transfer"],
@@ -946,7 +946,7 @@ def test_recording_query_fields_keep_their_bounds_and_drop_hostile_values():
         **{key: [-1, 10001, *integers] for key in _QUERY_ROWS},
         "session_open": [1, 0, "true", "PRIVATE", None],
         "query_answered": [1, 0, "false", "PRIVATE", None],
-        "query": ["LIST", "list ", "history", "PRIVATE", 1, None],
+        "query": ["LIST", "list ", "history", "PROBE", "probe ", "PRIVATE", 1, None],
         "owner": ["homebase", "camera", "PRIVATE_T8410", 1, None],
         "status": ["failed", "Completed", "PRIVATE", 1, None],
         "query_stage": ["download", "lookup", "PRIVATE", 1, None],
@@ -1088,6 +1088,46 @@ def test_experimental_standalone_survives_download_only_as_a_strict_boolean():
         row = {"event": "summary", "experimental_standalone": value}
         assert _fields(row)["experimental_standalone"] is None
     assert "experimental_standalone" not in _fields({"event": "summary"})
+
+
+def test_standalone_recording_probe_survives_download_only_as_a_strict_boolean():
+    # Issue #178: the probe option state a bridge 0.8.39 summary carries.
+    for value in (True, False):
+        row = {"event": "summary", "standalone_recording_probe": value}
+        assert _fields(row)["standalone_recording_probe"] is value
+    for value in ("true", 1, 0, 1.0, None, "PRIVATE", {}, []):
+        row = {"event": "summary", "standalone_recording_probe": value}
+        assert _fields(row)["standalone_recording_probe"] is None
+    assert "standalone_recording_probe" not in _fields({"event": "summary"})
+
+
+def test_standalone_recording_probe_rows_keep_their_outcome_and_no_identifiers():
+    # Issue #178: a probe record names only the query, never the probe's day,
+    # serial, path or reply. Its answer is either a page or silence.
+    empty, silent = (
+        _RECORDING_QUERIES[name] for name in ("probe_empty_page", "probe_silent")
+    )
+    assert (empty["query"], silent["query"]) == ("probe", "probe")
+    assert (empty["returned"], silent["returned"]) == (None, None)
+    private = {
+        "start_date": "20261016",
+        "end_date": "20261017",
+        "device_sn": "PRIVATE_SERIAL",
+        "account_id": "PRIVATE_ACCOUNT",
+        "storage_path": "/PRIVATE/clip.mp4",
+        "payload": '{"cmd":10017,"mIntRet":0,"PRIVATE":1}',
+    }
+    result = support_report(
+        {
+            "schema": 2,
+            "last_discovery": [],
+            "recent_events": [{**empty, **private}, {**silent, **private}],
+        }
+    )
+    assert result["recent_events"] == [empty, silent]
+    text = json.dumps(result)
+    for value in ("PRIVATE", "20261016", "20261017", "10017", "mIntRet"):
+        assert value not in text
 
 
 def _bridge_0837_report():

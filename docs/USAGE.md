@@ -222,10 +222,14 @@ shows the generic "Recordings: unavailable for this camera connection"
 instead. In **Download diagnostics** and on the `Eufy discovery:` log line, the
 camera's device row has `media.recordings` with `available=false`,
 `status=unsupported` and `reason=standalone_recordings_unverified`, and no
-`recording_query` record appears for the camera.
+`recording_query` record appears for the camera when you open its recordings.
+Only the opt-in
+[standalone recording probe](#standalone-recording-probe) adds one, with
+`query=probe`.
 
 No known request lists or plays the recordings of a standalone T8410, so the
-client sends none. The candidates, strongest first:
+client sends none when you open the recordings. The candidates, strongest
+first:
 
 1. The database query 10017 in the shape the Eufy app sends it, with start
    time `0` and no device filter. A public report describes an iPhone app
@@ -246,8 +250,10 @@ client sends none. The candidates, strongest first:
    reported). None of these covers a T84xx camera, and the reporter's T8410s
    keep no event clips, so the expected answer is an empty list. A list would
    not play either, because no evidenced decryption path exists for a
-   standalone camera's recordings. A bounded probe of this request is the next
-   step, in a follow-up issue.
+   standalone camera's recordings. From bridge 0.8.39 the opt-in
+   [standalone recording probe](#standalone-recording-probe) sends this
+   request once per camera at login, so a tester can report how a camera
+   answers it.
 2. The count-by-date query 10008 and the latest-info query 10013 have public
    answers from standalone cameras, but they list and play nothing. They are
    diagnostic only.
@@ -267,6 +273,67 @@ to true in the app's configuration, restart the app, wait for the startup
 result, try a snapshot and live view, then use **Download diagnostics** as
 described in [discovery diagnostics](DISCOVERY_DIAGNOSTICS.md#experimental-standalone-cameras).
 Turn the option off again to return to the previous behavior.
+
+### Standalone recording probe
+
+From bridge 0.8.39 with client 0.30.1, the app option
+`standalone_recording_probe: true` (Docker:
+`EUFY_STANDALONE_RECORDING_PROBE=true`) sends the first candidate above, the
+database query 10017 in the shape the Eufy app sends it, to each experimental
+standalone camera
+([issue #178](https://github.com/keesmod/ha-eufy-cam/issues/178)). It is a
+diagnostic that is off by default, and it needs `experimental_standalone` on
+as well. With only the probe option on, the bridge logs a note at startup and
+probes nothing. The option stays in stable releases as a documented
+diagnostic, off by default.
+
+What it sends and when:
+
+- One read-only request per camera, right after the camera's connection in
+  the login discovery. That discovery runs when the bridge starts or restores
+  its saved session, and when you log in with credentials. A camera whose
+  connection failed is not probed. A discovery after a cloud reconnect sends
+  no probe, so a camera that was offline at startup is probed at the next
+  restart. A login that is retried after a failure probes again.
+- The request asks for the newest 20 records of today on channel 0, with start
+  time `0` and no device filter. Today is the local date of the bridge host,
+  which depends on the time zone of the app or Docker container. Clips from
+  earlier days are not requested.
+- It only reads. It downloads and deletes nothing, and the integration gets
+  no recordings from it. It sends nothing to a HomeBase or to a camera behind
+  a HomeBase. All other requests and their payloads are unchanged. Recordings
+  on the standalone cards stay "not available" with the option on or off.
+
+What it costs:
+
+- The bridge reports ready only after its login discovery, so each standalone
+  camera adds up to about 15 seconds plus its connection to startup. Home
+  Assistant shows the integration as connecting until then. In a setup that
+  also has a HomeBase, its cameras wait too.
+- Turn the option off before you enter your Eufy credentials again in Home
+  Assistant, for example to reauthenticate. That login waits for the
+  discovery, and Home Assistant gives up after about a minute with "Cannot
+  communicate with the bridge" while the bridge still finishes.
+- When a camera does not answer within 15 seconds, its session is closed, as
+  after any timed-out query. Live view connects again when you open it.
+  Opening the snapshot does not connect, so it keeps its last picture, if any,
+  until a live view replaces it. The app log then shows a `station_connection`
+  line with `"phase":"observation"` and `"status":"disconnected"` just before
+  the probe line, and the camera's device row in that report shows
+  `"owner_status":"disconnected"`. The assessment in **Download diagnostics**
+  then lists a `standalone_connection` finding saying that the camera connected
+  and its session later closed. That is the probe's close, not a connection
+  fault. An answer, also a rejection, keeps the session open.
+
+Each probed camera leaves one `recording_query` line with `"query":"probe"` in
+the app log, and the discovery `summary` line has
+`"standalone_recording_probe":true`. How to collect and read them is in
+[discovery diagnostics](DISCOVERY_DIAGNOSTICS.md#standalone-recording-probe).
+Integration 0.8.48 or newer keeps both in **Download diagnostics**.
+Integration 0.8.48 betas from before the probe replace the record's `query`
+with `null`
+and drop the summary field, and integration 0.8.47 drops the record. The app
+log shows both in full with any integration.
 
 ## Recovery and maintenance
 

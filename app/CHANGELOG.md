@@ -10,10 +10,13 @@
   bridge passes each list, calendar, thumbnail and download its signal and
   three callbacks. Client 0.30.1 reports through them what the operation saw.
 - A HomeBase gets a record only for a failed operation, so its recordings and
-  the events timeline do not fill the 100 recent events. A camera on the
-  experimental standalone route gets no record of an operation, see the
-  issue #175 entry below. When the bridge's client is not connected, each
-  owner of the request gets a record with reason `client_disconnected`. A
+  the events timeline do not fill the 100 recent events. Apart from the
+  `client_disconnected` record below, a camera on the experimental standalone
+  route gets no record when its recordings are opened, see the issue #175 entry
+  below. Only the opt-in `standalone_recording_probe` entry below records an
+  operation on it, with `query=probe`. When the bridge's client is not
+  connected, each owner of the request gets a record with reason
+  `client_disconnected`. A
   failure the client did not report, such as `client_closed`, keeps its code,
   and an error that is no client error is `unclassified_error`.
 - The record has the stage the operation reached, its reason and numeric
@@ -40,15 +43,47 @@
   request lists or plays the recordings of a standalone T8410. In the
   [report of 2026-10-16](https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780)
   both T8410s acknowledged the list query without answering it, and the T8410C
-  rejected it with result -1100. The bridge source is unchanged. Its existing
+  rejected it with result -1100. This needs no bridge source change. Its existing
   capability check refuses each list, calendar, thumbnail and download for
   such a camera with `capability_unavailable` (HTTP 503) before any client
   call. The bridge therefore writes no `recording_query` record of its operations,
   and the 15-second wait is gone. The device row's
   `media.recordings` in the `Eufy discovery:` log line and the diagnostics
   download carries the reason. Snapshot and live view stay available. HomeBase
-  cameras, their requests and their recordings are unchanged, and the client
-  sends no new device request.
+  cameras, their requests and their recordings are unchanged, and this change
+  sends no new device request. Only the opt-in probe below adds one.
+- Add the app option `standalone_recording_probe` (Docker
+  `EUFY_STANDALONE_RECORDING_PROBE=true`), off by default, with client 0.30.1
+  and its `probeStandaloneRecordings`
+  ([issue #178](https://github.com/keesmod/ha-eufy-cam/issues/178)). With this
+  option and `experimental_standalone` both on, the login discovery sends one
+  read-only database query 10017 in the shape the Eufy app sends it to each
+  experimental standalone camera, right after the camera's successful
+  connection. It asks for the newest 20 records of today, the local date of the
+  app or container. The bridge records every outcome as a `recording_query`
+  record with `query=probe` and `returned=null` in the `Eufy discovery:` log
+  lines and the bridge's diagnostics download. The discovery `summary` gains
+  `standalone_recording_probe`, `true` when the option is on. The startup log
+  says when the option is on, and adds a note when `experimental_standalone` is
+  off, because then nothing is probed. Docker accepts `true` or `false`, an unset or empty value
+  means off, and any other value stops the bridge with an error.
+- The probe runs only in the login discovery. It never runs for a HomeBase or a
+  camera behind one, and never in a discovery after a cloud reconnect. A login
+  that is retried after a failure probes again. A probe failure is recorded and
+  never fails the discovery or the login. HomeBase requests, every other
+  payload, the recordings capability and the recording routes are unchanged,
+  so recordings on standalone cameras stay unavailable.
+- With the option on, the bridge reports ready later. Each standalone camera
+  adds up to about 15 seconds plus its connection, and the HomeBase cameras of
+  a mixed setup wait too. Turn the option off before you enter your Eufy
+  credentials again in Home Assistant, because that login waits for the
+  discovery. A camera that does not answer within 15 seconds has its session closed. Live
+  view connects again on demand, and the snapshot keeps its last picture until a
+  live view replaces it. The log then
+  shows a `station_connection` line with `phase=observation` and
+  `status=disconnected` before the probe line, and the camera's device row in
+  that report shows `owner_status=disconnected`. The option stays in stable
+  releases as a documented diagnostic, off by default.
 
 Upgrade: keep the same token and session. Update the integration to 0.8.48 to
 keep the `recording_query` records and the attempt `cause` in **Download
@@ -56,7 +91,10 @@ diagnostics**, for recording texts that no longer name a HomeBase, and for the
 standalone recordings text. Integration 0.8.47 still works but drops the
 records and the cause, and shows the generic "Recordings: unavailable for this
 camera connection" on a standalone camera. The log lines still carry the
-records. Rollback: restore the 0.8.38 app backup and integration 0.8.47.
+records. The `standalone_recording_probe` option stays off until you turn it
+on. Integration 0.8.48 also keeps its probe records and the summary field in
+**Download diagnostics**. Rollback: restore the 0.8.38 app backup and
+integration 0.8.47.
 
 ## 0.8.38 - 2026-10-15
 

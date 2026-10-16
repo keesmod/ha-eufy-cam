@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import {
   EufyError,
   EufyMegaClient,
@@ -15,7 +16,14 @@ import {
   type RecordingObservation,
   type RecordingOperationOptions,
 } from '@keesmod/eufy-mega-client';
-import { MegaBackend, liveStreamsPerStation, liveMaxSecondsMains, experimentalStandalone } from '../src/mega-backend.js';
+import {
+  MegaBackend,
+  liveStreamsPerStation,
+  liveMaxSecondsMains,
+  experimentalStandalone,
+  standaloneRecordingProbe,
+  recordingProbeNotice,
+} from '../src/mega-backend.js';
 import { Storage } from '../src/storage.js';
 import { backendName } from '../src/backend.js';
 import { MegaRecordings } from '../src/mega-recordings.js';
@@ -88,8 +96,10 @@ test('recording cancellation before the media handle arrives is counted and rele
   assert.equal(recordings.busy, false);
   assert.equal(recordings.metrics.cancelled, 1);
 });
-function fixture(limit?: number, mainsSeconds?: number, standalone?: boolean) {
+function fixture(limit?: number, mainsSeconds?: number, standalone?: boolean, probe?: boolean) {
   const calls: string[] = [];
+  // Each standalone recording probe the backend asks the client for (#178).
+  const probes: { id: string; options: unknown }[] = [];
   const state = {
     id: 'BASE',
     connected: true,
@@ -172,6 +182,10 @@ function fixture(limit?: number, mainsSeconds?: number, standalone?: boolean) {
       calls.push('shutdown');
     },
     ensureLiveStopped: async () => ({ confirmed: true, reason: 'device' }),
+    probeStandaloneRecordings: async (id: string, options?: unknown): Promise<RecordingObservation> => {
+      probes.push({ id, options });
+      return probeAnswer();
+    },
   });
   const storage = new Storage('/unused');
   const reads: string[] = [];
@@ -194,8 +208,19 @@ function fixture(limit?: number, mainsSeconds?: number, standalone?: boolean) {
     limit,
     mainsSeconds,
     standalone,
+    probe,
   );
-  return { backend, client, calls, reads, storage, options, bounds };
+  return { backend, client, calls, reads, storage, options, bounds, probes };
+}
+/** The client's observation of a standalone probe answered with an empty page (#178). */
+function probeAnswer(change: Partial<RecordingObservation> = {}): RecordingObservation {
+  return {
+    operation: 'probe', owner: 'standalone', sessionOpen: true, stage: 'validate', code: null, remoteCode: null,
+    elapsedMs: 640, pages: [{ limit: 20, elapsedMs: 600, answered: true, ackCode: 0, resultCode: 0, rows: 0 }],
+    unhandledReplies: 0, unhandledReason: null, unhandledResultCode: null,
+    rowClasses: { own: 0, otherDevice: 0, stationMismatch: 0, invalidTime: 0, otherDay: 0, cipherId: 0 },
+    ...change,
+  };
 }
 test('EUFY_LIVE_MAX_SECONDS_MAINS accepts 120 to 3600 seconds and defaults to 120', () => {
   assert.equal(liveMaxSecondsMains(undefined), 120);
@@ -744,7 +769,7 @@ for (const empty of [false,true])
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
       assert.equal(summary.experimental_standalone,false);
-      assert.equal(summary.software.library,'0.30.1-beta.2');
+      assert.equal(summary.software.library,'0.30.1-beta.3');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
@@ -1739,5 +1764,401 @@ test('recording_query records reach the Eufy discovery: log line as in the downl
     assert.doesNotMatch(JSON.stringify(output.mock.calls), /PRIVATE|WALL|BASE|CAM|fixture/);
   } finally {
     await bridge.close();
+  }
+});
+
+// Issue #178: the opt-in standalone recording probe of the login discovery.
+const login = { username: 'fixture', password: 'fixture', country: 'NL' };
+const probeQueries = (backend: MegaBackend) =>
+  backend.supportReport().recent_events.filter((row) => row.event === 'recording_query' && row.query === 'probe');
+const solo: Device = { ...wallLight, id: 'SOLO', stationId: 'SOLO', model: 'T8410', name: 'Indoor', firmware: '2.3.2.4' };
+/** The HomeBase, its camera, WALL and optionally SOLO, both experimental standalone owners. */
+function probeInventory(second = false): DiscoveryResult {
+  const value = standaloneInventory(true);
+  if (second) {
+    value.devices.push(solo);
+    value.relationships.push({ deviceId: 'SOLO', kind: 'standalone', ownerId: 'SOLO', transport: 'experimental', descriptor });
+  }
+  return value;
+}
+/** A probe fixture that logs each connect, state refresh and probe in order. */
+function probeFixture(probe: boolean | undefined, inventory = probeInventory()) {
+  const f = fixture(undefined, undefined, true, probe);
+  const order: string[] = [];
+  f.client.discoverDevices = async () => inventory;
+  const connect = f.client.connectStation;
+  f.client.connectStation = async (id: string) => {
+    order.push(`connect ${id}`);
+    return connect();
+  };
+  const refresh = f.client.refreshStationState;
+  f.client.refreshStationState = async (id?: string) => {
+    order.push(`refresh_state ${id}`);
+    return refresh();
+  };
+  const probeCall = f.client.probeStandaloneRecordings;
+  f.client.probeStandaloneRecordings = async (id: string, options?: unknown) => {
+    order.push(`probe ${id}`);
+    return probeCall(id, options);
+  };
+  return { ...f, order };
+}
+test('EUFY_STANDALONE_RECORDING_PROBE accepts only true or false and defaults to off (#178)', () => {
+  assert.equal(standaloneRecordingProbe(undefined), false);
+  assert.equal(standaloneRecordingProbe(''), false);
+  assert.equal(standaloneRecordingProbe(' '), false);
+  assert.equal(standaloneRecordingProbe('false'), false);
+  assert.equal(standaloneRecordingProbe('true'), true);
+  assert.equal(standaloneRecordingProbe(' true '), true);
+  for (const bad of ['TRUE', 'True', 'yes', '1', 'on', 'truee', 'false,true'])
+    assert.throws(() => standaloneRecordingProbe(bad), /EUFY_STANDALONE_RECORDING_PROBE must be true or false/, bad);
+  // The startup line says when the option is on, and that it does nothing without the standalone option.
+  assert.equal(recordingProbeNotice(false, true), undefined);
+  assert.equal(recordingProbeNotice(false, false), undefined);
+  assert.match(recordingProbeNotice(true, true)!, /^Eufy standalone recording probe enabled: .*read-only.*15 seconds/);
+  assert.match(recordingProbeNotice(true, false)!, /no effect.*nothing is probed.*EUFY_EXPERIMENTAL_STANDALONE=true/);
+});
+for (const probe of [undefined, false])
+  test(`with the probe option ${String(probe)} discovery sends no probe and the summary says false (#178)`, async () => {
+    const f = probeFixture(probe);
+    try {
+      assert.deepEqual(await f.backend.login(login), { state: 'connected' });
+      assert.equal(f.backend.standaloneRecordingProbe, false);
+      assert.deepEqual(f.probes, []);
+      assert.deepEqual(f.order, ['connect BASE', 'refresh_state BASE', 'connect WALL']);
+      assert.deepEqual(probeQueries(f.backend), []);
+      assert.equal(f.backend.supportReport().last_discovery[0]!.standalone_recording_probe, false);
+    } finally {
+      await f.backend.close();
+    }
+  });
+test('the login discovery probes a standalone camera once after its connect, HomeBase requests unchanged (#178)', async () => {
+  const off = probeFixture(false);
+  const f = probeFixture(true);
+  const faults: string[] = [];
+  f.backend.on('backend_fault', (code) => faults.push(code));
+  const lines: string[] = [];
+  f.backend.on('discovery_diagnostic', (line) => lines.push(line));
+  const homebase = f.client.getCameraCapabilities;
+  const allowed = { available: true, status: 'experimental' as const, reason: null as string | null };
+  const refused = { available: false, status: 'unsupported' as const, reason: 'standalone_recordings_unverified' };
+  for (const g of [off, f])
+    g.client.getCameraCapabilities = async (id: string) =>
+      id === 'WALL' ? { snapshot: { ...allowed }, live: { ...allowed }, recordings: { ...refused } } : homebase(id);
+  const call = (name: string) => async () => {
+    f.calls.push(name);
+    return { complete: true, returned: 0, recordings: [] };
+  };
+  Object.assign(f.client, {
+    listRecordings: call('listRecordings'),
+    recordingCalendar: call('recordingCalendar'),
+    recordingThumbnail: call('recordingThumbnail'),
+    downloadRecording: call('downloadRecording'),
+  });
+  try {
+    await off.backend.login(login);
+    assert.deepEqual(await f.backend.login(login), { state: 'connected' });
+    assert.equal(f.backend.standaloneRecordingProbe, true);
+    // One probe, right after the camera's own connect. The HomeBase calls are those of a run without it.
+    assert.deepEqual(f.order, ['connect BASE', 'refresh_state BASE', 'connect WALL', 'probe WALL']);
+    assert.deepEqual(f.order.filter((entry) => !entry.startsWith('probe')), off.order);
+    // Only the connection callbacks reach the client. Its own bounds apply, so the bridge passes no signal.
+    assert.equal(f.probes.length, 1);
+    assert.equal(f.probes[0]!.id, 'WALL');
+    const options = f.probes[0]!.options as Record<string, unknown>;
+    assert.deepEqual(Object.keys(options).sort(), ['onLookup', 'onProgress']);
+    assert.equal(typeof options.onProgress, 'function');
+    assert.equal(typeof options.onLookup, 'function');
+    const report = f.backend.supportReport();
+    const [record, ...more] = probeQueries(f.backend);
+    assert.deepEqual(more, []);
+    const summary = report.last_discovery[0]!;
+    assert.equal(summary.standalone_recording_probe, true);
+    assert.equal(summary.experimental_standalone, true);
+    assert.deepEqual(
+      [record!.report, record!.device_ref, record!.model, record!.owner, record!.status, record!.reason, record!.query_stage],
+      [summary.report, 3, 'T84A1', 'standalone', 'completed', null, 'validate'],
+    );
+    assert.deepEqual([record!.pages, record!.query_limit, record!.query_answered, record!.query_rows, record!.returned], [1, 20, true, 0, null]);
+    assert.equal('stage' in record!, false);
+    // The record and the summary field reach the log lines. No ID, serial or name leaves the bridge.
+    const logged = lines.map((line) => JSON.parse(line));
+    assert.deepEqual(logged.filter((row) => row.query === 'probe'), [record]);
+    assert.equal(logged.find((row) => row.event === 'summary').standalone_recording_probe, true);
+    assert.doesNotMatch(lines.join('\n') + JSON.stringify(report), /WALL|BASE|CAM|Wall light|HomeBase|Camera/);
+    assert.deepEqual(faults, []);
+    // Recordings stay unavailable on the standalone camera, and its HTTP operations never reach the client.
+    assert.deepEqual(f.backend.inventory().find((camera) => camera.serial === 'WALL')?.capabilities?.recordings, refused);
+    const abort = new AbortController();
+    for (const operation of [
+      () => f.backend.recordings.list('WALL', '2026-10-16', abort.signal),
+      () => f.backend.recordings.calendar(['WALL'], '2026-10', abort.signal),
+      () => f.backend.recordings.thumbnail('WALL', 'missing', abort.signal),
+      () => f.backend.recordings.video('WALL', 'missing', abort.signal, async () => {}),
+    ])
+      await assert.rejects(operation(), { code: 'capability_unavailable', status: 503 });
+    assert.deepEqual(f.calls, []);
+    assert.equal(f.backend.recordings.metrics.queries, 0);
+    assert.equal(f.backend.canStartLive('WALL'), true);
+  } finally {
+    await off.backend.close();
+    await f.backend.close();
+  }
+});
+test('each standalone owner is probed once in its own turn, a HomeBase-only inventory never (#178)', async () => {
+  const f = probeFixture(true, probeInventory(true));
+  const homebase = probeFixture(true, { devices, relationships: [
+    { deviceId: 'BASE', kind: 'station', ownerId: 'BASE' },
+    { deviceId: 'CAM', kind: 'station', ownerId: 'BASE' },
+  ], issues: [] });
+  try {
+    await f.backend.login(login);
+    assert.deepEqual(f.order, ['connect BASE', 'refresh_state BASE', 'connect WALL', 'probe WALL', 'connect SOLO', 'probe SOLO']);
+    assert.deepEqual(probeQueries(f.backend).map((row) => [row.device_ref, row.model]), [[3, 'T84A1'], [4, 'T8410']]);
+    await homebase.backend.login(login);
+    assert.deepEqual(homebase.order, ['connect BASE', 'refresh_state BASE']);
+    assert.deepEqual(homebase.probes, []);
+    assert.equal(homebase.backend.supportReport().last_discovery[0]!.standalone_recording_probe, true);
+  } finally {
+    await f.backend.close();
+    await homebase.backend.close();
+  }
+});
+test('a failed standalone connect is not probed and the next camera still is (#178)', async () => {
+  const f = probeFixture(true, probeInventory(true));
+  const connect = f.client.connectStation;
+  f.client.connectStation = async (id: string) => {
+    if (id === 'WALL') {
+      f.order.push('connect WALL failed');
+      throw new EufyError('device_request_timeout');
+    }
+    return connect(id);
+  };
+  try {
+    assert.deepEqual(await f.backend.login(login), { state: 'connected' });
+    assert.deepEqual(f.order, ['connect BASE', 'refresh_state BASE', 'connect WALL failed', 'connect SOLO', 'probe SOLO']);
+    assert.deepEqual(probeQueries(f.backend).map((row) => row.model), ['T8410']);
+  } finally {
+    await f.backend.close();
+  }
+});
+test('a discovery after a cloud reconnect never probes, a new login attempt probes again (#178)', async () => {
+  const f = probeFixture(true);
+  try {
+    await f.backend.login(login);
+    assert.deepEqual(f.probes.map((call) => call.id), ['WALL']);
+    // The cloud session dropped. refresh() reconnects and runs discovery again while live view is allowed.
+    f.client.connected = false;
+    await (f.backend as unknown as { refresh(): Promise<void> }).refresh();
+    assert.deepEqual(f.order.slice(4), ['connect BASE', 'refresh_state BASE', 'connect WALL']);
+    assert.deepEqual(f.probes.map((call) => call.id), ['WALL']);
+    const reports = f.backend.supportReport();
+    assert.equal(reports.last_discovery[0]!.report, 2);
+    assert.equal(reports.last_discovery[0]!.standalone_recording_probe, true);
+    assert.equal(probeQueries(f.backend).length, 1);
+  } finally {
+    await f.backend.close();
+  }
+  // A login that failed after its discovery is retried on a new backend, which probes again.
+  const g = probeFixture(true);
+  g.client.startEvents = async () => {
+    throw new EufyError('push_unavailable');
+  };
+  try {
+    await assert.rejects(g.backend.login(login), { code: 'push_unavailable' });
+    assert.deepEqual(g.probes.map((call) => call.id), ['WALL']);
+  } finally {
+    await g.backend.close();
+  }
+  g.client.startEvents = async () => {};
+  const retry = new MegaBackend(g.storage, () => false, () => g.client as unknown as EufyMegaClient, undefined, undefined, undefined, true, true);
+  try {
+    assert.deepEqual(await retry.login(login), { state: 'connected' });
+    assert.deepEqual(g.probes.map((call) => call.id), ['WALL', 'WALL']);
+  } finally {
+    await retry.close();
+  }
+});
+test('a bridge closed during discovery sends no probe (#178)', async () => {
+  const f = probeFixture(true);
+  const connect = f.client.connectStation;
+  let closing: Promise<void> | undefined;
+  f.client.connectStation = async (id: string) => {
+    if (id === 'WALL') closing = f.backend.close();
+    return connect(id);
+  };
+  await assert.rejects(f.backend.login(login));
+  await closing;
+  assert.deepEqual(f.probes, []);
+});
+for (const [name, thrown, reason, remote] of [
+  ['an out-of-scope refusal', new EufyError('operation_outside_hardware_scope'), 'operation_outside_hardware_scope', null],
+  ['a client error with a remote code', new EufyError('client_closed', -7), 'client_closed', -7],
+  ['an error that is no EufyError', new Error('PRIVATE WALL failure'), 'unclassified_error', null],
+] as const)
+  test(`a probe that throws ${name} is recorded and never fails login (#178)`, async () => {
+    const f = probeFixture(true);
+    const faults: string[] = [];
+    f.backend.on('backend_fault', (code) => faults.push(code));
+    f.client.probeStandaloneRecordings = async (id: string, options?: unknown) => {
+      f.probes.push({ id, options });
+      throw thrown;
+    };
+    try {
+      assert.deepEqual(await f.backend.login(login), { state: 'connected' });
+      assert.equal(f.backend.connected, true);
+      const report = f.backend.supportReport();
+      assert.equal(report.last_discovery[0]!.outcome, 'accepted');
+      assert.equal(report.last_discovery.at(-1)!.event, 'end');
+      const [record, ...more] = probeQueries(f.backend);
+      assert.deepEqual(more, []);
+      const { diagnostic: _d, schema: _s, timestamp: _t, elapsed_ms: elapsed, ...fields } = record!;
+      assert.equal(typeof elapsed, 'number');
+      assert.deepEqual(fields, {
+        event: 'recording_query', report: 1, device_ref: 3, model: 'T84A1', query: 'probe', owner: 'standalone',
+        status: 'error', reason, result_code: remote, session_open: null, query_stage: 'admission',
+        pages: 0, query_limit: 0, query_answered: false, ack_code: null, query_result_code: null, query_rows: null,
+        unhandled_replies: 0, unhandled_reason: null, unhandled_result_code: null, rows_own: 0,
+        rows_other_device: 0, rows_station_mismatch: 0, rows_invalid_time: 0, rows_other_day: 0,
+        rows_cipher_id: 0, returned: null,
+      });
+      assert.deepEqual(faults, []);
+      assert.doesNotMatch(JSON.stringify(report), /PRIVATE|WALL/);
+    } finally {
+      await f.backend.close();
+    }
+  });
+test('an unreadable probe observation or a throwing recorder never fails login (#178)', async () => {
+  const f = probeFixture(true);
+  // Not thenable, so the promise resolves with it. Every other property throws.
+  f.client.probeStandaloneRecordings = async () =>
+    new Proxy({}, { get: (_target, key) => { if (key === 'then') return undefined; throw new Error('PRIVATE_TOKEN'); } }) as RecordingObservation;
+  try {
+    assert.deepEqual(await f.backend.login(login), { state: 'connected' });
+    assert.deepEqual(probeQueries(f.backend), []);
+    assert.equal(f.backend.supportReport().last_discovery[0]!.standalone_recording_probe, true);
+  } finally {
+    await f.backend.close();
+  }
+  // Even a recorder that throws cannot fail the discovery or the login.
+  const g = probeFixture(true);
+  (g.backend as unknown as { discoveryDiagnostics: { recording: () => void } }).discoveryDiagnostics.recording = () => {
+    throw new Error('PRIVATE_TOKEN');
+  };
+  try {
+    assert.deepEqual(await g.backend.login(login), { state: 'connected' });
+    assert.deepEqual(g.probes.map((call) => call.id), ['WALL']);
+    assert.equal(g.backend.supportReport().last_discovery[0]!.outcome, 'accepted');
+  } finally {
+    await g.backend.close();
+  }
+});
+test('a probe that had to connect carries that connection stage and lookup (#178)', async () => {
+  const f = probeFixture(true);
+  f.client.probeStandaloneRecordings = async (_id: string, options?: unknown) => {
+    const callbacks = options as RecordingOperationOptions;
+    callbacks.onProgress?.({ stage: 'lookup', elapsedMs: 0, inventoryAddress: true });
+    callbacks.onLookup?.({ ...lookupSeen, rounds: 10, broadcastTargets: 1 });
+    return probeAnswer({ sessionOpen: false, stage: 'connect', code: 'device_request_timeout', elapsedMs: 20012, pages: [], rowClasses: null });
+  };
+  try {
+    await f.backend.login(login);
+    const [record] = probeQueries(f.backend);
+    assert.deepEqual(
+      [record!.status, record!.reason, record!.session_open, record!.query_stage, record!.stage, record!.inventory_address],
+      ['error', 'device_request_timeout', false, 'connect', 'lookup', true],
+    );
+    assert.deepEqual([record!.lookup_rounds, record!.lookup_broadcast_targets, record!.pages, record!.query_limit, record!.returned], [10, 1, 0, 0, null]);
+  } finally {
+    await f.backend.close();
+  }
+});
+test('the device row reports the session the client last observed, closed after a silent probe (#178)', async () => {
+  const session = { id: 'WALL', connected: true, guardMode: null, currentMode: null, alarm: false, alarmDelay: 0, armDelay: 0, commandEncryption: 'lan-derived' as const };
+  for (const silent of [false, true]) {
+    const f = probeFixture(true);
+    const connect = f.client.connectStation;
+    f.client.connectStation = async (id: string, value?: any) => {
+      if (id !== 'WALL') return connect(id);
+      // Like the library, the session reports itself before the connect resolves,
+      // and the connect record carries the attempt's lookup.
+      value?.onLookup?.({ ...lookupSeen, rounds: 1, datagrams: 1, ownReplies: 1, ownRound: 0, inventoryReply: 'own' });
+      f.client.emit('station', session);
+      return session;
+    };
+    f.client.probeStandaloneRecordings = async () => {
+      if (!silent) return probeAnswer();
+      // The client closes the session of a probe without an answer before it resolves.
+      f.client.emit('station', { ...session, connected: false, commandEncryption: null });
+      return probeAnswer({ stage: 'query', code: 'device_request_timeout', elapsedMs: 15031,
+        pages: [{ limit: 20, elapsedMs: 15030, answered: false, ackCode: 0, resultCode: null, rows: null }], rowClasses: null });
+    };
+    try {
+      await f.backend.login(login);
+      const report = f.backend.supportReport();
+      const timeline = report.recent_events
+        .filter((row) => row.device_ref === 3)
+        .map((row) => [row.event, row.phase ?? row.query, row.status]);
+      assert.deepEqual(timeline, [
+        ['station_connection', 'observation', 'connected'],
+        ['station_connection', 'connect', 'connected'],
+        ...(silent ? [['station_connection', 'observation', 'disconnected']] : []),
+        ['recording_query', 'probe', silent ? 'error' : 'completed'],
+      ]);
+      const row = report.last_discovery.find((r) => r.event === 'device' && r.model === 'T84A1')!;
+      assert.deepEqual([row.owner_status, row.owner_connected], silent ? ['disconnected', false] : ['connected', true]);
+    } finally {
+      await f.backend.close();
+    }
+  }
+});
+// The probe rows of the fixture shared with the HA download tests.
+type FixtureRow = Record<string, any>;
+const sharedProbeRows = Object.entries((JSON.parse(readFileSync(
+  new URL('../../tests/fixtures/recording-query.json', import.meta.url), 'utf8',
+)) as { rows: Record<string, FixtureRow> }).rows).filter(([, row]) => row.query === 'probe');
+test('each shared probe fixture row is what the bridge logs and keeps for its observation (#178)', async (t) => {
+  const { Eufy } = await import('../src/eufy.js');
+  const { logDiscoveryDiagnostic } = await import('../src/backend-log.js');
+  assert.ok(sharedProbeRows.length >= 2);
+  for (const [name, row] of sharedProbeRows) {
+    // A probe sends one page. The fixture row stands for that observation without a connect.
+    assert.equal(row.pages, 1, name);
+    const observation: RecordingObservation = {
+      operation: 'probe', owner: row.owner, sessionOpen: row.session_open, stage: row.query_stage, code: row.reason,
+      remoteCode: row.result_code, elapsedMs: row.elapsed_ms,
+      pages: [{ limit: row.query_limit, elapsedMs: row.elapsed_ms, answered: row.query_answered, ackCode: row.ack_code,
+        resultCode: row.query_result_code, rows: row.query_rows }],
+      unhandledReplies: row.unhandled_replies, unhandledReason: row.unhandled_reason,
+      unhandledResultCode: row.unhandled_result_code,
+      rowClasses: row.query_rows === null ? null : {
+        own: row.rows_own, otherDevice: row.rows_other_device, stationMismatch: row.rows_station_mismatch,
+        invalidTime: row.rows_invalid_time, otherDay: row.rows_other_day, cipherId: row.rows_cipher_id,
+      },
+    };
+    const f = probeFixture(true);
+    f.client.probeStandaloneRecordings = async () => observation;
+    const bridge = new Eufy(f.storage, 'mega', false, () => f.backend);
+    const output = t.mock.method(console, 'info', () => {});
+    bridge.on('discovery_diagnostic', logDiscoveryDiagnostic);
+    try {
+      await bridge.login(login);
+      const download = bridge.supportReport().recent_events.filter((r) => r.event === 'recording_query');
+      const logged = output.mock.calls
+        .filter((call) => call.arguments[0] === 'Eufy discovery:')
+        .map((call) => JSON.parse(call.arguments[1] as string))
+        .filter((r) => r.event === 'recording_query');
+      assert.equal(download.length, 1, name);
+      assert.deepEqual(logged, download, name);
+      const { diagnostic: _d, schema: _s, timestamp: _t, ...fields } = download[0]!;
+      // Only the report, reference and model of this inventory differ from the fixture.
+      const expected = { ...row, report: 1, device_ref: 3, model: 'T84A1' };
+      assert.deepEqual(fields, expected, name);
+      assert.deepEqual(Object.keys(fields), Object.keys(expected), name);
+      assert.doesNotMatch(JSON.stringify(output.mock.calls), /PRIVATE|WALL|BASE|CAM|fixture/);
+    } finally {
+      output.mock.restore();
+      await bridge.close();
+    }
   }
 });

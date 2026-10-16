@@ -12,8 +12,10 @@
 - A HomeBase gets a record only for a failed operation, so its recordings and
   the events timeline do not fill the 100 recent events. The bridge also
   records its own refusal when its client is not connected, as
-  `client_disconnected`, for any owner. A camera on the experimental standalone
-  route gets no record of an operation, see the issue #175 entry below.
+  `client_disconnected`, for any owner. Apart from that refusal, a camera on the
+  experimental standalone route gets no record when its recordings are opened,
+  see the issue #175 entry below. Only the opt-in probe of the issue #178 entry
+  below records an operation on it, with `query=probe`.
 - The record says how far the operation got (`query_stage`), why it failed
   (`reason`, `result_code`), what the device answered to the last query page
   (`ack_code`, `query_answered`, `query_result_code`, `query_rows`), how many
@@ -39,9 +41,10 @@
   recordings…", "Recording unavailable. Load the date again." and "Device time".
   The Dutch texts change the same way. The cause of a failure is in the new
   record, not in the text.
-- Apart from the standalone refusal below, client 0.30.1 only observes the
-  operation. Its queries, page sizes, timeouts and error codes are unchanged,
-  and a failed or cancelled operation still closes the owner's session. For a
+- Apart from the standalone refusal and the opt-in probe below, client 0.30.1
+  only observes the operation. Its queries, page sizes, timeouts and error
+  codes are unchanged, and a failed or cancelled operation still closes the
+  owner's session. For a
   HomeBase, the bridge's HTTP answers keep their status codes and bodies. On 2026-10-16 the
   [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152) reporter's
   records from integration 0.8.48-beta.1 and bridge 0.8.39-beta.1 showed two
@@ -71,19 +74,55 @@
   both T8410s acknowledged the list query without answering it, and the T8410C
   rejected it with `result_code=-1100`. The best next candidate, the database
   query 10017 in the shape the Eufy app sends, has public results on other
-  standalone models but none on a T84xx camera, and it is not sent. This change
-  adds no device request and changes no payload. HomeBase cameras, their
-  requests and their recordings are unchanged.
+  standalone models but none on a T84xx camera. Only the opt-in probe of the
+  issue #178 entry below sends it. The issue #175 change adds no device request
+  and changes no payload. HomeBase cameras, their requests and their recordings
+  are unchanged.
 - For such a camera the bridge refuses each recording request with
   `capability_unavailable` before any client call, so **Download diagnostics**
   has no `recording_query` record of its operations. Its device row shows
   `media.recordings` with `available=false`, `status=unsupported` and
   `reason=standalone_recordings_unverified`.
+- **Standalone recording probe** records in **Download diagnostics**, from
+  bridge 0.8.39 with client 0.30.1
+  ([issue #178](https://github.com/keesmod/ha-eufy-cam/issues/178)). With the
+  new bridge app option `standalone_recording_probe` and `experimental_standalone`
+  both on, the bridge sends one read-only database query 10017 in the shape the
+  Eufy app sends it to each experimental standalone camera, right after the
+  camera's connection in the login discovery. It asks for the newest 20 records
+  of today. The answer becomes a `recording_query` record with `query=probe`,
+  whose readings are in
+  [discovery diagnostics](docs/DISCOVERY_DIAGNOSTICS.md#standalone-recording-probe).
+  The download keeps `query=probe` and the `summary` field
+  `standalone_recording_probe`, a strict boolean that is `true` when the option
+  is on. Any other value becomes `null`. The assessment adds no finding for the probe
+  record.
+- The option is off by default and stays in stable releases as a documented
+  diagnostic. The probe sends nothing to a HomeBase or to a camera behind one,
+  and every other request and payload is unchanged. It only reads. It
+  downloads and deletes nothing, and the standalone cards keep showing
+  recordings as not available. With the option on, the bridge reports ready
+  later. Each standalone camera adds up to about 15 seconds plus its
+  connection, and the HomeBase cameras of a mixed setup wait too. Turn the option off before you
+  enter your Eufy credentials again in Home Assistant, because that login waits
+  for the discovery and can exceed Home Assistant's one-minute bridge request
+  limit. A camera that does not answer has its session closed after 15
+  seconds. A `station_connection` record with `phase=observation` and
+  `status=disconnected` then precedes the probe record, and the camera's device
+  row in that report shows `owner_status=disconnected`. The assessment in
+  **Download diagnostics** then reports that camera as `standalone_connection`
+  with "The experimental standalone camera connected on the local route, and
+  its session later closed." That finding comes from the probe's close, not
+  from a connection fault. An answer, also one with `history_rejected`, adds no
+  finding. See
+  [standalone recording probe](docs/USAGE.md#standalone-recording-probe).
 
 Upgrade: update the HACS integration to 0.8.48 and the bridge app to 0.8.39,
 then restart Home Assistant. Keep the same token and session. No configuration
-migration is needed. Integration 0.8.47 still works with bridge 0.8.39, but its
-download drops the `recording_query` records and the attempt `cause` and
+migration is needed. The `standalone_recording_probe` option stays off until
+you turn it on. Integration 0.8.47 still works with bridge 0.8.39, but its
+download drops the `recording_query` records including the probe records, the
+`standalone_recording_probe` summary field and the attempt `cause` and
 `result_code`, and a standalone camera's card shows the generic "Recordings:
 unavailable for this camera connection". The bridge's `Eufy discovery:` log
 lines still carry the records. With bridge 0.8.38 the download has no such
