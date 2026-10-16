@@ -159,26 +159,53 @@ experimental features and work only if that session works. On
 [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152), live video was
 reported working on two standalone T8410s, with firmware 2.3.2.4 and 2.3.1.6.
 The camera on 2.3.1.6 first ended its connection at the lookup in several runs,
-so a failure is still possible and useful evidence. No standalone T8410C result
-is recorded yet. The reported one runs firmware 3.3.4.4, another firmware line
-than the T8410, so the T8410 result does not carry over
-([issue #168](https://github.com/keesmod/ha-eufy-cam/issues/168)).
+so a failure is still possible and useful evidence. In a report on 2026-10-16
+it ended the same way, with lookup replies only from other devices in the
+account, while it was unpowered. Whether it was unpowered in the earlier runs
+is not known. The same report had a snapshot and live video working on a
+standalone T8410C with firmware 3.3.4.4, another firmware line than the T8410
+([issue #168](https://github.com/keesmod/ha-eufy-cam/issues/168),
+[report](https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780)).
+These results are reported, not independently reproduced.
 Recordings that would need a cloud key cannot be downloaded, and the camera's
 detection events, guard mode and alarm state are not part of this test.
 
 Recordings on a standalone camera are not confirmed to work. On 2026-10-15 the
 issue #152 reporter's standalone T8410 on firmware 2.3.2.4 showed live view,
 but "Show recordings" failed with "The HomeBase connection is unavailable. Try
-again shortly." The cause is not known. From integration 0.8.48 the dialog
-says "Recordings are unavailable for this camera right now. Try again shortly."
-instead. From bridge 0.8.39, each list, calendar and download on a standalone
-camera and each failed thumbnail leaves a `recording_query` record that says
-how far it got and what the camera answered. A repeat of the same outcome for
-the same camera and operation in one report adds no record. Integration 0.8.48
-keeps these records in **Download diagnostics**, see
+again shortly." The cause was not known at the time. From integration 0.8.48
+the dialog says "Recordings are unavailable for this camera right now. Try
+again shortly." instead. From bridge 0.8.39, each list, calendar and download
+on a standalone camera and each failed thumbnail leaves a `recording_query`
+record that says how far it got and what the camera answered. A repeat of the
+same outcome for the same camera and operation in one report adds no record.
+Integration 0.8.48 keeps these records in **Download diagnostics**, see
 [failed recordings](DISCOVERY_DIAGNOSTICS.md#failed-recordings).
 A download refused because it would need a cloud key shows
 `recording_cipher_unavailable` as the `cause` of its playback attempt.
+
+On 2026-10-16 the same reporter opened the recordings of three standalone
+cameras with integration 0.8.48-beta.1, bridge 0.8.39-beta.1 and client
+0.30.1-beta.1, with every live view closed
+([report](https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780)).
+Both T8410s, on firmware 2.3.2.4 and 2.3.1.6 with a microSD card, acknowledged
+the list query with `ack_code=0` but never answered it. Each such attempt ended
+with `device_request_timeout` after about 16 seconds, twice per camera. The
+T8410C on firmware 3.3.4.4, which has no microSD card, answered after about a
+second and rejected the list with `history_rejected` and `result_code=-1100`,
+twice. In the Eufy app the T8410s show only a continuous timeline and no
+separate event clips, and the T8410C shows no recordings. Reported, not
+independently reproduced. Recording playback on a standalone T8410 therefore
+does not work with the current request.
+
+One reading is that a standalone T8410 on firmware 2.3.x accepts the database
+query 10006 that the list sends but does not answer it. That fits the public
+analog
+[bropat/eufy-security-client#963](https://github.com/bropat/eufy-security-client/issues/963),
+where a standalone E30 never answered 10006, and the camera's continuous-only
+recording. Which request the camera answers for its continuous timeline is not
+known. The reporter reads the T8410C's -1100 as the result of missing storage.
+Neither reading is proven. Standalone recordings continue in a follow-up issue.
 
 To test it, update the app and the integration, set `experimental_standalone`
 to true in the app's configuration, restart the app, wait for the startup
