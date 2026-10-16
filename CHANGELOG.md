@@ -9,11 +9,11 @@
   experimental route while live view worked, and no download or log said why.
   The bridge answered `recording_unavailable` for almost every cause and
   recorded nothing.
-- A camera on the experimental standalone route gets a record for each list,
-  calendar and download and for each failed thumbnail. A HomeBase gets one only
-  for a failed operation, so its recordings and the events timeline do not fill
-  the 100 recent events. The bridge also records its own refusal when its client
-  is not connected, as `client_disconnected`.
+- A HomeBase gets a record only for a failed operation, so its recordings and
+  the events timeline do not fill the 100 recent events. The bridge also
+  records its own refusal when its client is not connected, as
+  `client_disconnected`. A camera on the experimental standalone route gets no
+  record, see the issue #175 entry below.
 - The record says how far the operation got (`query_stage`), why it failed
   (`reason`, `result_code`), what the device answered to the last query page
   (`ack_code`, `query_answered`, `query_result_code`, `query_rows`), how many
@@ -39,10 +39,10 @@
   recordings…", "Recording unavailable. Load the date again." and "Device time".
   The Dutch texts change the same way. The cause of a failure is in the new
   record, not in the text.
-- Client 0.30.1 only observes the operation. Its queries, page sizes, timeouts
-  and error codes are unchanged, and a failed or cancelled operation still
-  closes the owner's session. The bridge's HTTP answers keep their status codes
-  and bodies. On 2026-10-16 the
+- Apart from the standalone refusal below, client 0.30.1 only observes the
+  operation. Its queries, page sizes, timeouts and error codes are unchanged,
+  and a failed or cancelled operation still closes the owner's session. For a
+  HomeBase, the bridge's HTTP answers keep their status codes and bodies. On 2026-10-16 the
   [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152) reporter's
   records from integration 0.8.48-beta.1 and bridge 0.8.39-beta.1 showed two
   standalone T8410s on firmware 2.3.x acknowledging the list query
@@ -53,8 +53,7 @@
   ([issue #168](https://github.com/keesmod/ha-eufy-cam/issues/168)).
   Reported, not independently reproduced. Recording playback on a standalone
   T8410 therefore does not work with the current request. Why the T8410s do
-  not answer is not proven, and standalone recordings continue in a follow-up
-  issue.
+  not answer is not proven.
 - **Recordings on an experimental standalone camera** now show as not
   available instead of failing after a wait, from bridge 0.8.39 with client
   0.30.1 ([issue #175](https://github.com/keesmod/ha-eufy-cam/issues/175)).
@@ -75,9 +74,9 @@
   standalone models but none on a T84xx camera, and it is not sent. This change
   adds no device request and changes no payload. HomeBase cameras, their
   requests and their recordings are unchanged.
-- For such a camera the bridge refuses each recording request before the
-  client, so the standalone `recording_query` records described above no
-  longer appear in **Download diagnostics**. Its device row shows
+- For such a camera the bridge refuses each recording request with
+  `capability_unavailable` before any client call, so **Download diagnostics**
+  has no `recording_query` record of its queries. Its device row shows
   `media.recordings` with `available=false`, `status=unsupported` and
   `reason=standalone_recordings_unverified`.
 

@@ -9,10 +9,9 @@
   experimental route with `recording_unavailable`, and nothing said why. The
   bridge passes each list, calendar, thumbnail and download its signal and
   three callbacks. Client 0.30.1 reports through them what the operation saw.
-- A camera on the experimental standalone route gets a record for each list,
-  calendar and download and for each failed thumbnail. A HomeBase gets one only
-  for a failed operation, so its recordings and the events timeline do not fill
-  the 100 recent events. When the bridge's client is not connected, each owner
+- A HomeBase gets a record only for a failed operation, so its recordings and
+  the events timeline do not fill the 100 recent events. A camera on the
+  experimental standalone route gets no record, see the issue #175 entry below. When the bridge's client is not connected, each owner
   of the request gets a record with reason `client_disconnected`. A failure the
   client did not report, such as `client_closed`, keeps its code, and an error
   that is no client error is `unclassified_error`.
@@ -29,8 +28,8 @@
   `recording_cipher_unavailable` behind `recording_unavailable`. A transfer that
   ended incomplete gives `transfer_` plus the client's reason, such as
   `transfer_connection_lost`.
-- Observation only. The HTTP status codes and bodies of every recording
-  request stay the same, and so do the client's queries, page sizes, timeouts
+- Observation only for a HomeBase. The HTTP status codes and bodies of its
+  recording requests stay the same, and so do the client's queries, page sizes, timeouts
   and error codes. A failed or cancelled operation still closes the owner's
   session.
 - Pin client 0.30.1, which reports the recordings of an experimental standalone
@@ -43,8 +42,8 @@
   rejected it with result -1100. The bridge source is unchanged. Its existing
   capability check refuses each list, calendar, thumbnail and download for
   such a camera with `capability_unavailable` (HTTP 503) before any client
-  call. The standalone `recording_query` records described above therefore no
-  longer appear for it, and the 15-second wait is gone. The device row's
+  call. The bridge therefore writes no `recording_query` record of its queries, and the
+  15-second wait is gone. The device row's
   `media.recordings` in the `Eufy discovery:` log line and the diagnostics
   download carries the reason. Snapshot and live view stay available. HomeBase
   cameras, their requests and their recordings are unchanged, and the client
