@@ -21,6 +21,7 @@ import {
   diagnosticCode,
   experimentalOwner,
   diagnosticModel,
+  type RecordingQueryReport,
 } from './discovery-diagnostics.js';
 import { RecordingTranscoder } from './recording-media.js';
 import { MegaRecordings } from './mega-recordings.js';
@@ -73,6 +74,25 @@ export function experimentalStandalone(value?: string): boolean {
   if (text === '' || text === 'false') return false;
   if (text === 'true') return true;
   throw new Error('EUFY_EXPERIMENTAL_STANDALONE must be true or false');
+}
+/**
+ * Parse EUFY_STANDALONE_RECORDING_PROBE, true or false. Unset keeps it off. With
+ * it and EUFY_EXPERIMENTAL_STANDALONE, the login discovery sends one read-only
+ * recording query to each experimental standalone camera after its connection
+ * and records how the camera answered (#178).
+ */
+export function standaloneRecordingProbe(value?: string): boolean {
+  const text = value?.trim() ?? '';
+  if (text === '' || text === 'false') return false;
+  if (text === 'true') return true;
+  throw new Error('EUFY_STANDALONE_RECORDING_PROBE must be true or false');
+}
+/** The startup line for the recording probe option, none while it is off (#178). */
+export function recordingProbeNotice(probe: boolean, standalone: boolean): string | undefined {
+  if (probe !== true) return undefined;
+  return standalone === true
+    ? 'Eufy standalone recording probe enabled: the login discovery sends one read-only recording query to each experimental standalone camera after its connection and logs the answer. Startup waits up to about 15 seconds plus the connection per camera, see docs/DISCOVERY_DIAGNOSTICS.md'
+    : 'Eufy standalone recording probe enabled, but it has no effect without experimental standalone cameras, so nothing is probed. Turn on experimental_standalone (EUFY_EXPERIMENTAL_STANDALONE=true) as well';
 }
 function discoveryDetail(issue: DiscoveryIssue): string | undefined {
   if (issue.code !== 'unsupported_device') return undefined;
@@ -195,6 +215,8 @@ export class MegaBackend extends EventEmitter implements Backend {
     readonly liveMaxSecondsMains = 120,
     /** Forwarded to the client as its experimentalStandalone opt-in. */
     readonly experimentalStandalone = false,
+    /** Probe the recordings of each experimental standalone camera in the login discovery (#178). */
+    readonly standaloneRecordingProbe = false,
   ) {
     super();
     if (!Number.isInteger(liveStreamsPerStation) || liveStreamsPerStation < 1 || liveStreamsPerStation > 4)
@@ -411,14 +433,20 @@ export class MegaBackend extends EventEmitter implements Backend {
       for (const relationship of result.relationships) {
         if (!experimentalOwner(relationship)) continue;
         const stages = connectionStages();
+        let connected = false;
         try {
           await client.connectStation(relationship.ownerId, { onProgress: stages.onProgress, onLookup: stages.onLookup });
           this.discoveryDiagnostics.station(relationship.ownerId, 'connect', 'connected', undefined, stages.detail);
+          connected = true;
         } catch (error) {
           const code = error instanceof EufyError ? error.code : 'connection_failed';
           this.discoveryDiagnostics.station(relationship.ownerId, 'connect', 'error', code, stages.detail);
           this.emit('backend_fault', code);
         }
+        // The opt-in probe runs only in the login discovery, never in one after
+        // a cloud reconnect while live view is already allowed (#178).
+        if (connected && this.standaloneRecordingProbe === true && !this.ready && !this.closed)
+          await this.probeRecordings(client, relationship.ownerId);
       }
       // HomeBase connection already requests existing cover images. This does not
       // start cameras or manufacture a new snapshot by briefly opening live video.
@@ -437,7 +465,40 @@ export class MegaBackend extends EventEmitter implements Backend {
         reportedCapabilities,
         reportedStates,
         this.experimentalStandalone,
+        this.standaloneRecordingProbe,
       );
+    }
+  }
+  /**
+   * Issue #178: one read-only recording query to an experimental standalone
+   * owner, recorded as a recording_query record with query probe. The client
+   * bounds it, so the bridge adds no timeout. It never throws: a failure is
+   * recorded and the discovery goes on, so it cannot fail discovery or login.
+   */
+  private async probeRecordings(client: EufyMegaClient, owner: string): Promise<void> {
+    const stages = connectionStages();
+    const started = performance.now();
+    try {
+      let report: RecordingQueryReport;
+      try {
+        const observation = await client.probeStandaloneRecordings(owner, {
+          onProgress: stages.onProgress,
+          onLookup: stages.onLookup,
+        });
+        report = { query: 'probe', observation, connection: stages.detail };
+      } catch (error) {
+        // A refusal before the client's recording access reports no observation.
+        report = {
+          query: 'probe',
+          reason: error instanceof EufyError ? error.code : 'unclassified_error',
+          remoteCode: error instanceof EufyError ? error.remoteCode : undefined,
+          elapsedMs: Math.round(performance.now() - started),
+          connection: stages.detail,
+        };
+      }
+      this.discoveryDiagnostics.recording(owner, report);
+    } catch {
+      // The probe is a diagnostic. Nothing it does may alter discovery or login.
     }
   }
   private async refresh(): Promise<void> {

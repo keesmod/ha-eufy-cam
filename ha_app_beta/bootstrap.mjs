@@ -20,6 +20,8 @@ if (Number.isInteger(options.live_max_streams_per_station)) process.env.EUFY_LIV
 if (Number.isInteger(options.live_max_seconds_mains)) process.env.EUFY_LIVE_MAX_SECONDS_MAINS = String(options.live_max_seconds_mains);
 // Optional experimental standalone cameras, off unless explicitly true.
 if (options.experimental_standalone === true) process.env.EUFY_EXPERIMENTAL_STANDALONE = 'true';
+// Optional recording probe of experimental standalone cameras during the login discovery, off unless explicitly true.
+if (options.standalone_recording_probe === true) process.env.EUFY_STANDALONE_RECORDING_PROBE = 'true';
 // Old Supervisor options may still contain legacy. Only the Mega migration
 // service starts, and its saved-inventory gate prevents importing old credentials.
 process.env.EUFY_BACKEND = options.backend === 'legacy' ? 'mega' : (options.backend ?? 'mega');
