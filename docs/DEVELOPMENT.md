@@ -292,7 +292,11 @@ plus the `onProgress` and `onLookup` callbacks of the owner's connection when
 the operation has to connect.
 
 The bridge records an operation on an experimental standalone owner except a
-successful thumbnail, and a failed operation on any owner. A HomeBase success
+successful thumbnail, and a failed operation on any owner. Since
+[issue #175](https://github.com/keesmod/ha-eufy-cam/issues/175) the only
+operation on a standalone owner is the opt-in probe, because the bridge refuses
+its other recording requests with `capability_unavailable` before any client
+call. A HomeBase success
 is not recorded, so its recordings and the events timeline do not fill the
 ring. A request can run one operation per owner, so a timeline over several
 HomeBases can add one record per failed owner. Two bridge cases have no client
@@ -365,10 +369,13 @@ probe set `query` to `null` and drop the summary field, and integration
 0.8.47 drops the record. The collection steps and readings are in
 [standalone recording probe](DISCOVERY_DIAGNOSTICS.md#standalone-recording-probe).
 
-Apart from the opt-in probe, the client observes only. Its queries, page
-sizes, timeouts, error codes and the session close after a failed or cancelled
-operation are unchanged, and so
-are the bridge's HTTP status codes and bodies. The values are bounded scalars
+Apart from the standalone refusal of
+[issue #175](https://github.com/keesmod/ha-eufy-cam/issues/175) and the opt-in
+probe, the client observes only. Its queries, page sizes, timeouts, error codes
+and the session close after a failed or cancelled operation are unchanged. For
+a HomeBase, the bridge's HTTP status codes and bodies are unchanged too. For an
+experimental standalone camera, the bridge refuses each recording request with
+`capability_unavailable` (503) before any client call. The values are bounded scalars
 and fixed enums without an ID, serial, DID, path, name or address. The bridge
 revalidates each value at its logging boundary, sets an integer outside its
 bound, a value that is not a real boolean and an enum outside its set to
