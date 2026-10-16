@@ -9,6 +9,7 @@ No live stream or optional debug logging is needed to generate discovery evidenc
 
 | Collection method | Bridge | Bundled library | HA integration |
 |---|---|---|---|
+| [Standalone recording probe](#standalone-recording-probe) records with `query=probe` and the `standalone_recording_probe` summary field | 0.8.39, from 0.8.39-beta.3 | 0.30.1, from 0.30.1-beta.3 | 0.8.48 for the download, from 0.8.48-beta.3 |
 | [Recording query records](#failed-recordings) that say how a recording list, calendar, thumbnail or download ended | 0.8.39 | 0.30.1 | 0.8.48 for the download |
 | [Lookup fields](#lookup-fields-of-a-connection-attempt) that say what the local lookup of a station connection attempt saw | 0.8.38 | 0.30.0 | 0.8.47 for the download and assessment |
 | Beta bridge, library and integration versions such as `0.8.38-beta.1` as received instead of `unavailable` | 0.8.38 | 0.30.0 | 0.8.47 for the download |
@@ -395,8 +396,10 @@ storage. The first answered snapshot, recording or live result shows whether
 the camera accepts the command key. A live view or snapshot shows that in the
 viewer. From bridge 0.8.39 with client 0.30.1 the camera's `media.recordings`
 has `reason=standalone_recordings_unverified` and no recording request is
-sent, see [failed recordings](#failed-recordings). Include the complete
-download in [client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
+sent, see [failed recordings](#failed-recordings). The only exception is the
+opt-in [standalone recording probe](#standalone-recording-probe) at login.
+Include the complete download in
+[client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
 
 ### Lookup fields of a connection attempt
 
@@ -448,7 +451,9 @@ gets one only for a failed operation. The dialog's text, such as "Recordings
 are unavailable for this camera right now. Try again shortly.", does not say
 why. The record does.
 
-A camera on the experimental standalone route gets no such record. From bridge
+A camera on the experimental standalone route gets no such record when its
+recordings are opened. The opt-in probe at login is described in
+[standalone recording probe](#standalone-recording-probe). From bridge
 0.8.39 with client 0.30.1 its recordings show as not available with reason
 `standalone_recordings_unverified`
 ([issue #175](https://github.com/keesmod/ha-eufy-cam/issues/175)). The
@@ -517,6 +522,77 @@ and no microSD card, each list ended after about a second at
 answered and rejected the query. The reporter reads -1100 as missing storage,
 which is not proven. The first attempt on the 2.3.1.6 camera, made while it was unpowered, ended at `query_stage=connect` with `stage=lookup` and `lookup_own_replies=0`.
 Reported, not independently reproduced.
+
+### Standalone recording probe
+
+With the app option `standalone_recording_probe` on, bridge 0.8.39-beta.3 with
+client 0.30.1-beta.3 sends one read-only database query 10017 to each
+experimental standalone camera right after its connection in the login
+discovery, see [standalone recording probe](USAGE.md#standalone-recording-probe)
+([issue #178](https://github.com/keesmod/ha-eufy-cam/issues/178)). Each probe
+leaves one `recording_query` record with `query=probe` in the
+`Eufy discovery:` log lines and in `recent_events`. A probe that sent its
+request has `pages=1` and `query_limit=20`. Its `returned` is always `null`,
+because no HTTP request is answered. The `summary` record has
+`standalone_recording_probe`, `true` when the option is on. Recordings on the
+standalone cards stay "not available" either way.
+
+To collect the result:
+
+1. Update the integration to 0.8.48-beta.3 or newer and the bridge app to
+   0.8.39-beta.3 or newer, see [beta testing](INSTALLATION.md#beta-testing).
+   Run only one bridge app.
+2. In the app's **Configuration**, keep `experimental_standalone` on, turn on
+   **Show unused optional configuration options**, turn on
+   `standalone_recording_probe` and save. For Docker, add
+   `-e EUFY_EXPERIMENTAL_STANDALONE=true -e EUFY_STANDALONE_RECORDING_PROBE=true`.
+3. Restart the app. Wait until the `Eufy discovery:` line with
+   `"event":"summary"` appears before you open live view or recordings. Each
+   standalone camera can add up to about 15 seconds plus its connection.
+4. From the app log, paste verbatim the `Eufy discovery:` line with
+   `"event":"connection"`, the line with `"event":"summary"` and the one line
+   with `"query":"probe"` for each standalone camera. A camera without a probe
+   line was not probed. Also paste its `"event":"station_connection"` line in
+   that case.
+5. Turn `standalone_recording_probe` off again and restart. Turn it off before
+   you enter your Eufy credentials again in Home Assistant.
+
+How to read a probe record:
+
+| Fields | What they show |
+|---|---|
+| `status=completed` with `query_rows=0` | The camera answered with an empty page for today. It answers the query, but that does not show that it has no footage. Clips from earlier days are not requested, and continuous footage may not be listed by this query at all |
+| `status=completed` with `rows_own` above 0 | The camera listed records of its own for today. `rows_other_day`, `rows_invalid_time` and `rows_cipher_id` describe them further. Whether to open recordings for that model is a separate later decision |
+| `status=completed` with `rows_other_device` or `rows_station_mismatch` above 0 | The answer has records of another device, or of the camera without a storage path, such as a record with only a picture |
+| `reason=history_rejected` at `validate` | The camera answered and rejected the query with the database result in `result_code` and `query_result_code`. Unlike a list, this keeps the camera's session open |
+| `reason=device_request_timeout` at `query` with `ack_code=0` and `unhandled_replies=0` | The camera accepted the command but sent no answer within 15 seconds. The session is closed |
+| The same with a non-zero `ack_code` | The camera refused the command with that code |
+| The same with `ack_code=null` | The camera sent neither a command result nor an answer |
+| The same with `unhandled_reason=parse_error` | The camera answered the query in a shape the client cannot read. `unhandled_result_code` is the answer's database result. Only replies to this query or without an inner command are counted |
+| The same with `unhandled_reason=unknown_cmd` | The camera answered without a usable inner command, its code is `unhandled_result_code` |
+| `query_stage=connect` with `stage` and lookup fields | The session was gone before the probe and its new connection failed, read as in [lookup fields](#lookup-fields-of-a-connection-attempt) |
+| `query_stage=admission` | The client refused before sending, with the reason in `reason`, for example `station_busy`. The bridge itself never refuses a probe |
+| `reason=device_request_failed` at `query` with `pages=0` | The request could not be sent, for example because the library does not list the command for this camera type |
+| `reason=device_disconnected` at `query` | The session closed while the probe waited |
+| `reason=cancelled` | The bridge stopped during the probe, or the probe reached its 60-second bound |
+
+`session_open=true` says that the camera's session was connected when the
+probe started, which is normal right after its discovery connection. A probe
+that fails after that connection closes the session, for example after the
+15-second timeout. A `station_connection` record with `phase=observation` and
+`status=disconnected` then comes just before the probe record, and the
+camera's device row in that report shows `owner_status=disconnected` and
+`owner_connected=false`. An answer, also one with `history_rejected`, keeps the
+session open and the row at `owner_status=connected`. None of these values
+proves a cause on its own. Each model's result, a failure included, goes into the
+[model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md).
+
+When the summary has `"standalone_recording_probe":true` but a camera has no
+probe line, its connection in that discovery failed or it is not on the
+experimental route. With `false` or no field the option is off, or the bridge
+is older than 0.8.39-beta.3. Integration 0.8.48-beta.1 and beta.2 show
+`query=null` for a probe record and drop the summary field, and integration
+0.8.47 drops the record. The app log lines carry both in full.
 
 ## Privacy and scope
 

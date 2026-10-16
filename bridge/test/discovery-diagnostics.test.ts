@@ -505,6 +505,35 @@ test('the summary carries the experimental_standalone option and no other record
   );
 });
 
+test('the summary carries the standalone_recording_probe option and no other record does (#178)', () => {
+  const summary = (f: ReturnType<typeof collect>) => f.rows().find(row => row.event === 'summary');
+  for (const [standalone, probe] of [[true, true], [false, true], [true, false], [false, false]] as const) {
+    const f = collect();
+    f.reporter.inventory(result(), 'accepted', undefined, true, new Map(), new Map(), standalone, probe);
+    // The option is reported as set, also when experimental_standalone is off and nothing is probed.
+    assert.equal(summary(f).standalone_recording_probe, probe);
+    assert.equal(summary(f).experimental_standalone, standalone);
+    const keys = Object.keys(summary(f));
+    assert.equal(keys.indexOf('standalone_recording_probe'), keys.indexOf('experimental_standalone') + 1);
+    const report = f.reporter.report();
+    assert.equal(report.last_discovery[0]!.standalone_recording_probe, probe);
+    for (const row of [...f.rows(), ...report.last_discovery])
+      if (row.event !== 'summary') assert.equal('standalone_recording_probe' in row, false, String(row.event));
+  }
+  // Only the boolean true turns it on. Omitted, it is false.
+  for (const value of ['true', 1, {}, null, undefined]) {
+    const f = collect();
+    f.reporter.inventory(result(), 'accepted', undefined, true, new Map(), new Map(), true, value as unknown as boolean);
+    assert.equal(summary(f).standalone_recording_probe, false, JSON.stringify(value));
+  }
+  const omitted = collect();
+  omitted.reporter.inventory(result(), 'accepted', undefined, true, new Map(), new Map(), true);
+  assert.equal(summary(omitted).standalone_recording_probe, false);
+  // Without an inventory the summary still states the option.
+  const failed = collect();
+  failed.reporter.inventory(undefined, 'invalid_inventory', undefined, false, new Map(), new Map(), true, true);
+  assert.equal(summary(failed).standalone_recording_probe, true);
+});
 // The HA download applies the same release and numeric version bounds.
 const versionCases = JSON.parse(readFileSync(
   new URL('../../tests/fixtures/diagnostic-versions.json', import.meta.url), 'utf8',
@@ -627,6 +656,18 @@ test('a recording_query record without a client observation is a failure at admi
   f.reporter.recording('PRIVATE_UNKNOWN', { query: 'list', reason: 'client_disconnected', returned: 503 });
   assert.equal(recordingRows(f).length, 2);
   assert.doesNotMatch(JSON.stringify(f.reporter.report()) + f.lines.join('\n'), /PRIVATE/);
+});
+
+test('a probe record has returned null and keeps the record shape of a list (#178)', () => {
+  const f = collect();
+  f.reporter.prepare(solo());
+  f.reporter.recording('PRIVATE_SOLO', { query: 'probe', reason: 'operation_outside_hardware_scope', elapsedMs: 0 });
+  f.reporter.recording('PRIVATE_SOLO', { query: 'list', reason: 'client_disconnected', elapsedMs: 0, returned: 503 });
+  const [probe, list] = recordingRows(f).map(withoutEnvelope);
+  assert.deepEqual(Object.keys(probe!), Object.keys(list!));
+  assert.deepEqual([probe!.query, probe!.owner, probe!.query_stage, probe!.returned], ['probe', 'standalone', 'admission', null]);
+  assert.equal(list!.returned, 503);
+  assert.doesNotMatch(f.lines.join('\n'), /PRIVATE/);
 });
 
 test('hostile recording observations keep only bounded values and never throw (#152)', () => {

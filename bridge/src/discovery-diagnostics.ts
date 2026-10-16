@@ -70,7 +70,8 @@ export function connectionAttempt(): {
 export type RecordingQuery = 'list' | 'calendar' | 'thumbnail' | 'download';
 /** One recording operation of the bridge for the recording_query record (#152). */
 export interface RecordingQueryReport {
-  query: RecordingQuery;
+  /** `probe` is the opt-in standalone recording probe of the login discovery (#178). */
+  query: RecordingQuery | 'probe';
   /** The client's own report of the operation, revalidated here. Absent when it reported none. */
   observation?: RecordingObservation;
   /** Without an observation: the bridge's reason, such as client_disconnected. */
@@ -81,8 +82,8 @@ export interface RecordingQueryReport {
   elapsedMs?: number;
   /** How far the owner's connection got when the operation had to connect. */
   connection?: StationConnectionDetail;
-  /** The HTTP status the bridge answered the request with. */
-  returned: number;
+  /** The HTTP status the bridge answered the request with. Absent for a probe, which answers no request. */
+  returned?: number;
 }
 type LookupFields = Record<string, number | boolean | string>;
 const lookupReplies: ReadonlySet<unknown> = new Set(['none', 'own', 'account', 'foreign', 'near']);
@@ -149,7 +150,7 @@ const integer = (value: unknown, min: number, max: number): number | null =>
   typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max
     ? value
     : null;
-const recordingQueries: ReadonlySet<unknown> = new Set(['list', 'calendar', 'thumbnail', 'download']);
+const recordingQueries: ReadonlySet<unknown> = new Set(['list', 'calendar', 'thumbnail', 'download', 'probe']);
 const recordingOwners: ReadonlySet<unknown> = new Set(['standalone', 'station']);
 const queryStages: ReadonlySet<unknown> = new Set(['admission', 'connect', 'query', 'validate', 'transfer']);
 const unhandledReasons: ReadonlySet<unknown> = new Set(['unknown_cmd', 'parse_error']);
@@ -520,6 +521,7 @@ export class DiscoveryDiagnostics {
     capabilities: ReadonlyMap<string, CameraCapabilities>,
     states: ReadonlyMap<string, StationState>,
     experimentalStandalone = false,
+    standaloneRecordingProbe = false,
   ): void {
     if (result && this.pendingReport !== this.sequence + 1) this.prepare(result);
     const devices = result?.devices.slice(0, 99) ?? [];
@@ -652,6 +654,8 @@ export class DiscoveryDiagnostics {
       // The opt-in the library received, so a standalone row with
       // standalone_transport_unverified can be read as not admitted (#154).
       experimental_standalone: experimentalStandalone === true,
+      // The opt-in standalone recording probe of the login discovery (#178).
+      standalone_recording_probe: standaloneRecordingProbe === true,
     };
     const snapshot = JSON.stringify([summary, rows, rejections]);
     const unchanged = snapshot === this.previous;

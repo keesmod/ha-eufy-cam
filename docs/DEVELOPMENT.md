@@ -174,7 +174,7 @@ selects the record shape:
 
 | Event | Contents |
 |---|---|
-| `summary` | Actual bridge/library/Node/platform versions, outcome, discovery counts, inventory availability, migration-baseline/missing counts, truncation and report number, and since bridge 0.8.37 the `experimental_standalone` opt-in |
+| `summary` | Actual bridge/library/Node/platform versions, outcome, discovery counts, inventory availability, migration-baseline/missing counts, truncation and report number, since bridge 0.8.37 the `experimental_standalone` opt-in, and since bridge 0.8.39 the `standalone_recording_probe` opt-in |
 | `device` | Anonymous reference, model/firmware/hardware, observed availability, owner relationship/status and per-feature software capabilities |
 | `issue` | Source inventory row, validated reason code, bounded model/type/firmware and parent context, anonymous links where known |
 | `end` | Report number and number of device/issue rows emitted |
@@ -313,7 +313,7 @@ latter.
 | Field | Source | Bound | Meaning |
 |---|---|---|---|
 | `report`, `device_ref`, `model` | Bridge | As `station_connection` | The discovery report and the anonymous reference and model of the operation's owner. That is the camera itself on the experimental standalone route and else its HomeBase. An owner outside the latest inventory gets no record |
-| `query` | Bridge | `list`, `calendar`, `thumbnail`, `download` | The client operation. The events timeline uses `list` |
+| `query` | Bridge | `list`, `calendar`, `thumbnail`, `download`, `probe` | The client operation. The events timeline uses `list`. `probe` is the opt-in standalone recording probe at login |
 | `owner` | Client `owner`, else the bridge's inventory | `standalone`, `station` | `standalone` for an experimental standalone owner. The client reports `station` for an unknown or expired recording ID |
 | `status` | Client `code` | `completed`, `error` | `error` for every failure, including a bridge case without a client report |
 | `reason` | Client `code`, else the bridge | Machine code | `null` on success. The client's `unexpected_error`, an error that is no `EufyError`, becomes `unclassified_error` |
@@ -323,7 +323,7 @@ latter.
 | `stage`, `inventory_address`, `lookup_*`, `inventory_address_*` | Connection callbacks | As `station_connection` | Only when the operation connected the owner: the last connection stage and the lookup of that attempt |
 | `elapsed_ms` | Client `elapsedMs`, else the bridge's own timing | 0 to 3600000 | Milliseconds of the operation. A download ends when its transfer starts |
 | `pages` | Client `pages` | 0 to 4 | Query pages sent. A calendar sends one, a thumbnail or download none |
-| `query_limit` | Last page `limit` | 0 to 10000 | Rows requested by the last page. 0 for a calendar and without a page |
+| `query_limit` | Last page `limit` | 0 to 10000 | Rows requested by the last page. 20 for a probe, 0 for a calendar and without a page |
 | `query_answered` | Last page `answered` | Boolean | Whether the last page was answered. `false` without a page |
 | `ack_code` | Last page `ackCode` | -999999 to 999999 | The session's command result for the last page's query command. `null` without one |
 | `query_result_code` | Last page `resultCode` | -999999 to 999999 | The answer's database result (mIntRet). `null` without an answer |
@@ -331,9 +331,9 @@ latter.
 | `unhandled_replies` | Client `unhandledReplies` | 0 to 99 | Database replies the owner's session could not dispatch during the operation |
 | `unhandled_reason` | Client `unhandledReason` | `unknown_cmd`, `parse_error` | Why the latest of those was not dispatched. `null` without one |
 | `unhandled_result_code` | Client `unhandledResultCode` | -999999 to 999999 | The database result of the latest of those. `null` without one |
-| `rows_own`, `rows_other_device`, `rows_station_mismatch` | Client `rowClasses` | 0 to 10000 | A list's latest answered page divided into rows of the owner's cameras, of other devices, and of the owner's cameras with another station or no valid path. 0 without an answered list page |
-| `rows_invalid_time`, `rows_other_day`, `rows_cipher_id` | Client `rowClasses` | 0 to 10000 | Rows of that page with an invalid time, with a start on another day, and with a cipher ID of any value. 0 without an answered list page |
-| `returned` | Bridge | 100 to 599 | The HTTP status of the bridge's answer to the request, 200 on success. When a video fails after its 200 headers were sent, the bridge closes the response and the record says 503 |
+| `rows_own`, `rows_other_device`, `rows_station_mismatch` | Client `rowClasses` | 0 to 10000 | A list's or probe's latest answered page divided into rows of the owner's cameras, of other devices, and of the owner's cameras with another station or no valid path. 0 without an answered list or probe page |
+| `rows_invalid_time`, `rows_other_day`, `rows_cipher_id` | Client `rowClasses` | 0 to 10000 | Rows of that page with an invalid time, with a start on another day, and with a cipher ID of any value. 0 without an answered list or probe page |
+| `returned` | Bridge | 100 to 599 | The HTTP status of the bridge's answer to the request, 200 on success. When a video fails after its 200 headers were sent, the bridge closes the response and the record says 503. `null` for a probe, which answers no HTTP request |
 
 A record carries every field except `stage`, `inventory_address` and the lookup
 fields, which appear only when the operation connected. `null` means that the
@@ -349,8 +349,25 @@ with `unhandled_result_code=-6006` an answer without an inner command, and
 standalone owner will be refused with `recording_cipher_unavailable`. None of
 these values proves a cause on its own.
 
-The client observes only. Its queries, page sizes, timeouts, error codes and
-the session close after a failed or cancelled operation are unchanged, and so
+Since bridge 0.8.39-beta.3 with client 0.30.1-beta.3, the app option
+`standalone_recording_probe` (Docker `EUFY_STANDALONE_RECORDING_PROBE`) makes
+the login discovery call the client's `probeStandaloneRecordings` once for
+each experimental standalone camera right after its successful connection
+([issue #178](https://github.com/keesmod/ha-eufy-cam/issues/178)). The client
+sends one read-only 10017 request for the newest 20 records of today and
+reports the outcome as its observation. The bridge records every probe outcome
+as a `recording_query` record with `query=probe` and `returned=null`, and the
+`summary` carries `standalone_recording_probe`, a boolean that is `true`
+exactly when the option is on. A discovery after a cloud reconnect sends no
+probe. The HA download keeps `query=probe` from integration 0.8.48-beta.3 and
+only a strict boolean for the summary field. Integration 0.8.48-beta.1 and
+beta.2 set `query` to `null` and drop the summary field, and integration
+0.8.47 drops the record. The collection steps and readings are in
+[standalone recording probe](DISCOVERY_DIAGNOSTICS.md#standalone-recording-probe).
+
+Apart from the opt-in probe, the client observes only. Its queries, page
+sizes, timeouts, error codes and the session close after a failed or cancelled
+operation are unchanged, and so
 are the bridge's HTTP status codes and bodies. The values are bounded scalars
 and fixed enums without an ID, serial, DID, path, name or address. The bridge
 revalidates each value at its logging boundary, sets an integer outside its

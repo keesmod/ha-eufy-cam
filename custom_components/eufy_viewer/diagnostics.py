@@ -59,7 +59,8 @@ _ENUMS = {
     "platform": {"linux", "darwin", "win32", "other"},
     "arch": {"x64", "arm64", "arm", "other"},
     # A recording query of the bridge, its owner and how far it got, bridge 0.8.39.
-    "query": {"list", "calendar", "thumbnail", "download"},
+    # A probe is the opt-in standalone recording probe at login, issue #178.
+    "query": {"list", "calendar", "thumbnail", "download", "probe"},
     "owner": {"standalone", "station"},
     "query_stage": set("admission connect query validate transfer".split()),
     "unhandled_reason": {"unknown_cmd", "parse_error"},
@@ -119,7 +120,7 @@ _BOOLEANS = set(
         "inventory_available truncated unchanged inventory_address "
         "experimental_standalone lookup_broadcast_enabled "
         "inventory_address_on_subnet inventory_address_shared "
-        "session_open query_answered"
+        "session_open query_answered standalone_recording_probe"
     ).split()
 )
 _VERSIONS = set("firmware hardware parent_firmware node".split())
