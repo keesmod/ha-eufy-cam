@@ -62,8 +62,8 @@
   lines and the bridge's diagnostics download. The discovery `summary` gains
   `standalone_recording_probe`, `true` when the option is on. The startup log
   says when the option is on, and adds a note when `experimental_standalone` is
-  off, because then nothing is probed. Docker accepts `true` or `false`, and any
-  other value stops the bridge with an error.
+  off, because then nothing is probed. Docker accepts `true` or `false`, an unset or empty value
+  means off, and any other value stops the bridge with an error.
 - The probe runs only in the login discovery. It never runs for a HomeBase or a
   camera behind one, and never in a discovery after a cloud reconnect. A login
   that is retried after a failure probes again. A probe failure is recorded and

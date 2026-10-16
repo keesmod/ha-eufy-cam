@@ -9,7 +9,7 @@ No live stream or optional debug logging is needed to generate discovery evidenc
 
 | Collection method | Bridge | Bundled library | HA integration |
 |---|---|---|---|
-| [Standalone recording probe](#standalone-recording-probe) records with `query=probe` and the `standalone_recording_probe` summary field | 0.8.39, from 0.8.39-beta.3 | 0.30.1, from 0.30.1-beta.3 | 0.8.48 for the download, from 0.8.48-beta.3 |
+| [Standalone recording probe](#standalone-recording-probe) records with `query=probe` and the `standalone_recording_probe` summary field | 0.8.39 | 0.30.1 | 0.8.48 for the download |
 | [Recording query records](#failed-recordings) that say how a recording list, calendar, thumbnail or download ended | 0.8.39 | 0.30.1 | 0.8.48 for the download |
 | [Lookup fields](#lookup-fields-of-a-connection-attempt) that say what the local lookup of a station connection attempt saw | 0.8.38 | 0.30.0 | 0.8.47 for the download and assessment |
 | Beta bridge, library and integration versions such as `0.8.38-beta.1` as received instead of `unavailable` | 0.8.38 | 0.30.0 | 0.8.47 for the download |
@@ -525,8 +525,8 @@ Reported, not independently reproduced.
 
 ### Standalone recording probe
 
-With the app option `standalone_recording_probe` on, bridge 0.8.39-beta.3 with
-client 0.30.1-beta.3 sends one read-only database query 10017 to each
+With the app option `standalone_recording_probe` on, bridge 0.8.39 with client
+0.30.1 sends one read-only database query 10017 to each
 experimental standalone camera right after its connection in the login
 discovery, see [standalone recording probe](USAGE.md#standalone-recording-probe)
 ([issue #178](https://github.com/keesmod/ha-eufy-cam/issues/178)). Each probe
@@ -539,8 +539,8 @@ standalone cards stay "not available" either way.
 
 To collect the result:
 
-1. Update the integration to 0.8.48-beta.3 or newer and the bridge app to
-   0.8.39-beta.3 or newer, see [beta testing](INSTALLATION.md#beta-testing).
+1. Update the integration to 0.8.48 and the bridge app to 0.8.39, or to their
+   betas with the probe, see [beta testing](INSTALLATION.md#beta-testing).
    Run only one bridge app.
 2. In the app's **Configuration**, keep `experimental_standalone` on, turn on
    **Show unused optional configuration options**, turn on
@@ -600,8 +600,8 @@ offline at login and connected in a later discovery shows `status=connected` in
 that later report and still has no probe line. The download keeps only the
 latest 100 events, so the probe record can be gone from it while the app log
 still has it. With `false` or no field the option is off, or the bridge
-is older than 0.8.39-beta.3. Integration 0.8.48-beta.1 and beta.2 show
-`query=null` for a probe record and drop the summary field, and integration
+predates the probe of 0.8.39. Integration 0.8.48 betas from before the probe
+show `query=null` for a probe record and drop the summary field, and integration
 0.8.47 drops the record. The app log lines carry both in full.
 
 ## Privacy and scope

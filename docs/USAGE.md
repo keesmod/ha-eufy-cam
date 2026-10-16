@@ -249,7 +249,7 @@ first:
    reported). None of these covers a T84xx camera, and the reporter's T8410s
    keep no event clips, so the expected answer is an empty list. A list would
    not play either, because no evidenced decryption path exists for a
-   standalone camera's recordings. From bridge 0.8.39-beta.3 the opt-in
+   standalone camera's recordings. From bridge 0.8.39 the opt-in
    [standalone recording probe](#standalone-recording-probe) sends this
    request once per camera at login, so a tester can report how a camera
    answers it.
@@ -275,7 +275,7 @@ Turn the option off again to return to the previous behavior.
 
 ### Standalone recording probe
 
-From bridge 0.8.39-beta.3 with client 0.30.1-beta.3, the app option
+From bridge 0.8.39 with client 0.30.1, the app option
 `standalone_recording_probe: true` (Docker:
 `EUFY_STANDALONE_RECORDING_PROBE=true`) sends the first candidate above, the
 database query 10017 in the shape the Eufy app sends it, to each experimental
@@ -328,8 +328,9 @@ Each probed camera leaves one `recording_query` line with `"query":"probe"` in
 the app log, and the discovery `summary` line has
 `"standalone_recording_probe":true`. How to collect and read them is in
 [discovery diagnostics](DISCOVERY_DIAGNOSTICS.md#standalone-recording-probe).
-Integration 0.8.48-beta.3 or newer keeps both in **Download diagnostics**.
-Integration 0.8.48-beta.1 and beta.2 replace the record's `query` with `null`
+Integration 0.8.48 or newer keeps both in **Download diagnostics**.
+Integration 0.8.48 betas from before the probe replace the record's `query`
+with `null`
 and drop the summary field, and integration 0.8.47 drops the record. The app
 log shows both in full with any integration.
 

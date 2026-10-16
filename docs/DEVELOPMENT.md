@@ -349,7 +349,7 @@ with `unhandled_result_code=-6006` an answer without an inner command, and
 standalone owner will be refused with `recording_cipher_unavailable`. None of
 these values proves a cause on its own.
 
-Since bridge 0.8.39-beta.3 with client 0.30.1-beta.3, the app option
+Since bridge 0.8.39 with client 0.30.1, the app option
 `standalone_recording_probe` (Docker `EUFY_STANDALONE_RECORDING_PROBE`) makes
 the login discovery call the client's `probeStandaloneRecordings` once for
 each experimental standalone camera right after its successful connection
@@ -359,9 +359,9 @@ reports the outcome as its observation. The bridge records every probe outcome
 as a `recording_query` record with `query=probe` and `returned=null`, and the
 `summary` carries `standalone_recording_probe`, a boolean that is `true`
 exactly when the option is on. A discovery after a cloud reconnect sends no
-probe. The HA download keeps `query=probe` from integration 0.8.48-beta.3 and
-only a strict boolean for the summary field. Integration 0.8.48-beta.1 and
-beta.2 set `query` to `null` and drop the summary field, and integration
+probe. The HA download keeps `query=probe` from integration 0.8.48 and only a
+strict boolean for the summary field. Integration 0.8.48 betas from before the
+probe set `query` to `null` and drop the summary field, and integration
 0.8.47 drops the record. The collection steps and readings are in
 [standalone recording probe](DISCOVERY_DIAGNOSTICS.md#standalone-recording-probe).
 
