@@ -328,7 +328,7 @@ latter.
 | `ack_code` | Last page `ackCode` | -999999 to 999999 | The session's command result for the last page's query command. `null` without one |
 | `query_result_code` | Last page `resultCode` | -999999 to 999999 | The answer's database result (mIntRet). `null` without an answer |
 | `query_rows` | Last page `rows` | 0 to 10000 | Rows in the last page's answer. `null` without an answer |
-| `unhandled_replies` | Client `unhandledReplies` | 0 to 99 | Database replies the owner's session could not dispatch during the operation |
+| `unhandled_replies` | Client `unhandledReplies` | 0 to 99 | Database replies the owner's session could not dispatch during the operation. A probe does not count replies with inner command 10013, the latest-info query every connection sends |
 | `unhandled_reason` | Client `unhandledReason` | `unknown_cmd`, `parse_error` | Why the latest of those was not dispatched. `null` without one |
 | `unhandled_result_code` | Client `unhandledResultCode` | -999999 to 999999 | The database result of the latest of those. `null` without one |
 | `rows_own`, `rows_other_device`, `rows_station_mismatch` | Client `rowClasses` | 0 to 10000 | A list's or probe's latest answered page divided into rows of the owner's cameras, of other devices, and of the owner's cameras with another station or no valid path. 0 without an answered list or probe page |
