@@ -23,3 +23,21 @@ export class StationError extends Error {
     super(code);
   }
 }
+const snapshotStatus = {
+  capability_unavailable: 503,
+  not_connected: 503,
+  recording_busy: 409,
+  live_stopping: 409,
+  station_limit: 409,
+  camera_busy: 409,
+  refresh_timeout: 504,
+  refresh_failed: 502,
+} as const;
+export class SnapshotError extends Error {
+  constructor(
+    readonly code: keyof typeof snapshotStatus,
+    readonly status: number = snapshotStatus[code],
+  ) {
+    super(code);
+  }
+}
