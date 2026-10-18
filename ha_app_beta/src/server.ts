@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { timingSafeEqual } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import type { Credentials, Eufy } from "./eufy.js";
-import { RecordingError,StationError } from "./errors.js";
+import { RecordingError, SnapshotError, StationError } from "./errors.js";
 import type { Notification } from "./notifications.js";
 import type { Peer } from "./streams.js";
 import { MigrationError } from './migration.js';
@@ -26,7 +26,7 @@ function json(response: ServerResponse, status: number, value: unknown): void {
 }
 export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 1024, perMessageDeflate: false });
-  const state = () => ({ protocol: 1, recording_playback: 1, migration: { version: 1, error: eufy.migrationError }, backend: eufy.backendName, transports: ["jpeg", "webrtc"], live_max_streams_per_station: eufy.liveStreamsPerStation, live_max_seconds_mains: eufy.liveMaxSecondsMains, bridge_id: bridgeId, auth: eufy.auth.state, notification_metrics: eufy.notifications?.metrics, cameras: eufy.inventory(), stations: eufy.stations?.inventory() ?? [], alarm_metrics: eufy.stations?.metrics, recording_metrics: eufy.recordings ? { ...eufy.recordings.metrics, active: eufy.recordings.busy } : undefined, stream_metrics: { ...eufy.metrics, ...eufy.hub.recoveryMetrics, active_cameras: eufy.hub.active, quarantined: eufy.hub.quarantined } });
+  const state = () => ({ protocol: 1, recording_playback: 1, snapshot_refresh: 1, migration: { version: 1, error: eufy.migrationError }, backend: eufy.backendName, transports: ["jpeg", "webrtc"], live_max_streams_per_station: eufy.liveStreamsPerStation, live_max_seconds_mains: eufy.liveMaxSecondsMains, bridge_id: bridgeId, auth: eufy.auth.state, notification_metrics: eufy.notifications?.metrics, cameras: eufy.inventory(), stations: eufy.stations?.inventory() ?? [], alarm_metrics: eufy.stations?.metrics, recording_metrics: eufy.recordings ? { ...eufy.recordings.metrics, active: eufy.recordings.busy } : undefined, stream_metrics: { ...eufy.metrics, ...eufy.hub.recoveryMetrics, active_cameras: eufy.hub.active, quarantined: eufy.hub.quarantined } });
   const server = createServer((request, response) => {
     const media = /^\/v1\/media\/([a-f0-9]{64})(\/audio)?$/.exec(new URL(request.url ?? "/", "http://bridge").pathname);
     if (request.method === "GET" && media) {
@@ -101,6 +101,17 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         } finally { response.off("close", abort); }
         return;
       }
+      const refresh = /^\/v1\/snapshot\/([A-Za-z0-9_-]{1,64})\/refresh$/.exec(url.pathname);
+      if (request.method === "POST" && refresh) {
+        if (!eufy.hasCamera(refresh[1]!)) { json(response, 404, { error: "not_found" }); return; }
+        // A client that leaves cancels the refresh, so its viewer never keeps the camera awake.
+        const cancel = new AbortController(); const abort = () => { if (!response.writableFinished) cancel.abort(); }; response.once("close", abort);
+        try {
+          const picture = await eufy.refreshSnapshot(refresh[1]!, cancel.signal);
+          if (!response.destroyed) json(response, 200, { snapshot_received_at: picture.received });
+        } finally { response.off("close", abort); }
+        return;
+      }
       const match = /^\/v1\/snapshot\/([A-Za-z0-9_-]{1,64})$/.exec(url.pathname);
       if (request.method === "GET" && match?.[1]) {
         if (eufy.inventory().find(c => c.serial === match[1])?.capabilities?.snapshot.available === false) { json(response, 503, { error: "capability_unavailable" }); return; }
@@ -109,7 +120,7 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         response.writeHead(200, { "Content-Type": picture.mime, "Content-Length": picture.data.length, "Cache-Control": "no-store" }); response.end(picture.data); return;
       }
       json(response, 404, { error: "not_found" });
-    })().catch(error => { if (error instanceof MigrationError && !response.headersSent) { json(response, 409, { error: error.code }); return; } if (!response.headersSent) json(response, (error instanceof RecordingError || error instanceof StationError) ? error.status : 400, { error: (error instanceof RecordingError || error instanceof StationError) ? error.code : "request_failed" }); else response.destroy(); });
+    })().catch(error => { if (error instanceof MigrationError && !response.headersSent) { json(response, 409, { error: error.code }); return; } const known = error instanceof RecordingError || error instanceof StationError || error instanceof SnapshotError; if (!response.headersSent) json(response, known ? error.status : 400, { error: known ? error.code : "request_failed" }); else response.destroy(); });
   });
   server.requestTimeout = 60_000; server.headersTimeout = 10_000;
   server.on("upgrade", (request, socket, head) => {
