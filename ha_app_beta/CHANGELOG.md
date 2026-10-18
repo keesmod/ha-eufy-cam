@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.39-beta.4
+## 0.8.39-beta.5
 Unreleased
 
 - Pin client 0.30.1 and record recording operations as `recording_query`
@@ -123,6 +123,35 @@ Unreleased
   cover only when the backend stores a new one, so the newest image stays the
   snapshot until a newer one arrives. Without this, a refreshed snapshot would
   revert the same way.
+- Pin client 0.30.1, which delivers motion and person events of an
+  experimental standalone Wall Light Cam S100 `T84A1`
+  ([issue #185](https://github.com/keesmod/ha-eufy-cam/issues/185)). With
+  `experimental_standalone` on, such an event reaches the `/v1/events` stream and the
+  integration's event entity like the event of a camera behind a HomeBase. The
+  client admits a push only when its device and station serial both name the
+  camera, its type is 151 and its event code is 3101 (motion) or 3102
+  (person). It refuses guard mode, alarm, microSD, undecoded and every other
+  push, and every T8410 or T8410C push. No standalone push reaches the vendored
+  station handler, so the camera gets no guard mode or alarm state. An event
+  opens no camera connection and loads no image, so it brings no new event
+  image and does not refresh the snapshot. No new option is needed. HomeBase
+  cameras and their events are unchanged. Synthetic coverage only, the result
+  on hardware is pending.
+- Add `standalone_pushes` to the diagnostics download, the client's
+  `standalonePushStatus` in snake_case: `arrived`, `admitted`, `refused` by
+  reason, `sources` with `cloud` and `local`, and `event_codes` and
+  `push_types` as rows of `{code, count}`. The bridge checks every value again,
+  because it crosses the library boundary. A count is a whole number from 0 to
+  2147483647 and else `null`. A code is a whole number from 0 to 99999, `none`
+  or `other`, and any other row is left out, with at most 16 numeric rows plus
+  `none` and `other` per list. The block is `null` without a client and in the
+  setup report before the first login. A failed login keeps the counts of its
+  closed client in the cached report. It has no serial, DID, address, name or
+  image, and it is not part of the `Eufy discovery:` log lines.
+- The startup line of `experimental_standalone` no longer says the route is
+  unverified on hardware. It says that live view and snapshot are reported
+  working, not independently reproduced, and that T84A1 motion and person
+  events are experimental.
 
 Upgrade: keep the same token and session. Update the integration to 0.8.48 to
 keep the `recording_query` records and the attempt `cause` in **Download
@@ -133,8 +162,11 @@ camera connection" on a standalone camera. The log lines still carry the
 records. The `standalone_recording_probe` option stays off until you turn it
 on. Integration 0.8.48 also keeps its probe records and the summary field in
 **Download diagnostics**, and adds a **Refresh snapshot** button per camera
-that uses the new route. Integration 0.8.47 has no such button. Rollback:
-restore the 0.8.38 app backup and integration 0.8.47.
+that uses the new route. Integration 0.8.47 has no such button. Integration
+0.8.48 keeps `standalone_pushes` in **Download diagnostics**, and 0.8.47 drops
+it. Standalone T84A1 events reach both, because they use the existing event
+path. Rollback: restore the 0.8.38 app backup and integration 0.8.47. A
+standalone T84A1 then has no events again.
 
 ## 0.8.38 - 2026-10-15
 
