@@ -169,6 +169,9 @@ is not known. The same report had a snapshot and live video working on a
 standalone T8410C with firmware 3.3.4.4, another firmware line than the T8410
 ([issue #168](https://github.com/keesmod/ha-eufy-cam/issues/168),
 [report](https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780)).
+On 2026-10-17 a standalone T84A1 with firmware 1.1.0.4 was reported with a
+snapshot and live video with audio working
+([report](https://github.com/keesmod/eufy-mega-client/issues/142#issuecomment-6236984885)).
 These results are reported, not independently reproduced.
 Recordings that would need a cloud key cannot be downloaded, and the camera's
 detection events, guard mode and alarm state are not part of this test.

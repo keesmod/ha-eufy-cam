@@ -152,7 +152,8 @@ The 2026-10-09 update describes standalone T84A1 firmware 1.1.0.4 with no
 media and `standalone_transport_unverified`. That is the existing missing standalone
 route in [client #142](https://github.com/keesmod/eufy-mega-client/issues/142),
 not the T8113-V recognition bug. The reporter's model/type/firmware/topology
-and feature results are recorded in the client's [model matrix][66-matrix].
+and feature results are recorded in the client's [model matrix][66-matrix]. The
+same reporter's result on the experimental route of 2026-10-17 is below.
 T8920/type 20 and T87B0/type 157 are non-camera sensor/tracker products and
 remain outside camera discovery.
 
@@ -264,6 +265,17 @@ rejected with `history_rejected` and `result_code=-1100`, see
 [failed recordings](#failed-recordings). The camera has no microSD card.
 Reported, not independently reproduced.
 
+On 2026-10-17 the issue #66 reporter [reported][84A1-result] a standalone Wall
+Light Cam S100 `T84A1` on firmware 1.1.0.4, with integration 0.8.47 and bridge
+0.8.38 with client 0.30.0 and `experimental_standalone` on. Its `device` row had
+`relationship=standalone`, `relationship_transport=experimental` and a complete
+`descriptor`. Its `station_connection` record with `phase=connect` was
+connected, with `lookup_own_replies=1`, `lookup_inventory_reply=own` and
+`inventory_address_on_subnet=true`. A snapshot and live video with audio worked
+over several sessions. Recordings were not tested. The comment has no
+diagnostics download attached. Reported, not independently reproduced, and
+recorded in the client's [model matrix][84A1-matrix].
+
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
 [152-records]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780
 [168]: https://github.com/keesmod/ha-eufy-cam/issues/168
@@ -272,6 +284,8 @@ Reported, not independently reproduced.
 [66-update]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6083775017
 [66-result]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6098838866
 [66-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-issue-66-update-0282
+[84A1-result]: https://github.com/keesmod/eufy-mega-client/issues/142#issuecomment-6236984885
+[84A1-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-standalone-t84a1-result-2026-10-17
 [149]: https://github.com/keesmod/ha-eufy-cam/issues/149
 [149-result]: https://github.com/keesmod/ha-eufy-cam/issues/149#issuecomment-6214980737
 [149-eufy]: https://service.eufy.com/eu/article-description/eufy-Security-Complete-HomeBase-Compatibility-Guide
