@@ -1256,3 +1256,129 @@ async def test_download_names_a_standalone_model_the_library_did_not_admit(hass)
     assert "model code T8410C" in finding["observation"]
     assert finding["evidence"] == "support.last_discovery"
     assert "PRIVATE" not in json.dumps(result)
+
+
+# Issue #185: the bridge's standalone push counts, numbers only.
+_PUSHES = {
+    "arrived": 5,
+    "admitted": 2,
+    "refused": {
+        "events_not_enabled": 0,
+        "owner_unavailable": 0,
+        "serial_mismatch": 1,
+        "type_mismatch": 1,
+        "unsupported_event": 1,
+    },
+    "sources": {"cloud": 4, "local": 1},
+    "event_codes": [
+        {"code": 3101, "count": 1},
+        {"code": 3102, "count": 1},
+        {"code": 3105, "count": 2},
+        {"code": "none", "count": 1},
+    ],
+    "push_types": [{"code": 18, "count": 1}, {"code": 151, "count": 4}],
+}
+
+
+def test_standalone_pushes_survive_download_unchanged():
+    result = support_report(
+        {
+            "schema": 2,
+            "last_discovery": [],
+            "recent_events": [],
+            "standalone_pushes": _PUSHES,
+        }
+    )
+    assert result["standalone_pushes"] == _PUSHES
+
+
+@pytest.mark.parametrize("value", [None, "PRIVATE_SERIAL", 5, [], True])
+def test_standalone_pushes_are_null_without_a_client_or_an_old_bridge(value):
+    report = {"schema": 2, "last_discovery": [], "recent_events": []}
+    assert support_report(report)["standalone_pushes"] is None
+    report["standalone_pushes"] = value
+    assert support_report(report)["standalone_pushes"] is None
+
+
+def test_standalone_pushes_keep_bounded_integers_and_no_identifiers():
+    hostile = {
+        "arrived": 2**31,
+        "admitted": True,
+        "serial": "PRIVATE_SERIAL",
+        "address": "192.168.1.20",
+        "image": "data:image/jpeg;base64,PRIVATE",
+        "refused": {
+            "events_not_enabled": -1,
+            "owner_unavailable": 1.0,
+            "serial_mismatch": "1",
+            "type_mismatch": None,
+            "unsupported_event": 2**31 - 1,
+            "PRIVATE_SERIAL": 3,
+        },
+        "sources": ["PRIVATE_SERIAL", 1],
+        "event_codes": [
+            {"code": 0, "count": 1},
+            {"code": 99999, "count": 0},
+            {"code": 100000, "count": 1},
+            {"code": -1, "count": 1},
+            {"code": "3101", "count": 1},
+            {"code": "PRIVATE_SERIAL", "count": 1},
+            {"code": True, "count": 1},
+            {"code": 3101.0, "count": 1},
+            {"code": ["none"], "count": 1},
+            {"code": 3102, "count": 2**31},
+            {"code": 3103, "count": False},
+            {"code": "other", "count": 2, "serial": "PRIVATE_SERIAL"},
+            "PRIVATE_SERIAL",
+        ],
+        "push_types": {"151": 4},
+    }
+    result = support_report(
+        {
+            "schema": 2,
+            "last_discovery": [],
+            "recent_events": [],
+            "standalone_pushes": hostile,
+        }
+    )["standalone_pushes"]
+    assert result == {
+        "refused": {"unsupported_event": 2**31 - 1},
+        "sources": {},
+        "event_codes": [
+            {"code": 0, "count": 1},
+            {"code": 99999, "count": 0},
+            {"code": "other", "count": 2},
+        ],
+        "push_types": [],
+    }
+    text = json.dumps(result)
+    for value in ("PRIVATE", "192.168", "base64", "serial", "address", "image"):
+        assert value not in text.replace("serial_mismatch", "")
+    # At most 18 rows reach the download, 16 numeric codes plus none and other.
+    many = [{"code": code, "count": 1} for code in range(40)]
+    rows = support_report(
+        {
+            "schema": 2,
+            "last_discovery": [],
+            "recent_events": [],
+            "standalone_pushes": {**_PUSHES, "event_codes": many},
+        }
+    )["standalone_pushes"]["event_codes"]
+    assert len(rows) == 18
+
+
+async def test_download_keeps_standalone_pushes_from_the_bridge(hass):
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="PRIVATE", data=DATA)
+    entry.add_to_hass(hass)
+    with patch(
+        "custom_components.eufy_viewer.api.BridgeClient.request",
+        AsyncMock(
+            return_value={
+                **_bridge_0837_report(),
+                "standalone_pushes": {**_PUSHES, "serial": "PRIVATE_SERIAL"},
+            }
+        ),
+    ):
+        result = await async_get_config_entry_diagnostics(hass, entry)
+    assert result["support"]["standalone_pushes"] == _PUSHES
+    assert "PRIVATE" not in json.dumps(result)

@@ -142,20 +142,52 @@
   live session a refresh attached to. Bridge 0.8.39 also keeps the last frame
   of a finished live view as the snapshot until a newer image arrives. Until
   now the next unrelated bridge update could put the older HomeBase cover back.
+- **Motion and person events for an experimental standalone T84A1**, from
+  bridge 0.8.39 with client 0.30.1
+  ([issue #185](https://github.com/keesmod/ha-eufy-cam/issues/185)). With
+  `experimental_standalone` on, a standalone Wall Light Cam S100 `T84A1` now
+  fires its existing event entity and the `eufy_viewer_event` automation event
+  for motion and person, as a camera behind a HomeBase does. Until now the
+  client dropped every push of a standalone camera. The client admits a push
+  only when its device and station serial both name the camera, its type is the
+  camera's type 151 and its event code is 3101 (motion) or 3102 (person).
+  Every other push stays refused, including guard mode, alarm, microSD and
+  every T8410 or T8410C push. A person event has `recognition=unidentified`
+  and no name. No new option is needed, and the event path of the integration
+  and the card are unchanged.
+- A standalone camera still gets no guard mode or alarm state. An event opens
+  no camera connection and loads no image, so it brings no new event image and
+  does not refresh the camera's snapshot. Standalone T8410 and T8410C cameras
+  still have no events. HomeBase cameras and their events are unchanged. The
+  events have synthetic test coverage only. No standalone T84A1 push has been
+  captured yet, so the result on hardware is pending.
+- **Download diagnostics** keeps `support.standalone_pushes`, the numbers-only
+  push counts of the bridge's client, from bridge 0.8.39 with client 0.30.1.
+  It has `arrived`, `admitted`, `refused` by reason (`events_not_enabled`,
+  `owner_unavailable`, `serial_mismatch`, `type_mismatch`,
+  `unsupported_event`), `sources` (`cloud`, `local`), and `event_codes` and
+  `push_types` as rows of `{code, count}`. A code is a whole number from 0 to
+  99999, `none` or `other`, with at most 18 rows per list. Each count is a whole
+  number checked against its bound, and anything else is left out. The block is
+  `null` when the bridge has no client or predates it. It has no serial,
+  address, name or image. The assessment adds no finding for it. See
+  [standalone push counts](docs/DISCOVERY_DIAGNOSTICS.md#standalone-push-counts).
 
 Upgrade: update the HACS integration to 0.8.48 and the bridge app to 0.8.39,
 then restart Home Assistant. Keep the same token and session. No configuration
 migration is needed. The `standalone_recording_probe` option stays off until
 you turn it on. Integration 0.8.47 still works with bridge 0.8.39, but its
 download drops the `recording_query` records including the probe records, the
-`standalone_recording_probe` summary field and the attempt `cause` and
-`result_code`, a standalone camera's card shows the generic "Recordings:
-unavailable for this camera connection", and it has no Refresh snapshot
-button. The bridge's `Eufy discovery:` log lines still carry the records. With
-bridge 0.8.38 the download has no such records, a standalone camera's
-recordings are offered and fail as before, and no camera gets the Refresh
-snapshot button.
-Rollback: restore the bridge 0.8.38 app backup and integration 0.8.47.
+`standalone_recording_probe` summary field, `standalone_pushes` and the attempt
+`cause` and `result_code`, a standalone camera's card shows the generic
+"Recordings: unavailable for this camera connection", and it has no Refresh
+snapshot button. Standalone T84A1 events reach integration 0.8.47 as well,
+because they use the existing event path. The bridge's `Eufy discovery:` log
+lines still carry the records. With bridge 0.8.38 the download has no such
+records, a standalone camera's recordings are offered and fail as before, no
+camera gets the Refresh snapshot button and a standalone T84A1 has no events.
+Rollback: restore the bridge 0.8.38 app backup and integration 0.8.47. A
+standalone T84A1 then has no events again.
 
 ## 0.8.47 - 2026-10-15
 

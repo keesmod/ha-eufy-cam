@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import type { DiscoveryResult, Diagnostic, CameraCapabilities, RecordingObservation, StationLookupObservation } from '@keesmod/eufy-mega-client';
 import {
   DiscoveryDiagnostics, diagnosticCode, diagnosticModel, diagnosticReleaseVersion, diagnosticSoftware, diagnosticVersion,
+  standalonePushReport,
   type RecordingQueryReport,
 } from '../src/discovery-diagnostics.js';
 
@@ -32,7 +33,7 @@ test('support report includes software, inventory, anonymous ownership, firmware
     {snapshot:capability,live:capability,recordings:capability}]]),new Map());
   const rows=f.rows();
   assert.equal(rows.length,6);
-  assert.equal(rows[0].software.library,'0.30.1-beta.3');
+  assert.equal(rows[0].software.library,'0.30.1-beta.4');
   assert.equal(rows[0].software.bridge,diagnosticSoftware().bridge);
   assert.deepEqual([rows[0].cameras,rows[0].stations,rows[0].issues],[1,1,2]);
   assert.equal(rows[2].owner_ref,1);
@@ -768,4 +769,70 @@ test('recording_query records share the bounded ring of recent events (#152)', (
   assert.ok(events.every(row => row.event === 'recording_query'));
   assert.equal(events.at(-1)!.ack_code, -149);
   assert.equal(f.lines.length, 151);
+});
+
+// ha-eufy-cam#185: the client's standalone push observation, revalidated at the library boundary.
+const pushObservation = () => ({
+  arrived: 7,
+  admitted: 3,
+  refused: { events_not_enabled: 0, owner_unavailable: 1, serial_mismatch: 1, type_mismatch: 1, unsupported_event: 1 },
+  sources: { cloud: 6, local: 1 },
+  eventCodes: { '3101': 2, '3102': 1, '3103': 2, none: 1, other: 1 },
+  pushTypes: { '151': 6, '18': 1 },
+});
+test('the standalone push observation becomes snake_case counts and bounded {code, count} rows (#185)', () => {
+  assert.deepEqual(standalonePushReport(pushObservation()), {
+    arrived: 7,
+    admitted: 3,
+    refused: { events_not_enabled: 0, owner_unavailable: 1, serial_mismatch: 1, type_mismatch: 1, unsupported_event: 1 },
+    sources: { cloud: 6, local: 1 },
+    event_codes: [
+      { code: 3101, count: 2 }, { code: 3102, count: 1 }, { code: 3103, count: 2 },
+      { code: 'none', count: 1 }, { code: 'other', count: 1 },
+    ],
+    push_types: [{ code: 18, count: 1 }, { code: 151, count: 6 }],
+  });
+  // The client's zero observation before its device transport exists.
+  assert.deepEqual(standalonePushReport({
+    arrived: 0, admitted: 0,
+    refused: { events_not_enabled: 0, owner_unavailable: 0, serial_mismatch: 0, type_mismatch: 0, unsupported_event: 0 },
+    sources: { cloud: 0, local: 0 }, eventCodes: {}, pushTypes: {},
+  }), {
+    arrived: 0, admitted: 0,
+    refused: { events_not_enabled: 0, owner_unavailable: 0, serial_mismatch: 0, type_mismatch: 0, unsupported_event: 0 },
+    sources: { cloud: 0, local: 0 }, event_codes: [], push_types: [],
+  });
+});
+test('a hostile standalone push observation leaves only bounded integers and no serial (#185)', () => {
+  for (const missing of [undefined, null, 'PRIVATE_SERIAL', 7, true, [1, 2]])
+    assert.equal(standalonePushReport(missing), null);
+  const report = standalonePushReport({
+    arrived: 1.5,
+    admitted: -1,
+    refused: { events_not_enabled: '2', owner_unavailable: 2 ** 31, serial_mismatch: Number.NaN, type_mismatch: null, unsupported_event: 2 ** 31 - 1, PRIVATE_SERIAL: 4 },
+    sources: ['PRIVATE_SERIAL', 2],
+    serial: 'PRIVATE_SERIAL',
+    address: '192.168.1.20',
+    image: 'data:image/jpeg;base64,PRIVATE',
+    eventCodes: {
+      PRIVATE_SERIAL: 1, '192.168.1.20': 1, '-1': 1, '01': 1, '100000': 1, '1e3': 1, ' 3101': 1, '3101.0': 1,
+      '99999': 1, '0': 2 ** 31 - 1, '3101': 2 ** 31, '3102': '1', '3103': 1.5, '3104': -1, none: true, other: 0,
+    },
+    pushTypes: ['PRIVATE_SERIAL', 151],
+  })!;
+  assert.deepEqual(report, {
+    arrived: null,
+    admitted: null,
+    refused: { events_not_enabled: null, owner_unavailable: null, serial_mismatch: null, type_mismatch: null, unsupported_event: 2 ** 31 - 1 },
+    sources: { cloud: null, local: null },
+    event_codes: [{ code: 0, count: 2 ** 31 - 1 }, { code: 99999, count: 1 }, { code: 'other', count: 0 }],
+    push_types: [],
+  });
+  assert.doesNotMatch(JSON.stringify(report), /PRIVATE|192\.168|base64|"(?:serial|address|image)"/);
+  // At most 16 numeric keys plus none and other, as the client bounds them.
+  const many = Object.fromEntries([...Array.from({ length: 40 }, (_, index) => [String(index * 10), 1]), ['none', 2], ['other', 3]]);
+  const rows = standalonePushReport({ ...pushObservation(), eventCodes: many })!.event_codes;
+  assert.equal(rows.length, 18);
+  assert.deepEqual(rows.slice(-3), [{ code: 150, count: 1 }, { code: 'none', count: 2 }, { code: 'other', count: 3 }]);
+  assert.ok(rows.every((row) => Number.isInteger(row.count) && (typeof row.code === 'number' ? Number.isInteger(row.code) && row.code >= 0 && row.code <= 99999 : row.code === 'none' || row.code === 'other')));
 });

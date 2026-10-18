@@ -491,6 +491,54 @@ def video_report(raw: Any) -> dict[str, Any]:
     return result
 
 
+# Standalone push counts of the bridge's client, bridge 0.8.39 with client
+# 0.30.1, issue #185. Numbers only, never a serial, address or image.
+_PUSH_COUNT = (0, 2**31 - 1)
+_PUSH_REFUSALS = (
+    "events_not_enabled",
+    "owner_unavailable",
+    "serial_mismatch",
+    "type_mismatch",
+    "unsupported_event",
+)
+# At most 16 numeric event codes or push types, plus none and other.
+_PUSH_ROWS = 18
+
+
+def _push_rows(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for row in raw[:_PUSH_ROWS]:
+        if not isinstance(row, dict):
+            continue
+        code, count = row.get("code"), row.get("count")
+        if not (type(count) is int and _PUSH_COUNT[0] <= count <= _PUSH_COUNT[1]):
+            continue
+        if (type(code) is int and 0 <= code <= 99999) or (
+            isinstance(code, str) and code in {"none", "other"}
+        ):
+            rows.append({"code": code, "count": count})
+    return rows
+
+
+def standalone_pushes_report(raw: Any) -> dict[str, Any] | None:
+    """Keep the bridge's standalone push counts, bounded integers only."""
+    if not isinstance(raw, dict):
+        return None
+    return {
+        **_bounded(raw, dict.fromkeys(("arrived", "admitted"), _PUSH_COUNT)),
+        "refused": _bounded(
+            raw.get("refused"), dict.fromkeys(_PUSH_REFUSALS, _PUSH_COUNT)
+        ),
+        "sources": _bounded(
+            raw.get("sources"), dict.fromkeys(("cloud", "local"), _PUSH_COUNT)
+        ),
+        "event_codes": _push_rows(raw.get("event_codes")),
+        "push_types": _push_rows(raw.get("push_types")),
+    }
+
+
 def support_report(
     raw: Any, window_ms: int = EVIDENCE_GRACE_SECONDS * 1000
 ) -> dict[str, Any]:
@@ -564,6 +612,8 @@ def support_report(
             or type(row.get("age_ms")) is not int
             or row["age_ms"] < window_ms
         ]
+    # Null for a bridge before 0.8.39-beta.5 or without a client.
+    result["standalone_pushes"] = standalone_pushes_report(raw.get("standalone_pushes"))
     return result
 
 

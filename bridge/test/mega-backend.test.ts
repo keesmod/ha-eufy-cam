@@ -769,7 +769,7 @@ for (const empty of [false,true])
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
       assert.equal(summary.experimental_standalone,false);
-      assert.equal(summary.software.library,'0.30.1-beta.3');
+      assert.equal(summary.software.library,'0.30.1-beta.4');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
@@ -866,6 +866,118 @@ function standaloneInventory(transport: boolean): DiscoveryResult {
     issues: transport ? [] : [{ index: 2, deviceId: 'WALL', code: 'standalone_transport_unverified' }],
   };
 }
+// ha-eufy-cam#185: the client's standalone push counts in the support report.
+const pushStatus = () => ({
+  arrived: 5,
+  admitted: 2,
+  refused: { events_not_enabled: 0, owner_unavailable: 0, serial_mismatch: 1, type_mismatch: 1, unsupported_event: 1 },
+  sources: { cloud: 5, local: 0 },
+  eventCodes: { '3101': 1, '3102': 1, '3105': 2, none: 1 },
+  pushTypes: { '151': 4, other: 1 },
+});
+const pushReport = {
+  arrived: 5,
+  admitted: 2,
+  refused: { events_not_enabled: 0, owner_unavailable: 0, serial_mismatch: 1, type_mismatch: 1, unsupported_event: 1 },
+  sources: { cloud: 5, local: 0 },
+  event_codes: [{ code: 3101, count: 1 }, { code: 3102, count: 1 }, { code: 3105, count: 2 }, { code: 'none', count: 1 }],
+  push_types: [{ code: 151, count: 4 }, { code: 'other', count: 1 }],
+};
+test('the support report carries the client standalone push counts, null without a client (#185)', async () => {
+  const f = fixture(undefined, undefined, true);
+  assert.equal(f.backend.supportReport().standalone_pushes, null, 'no client before the first login');
+  let status: unknown = pushStatus();
+  Object.defineProperty(f.client, 'standalonePushStatus', { get: () => status, configurable: true });
+  f.client.discoverDevices = async () => standaloneInventory(true);
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.deepEqual(f.backend.supportReport().standalone_pushes, pushReport);
+    // Hostile values from the library boundary leave only bounded integers.
+    status = {
+      ...pushStatus(),
+      arrived: 2 ** 31,
+      admitted: '2',
+      serial: 'WALL',
+      sources: { cloud: 1.5, local: -1, WALL: 1 },
+      eventCodes: { WALL: 1, '192.168.1.20': 2, '3101': 1 },
+      pushTypes: { '151': { WALL: 1 } },
+    };
+    const hostile = f.backend.supportReport().standalone_pushes!;
+    assert.equal(hostile.arrived, null);
+    assert.equal(hostile.admitted, null);
+    assert.deepEqual(hostile.sources, { cloud: null, local: null });
+    assert.deepEqual(hostile.event_codes, [{ code: 3101, count: 1 }]);
+    assert.deepEqual(hostile.push_types, []);
+    assert.doesNotMatch(JSON.stringify(f.backend.supportReport()), /PRIVATE|WALL|BASE|CAM|192\.168|fixture/);
+    // A getter that throws or a client without it never fails the download.
+    Object.defineProperty(f.client, 'standalonePushStatus', { get: () => { throw new Error('PRIVATE WALL'); }, configurable: true });
+    assert.equal(f.backend.supportReport().standalone_pushes, null);
+    Object.defineProperty(f.client, 'standalonePushStatus', { value: undefined, configurable: true });
+    assert.equal(f.backend.supportReport().standalone_pushes, null);
+  } finally {
+    await f.backend.close();
+  }
+});
+test('a standalone T84A1 motion and person event reaches the notification path like a HomeBase camera, without a camera call (#185)', async () => {
+  const f = fixture(undefined, undefined, true);
+  f.client.discoverDevices = async () => standaloneInventory(true);
+  const commands: string[] = [];
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    f.client.connectStation = async () => { commands.push('connect'); throw new Error('no connection'); };
+    const notifications: Record<string, unknown>[] = [];
+    f.backend.on('notification', (event) => notifications.push(event));
+    for (const [id, type] of [['m', 'motion'], ['p', 'person']] as const)
+      f.client.emit('event', {
+        id, deviceId: 'WALL', type, receivedAt: 'time', occurredAt: null, source: 'push',
+        personName: null, recognition: type === 'person' ? 'unidentified' : 'not_applicable', vendorEventType: type === 'motion' ? 3101 : 3102,
+      });
+    assert.deepEqual(notifications.map((n) => [n.serial, n.event_type, n.recognition, n.eufy_event_type]), [
+      ['WALL', 'motion', 'not_applicable', 3101],
+      ['WALL', 'person', 'unidentified', 3102],
+    ]);
+    assert.deepEqual(commands, [], 'an event opens no connection');
+    assert.deepEqual(f.calls, [], 'an event starts no live view');
+  } finally {
+    await f.backend.close();
+  }
+});
+test('the shipped client\'s standalone push counts pass the bridge projection as zeros (#185)', async () => {
+  const client = new EufyMegaClient({
+    credentials: { email: 'fixture@example.invalid', password: 'fixture', country: 'NL' },
+    sessionStore: { load: async () => undefined, save: async () => {} },
+  });
+  try {
+    const { standalonePushReport } = await import('../src/discovery-diagnostics.js');
+    assert.deepEqual(standalonePushReport(client.standalonePushStatus), {
+      arrived: 0,
+      admitted: 0,
+      refused: { events_not_enabled: 0, owner_unavailable: 0, serial_mismatch: 0, type_mismatch: 0, unsupported_event: 0 },
+      sources: { cloud: 0, local: 0 },
+      event_codes: [],
+      push_types: [],
+    });
+  } finally {
+    await client.shutdown();
+  }
+});
+for (const failed of [false, true])
+  test(`the bridge download keeps standalone_pushes ${failed ? 'from a failed login' : 'as null before any backend'} (#185)`, async () => {
+    const { Eufy } = await import('../src/eufy.js');
+    const f = fixture();
+    Object.defineProperty(f.client, 'standalonePushStatus', { get: pushStatus, configurable: true });
+    if (failed) f.client.discoverDevices = async () => ({ devices: [], relationships: [], issues: [] });
+    else f.storage.read = async () => '{PRIVATE';
+    const bridge = new Eufy(f.storage, 'mega', false, () => f.backend);
+    try {
+      assert.equal(bridge.supportReport().standalone_pushes, null, 'the setup report has no client');
+      await assert.rejects(bridge.login({ username: 'fixture', password: 'fixture', country: 'NL' }));
+      // A failed migration check caches the closed backend's report with its counts.
+      assert.deepEqual(bridge.supportReport().standalone_pushes, failed ? pushReport : null);
+    } finally {
+      await bridge.close();
+    }
+  });
 test('EUFY_EXPERIMENTAL_STANDALONE accepts only true or false and defaults to off', () => {
   assert.equal(experimentalStandalone(undefined), false);
   assert.equal(experimentalStandalone(''), false);

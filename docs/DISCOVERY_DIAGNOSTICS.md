@@ -9,6 +9,7 @@ No live stream or optional debug logging is needed to generate discovery evidenc
 
 | Collection method | Bridge | Bundled library | HA integration |
 |---|---|---|---|
+| [Standalone push counts](#standalone-push-counts) in `support.standalone_pushes` | 0.8.39 | 0.30.1 | 0.8.48 for the download |
 | [Standalone recording probe](#standalone-recording-probe) records with `query=probe` and the `standalone_recording_probe` summary field | 0.8.39 | 0.30.1 | 0.8.48 for the download |
 | [Recording query records](#failed-recordings) that say how a recording list, calendar, thumbnail or download ended | 0.8.39 | 0.30.1 | 0.8.48 for the download |
 | [Lookup fields](#lookup-fields-of-a-connection-attempt) that say what the local lookup of a station connection attempt saw | 0.8.38 | 0.30.0 | 0.8.47 for the download and assessment |
@@ -630,6 +631,70 @@ still has it. With `false` or no field the option is off, or the bridge
 predates the probe of 0.8.39. Integration 0.8.48 betas from before the probe
 show `query=null` for a probe record and drop the summary field, and integration
 0.8.47 drops the record. The app log lines carry both in full.
+
+### Standalone push counts
+
+From bridge 0.8.39 with client 0.30.1, an experimental standalone `T84A1`
+delivers motion and person events, see
+[standalone T84A1 events](USAGE.md#standalone-t84a1-events)
+([issue #185](https://github.com/keesmod/ha-eufy-cam/issues/185)). The download
+then has `support.standalone_pushes`, the client's count of every push that
+names an experimental standalone camera as its device or station, summed over
+all such cameras. It holds numbers only, with no serial, DID, address, name,
+time or image. It is `null` when the bridge has no client, for example before
+the first login, and with an older bridge. Integration 0.8.47 and 0.8.48 betas
+from before the push counts drop the key. HomeBase pushes are never counted.
+
+| Field | Meaning |
+|---|---|
+| `arrived` | Push deliveries that named a standalone camera |
+| `admitted` | Of those, passed on as a motion or person event |
+| `refused.events_not_enabled` | The camera's model has no standalone events. Every T8410 and T8410C push counts here |
+| `refused.owner_unavailable` | The camera was not set up, or it or its session had failed |
+| `refused.serial_mismatch` | The device or station serial of the push was not the camera's own, an empty value included |
+| `refused.type_mismatch` | The push type was not the camera's inventory device type, 151 for the T84A1. A cloud alarm push of type 10900 or 11000 counts here |
+| `refused.unsupported_event` | The push type was the camera's type, but the event code was not 3101 (motion) or 3102 (person), or the camera lacks that detection. A guard mode, alarm or microSD push counts here only when its type is 151 |
+| `sources.cloud`, `sources.local` | Deliveries from the Eufy push service, and camera push notifications over an already open session |
+| `event_codes` | Rows of `{code, count}` by the push's event code |
+| `push_types` | Rows of `{code, count}` by the push's type field. For a local push that is its message type |
+
+A refused push counts once, under the first rule of the table that it failed,
+in this order. `arrived` equals `admitted` plus every refusal, the sum of
+`sources`, the sum of the `event_codes` counts and the sum of the `push_types`
+counts. A `code` is the whole number from 0 to 99999, `none` when the push had
+no such field, or `other` for any other value and once 16 numeric codes exist.
+Each list has at most 18 rows. Both the bridge and the integration check every
+value again, so a count outside 0 to 2147483647 or an unknown row is left out.
+
+How to read the counts:
+
+- `arrived=0`: no push named the camera while events ran. Either Eufy sent the
+  account no push for the camera, or the client could not read the serials of
+  its payload. Such a push is neither counted nor admitted, so 0 alone does not
+  show that Eufy sends nothing. The counts start only when events run, and a
+  push over an open session during live view without running events is not
+  counted either.
+- `admitted` above 0: motion or person pushes reached the event path. Each
+  should appear as an event on that camera in Home Assistant.
+- `serial_mismatch`: the push names other serials than the camera's own.
+- `type_mismatch`: the push type differs from the inventory device type.
+  `push_types` shows the value. 10900 or 11000 is an alarm push, not a motion
+  or person push. With `sources.local` above 0 it may be the message type of
+  local pushes rather than a cloud push shape.
+- `unsupported_event`: `event_codes` shows which codes arrived instead of
+  3101 or 3102.
+- `event_codes` with `none`: a push without a decoded event code.
+- `arrived` counts deliveries, not detections. A detection that arrives both
+  from the cloud and over an open session counts twice, and it can become one
+  event or two.
+
+The counts are kept for the bridge's running client. They survive an event
+stream reconnect but start again at 0 when the bridge restarts or when you
+enter your Eufy credentials again. Paste `support.standalone_pushes` with `support.software` and the
+standalone camera's device row into
+[issue #185](https://github.com/keesmod/ha-eufy-cam/issues/185), together with
+what the Eufy app and Home Assistant showed. The result goes into the
+[model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md).
 
 ## Privacy and scope
 
