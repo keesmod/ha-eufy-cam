@@ -173,8 +173,11 @@ On 2026-10-17 a standalone T84A1 with firmware 1.1.0.4 was reported with a
 snapshot and live video with audio working
 ([report](https://github.com/keesmod/eufy-mega-client/issues/142#issuecomment-6236984885)).
 These results are reported, not independently reproduced.
-Recordings that would need a cloud key cannot be downloaded, and the camera's
-detection events, guard mode and alarm state are not part of this test.
+Recordings that would need a cloud key cannot be downloaded. From bridge 0.8.39
+with client 0.30.1 a standalone T84A1 delivers motion and person events, see
+[standalone T84A1 events](#standalone-t84a1-events). The T8410 and T8410C still
+have no events, and guard mode and alarm state are not part of this route for
+any of the three.
 
 Recordings on a standalone camera are not confirmed to work. On 2026-10-15 the
 issue #152 reporter's standalone T8410 on firmware 2.3.2.4 showed live view,
@@ -278,6 +281,38 @@ to true in the app's configuration, restart the app, wait for the startup
 result, try a snapshot and live view, then use **Download diagnostics** as
 described in [discovery diagnostics](DISCOVERY_DIAGNOSTICS.md#experimental-standalone-cameras).
 Turn the option off again to return to the previous behavior.
+
+### Standalone T84A1 events
+
+From bridge 0.8.39 with client 0.30.1
+([issue #185](https://github.com/keesmod/ha-eufy-cam/issues/185)), a standalone
+Wall Light Cam S100 `T84A1` on the experimental route fires its event entity
+and the `eufy_viewer_event` automation event for motion and person, as a
+camera behind a HomeBase does, see [camera events](NOTIFICATIONS.md). It needs
+no other option than `experimental_standalone`. Integration 0.8.48 is not
+needed for the events, only for the push counts in **Download diagnostics**.
+
+- The client admits a push only when its device and station serial both name
+  the camera, its type is 151 and its event code is 3101 (motion) or 3102
+  (person). It refuses every other push, including guard mode, alarm, microSD
+  and pushes it cannot decode.
+- A standalone camera gets no guard mode, alarm or microSD state, and its
+  person events have `recognition: unidentified` without a name.
+- An event opens no camera connection and loads no image. It brings no new
+  event image, and it does not refresh the camera's snapshot. Use **Refresh
+  snapshot** or live view for a new picture.
+- A standalone `T8410` or `T8410C` has no events. Its pushes are refused and
+  counted with `events_not_enabled`.
+- HomeBase cameras and their events are unchanged.
+
+This is experimental. Its tests use synthetic pushes, and no standalone T84A1
+push has been captured yet, so the result on hardware is pending. To report
+it, turn on `experimental_standalone`, trigger motion and a person in front of
+the camera, check that the Eufy app shows the event and whether Home Assistant
+shows the matching event on that camera and on no other camera, then take
+**Download diagnostics** and read
+`support.standalone_pushes` as described in
+[standalone push counts](DISCOVERY_DIAGNOSTICS.md#standalone-push-counts).
 
 ### Standalone recording probe
 

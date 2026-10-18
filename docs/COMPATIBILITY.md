@@ -437,8 +437,14 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   opt-in [standalone recording probe](USAGE.md#standalone-recording-probe) from
   bridge 0.8.39 sends one read-only 10017 query to each such camera at login
   ([issue #178](https://github.com/keesmod/ha-eufy-cam/issues/178)). No probe
-  result is recorded yet. See
-  [experimental standalone cameras](USAGE.md#experimental-standalone-cameras).
+  result is recorded yet. From bridge 0.8.39 with client 0.30.1 the standalone
+  T84A1 also delivers motion and person events on that route
+  ([issue #185](https://github.com/keesmod/ha-eufy-cam/issues/185)). This is
+  experimental with synthetic coverage only, and the hardware result is
+  pending. The T8410 and T8410C have no events, and none of the three gets
+  guard mode or alarm state. See
+  [experimental standalone cameras](USAGE.md#experimental-standalone-cameras)
+  and [standalone T84A1 events](USAGE.md#standalone-t84a1-events).
 - **Standalone Floodlight Cam 2K `T8424`, type 39**, is recognized as a
   standalone camera from bridge 0.8.29, without a connection route for its
   snapshot, live view or recordings, also with `experimental_standalone` on.

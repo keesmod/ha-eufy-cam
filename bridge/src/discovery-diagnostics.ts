@@ -292,7 +292,77 @@ const cloudRoutes = new Map([
   ['/openapi/oauth/key/exchange', 'key_exchange'],
   ['/app/sendmsg/verify_code', 'verification'],
 ]);
+/** One histogram row of the standalone push observation (#185). */
+export interface StandalonePushRow {
+  /** The decimal value 0 to 99999, `none` when the field was absent, `other` for anything else. */
+  code: number | 'none' | 'other';
+  count: number;
+}
+/**
+ * The client's numbers-only observation of pushes that name an experimental
+ * standalone owner (#185), revalidated here. A value outside its bound is null.
+ */
+export interface StandalonePushReport {
+  arrived: number | null;
+  admitted: number | null;
+  refused: Record<(typeof standalonePushRefusals)[number], number | null>;
+  sources: { cloud: number | null; local: number | null };
+  event_codes: StandalonePushRow[];
+  push_types: StandalonePushRow[];
+}
+const standalonePushRefusals = [
+  'events_not_enabled',
+  'owner_unavailable',
+  'serial_mismatch',
+  'type_mismatch',
+  'unsupported_event',
+] as const;
+/** A push count, the same bound as the integration's other counters. */
+const pushCount = (value: unknown) => integer(value, 0, 2 ** 31 - 1);
+/** At most 16 numeric keys, as the client bounds them, then `none` and `other`. */
+const STANDALONE_PUSH_CODES = 16;
+function standalonePushRows(value: unknown): StandalonePushRow[] {
+  const histogram = record(value);
+  if (!histogram || Array.isArray(histogram)) return [];
+  const numeric: StandalonePushRow[] = [];
+  const named: StandalonePushRow[] = [];
+  for (const [key, raw] of Object.entries(histogram)) {
+    const count = pushCount(raw);
+    if (count === null) continue;
+    if (/^(?:0|[1-9][0-9]{0,4})$/.test(key)) numeric.push({ code: Number(key), count });
+  }
+  for (const code of ['none', 'other'] as const) {
+    const count = pushCount(histogram[code]);
+    if (count !== null) named.push({ code, count });
+  }
+  numeric.sort((a, b) => (a.code as number) - (b.code as number));
+  return [...numeric.slice(0, STANDALONE_PUSH_CODES), ...named];
+}
+/**
+ * Project the client's `standalonePushStatus` for the support report (#185).
+ * It crosses a library boundary, so every value is checked again and nothing
+ * but bounded integers and the code keys above leaves. Null without an
+ * observation.
+ */
+export function standalonePushReport(value: unknown): StandalonePushReport | null {
+  const observation = record(value);
+  if (!observation || Array.isArray(observation)) return null;
+  const refused = record(observation.refused);
+  const sources = record(observation.sources);
+  return {
+    arrived: pushCount(observation.arrived),
+    admitted: pushCount(observation.admitted),
+    refused: Object.fromEntries(
+      standalonePushRefusals.map((reason) => [reason, pushCount(refused?.[reason])]),
+    ) as StandalonePushReport['refused'],
+    sources: { cloud: pushCount(sources?.cloud), local: pushCount(sources?.local) },
+    event_codes: standalonePushRows(observation.eventCodes),
+    push_types: standalonePushRows(observation.pushTypes),
+  };
+}
 export interface SupportReport {
+  /** Standalone push counts of the running client, null without one (#185). */
+  standalone_pushes?: StandalonePushReport | null;
   cache_age_ms?: number;
   recording?: ReturnType<import("./recording-diagnostics.js").RecordingDiagnostics["report"]>;
   software?: ReturnType<typeof diagnosticSoftware>;

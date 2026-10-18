@@ -168,6 +168,7 @@ The bridge's Bearer-authenticated `GET /v1/diagnostics` returns:
 | `generated_at` | Download generation time in UTC ISO format with milliseconds |
 | `last_discovery` | Complete latest summary, device/issue rows and end record |
 | `recent_events` | At most 100 recent cloud, connection, station-connection, recording query and fault records |
+| `standalone_pushes` | Since bridge 0.8.39 with client 0.30.1, the client's numbers-only counts of pushes that name an experimental standalone camera, revalidated by the bridge, or `null` without a client. See [standalone push counts](DISCOVERY_DIAGNOSTICS.md#standalone-push-counts) |
 
 Records carry `diagnostic=discovery`, `schema=2` and a UTC `timestamp`. An `event`
 selects the record shape:
