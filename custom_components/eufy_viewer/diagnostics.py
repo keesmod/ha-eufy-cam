@@ -246,7 +246,9 @@ _AUDIO_PIPELINE_EVENTS = set(
     "jpeg_encoder_exit media_encoder_exit jpeg_encoder_error media_encoder_error "
     "jpeg_invalid_data media_invalid_data jpeg_decode_error media_decode_error "
     "jpeg_encoder_stderr media_encoder_stderr "
-    "media_audio_error audio_transport_error".split()
+    "media_audio_error audio_transport_error "
+    # A snapshot refresh attached to this live session, bridge 0.8.39.
+    "snapshot_refresh".split()
 )
 
 

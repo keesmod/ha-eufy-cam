@@ -12,7 +12,9 @@ Anker.
 ## What you get
 
 - A camera entity for each supported Eufy camera, showing the latest received
-  snapshot. The integration never wakes a camera to refresh it.
+  snapshot. The integration never wakes a camera by itself to refresh it. Its
+  **Refresh snapshot** button wakes the camera for a new snapshot when you
+  press it.
 - Live video after a tap on the **Eufy Security Viewer** card, through WebRTC
   with optional sound. When WebRTC is unavailable or fails, the card shows JPEG
   video without sound.

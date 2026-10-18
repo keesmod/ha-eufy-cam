@@ -6,8 +6,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
-import type { Backend, AuthState } from '../src/backend.js';
+import type { Backend, AuthState, CameraInfo, Picture } from '../src/backend.js';
 import { Eufy } from '../src/eufy.js';
+import { SnapshotError } from '../src/errors.js';
 import { Storage } from '../src/storage.js';
 import { logBackendFault, logStandaloneNotAdmitted } from '../src/backend-log.js';
 
@@ -373,5 +374,352 @@ test('an unadmitted standalone camera reaches the default info logger by model c
     ]);
     assert.equal(error.mock.callCount(), 0);
     for (const value of calls.flat()) assert.doesNotMatch(String(value), /PRIVATE|\n/);
+  } finally { await bridge.close(); }
+});
+
+const camera = (snapshot = true, live = true): CameraInfo => {
+  const capability = (available: boolean) => ({ available, status: available ? 'experimental' as const : 'unsupported' as const, reason: available ? null : 'camera_media_unverified' });
+  return { serial: 'CAM1', name: 'Fixture', model: 'T8214', hardware: '', software: '', battery: 80, snapshot_received_at: null,
+    capabilities: { snapshot: capability(snapshot), live: capability(live), recordings: capability(true) } };
+};
+async function refreshBridge() {
+  const storage = new Storage('/unused');
+  storage.read = async () => undefined;
+  storage.write = async () => {};
+  const calls: string[] = [];
+  const backend = fixtureBackend();
+  backend.inventory = () => [camera()];
+  backend.startLive = async serial => { calls.push(`start:${serial}`); };
+  backend.stopLive = async serial => { calls.push(`stop:${serial}`); };
+  const bridge = new Eufy(storage, 'mega', false, () => backend);
+  await bridge.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+  bridge.snapshotRefreshSettleMs = 0;
+  return { bridge, backend, calls };
+}
+const settle = () => new Promise(resolve => setImmediate(resolve));
+const jpeg = (marker: number) => Buffer.from([255, 216, marker, 255, 217]);
+const refusal = (code: string, status: number) => (error: unknown) => error instanceof SnapshotError && error.code === code && error.status === status;
+const refreshMetrics = (bridge: Eufy) => [bridge.metrics.snapshot_refresh_requests, bridge.metrics.snapshot_refresh_completed, bridge.metrics.snapshot_refresh_failed];
+
+test('a snapshot refresh wakes the camera as a viewer, keeps its frame and ends with the confirmed stop (#182)', async () => {
+  const { bridge, backend, calls } = await refreshBridge();
+  try {
+    const cover = { data: Buffer.from('cover'), mime: 'image/jpeg', received: '2026-10-18T08:00:00.000Z' };
+    backend.pictures.set('CAM1', cover); backend.emit('change');
+    assert.equal(bridge.pictures.get('CAM1'), cover);
+    let changes = 0; bridge.on('change', () => changes++);
+    const refresh = bridge.refreshSnapshot('CAM1');
+    assert.deepEqual(calls, ['start:CAM1']);
+    assert.equal(bridge.hub.phase('CAM1'), 'starting');
+    const frame = jpeg(1);
+    bridge.hub.frame('CAM1', frame);
+    const picture = await refresh;
+    assert.equal(picture.data, frame); assert.equal(picture.mime, 'image/jpeg');
+    assert.ok(Date.parse(picture.received) >= Date.parse(cover.received));
+    assert.equal(bridge.pictures.get('CAM1'), picture);
+    assert.equal(bridge.inventory()[0]!.snapshot_received_at, picture.received);
+    assert.equal(changes, 1);
+    // The refresh was the only viewer, so the hub ends the session and asks for the confirmed stop.
+    assert.equal(bridge.hub.phase('CAM1'), 'stopping'); assert.equal(bridge.hub.active, 0);
+    assert.deepEqual(calls, ['start:CAM1', 'stop:CAM1']);
+    assert.deepEqual(refreshMetrics(bridge), [1, 1, 0]);
+    const [row] = bridge.supportReport().live_video!;
+    const events = row!.pipeline!.map(entry => entry.event);
+    for (const event of ['start', 'snapshot_refresh', 'no_viewers', 'session_end']) assert.ok(events.includes(event as never), event);
+    assert.doesNotMatch(JSON.stringify(row), /CAM1/);
+    // An unrelated backend update no longer brings the older cover back.
+    backend.emit('change');
+    assert.equal(bridge.pictures.get('CAM1'), picture);
+    bridge.hub.stopped('CAM1');
+    assert.equal(bridge.hub.phase('CAM1'), undefined);
+  } finally { await bridge.close(); }
+});
+
+test('a refresh acknowledges frames until the settle time has passed and keeps the latest one', async () => {
+  const { bridge } = await refreshBridge();
+  try {
+    bridge.snapshotRefreshSettleMs = 100;
+    let finished = false;
+    const refresh = bridge.refreshSnapshot('CAM1').finally(() => { finished = true; });
+    bridge.hub.frame('CAM1', jpeg(1)); await settle();
+    // Delivered only because the refresh acknowledged the first frame.
+    bridge.hub.frame('CAM1', jpeg(2)); await settle();
+    assert.equal(finished, false);
+    await new Promise(resolve => setTimeout(resolve, 120));
+    const last = jpeg(3);
+    bridge.hub.frame('CAM1', last);
+    assert.equal((await refresh).data, last);
+    assert.ok(bridge.supportReport().live_video![0]!.pipeline!.some(entry => entry.event === 'frame_ack'));
+    bridge.hub.stopped('CAM1');
+  } finally { await bridge.close(); }
+});
+
+test('a refresh joins a watched camera without starting or stopping it', async () => {
+  const { bridge, calls } = await refreshBridge();
+  try {
+    const delivered: Buffer[] = [], closed: string[] = [];
+    const viewer = { bufferedAmount: 0, send: (frame: Buffer) => { delivered.push(frame); }, close: (_code: number, reason: string) => { closed.push(reason); } };
+    assert.equal(bridge.hub.attach('CAM1', viewer), true);
+    const refresh = bridge.refreshSnapshot('CAM1');
+    const frame = jpeg(1);
+    bridge.hub.frame('CAM1', frame);
+    assert.equal((await refresh).data, frame);
+    await settle();
+    assert.deepEqual(calls, ['start:CAM1']);
+    assert.equal(bridge.hub.phase('CAM1'), 'playing'); assert.equal(bridge.hub.active, 1);
+    assert.deepEqual(delivered, [frame]); assert.deepEqual(closed, []);
+    assert.ok(bridge.supportReport().live_video![0]!.pipeline!.some(entry => entry.event === 'snapshot_refresh'));
+    assert.equal(bridge.hub.ack('CAM1', viewer), true, 'The viewer keeps watching');
+    bridge.hub.detach('CAM1', viewer);
+    assert.deepEqual(calls, ['start:CAM1', 'stop:CAM1']);
+    bridge.hub.stopped('CAM1');
+  } finally { await bridge.close(); }
+});
+
+test('a refresh is refused, never queued, with a fixed code for each blocked state', async () => {
+  const { bridge, backend, calls } = await refreshBridge();
+  const state = backend as unknown as { connected: boolean; recordings: { busy: boolean } };
+  const idle = () => ({ bufferedAmount: 0, send: () => {}, close: () => {} });
+  try {
+    for (const [snapshot, live] of [[false, true], [true, false]]) {
+      backend.inventory = () => [camera(snapshot, live)];
+      state.connected = false;
+      await assert.rejects(bridge.refreshSnapshot('CAM1'), refusal('capability_unavailable', 503));
+      state.connected = true;
+    }
+    backend.inventory = () => [camera()];
+    state.connected = false; state.recordings.busy = true;
+    await assert.rejects(bridge.refreshSnapshot('CAM1'), refusal('not_connected', 503));
+    state.connected = true; bridge.auth = { state: 'connecting' };
+    await assert.rejects(bridge.refreshSnapshot('CAM1'), refusal('not_connected', 503));
+    bridge.auth = { state: 'connected' };
+    await assert.rejects(bridge.refreshSnapshot('CAM1'), refusal('recording_busy', 409));
+    state.recordings.busy = false;
+    assert.deepEqual(calls, []);
+    // A previous session that waits for its confirmed stop.
+    const viewer = idle(); bridge.hub.attach('CAM1', viewer); bridge.hub.detach('CAM1', viewer);
+    await assert.rejects(bridge.refreshSnapshot('CAM1'), refusal('live_stopping', 409));
+    bridge.hub.stopped('CAM1');
+    Object.defineProperty(bridge.hub, 'recoveringStation', { value: true, configurable: true });
+    await assert.rejects(bridge.refreshSnapshot('CAM1'), refusal('live_stopping', 409));
+    delete (bridge.hub as { recoveringStation?: boolean }).recoveringStation;
+    calls.length = 0;
+    backend.canStartLive = () => 'station_limit';
+    await assert.rejects(bridge.refreshSnapshot('CAM1'), refusal('station_limit', 409));
+    backend.canStartLive = () => false;
+    await assert.rejects(bridge.refreshSnapshot('CAM1'), refusal('camera_busy', 409));
+    assert.deepEqual(calls, [], 'A refused refresh starts and stops nothing');
+    assert.equal(bridge.hub.active, 0); assert.equal(bridge.hub.quarantined, 0);
+    backend.canStartLive = () => true;
+    // Four viewers already watch the camera.
+    const viewers = [idle(), idle(), idle(), idle()];
+    for (const peer of viewers) assert.equal(bridge.hub.attach('CAM1', peer), true);
+    await assert.rejects(bridge.refreshSnapshot('CAM1'), refusal('camera_busy', 409));
+    assert.equal(bridge.hub.phase('CAM1'), 'starting');
+    for (const peer of viewers) bridge.hub.detach('CAM1', peer);
+    bridge.hub.stopped('CAM1');
+    assert.deepEqual(refreshMetrics(bridge), [10, 0, 10]);
+  } finally { await bridge.close(); }
+});
+
+test('a refresh without a frame reports the hub\'s timeouts apart from other session ends', async t => {
+  const { bridge, backend, calls } = await refreshBridge();
+  try {
+    for (const [reason, code, status] of [['Viewing time limit or stalled camera', 'refresh_timeout', 504], ['Device stop unconfirmed', 'refresh_failed', 502], ['Bridge shutting down', 'refresh_failed', 502]] as const) {
+      const refresh = bridge.refreshSnapshot('CAM1');
+      bridge.hub.end('CAM1', reason);
+      await assert.rejects(refresh, refusal(code, status));
+      bridge.hub.stopped('CAM1');
+    }
+    // The hub's first-frame timeout ends the session.
+    const base = performance.now();
+    const expired = bridge.refreshSnapshot('CAM1');
+    const clock = t.mock.method(performance, 'now', () => base + 20_001);
+    bridge.hub.tick();
+    clock.mock.restore();
+    await assert.rejects(expired, refusal('refresh_timeout', 504));
+    bridge.hub.stopped('CAM1');
+    const removed = bridge.refreshSnapshot('CAM1');
+    backend.emit('camera-removed', 'CAM1');
+    await assert.rejects(removed, refusal('refresh_failed', 502));
+    bridge.hub.stopped('CAM1');
+    calls.length = 0;
+    backend.startLive = async () => { throw new Error('device_request_timeout'); };
+    await assert.rejects(bridge.refreshSnapshot('CAM1'), refusal('refresh_failed', 502));
+    assert.deepEqual(calls, [], 'A start that never reached the device needs no stop');
+    assert.equal(bridge.hub.quarantined, 0);
+    assert.deepEqual(refreshMetrics(bridge), [6, 0, 6]);
+  } finally { await bridge.close(); }
+});
+
+test('a refresh that joins a starting session waits for its first frame, not the 10 s join deadline', async t => {
+  const { bridge, calls } = await refreshBridge();
+  const base = performance.now();
+  let now = base;
+  t.mock.method(performance, 'now', () => now);
+  try {
+    // A double press while the camera wakes.
+    const first = bridge.refreshSnapshot('CAM1'), second = bridge.refreshSnapshot('CAM1');
+    now = base + 12_000; bridge.hub.tick();
+    assert.equal(bridge.hub.phase('CAM1'), 'starting');
+    const frame = jpeg(1);
+    bridge.hub.frame('CAM1', frame);
+    assert.equal((await first).data, frame); assert.equal((await second).data, frame);
+    assert.deepEqual(calls, ['start:CAM1', 'stop:CAM1']);
+    bridge.hub.stopped('CAM1');
+    // A refresh joins a starting live view, and the frame comes after its deadline but before the next tick.
+    const delivered: Buffer[] = [];
+    const viewer = { bufferedAmount: 0, send: (frame: Buffer) => { delivered.push(frame); }, close: () => {} };
+    bridge.hub.attach('CAM1', viewer);
+    const joined = bridge.refreshSnapshot('CAM1');
+    now += 10_001;
+    const late = jpeg(2);
+    bridge.hub.frame('CAM1', late);
+    assert.equal((await joined).data, late);
+    assert.deepEqual(delivered, [late]); assert.equal(bridge.hub.phase('CAM1'), 'playing');
+    bridge.hub.detach('CAM1', viewer); bridge.hub.stopped('CAM1');
+    // The rejoined refresh still ends with the hub's first-frame timeout.
+    const started = now;
+    const a = bridge.refreshSnapshot('CAM1'), b = bridge.refreshSnapshot('CAM1');
+    now = started + 12_000; bridge.hub.tick();
+    now = started + 20_000; bridge.hub.tick();
+    await assert.rejects(a, refusal('refresh_timeout', 504)); await assert.rejects(b, refusal('refresh_timeout', 504));
+    assert.equal(bridge.hub.phase('CAM1'), 'stopping');
+    bridge.hub.stopped('CAM1');
+    assert.equal(calls.filter(call => call.startsWith('start')).length, 3);
+    assert.deepEqual(refreshMetrics(bridge), [5, 3, 2]);
+  } finally { await bridge.close(); }
+});
+
+test('a refresh that already holds a frame succeeds when the session ends early or its guard fires', async t => {
+  const { bridge, calls } = await refreshBridge();
+  try {
+    bridge.snapshotRefreshSettleMs = 60_000;
+    const ended = bridge.refreshSnapshot('CAM1');
+    const first = jpeg(1);
+    bridge.hub.frame('CAM1', first); await settle();
+    bridge.hub.end('CAM1', 'Viewing time limit or stalled camera');
+    assert.equal((await ended).data, first);
+    assert.equal(bridge.pictures.get('CAM1')!.data, first);
+    bridge.hub.stopped('CAM1');
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    let finished = false;
+    const silent = bridge.refreshSnapshot('CAM1').finally(() => { finished = true; });
+    t.mock.timers.tick(29_999); await settle();
+    assert.equal(finished, false);
+    t.mock.timers.tick(1);
+    await assert.rejects(silent, refusal('refresh_timeout', 504));
+    assert.equal(bridge.hub.phase('CAM1'), 'stopping', 'The guard detaches the viewer');
+    bridge.hub.stopped('CAM1');
+    const guarded = bridge.refreshSnapshot('CAM1');
+    const second = jpeg(2);
+    bridge.hub.frame('CAM1', second); await settle();
+    t.mock.timers.tick(30_000);
+    assert.equal((await guarded).data, second);
+    bridge.hub.stopped('CAM1');
+    assert.deepEqual(calls.filter(call => call.startsWith('stop')).length, 3);
+    assert.deepEqual(refreshMetrics(bridge), [3, 2, 1]);
+  } finally { t.mock.timers.reset(); await bridge.close(); }
+});
+
+test('an aborted refresh detaches its viewer, so the camera gets its confirmed stop', async () => {
+  const { bridge, calls } = await refreshBridge();
+  try {
+    const cancel = new AbortController();
+    const refresh = bridge.refreshSnapshot('CAM1', cancel.signal);
+    assert.equal(bridge.hub.active, 1);
+    cancel.abort();
+    await assert.rejects(refresh, { name: 'AbortError' });
+    assert.equal(bridge.hub.phase('CAM1'), 'stopping');
+    assert.deepEqual(calls, ['start:CAM1', 'stop:CAM1']);
+    bridge.hub.stopped('CAM1');
+    await assert.rejects(bridge.refreshSnapshot('CAM1', AbortSignal.abort()), { name: 'AbortError' });
+    assert.equal(calls.length, 2, 'An aborted request never starts the camera');
+    // A frame does not make an abandoned request succeed.
+    bridge.snapshotRefreshSettleMs = 60_000;
+    const late = new AbortController();
+    const held = bridge.refreshSnapshot('CAM1', late.signal);
+    bridge.hub.frame('CAM1', jpeg(1)); await settle();
+    late.abort();
+    await assert.rejects(held, { name: 'AbortError' });
+    assert.equal(bridge.pictures.has('CAM1'), false);
+    bridge.hub.stopped('CAM1');
+    assert.deepEqual(refreshMetrics(bridge), [3, 0, 3]);
+  } finally { await bridge.close(); }
+});
+
+test('a finished live view keeps its last frame until the backend stores a newer cover (#182)', async () => {
+  const { bridge, backend } = await refreshBridge();
+  // Without FFmpeg the test puts a decoded frame where the JPEG framer puts it.
+  const decoded = (bridge as unknown as { livePictures: Map<string, Picture> }).livePictures;
+  try {
+    const cover = { data: Buffer.from('cover'), mime: 'image/jpeg', received: '2026-10-18T08:00:00.000Z' };
+    backend.pictures.set('CAM1', cover); backend.emit('change');
+    const viewer = { bufferedAmount: 0, send: () => {}, close: () => {} };
+    bridge.hub.attach('CAM1', viewer);
+    const live = { data: jpeg(1), mime: 'image/jpeg', received: '2026-10-18T09:00:00.000Z' };
+    decoded.set('CAM1', live);
+    bridge.hub.detach('CAM1', viewer);
+    assert.equal(bridge.pictures.get('CAM1'), live);
+    backend.emit('change');
+    assert.equal(bridge.pictures.get('CAM1'), live, 'An unrelated backend update keeps the live frame');
+    assert.equal(bridge.inventory()[0]!.snapshot_received_at, live.received);
+    const newer = { data: Buffer.from('newer cover'), mime: 'image/jpeg', received: '2026-10-18T10:00:00.000Z' };
+    backend.pictures.set('CAM1', newer); backend.emit('change');
+    assert.equal(bridge.pictures.get('CAM1'), newer, 'A new cover object replaces it');
+    bridge.hub.stopped('CAM1');
+    // A refresh frame that is the decoded live picture keeps that picture and its time.
+    const refresh = bridge.refreshSnapshot('CAM1');
+    const frame = { data: jpeg(2), mime: 'image/jpeg', received: '2026-10-18T11:00:00.000Z' };
+    decoded.set('CAM1', frame);
+    bridge.hub.frame('CAM1', frame.data);
+    assert.equal(await refresh, frame);
+    assert.equal(bridge.pictures.get('CAM1'), frame, 'The promotion at the session end changes nothing');
+    bridge.hub.stopped('CAM1');
+  } finally { await bridge.close(); }
+});
+
+test('a refresh keeps the newest decoded frame when FFmpeg emits several in one chunk (#182)', async () => {
+  const { bridge } = await refreshBridge();
+  const decoded = (bridge as unknown as { livePictures: Map<string, Picture> }).livePictures;
+  // As the JPEG framer emits a frame: the decoded picture first, then the hub.
+  const emit = (picture: Picture) => { decoded.set('CAM1', picture); bridge.hub.frame('CAM1', picture.data); };
+  const seen: (string | null)[] = [];
+  bridge.on('change', () => seen.push(bridge.inventory()[0]!.snapshot_received_at));
+  try {
+    const refresh = bridge.refreshSnapshot('CAM1');
+    const a = { data: jpeg(1), mime: 'image/jpeg', received: '2026-10-18T10:00:00.000Z' };
+    const b = { data: jpeg(2), mime: 'image/jpeg', received: '2026-10-18T10:00:00.050Z' };
+    // One stdout chunk: b arrives while the refresh still owes the ack for a.
+    emit(a); emit(b);
+    const picture = await refresh;
+    assert.equal(picture, b);
+    assert.equal(bridge.hub.phase('CAM1'), 'stopping');
+    assert.equal(bridge.pictures.get('CAM1'), picture, 'The promotion at the session end changes nothing');
+    assert.deepEqual([...new Set(seen)], [picture.received], 'snapshot_received_at changes once');
+    bridge.hub.stopped('CAM1');
+    // A camera that stops by itself promotes the frame before the refresh hears of it.
+    bridge.snapshotRefreshSettleMs = 60_000;
+    seen.length = 0;
+    const stopped = bridge.refreshSnapshot('CAM1');
+    const c = { data: jpeg(3), mime: 'image/jpeg', received: '2026-10-18T11:00:00.000Z' };
+    emit(c); await settle();
+    bridge.hub.stopped('CAM1');
+    assert.equal(await stopped, c);
+    assert.equal(bridge.pictures.get('CAM1'), c);
+    assert.deepEqual(seen, [c.received], 'Only the promotion reports a change');
+    // Also the newest frame of one chunk, skipped for the refresh, stays the snapshot.
+    seen.length = 0;
+    const skipped = bridge.refreshSnapshot('CAM1');
+    const d = { data: jpeg(4), mime: 'image/jpeg', received: '2026-10-18T12:00:00.000Z' };
+    emit(d);
+    // Stamped as the framer does, after the refresh received d.
+    const e = { data: jpeg(5), mime: 'image/jpeg', received: new Date().toISOString() };
+    emit(e); await settle();
+    bridge.hub.stopped('CAM1');
+    assert.equal(await skipped, e);
+    assert.equal(bridge.pictures.get('CAM1'), e);
+    assert.deepEqual(seen, [e.received], 'Only the promotion reports a change');
+    assert.deepEqual(refreshMetrics(bridge), [3, 3, 0]);
   } finally { await bridge.close(); }
 });

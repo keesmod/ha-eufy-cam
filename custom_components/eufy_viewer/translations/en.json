@@ -89,6 +89,43 @@
       "push_connection": {
         "name": "Eufy push connection"
       }
+    },
+    "button": {
+      "refresh_snapshot": {
+        "name": "Refresh snapshot"
+      }
+    }
+  },
+  "exceptions": {
+    "snapshot_refresh_capability_unavailable": {
+      "message": "This camera cannot refresh its snapshot on its current connection."
+    },
+    "snapshot_refresh_not_connected": {
+      "message": "The bridge is not connected to Eufy. Wait until it reconnects and try again."
+    },
+    "snapshot_refresh_recording_busy": {
+      "message": "A recording is being prepared. Try again when it has finished."
+    },
+    "snapshot_refresh_live_stopping": {
+      "message": "The previous live session is still stopping. Try again in a few seconds."
+    },
+    "snapshot_refresh_station_limit": {
+      "message": "Another camera on this HomeBase is live. Close that live view first."
+    },
+    "snapshot_refresh_camera_busy": {
+      "message": "The camera cannot start another live session now. Close a live view and try again."
+    },
+    "snapshot_refresh_refresh_timeout": {
+      "message": "The camera sent no picture in time. Check its connection and battery, then try again."
+    },
+    "snapshot_refresh_refresh_failed": {
+      "message": "The camera stopped before it sent a picture. Try again."
+    },
+    "snapshot_refresh_not_found": {
+      "message": "The bridge does not know this camera. Check that it is still shared with the bridge's Eufy account."
+    },
+    "snapshot_refresh_failed": {
+      "message": "Could not refresh the snapshot. Check the bridge connection and try again."
     }
   }
 }

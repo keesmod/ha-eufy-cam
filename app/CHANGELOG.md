@@ -84,6 +84,44 @@
   `status=disconnected` before the probe line, and the camera's device row in
   that report shows `owner_status=disconnected`. The option stays in stable
   releases as a documented diagnostic, off by default.
+- Add `POST /v1/snapshot/{serial}/refresh`, which refreshes one camera's
+  snapshot on demand
+  ([issue #182](https://github.com/keesmod/ha-eufy-cam/issues/182)). Until now
+  a snapshot was only the latest HomeBase cover or the last frame of a live
+  view, and nothing could ask for a new one. The bridge starts the camera as a
+  live view would, or joins the live session that already runs. A refresh that
+  joins a session that is still starting, such as a second press, waits for
+  the same first frame as the viewer that started it. It keeps the
+  newest frame about 1 second after the first one, because a battery camera
+  that just woke can still adjust its exposure, and then leaves. When nobody
+  else watches, the session ends with the usual confirmed stop. The answer is
+  `{"snapshot_received_at": "..."}` with the time that frame arrived.
+  `/v1/state` advertises the route with `snapshot_refresh: 1`, and
+  `stream_metrics` gains `snapshot_refresh_requests`,
+  `snapshot_refresh_completed` and `snapshot_refresh_failed`. A live session
+  that a refresh started or joined is a normal `support.live_video` row with
+  the pipeline event `snapshot_refresh`.
+- A refresh wakes the camera and costs battery like a short live view. It
+  counts against `live_max_streams_per_station` and is refused, never queued.
+  The refusals are `station_limit` while the HomeBase is at its live limit,
+  `camera_busy` when the bridge admits no further viewer of the camera,
+  `recording_busy` during a recording operation and `live_stopping` while a
+  previous session waits for its confirmed stop, all HTTP 409.
+  `not_connected` without a connected Eufy session and
+  `capability_unavailable` for a camera whose snapshot or live capability is
+  unavailable are HTTP 503. A refresh without a frame ends with
+  `refresh_timeout` (HTTP 504) when the camera did not deliver one in time,
+  and with `refresh_failed` (HTTP 502) when its session ended for another
+  reason. A refresh takes at most 30 seconds, and a client that disconnects
+  cancels it. Nothing refreshes by itself. Snapshot requests, card loads and
+  the event stream still never wake a camera.
+- A finished live view's last frame no longer reverts to the older HomeBase
+  cover at the next unrelated update. The bridge copied every cover it held
+  again on each backend update, such as a station state change, so the
+  snapshot and its `snapshot_received_at` went back in time. It now copies a
+  cover only when the backend stores a new one, so the newest image stays the
+  snapshot until a newer one arrives. Without this, a refreshed snapshot would
+  revert the same way.
 
 Upgrade: keep the same token and session. Update the integration to 0.8.48 to
 keep the `recording_query` records and the attempt `cause` in **Download
@@ -93,8 +131,9 @@ records and the cause, and shows the generic "Recordings: unavailable for this
 camera connection" on a standalone camera. The log lines still carry the
 records. The `standalone_recording_probe` option stays off until you turn it
 on. Integration 0.8.48 also keeps its probe records and the summary field in
-**Download diagnostics**. Rollback: restore the 0.8.38 app backup and
-integration 0.8.47.
+**Download diagnostics**, and adds a **Refresh snapshot** button per camera
+that uses the new route. Integration 0.8.47 has no such button. Rollback:
+restore the 0.8.38 app backup and integration 0.8.47.
 
 ## 0.8.38 - 2026-10-15
 

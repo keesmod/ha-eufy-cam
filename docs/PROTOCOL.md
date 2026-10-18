@@ -7,6 +7,7 @@ Control routes require `Authorization: Bearer <bridge token>`. The media-only ro
 | `GET /v1/state` | Protocol version, stable bridge ID, account state, cached camera inventory, configured live limit per HomeBase | None |
 | `POST /v1/login` | Account credentials or verification/captcha response | Login/discovery only |
 | `GET /v1/snapshot/{serial}` | Cached JPEG/PNG; 404 if absent | None |
+| `POST /v1/snapshot/{serial}/refresh` | Stores a fresh live frame as the snapshot and returns `{snapshot_received_at}`, see [snapshot refresh](#snapshot-refresh-0839) | Wakes the camera as an internal live viewer with the same admission, limits and confirmed stop. Joins a running session without starting or stopping it |
 | `WS /v1/events` | Initial state followed by push updates | None |
 | `GET /v1/media/{grant}` | Existing MPEG-TS feed, 256-bit grant | Cannot start or renew; closes when owning viewer ends |
 | `GET /v1/media/{grant}/audio` | Complete late AAC ADTS frames under the same viewer grant | Cannot start or renew; closes when owning viewer ends |
@@ -109,6 +110,47 @@ Software transcoding of three streams saturated a 2-core host, so the option
 value that a given host and transport can sustain is a capacity question, not a
 protocol limit. Three concurrent WebRTC streams in a browser on a
 software-transcoding host remain unverified.
+
+## Snapshot refresh, 0.8.39
+
+`/v1/state` advertises `snapshot_refresh: 1`, and integration 0.8.48 offers its
+**Refresh snapshot** button only then
+([issue #182](https://github.com/keesmod/ha-eufy-cam/issues/182)).
+`POST /v1/snapshot/{serial}/refresh` needs no body. The bridge attaches an
+internal viewer to the camera, which starts a live session when none runs or
+joins the running one, so admission, the per-HomeBase live limit, the
+first-frame and stall timeouts, the confirmed STOP, quarantine and recovery stay
+the same as for any viewer. It acknowledges frames until about one second after
+the first one, stores the latest frame as the snapshot, pushes the state change
+and detaches. When it was the only viewer, the session ends with the normal
+confirmed STOP. Other viewers of the camera keep their session. A joining
+viewer has 10 seconds for its first frame, also while the camera still starts.
+A refresh without a frame rejoins when that deadline lapses, so a second press
+or a refresh beside a starting live view waits for the session's first-frame
+timeout like the viewer that started it. A
+refresh gives up after 30 seconds, keeping a frame if one arrived, and a client
+that closes the request detaches the viewer. Success is HTTP 200 with
+`{"snapshot_received_at": "<ISO time>"}`. `GET /v1/snapshot/{serial}` is
+unchanged.
+
+A refresh that cannot run is refused, never queued. Failures use allowlisted
+JSON error codes:
+
+| Status | Code | Meaning |
+|---|---|---|
+| 404 | `not_found` | The camera is not in the inventory |
+| 409 | `recording_busy` | A recording is being prepared |
+| 409 | `live_stopping` | The camera's previous session is still stopping, or the bridge is recovering a HomeBase connection |
+| 409 | `station_limit` | The HomeBase is at `live_max_streams_per_station` |
+| 409 | `camera_busy` | Any other refusal by the live session, such as the viewer or camera slot limits |
+| 502 | `refresh_failed` | The session ended without a frame for another reason, such as a failed start |
+| 503 | `capability_unavailable` | The camera's snapshot or live capability is unavailable |
+| 503 | `not_connected` | The Eufy account or backend is not connected |
+| 504 | `refresh_timeout` | No frame arrived before the session's first-frame or stall timeout, or the 30-second bound |
+
+`stream_metrics` in `/v1/state` counts `snapshot_refresh_requests`,
+`snapshot_refresh_completed` and `snapshot_refresh_failed`. Live diagnostics
+mark the session with the `snapshot_refresh` event.
 
 ## Existing recordings
 

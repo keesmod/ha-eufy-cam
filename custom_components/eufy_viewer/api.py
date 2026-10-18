@@ -98,6 +98,38 @@ async def check_recording_error(response: aiohttp.ClientResponse) -> None:
         raise BridgeRecordingError(code, response.status)
 
 
+class BridgeSnapshotError(BridgeError):
+    """An allowlisted snapshot refresh failure safe to display to the user."""
+
+    def __init__(self, code: str, status: int) -> None:
+        super().__init__(code)
+        self.code = code
+        self.status = status
+
+
+SNAPSHOT_ERRORS = {
+    "capability_unavailable": 503,
+    "not_connected": 503,
+    "recording_busy": 409,
+    "live_stopping": 409,
+    "station_limit": 409,
+    "camera_busy": 409,
+    "refresh_timeout": 504,
+    "refresh_failed": 502,
+    "not_found": 404,
+}
+
+
+async def check_snapshot_error(response: aiohttp.ClientResponse) -> None:
+    """Forward only known codes, never arbitrary bridge error details."""
+    if response.status not in SNAPSHOT_ERRORS.values():
+        return
+    data = json.loads(await read_bounded(response.content, 4096))
+    code = data.get("error") if isinstance(data, dict) else None
+    if isinstance(code, str) and SNAPSHOT_ERRORS.get(code) == response.status:
+        raise BridgeSnapshotError(code, response.status)
+
+
 class BridgeAuthError(BridgeError):
     """Bridge rejected its access token."""
 
@@ -179,6 +211,7 @@ class BridgeState:
     migration_error: str | None = None
     recording_playback: bool = False
     live_max_seconds_mains: int = LIVE_BOUND_DEFAULT_SECONDS
+    snapshot_refresh: bool = False
 
     def live_bound_seconds(self, serial: str) -> int:
         """Mirror the bridge's cap for one camera.
@@ -349,6 +382,8 @@ class BridgeState:
                 type(data.get("recording_playback")) is int
                 and data["recording_playback"] == 1,
                 mains,
+                type(data.get("snapshot_refresh")) is int
+                and data["snapshot_refresh"] == 1,
             )
         except (KeyError, TypeError, ValueError) as err:
             raise BridgeError("Invalid bridge protocol") from err
@@ -412,6 +447,8 @@ class BridgeClient:
                     if response.status != 200:
                         if path.startswith(("/v1/recordings", "/v1/recording-days")):
                             await check_recording_error(response)
+                        if path.startswith("/v1/snapshot/"):
+                            await check_snapshot_error(response)
                         raise BridgeError("Bridge request failed")
                     raw = await read_bounded(
                         response.content,
@@ -460,6 +497,19 @@ class BridgeClient:
                     return await read_bounded(response.content, 5_000_000)
         except (aiohttp.ClientError, TimeoutError) as err:
             raise BridgeError("Snapshot unavailable") from err
+
+    async def refresh_snapshot(self, serial: str) -> str:
+        """Wake the camera on an explicit request and return the new receive time.
+
+        The bridge bounds the refresh at 30 s, inside this request's timeout.
+        """
+        result = await self.request("POST", f"/v1/snapshot/{serial}/refresh")
+        received = (
+            result.get("snapshot_received_at") if isinstance(result, dict) else None
+        )
+        if not isinstance(received, str) or not 1 <= len(received) <= 64:
+            raise BridgeError("Invalid snapshot refresh response")
+        return received
 
     async def recording_thumbnail(self, serial: str, recording_id: str) -> bytes:
         """Thumbnails retain their small independent response budget."""

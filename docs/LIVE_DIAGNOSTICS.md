@@ -201,6 +201,11 @@ categories, including `media_audio_error`, without copying its contents into the
 report. This cached evidence does not require debug logging to be enabled. The
 JSON contains no audio payload, raw header bytes or raw encoder messages.
 Observations expire from the bounded history or disappear on bridge restart.
+From bridge 0.8.39 the event `snapshot_refresh` means a **Refresh snapshot**
+press joined that live session while it was already running. A refresh that
+starts the session marks the event before this row exists, so this row lacks
+it and only the session's `support.live_video` row has it. Integration 0.8.48
+keeps the event in the download, and an older integration's allowlist drops it.
 
 Times are milliseconds since the bridge requested the stream, capped at 3600000.
 `first_data_after_metadata_ms` starts when the library returns its stream metadata.
@@ -361,6 +366,12 @@ stopped. A missing `first_data_ms` means that point never received data, not
 zero. The observation listens on the existing streams and callbacks. It never
 starts, pauses or consumes a stream on its own and it changes neither the
 fallback timing nor the encoder.
+
+A session started by a **Refresh snapshot** press from bridge 0.8.39 is a
+normal live session with a normal `support.live_video` row. Its `pipeline`
+has `snapshot_refresh`, and a refresh that joined a running session adds that
+event to the existing row. A refresh that was the only viewer ends with
+`no_viewers` and `session_end` about one second after its first frame.
 
 Read the row from the source forward. If `input.last_data_age_ms` at the end
 covers the gap that produced the fallback, the P2P video from the HomeBase

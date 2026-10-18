@@ -164,3 +164,19 @@ test("recovery waits for other viewers and pending starts; failed reset retains 
   for (now = 15000; now < 60000; now += 3000) hub.tick();
   assert.equal(recoveries, 1); assert.equal(hub.recoveryMetrics.recovery_failed, 1);
 });
+
+test("phase and station recovery are readable and reading them changes no session", async () => {
+  let now = 0; let confirm!: (serials: string[]) => void; const stops: string[] = [];
+  const hub = new StreamHub({ start: async () => {}, stop: async s => { stops.push(s); }, disposeMedia: () => {}, recover: async () => new Promise(resolve => { confirm = resolve; }) }, () => now);
+  const p = fixture().peer();
+  assert.equal(hub.phase("a"), undefined); assert.equal(hub.recoveringStation, false);
+  hub.attach("a", p); assert.equal(hub.phase("a"), "starting");
+  hub.frame("a", Buffer.from("frame")); assert.equal(hub.phase("a"), "playing"); assert.equal(hub.phase("b"), undefined);
+  assert.equal(hub.active, 1); assert.equal(p.frames.length, 1); assert.deepEqual(stops, []);
+  hub.detach("a", p); assert.equal(hub.phase("a"), "stopping");
+  await new Promise(resolve => setImmediate(resolve));
+  for (now = 3000; now <= 9000; now += 3000) hub.tick();
+  assert.equal(hub.recoveringStation, true); assert.equal(hub.phase("a"), "stopping");
+  confirm(["a"]); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(hub.recoveringStation, false); assert.equal(hub.phase("a"), undefined);
+});
