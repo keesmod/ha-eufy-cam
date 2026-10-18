@@ -53,8 +53,9 @@ test('state reports the configured per-station live limit', async () => {
   try {
     const response = await fetch(`http://127.0.0.1:${address.port}/v1/state`, { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(response.status, 200);
-    const state = await response.json() as { live_max_streams_per_station: number; live_max_seconds_mains: number; protocol: number };
+    const state = await response.json() as { live_max_streams_per_station: number; live_max_seconds_mains: number; protocol: number; snapshot_refresh: number };
     assert.equal(state.protocol, 1);
+    assert.equal(state.snapshot_refresh, 1, 'The integration offers the refresh only when the bridge advertises it');
     assert.equal(state.live_max_streams_per_station, 2);
     assert.equal(state.live_max_seconds_mains, 1800);
   } finally { server.emit('shutdown'); server.close(); await once(server, 'close'); }
@@ -447,5 +448,59 @@ test('failed recording requests keep the exact 503 body and leave a recording_qu
       ['list', 'standalone', 'client_disconnected', 'admission', 503],
     ]);
     assert.doesNotMatch(JSON.stringify(report), /CAM123|PRIVATE/);
+  } finally { server.emit('shutdown'); server.closeAllConnections(); server.close(); await once(server, 'close'); }
+});
+
+test('snapshot refresh is an authenticated POST for a known camera that maps refusals to fixed codes (#182)', async () => {
+  const { SnapshotError } = await import('../src/errors.js');
+  const calls: string[] = [];
+  let next: (signal: AbortSignal) => Promise<{ received: string }> = async () => ({ received: '2026-10-18T10:00:00.000Z' });
+  const fake = Object.assign(new EventEmitter(), {
+    auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123',
+    pictures: new Map([['CAM123', { data: Buffer.from([255, 216, 255, 217]), mime: 'image/jpeg' }]]),
+    hub: new StreamHub({ start: async () => { assert.fail('The route never starts the hub itself'); }, stop: async () => {}, disposeMedia: () => {} }),
+    refreshSnapshot: (serial: string, signal: AbortSignal) => { calls.push(serial); return next(signal); },
+  });
+  const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const base = `http://127.0.0.1:${address.port}`;
+  const url = `${base}/v1/snapshot/CAM123/refresh`;
+  const headers = { Authorization: `Bearer ${token}` };
+  try {
+    assert.equal((await fetch(url, { method: 'POST' })).status, 401);
+    const unknown = await fetch(`${base}/v1/snapshot/OTHER/refresh`, { method: 'POST', headers });
+    assert.equal(unknown.status, 404); assert.deepEqual(await unknown.json(), { error: 'not_found' });
+    for (const [method, path] of [['GET', '/v1/snapshot/CAM123/refresh'], ['POST', '/v1/snapshot/CAM123'], ['POST', '/v1/snapshot/CAM123/refresh/x']]) {
+      const response = await fetch(base + path, { method, headers });
+      assert.equal(response.status, 404, `${method} ${path}`); assert.deepEqual(await response.json(), { error: 'not_found' });
+    }
+    assert.deepEqual(calls, []);
+    const refreshed = await fetch(url, { method: 'POST', headers, body: 'ignored' });
+    assert.equal(refreshed.status, 200); assert.equal(refreshed.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await refreshed.json(), { snapshot_received_at: '2026-10-18T10:00:00.000Z' });
+    assert.deepEqual(calls, ['CAM123']);
+    const image = await fetch(`${base}/v1/snapshot/CAM123`, { headers });
+    assert.equal(image.status, 200); assert.equal(image.headers.get('content-type'), 'image/jpeg');
+    assert.equal((await image.arrayBuffer()).byteLength, 4);
+    for (const [code, status] of [['capability_unavailable', 503], ['not_connected', 503], ['recording_busy', 409], ['live_stopping', 409],
+      ['station_limit', 409], ['camera_busy', 409], ['refresh_timeout', 504], ['refresh_failed', 502]] as const) {
+      next = async () => { throw new SnapshotError(code); };
+      const response = await fetch(url, { method: 'POST', headers });
+      assert.equal(response.status, status, code); assert.deepEqual(await response.json(), { error: code });
+    }
+    next = async () => { throw new Error('PRIVATE upstream detail'); };
+    const failed = await fetch(url, { method: 'POST', headers });
+    assert.equal(failed.status, 400); assert.equal(await failed.text(), '{"error":"request_failed"}');
+    // A client that goes away aborts the refresh.
+    let entered!: () => void, aborted!: () => void;
+    const waiting = new Promise<void>(resolve => { entered = resolve; });
+    const cancelled = new Promise<void>(resolve => { aborted = resolve; });
+    next = signal => new Promise((_resolve, reject) => { signal.addEventListener('abort', () => { aborted(); reject(signal.reason); }); entered(); });
+    const client = new AbortController();
+    const pending = fetch(url, { method: 'POST', headers, signal: client.signal }).then(() => 'answered', () => 'cancelled');
+    await waiting; client.abort();
+    assert.equal(await pending, 'cancelled');
+    await cancelled;
   } finally { server.emit('shutdown'); server.closeAllConnections(); server.close(); await once(server, 'close'); }
 });

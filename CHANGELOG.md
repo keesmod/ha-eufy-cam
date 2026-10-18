@@ -116,6 +116,32 @@
   from a connection fault. An answer, also one with `history_rejected`, adds no
   finding. See
   [standalone recording probe](docs/USAGE.md#standalone-recording-probe).
+- **Refresh snapshot** button for each camera, from bridge 0.8.39
+  ([issue #182](https://github.com/keesmod/ha-eufy-cam/issues/182)). Until now
+  a snapshot was only the latest picture the bridge already held, a HomeBase
+  event cover or the last frame of a live view, and nothing could ask a camera
+  for a new one. A press, also `button.press` from an automation, starts the
+  camera like a live viewer, keeps a frame about one second after the first
+  one and then stops the camera with the normal confirmed stop. The camera's
+  `snapshot_received_at` changes and the card shows the new picture. A camera
+  that sends no picture in time fails the press with a short message after at
+  most about 30 seconds.
+- Each press wakes the camera and costs battery like a short live view. It
+  counts against the HomeBase live limit `live_max_streams_per_station` and is
+  refused, not queued, while that limit is reached, while a recording is being
+  prepared or while a previous live session is still stopping.
+  A camera that is already live keeps its newest frame without a second start,
+  and its live view continues. Nothing refreshes by itself. The integration
+  never presses the button, and image requests, card loads and more-info still
+  never wake a camera.
+- The button needs bridge 0.8.39 and appears only when the bridge advertises
+  the refresh with `snapshot_refresh: 1` in its state, for a camera whose
+  snapshot and live capabilities are available. A bridge updated later or a
+  capability that becomes available later adds the button without a restart.
+  **Download diagnostics** keeps the pipeline event `snapshot_refresh` of a
+  live session a refresh attached to. Bridge 0.8.39 also keeps the last frame
+  of a finished live view as the snapshot until a newer image arrives. Until
+  now the next unrelated bridge update could put the older HomeBase cover back.
 
 Upgrade: update the HACS integration to 0.8.48 and the bridge app to 0.8.39,
 then restart Home Assistant. Keep the same token and session. No configuration
@@ -123,10 +149,12 @@ migration is needed. The `standalone_recording_probe` option stays off until
 you turn it on. Integration 0.8.47 still works with bridge 0.8.39, but its
 download drops the `recording_query` records including the probe records, the
 `standalone_recording_probe` summary field and the attempt `cause` and
-`result_code`, and a standalone camera's card shows the generic "Recordings:
-unavailable for this camera connection". The bridge's `Eufy discovery:` log
-lines still carry the records. With bridge 0.8.38 the download has no such
-records, and a standalone camera's recordings are offered and fail as before.
+`result_code`, a standalone camera's card shows the generic "Recordings:
+unavailable for this camera connection", and it has no Refresh snapshot
+button. The bridge's `Eufy discovery:` log lines still carry the records. With
+bridge 0.8.38 the download has no such records, a standalone camera's
+recordings are offered and fail as before, and no camera gets the Refresh
+snapshot button.
 Rollback: restore the bridge 0.8.38 app backup and integration 0.8.47.
 
 ## 0.8.47 - 2026-10-15

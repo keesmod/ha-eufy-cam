@@ -25,6 +25,12 @@ available for already owned streams. The event card omits unavailable recording
 cameras and explains when none remain. Unknown optional fields are ignored and
 older bridge messages without capabilities preserve existing behavior.
 
+The **Refresh snapshot** button of integration 0.8.48 with bridge 0.8.39
+requires both the snapshot and the live capability, because a refresh wakes the
+camera through a live session. The button appears once both are available and
+the bridge advertises the refresh, and it is unavailable while either is not.
+The bridge refuses a refresh for such a camera with `capability_unavailable`.
+
 Standalone connection owners remain camera devices. Only actual station devices
 produce HomeBase inventory. A failed station connection does not prevent camera
 inventory setup. Camera credentials, sessions and lifecycle remain separate from

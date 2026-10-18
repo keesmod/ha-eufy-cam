@@ -103,7 +103,9 @@ powered camera, shows nothing there, and an unavailable camera hides it.
 
 ### Honest snapshot and streaming limits
 
-A sleeping battery camera cannot provide a newly captured photo on every dashboard visit without waking. Idle views show the **latest received snapshot**. The receive time remains available in the camera entity attributes, the card omits snapshot timestamps. If none exists, the card says so. New Eufy image events replace it. The last decoded live frame becomes the snapshot when viewing ends.
+A sleeping battery camera cannot provide a newly captured photo on every dashboard visit without waking. Idle views show the **latest received snapshot**. The receive time remains available in the camera entity attributes, the card omits snapshot timestamps. If none exists, the card says so. New Eufy image events replace it. The last decoded live frame becomes the snapshot when viewing ends. From bridge 0.8.39 that frame stays the snapshot until a newer image arrives. Earlier bridges could put the older HomeBase image back at the next unrelated update.
+
+From integration 0.8.48 with bridge 0.8.39 each camera has a **Refresh snapshot** button ([issue #182](https://github.com/keesmod/ha-eufy-cam/issues/182)). A press starts the camera the way a live viewer does, keeps a frame about one second after the first one, because a battery camera that just woke can still be adjusting its exposure, and then stops the camera with the normal confirmed stop. The card then shows the new snapshot. Each press wakes the camera and costs battery like a short live view, and it can take up to about 20 seconds while the camera starts. A refresh counts against `live_max_streams_per_station` like any live view. It is refused, not queued, for example while the HomeBase is at its live limit, while a recording is being prepared or while a previous live session is still stopping, and Home Assistant then shows an error that says why. When the camera is already live, the refresh joins that session and keeps its newest frame, and the other viewers keep watching. Nothing presses the button by itself. An automation can press it with the `button.press` action, and every such press wakes the camera. The button appears only with bridge 0.8.39 or newer and only for cameras whose snapshot and live capabilities are available, see [camera capabilities](CAMERA_CAPABILITIES.md).
 
 On supported clients, live viewing uses **WebRTC video with listen-only audio** through Home Assistant's managed go2rtc. The bridge converts H.264/H.265 to browser-compatible H.264, up to **1920 pixels wide and 30 fps**, limited by the camera's source frame rate. Supported camera audio is converted to Opus. Playback starts muted, tap **Sound on / Geluid aan** to listen. A camera that supplies no supported audio remains video-only.
 
@@ -343,7 +345,7 @@ log shows both in full with any integration.
 - On bridge connection loss, entities become unavailable and all live viewers end. The local push socket reconnects with bounded backoff, media never automatically restarts.
 - If a camera does not confirm stopping, the bridge makes at most three stop attempts. Once all viewers and pending starts have left, it makes one attempt to close the HomeBase connection and waits for confirmation before allowing playback again. A failed recovery keeps the affected session blocked. If the recording dialog says the previous live session is still stopping, wait about ten seconds and load the date again. Persistent failures require checking the bridge state, they do not trigger a polling or restart loop.
 - A camera removed from Eufy becomes unavailable in HA, its registry entry is preserved so reappearance keeps IDs. Remove obsolete devices through HA's normal UI.
-- Snapshot age is normal when there has been no new event. This integration does not wake a camera to make an old snapshot look fresh.
+- Snapshot age is normal when there has been no new event. This integration does not wake a camera by itself to make an old snapshot look fresh. Press the camera's **Refresh snapshot** button for a new one, see [snapshot limits](#honest-snapshot-and-streaming-limits).
 
 ## Dependencies
 
@@ -392,8 +394,9 @@ and `audio_input` mean input bytes arrived, not that decoding succeeded.
 `jpeg_frame` and `media_output` identify output from the two encoders.
 `media_reader` means a client requested the media stream, not that it played.
 `frame_ack` means the viewer acknowledged a delivered frame. `viewer_timeout`
-means that acknowledgement deadline expired. `camera_timeout` means the
-camera frame deadline or the maximum viewing duration expired (120 s, or the
+means that acknowledgement deadline expired. `snapshot_refresh` means a
+**Refresh snapshot** press attached to that live session. `camera_timeout`
+means the camera frame deadline or the maximum viewing duration expired (120 s, or the
 configured `live_max_seconds_mains` for a camera without a battery value), so a
 session that reaches the cap ends with `camera_timeout`, `stream_failure` and
 `session_end` by design. `stream_failure` is a general termination category. Encoder error, exit, invalid-data and

@@ -89,6 +89,43 @@
       "push_connection": {
         "name": "Eufy pushverbinding"
       }
+    },
+    "button": {
+      "refresh_snapshot": {
+        "name": "Snapshot vernieuwen"
+      }
+    }
+  },
+  "exceptions": {
+    "snapshot_refresh_capability_unavailable": {
+      "message": "Deze camera kan de snapshot via de huidige verbinding niet vernieuwen."
+    },
+    "snapshot_refresh_not_connected": {
+      "message": "De bridge is niet met Eufy verbonden. Wacht tot de verbinding hersteld is en probeer het opnieuw."
+    },
+    "snapshot_refresh_recording_busy": {
+      "message": "Er wordt een opname voorbereid. Probeer het opnieuw als die klaar is."
+    },
+    "snapshot_refresh_live_stopping": {
+      "message": "De vorige livesessie wordt nog afgesloten. Probeer het over een paar seconden opnieuw."
+    },
+    "snapshot_refresh_station_limit": {
+      "message": "Een andere camera op deze HomeBase is live. Sluit eerst dat livebeeld."
+    },
+    "snapshot_refresh_camera_busy": {
+      "message": "De camera kan nu geen extra livesessie starten. Sluit een livebeeld en probeer het opnieuw."
+    },
+    "snapshot_refresh_refresh_timeout": {
+      "message": "De camera stuurde niet op tijd een beeld. Controleer de verbinding en de batterij en probeer het opnieuw."
+    },
+    "snapshot_refresh_refresh_failed": {
+      "message": "De camera stopte voordat er een beeld kwam. Probeer het opnieuw."
+    },
+    "snapshot_refresh_not_found": {
+      "message": "De bridge kent deze camera niet. Controleer of de camera nog gedeeld is met het Eufy-account van de bridge."
+    },
+    "snapshot_refresh_failed": {
+      "message": "De snapshot kon niet worden vernieuwd. Controleer de verbinding met de bridge en probeer het opnieuw."
     }
   }
 }

@@ -199,6 +199,9 @@ export class StreamHub {
   }
 
   close(): void { for (const serial of this.cameras.keys()) this.end(serial, "Bridge shutting down"); }
+  /** Read-only, so a caller can refuse a stopping camera before it becomes a viewer. */
+  phase(serial: string): CameraSession["phase"] | undefined { return this.cameras.get(serial)?.phase; }
+  get recoveringStation(): boolean { return this.recovering; }
   get active(): number { return [...this.cameras.values()].filter(c => c.phase !== "stopping").length; }
   get quarantined(): number { return Math.max(Number(this.recovering), [...this.cameras.values()].filter(c => c.phase === "stopping").length); }
 }
