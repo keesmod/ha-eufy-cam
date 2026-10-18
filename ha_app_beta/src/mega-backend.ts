@@ -21,7 +21,9 @@ import {
   diagnosticCode,
   experimentalOwner,
   diagnosticModel,
+  standalonePushReport,
   type RecordingQueryReport,
+  type StandalonePushReport,
 } from './discovery-diagnostics.js';
 import { RecordingTranscoder } from './recording-media.js';
 import { MegaRecordings } from './mega-recordings.js';
@@ -67,7 +69,9 @@ export function liveMaxSecondsMains(value?: string): number {
 /**
  * Parse EUFY_EXPERIMENTAL_STANDALONE, true or false. Unset keeps it off. With it,
  * a standalone camera whose library profile allows it, T84A1, T8410 and T8410C today,
- * opens its own local session. Unverified on hardware.
+ * opens its own local session. Live view and snapshot are reported working on
+ * all three, not independently reproduced. A standalone T84A1 also delivers
+ * motion and person events from client 0.30.1, without a hardware result (#185).
  */
 export function experimentalStandalone(value?: string): boolean {
   const text = value?.trim() ?? '';
@@ -244,7 +248,20 @@ export class MegaBackend extends EventEmitter implements Backend {
       () => this.emit('change'),
     );
   }
-  supportReport() { return { ...this.discoveryDiagnostics.report(), live_audio: this.liveAudio.report(this.liveMaxSecondsMains * 1000 + 900_000), recording: this.recordings.diagnostics.report() }; }
+  supportReport() { return { ...this.discoveryDiagnostics.report(), live_audio: this.liveAudio.report(this.liveMaxSecondsMains * 1000 + 900_000), recording: this.recordings.diagnostics.report(), standalone_pushes: this.standalonePushes() }; }
+  /**
+   * The client's standalone push counts (#185), revalidated at this library
+   * boundary. Null without a client. A getter that throws gives null and never
+   * fails the download.
+   */
+  private standalonePushes(): StandalonePushReport | null {
+    if (!this.client) return null;
+    try {
+      return standalonePushReport(this.client.standalonePushStatus);
+    } catch {
+      return null;
+    }
+  }
   recordAudioEvent(serial: string, event: DiagnosticEvent): void { this.streams.get(serial)?.audio.mark(event); }
   audioAttempt(serial: string): number | undefined { return this.streams.get(serial)?.audio.report.attempt; }
   get connected(): boolean {
