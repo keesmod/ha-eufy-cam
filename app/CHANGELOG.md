@@ -151,6 +151,11 @@
   unverified on hardware. It says that live view and snapshot are reported
   working, not independently reproduced, and that T84A1 motion and person
   events are experimental.
+- Update `protobufjs` from 8.8.0 to 8.8.1, which the client's cloud push
+  connection uses, and `strtok3` from 10.3.5 to 10.4.0, which the client's
+  image type detection uses through `file-type`. Live view, snapshots,
+  recordings and events behave the same. No published advisory covers the
+  previous versions.
 
 Upgrade: keep the same token and session. Update the integration to 0.8.48 to
 keep the `recording_query` records and the attempt `cause` in **Download
