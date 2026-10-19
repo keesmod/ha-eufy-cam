@@ -175,12 +175,13 @@
 - **Bridge dependencies** `protobufjs` 8.8.1 and `strtok3` 10.4.0, from
   bridge 0.8.39. They replace 8.8.0 and 10.3.5 and reach the bridge through
   client 0.30.1. `protobufjs` decodes the messages of the client's cloud push
-  connection, and 8.8.1 rejects a message length prefix that overflows.
-  `strtok3` reads the bytes for the client's image type detection through
-  `file-type`. 10.4.0 adds an optional buffer limit that `file-type` does not
-  set and fixes the cancellation of stream reads. Live view, snapshots,
-  recordings and events behave the same. No published advisory covers
-  `protobufjs` 8.8.0 or `strtok3` 10.3.5, so these are maintenance updates.
+  connection, and 8.8.1 rejects an overflowing length prefix inside a decoded
+  message. `strtok3` reads the bytes for the client's image type detection
+  through `file-type`. 10.4.0 adds an optional buffer limit that `file-type`
+  does not set and fixes the cancellation of stream reads. Live view,
+  snapshots, recordings and events behave the same. No published advisory
+  covers `protobufjs` 8.8.0 or `strtok3` 10.3.5, so these are maintenance
+  updates.
 
 Upgrade: update the HACS integration to 0.8.48 and the bridge app to 0.8.39,
 then restart Home Assistant. Keep the same token and session. No configuration
