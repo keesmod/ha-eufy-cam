@@ -56,7 +56,7 @@ Eufy Security Viewer is listed in HACS. You do not need to add a custom reposito
 5. Enter the dedicated Eufy account's email, password and two-letter country code, such as `NL`, `GB` or `US`. Complete verification or captcha if prompted.
 6. Check that your cameras appear under the integration. They show the latest received snapshot, which may be old or absent until a new image arrives.
 
-Optional shortcut: [open this integration in HACS](https://my.home-assistant.io/redirect/hacs_repository/?owner=keesmod&repository=ha-eufy-cam&category=integration). This opens My Home Assistant, which forwards you to your own HA instance.
+Optional shortcut: [open this integration in HACS](https://my.home-assistant.io/redirect/hacs_repository/?owner=keesmod&repository=ha-eufy-cam&category=integration). This opens My Home Assistant, which forwards you to your own HA instance. If HACS asks to add it as a custom repository, select **Add**.
 
 Added this repository to HACS as a custom repository before? You do not need to change anything. HACS now treats it as a listed repository and keeps offering its updates.
 
@@ -99,7 +99,7 @@ Live WebRTC video uses Home Assistant's [go2rtc integration](https://www.home-as
 | There is no Apps menu | The app instructions require Home Assistant OS. Use Docker for a Home Assistant Container installation. |
 | The bridge app does not appear | Confirm you added the repository to the HA app store. Refresh the page and check your machine's architecture against the supported builds above. |
 | The bridge will not start | Check its logs. The token must contain at least 32 characters. |
-| HACS cannot find Eufy Security Viewer | Restart Home Assistant so HACS reloads its repository list, then search again. If it is still missing, open **HACS → ⋮ → Custom repositories**, add `https://github.com/keesmod/ha-eufy-cam` as type **Integration** and select **Add**. |
+| HACS cannot find Eufy Security Viewer | Restart Home Assistant so HACS reloads its repository list, then search again. If it is still missing, open the three-dot menu in HACS and select **Custom repositories**. Add `https://github.com/keesmod/ha-eufy-cam` as type **Integration** and select **Add**. See [HACS custom repository help](https://hacs.xyz/docs/faq/custom_repositories/). |
 | Integration setup cannot connect | Start the bridge first. The current HAOS app uses `http://127.0.0.1:8063`, older apps use their hostname on port 8080. For Docker, use the configured address reachable from HA. |
 | Integration setup rejects the bridge token | Copy the same token configured in the app or in Docker's `bridge.env`. Do not enter the Eufy password in this field. |
 | Eufy login succeeds but cameras are missing | Check device-sharing access in the Eufy app with the dedicated account, then collect a [complete discovery report](DISCOVERY_DIAGNOSTICS.md). |
@@ -120,7 +120,7 @@ Betas are prereleases such as `v0.8.47-beta.1` for opt-in testing before a stabl
 1. Open **HACS**, find **Eufy Security Viewer**, open its three-dot menu and select **Redownload**.
 2. Open **Need a different version?**, select the pre-release tag and download it. Restart Home Assistant.
 
-Alternatively, enable the **Pre-release** switch entity. HACS creates it disabled on the repository's device in the HACS integration. While it is on, HACS offers betas as updates. HACS can take several hours to show a new beta. To see it sooner, select **Update information** in the repository's three-dot menu.
+Alternatively, enable the **Pre-release** switch entity. HACS creates it disabled on the repository's device in the HACS integration. While it is on, HACS offers betas as updates. HACS can take up to a day to show a new beta. To see it sooner, select **Update information** in the repository's three-dot menu.
 
 To return, first turn off the **Pre-release** switch if you turned it on, so HACS stops offering betas. Turning it off does not downgrade an installed beta. Then redownload and select the stable tag, or wait for the stable release, which HACS offers as an update. A beta that changes only the integration works with the stable app. When its notes name a newer bridge, use the beta app below.
 
