@@ -120,7 +120,7 @@ Betas are prereleases such as `v0.8.47-beta.1` for opt-in testing before a stabl
 1. Open **HACS**, find **Eufy Security Viewer**, open its three-dot menu and select **Redownload**.
 2. Open **Need a different version?**, select the pre-release tag and download it. Restart Home Assistant.
 
-Alternatively, enable the **Pre-release** switch entity. HACS creates it disabled on the repository's device in the HACS integration. While it is on, HACS offers betas as updates. HACS can take up to a day to show a new beta. To see it sooner, select **Update information** in the repository's three-dot menu.
+Alternatively, enable the **Pre-release** switch entity. HACS creates it disabled on the repository's device in the HACS integration. While it is on, HACS offers betas as updates. HACS can take a day or longer to show a new beta. To see it sooner, select **Update information** in the repository's three-dot menu.
 
 To return, first turn off the **Pre-release** switch if you turned it on, so HACS stops offering betas. Turning it off does not downgrade an installed beta. Then redownload and select the stable tag, or wait for the stable release, which HACS offers as an update. A beta that changes only the integration works with the stable app. When its notes name a newer bridge, use the beta app below.
 
