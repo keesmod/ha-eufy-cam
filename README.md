@@ -73,9 +73,18 @@ Using Home Assistant Container or a separate bridge machine? Follow the
 
 ### 2. Install and connect the HACS integration
 
-1. In **HACS → ⋮ → Custom repositories**, add the same repository URL as an
-   **Integration**.
-2. Download **Eufy Security Viewer** and restart Home Assistant.
+Eufy Security Viewer is listed in HACS. You do not need to add a custom
+repository.
+
+1. Open **HACS** and search for **Eufy Security Viewer**. It is not the same as
+   the separate **Eufy Security** integration. If HACS cannot find it, see
+   [troubleshooting](docs/INSTALLATION.md#troubleshooting). The button below
+   opens it directly. If HACS asks to add it as a custom repository, select
+   **Add**.
+
+   [![Open Eufy Security Viewer in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=keesmod&repository=ha-eufy-cam&category=integration)
+
+2. Open it, select **Download** and restart Home Assistant.
 3. Open **Settings → Devices & services → Add integration → Eufy Security Viewer**.
 4. Enter `http://127.0.0.1:8063` for the Home Assistant OS app, or the bridge
    address from your Docker setup. Enter the token you saved above.
