@@ -277,6 +277,32 @@ over several sessions. Recordings were not tested. The comment has no
 diagnostics download attached. Reported, not independently reproduced, and
 recorded in the client's [model matrix][84A1-matrix].
 
+On 2026-10-22 the reporter of [issue #198][198] described a Video Doorbell
+T8210 under a HomeBase 3 that integration 0.8.47 does not list. The issue has
+no discovery report or diagnostics download, so the received model, type and
+firmware are not known. The reporter found no obvious
+reference to the doorbell in the bridge logs. From bridge 0.8.36 an unsupported
+`T8210` or `T8210C` row is logged at each discovery as
+`Eufy backend: unsupported_device` with its `device_model` and `device_type`,
+so whether their doorbell arrives as such a row is not known. Public reports
+show this doorbell arriving as `T8210` or as `T8210C`, both with type 7. Client
+0.30.0 and earlier have no profile for either, so such a row is rejected with
+`unsupported_device`. Client 0.30.1, included in bridge 0.8.39, admits exactly
+`T8210` and `T8210C` with type 7 under the HomeBase 3 policy. This rests on
+public evidence, recorded in the client's [model matrix][198-matrix]. Under
+another parent, such as a HomeBase 2, its `device` row shows
+`relationship=unsupported` with `relationship_reason=unsupported_station`, and
+Home Assistant shows it as a camera without media or events. An empty or self parent
+gives `relationship_reason=invalid_device_relationship` instead. `T8212`, other
+suffixes and other types stay `unsupported_device`. If the doorbell is still
+missing, restart the bridge once and [collect the startup
+logs](#collect-the-startup-logs). Look for an `issue` row with
+`code=unsupported_device`. It shows the received `device_type`, and the
+`model` when it fits the bound described below, otherwise `model=unavailable`.
+If the report has no row for it at all, check that the doorbell is shared
+with the account the bridge uses. Not tested on hardware with this
+integration.
+
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
 [152-records]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780
 [168]: https://github.com/keesmod/ha-eufy-cam/issues/168
@@ -293,6 +319,8 @@ recorded in the client's [model matrix][84A1-matrix].
 [149-mega]: https://github.com/mscodemonkey/eufy-mega-security/issues/7
 [149-upstream]: https://github.com/bropat/eufy-security-client/issues/722
 [149-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-issue-149-0292
+[198]: https://github.com/keesmod/ha-eufy-cam/issues/198
+[198-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#public-t8210-and-t8210c-type-7-evidence-0301
 
 `ref`, `owner_ref` and `device_ref` are anonymous references within a report.
 `inventory_row` is a separate zero-based source position. Use the `report` number

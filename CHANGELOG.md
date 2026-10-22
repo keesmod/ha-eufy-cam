@@ -41,11 +41,11 @@
   recordings…", "Recording unavailable. Load the date again." and "Device time".
   The Dutch texts change the same way. The cause of a failure is in the new
   record, not in the text.
-- Apart from the standalone refusal and the opt-in probe below, client 0.30.1
-  only observes the operation. Its queries, page sizes, timeouts and error
-  codes are unchanged, and a failed or cancelled operation still closes the
-  owner's session. For a
-  HomeBase, the bridge's HTTP answers keep their status codes and bodies. On 2026-10-16 the
+- The observation changes no recording operation. It keeps the queries, page
+  sizes, timeouts and error codes, a failed or cancelled operation still closes
+  the owner's session, and the bridge's HTTP answers for a HomeBase keep their
+  status codes and bodies. The standalone refusal and the opt-in probe below
+  are separate changes. On 2026-10-16 the
   [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152) reporter's
   records from integration 0.8.48-beta.1 and bridge 0.8.39-beta.1 showed two
   standalone T8410s on firmware 2.3.x acknowledging the list query
@@ -75,9 +75,9 @@
   rejected it with `result_code=-1100`. The best next candidate, the database
   query 10017 in the shape the Eufy app sends, has public results on other
   standalone models but none on a T84xx camera. Only the opt-in probe of the
-  issue #178 entry below sends it. The issue #175 change adds no device request
-  and changes no payload. HomeBase cameras, their requests and their recordings
-  are unchanged.
+  issue #178 entry below sends it. The issue #175 change adds no device
+  request, changes no payload and leaves HomeBase cameras, their requests and
+  their recordings unchanged.
 - For such a camera the bridge refuses each recording request with
   `capability_unavailable` before any client call, so **Download diagnostics**
   has no `recording_query` record of its operations. Its device row shows
@@ -99,7 +99,7 @@
   record.
 - The option is off by default and stays in stable releases as a documented
   diagnostic. The probe sends nothing to a HomeBase or to a camera behind one,
-  and every other request and payload is unchanged. It only reads. It
+  and leaves every other request and payload unchanged. It only reads. It
   downloads and deletes nothing, and the standalone cards keep showing
   recordings as not available. With the option on, the bridge reports ready
   later. Each standalone camera adds up to about 15 seconds plus its
@@ -158,8 +158,8 @@
 - A standalone camera still gets no guard mode or alarm state. An event opens
   no camera connection and loads no image, so it brings no new event image and
   does not refresh the camera's snapshot. Standalone T8410 and T8410C cameras
-  still have no events. HomeBase cameras and their events are unchanged. The
-  events have synthetic test coverage only. No standalone T84A1 push has been
+  still have no events. This change leaves HomeBase cameras and their events
+  unchanged. The events have synthetic test coverage only. No standalone T84A1 push has been
   captured yet, so the result on hardware is pending.
 - **Download diagnostics** keeps `support.standalone_pushes`, the numbers-only
   push counts of the bridge's client, from bridge 0.8.39 with client 0.30.1.
@@ -176,9 +176,11 @@
   bridge 0.8.39. They replace 8.8.0 and 10.3.5 and reach the bridge through
   client 0.30.1. `protobufjs` decodes the messages of the client's cloud push
   connection, and 8.8.1 rejects an overflowing length prefix inside a decoded
-  message. `strtok3` reads the bytes for the client's image type detection
-  through `file-type`. 10.4.0 adds an optional buffer limit that `file-type`
-  does not set and fixes the cancellation of stream reads. Live view,
+  message. `strtok3` is a dependency of `file-type`, which the client's
+  vendored image download would use through `image-type`. The client refuses
+  that download before any byte is read, so no image reaches `strtok3`. 10.4.0
+  adds an optional buffer limit and fixes the cancellation of stream reads.
+  Live view,
   snapshots, recordings and events behave the same. No published advisory
   covers `protobufjs` 8.8.0 or `strtok3` 10.3.5, so these are maintenance
   updates.
@@ -193,6 +195,21 @@
   API show the reference and not that value. An invalid `/data/options.json`
   gives only the error name, such as `SyntaxError`, and no longer prints the
   file line holding the token. The 32-character minimum is unchanged.
+- A **Video Doorbell 2K** that arrives as `T8210` or `T8210C` with device
+  type 7 behind a HomeBase 3 now appears as a camera, from bridge 0.8.39 with
+  client 0.30.1 ([issue #198](https://github.com/keesmod/ha-eufy-cam/issues/198)).
+  Until now the client rejected it as `unsupported_device`, so Home Assistant
+  did not list it. It gets the camera, event and battery entities of the other
+  battery doorbells. Snapshots, live view and recordings need the HomeBase 3 on
+  firmware 2.0.9.7 or later, as for the C30 and C31. Under another parent,
+  such as a HomeBase 2, it now also appears as a camera, but without
+  snapshots, live view, recordings or events, with `unsupported_station`. An empty or
+  self parent gives `invalid_device_relationship` in the same way. The client
+  admits both model codes on public evidence, because issue #198 does not
+  show the received model or type. Their coverage is synthetic, and the result on
+  hardware is pending. `T8212`, other suffixes and other device types stay
+  unsupported. See
+  [discovery diagnostics](docs/DISCOVERY_DIAGNOSTICS.md#interpret-the-report).
 
 Upgrade: update the HACS integration to 0.8.48 and the bridge app to 0.8.39,
 then restart Home Assistant. Keep the same token and session. No configuration
@@ -202,13 +219,16 @@ download drops the `recording_query` records including the probe records, the
 `standalone_recording_probe` summary field, `standalone_pushes` and the attempt
 `cause` and `result_code`, a standalone camera's card shows the generic
 "Recordings: unavailable for this camera connection", and it has no Refresh
-snapshot button. Standalone T84A1 events reach integration 0.8.47 as well,
-because they use the existing event path. The bridge's `Eufy discovery:` log
+snapshot button. Standalone T84A1 events and a `T8210` or `T8210C` doorbell
+reach integration 0.8.47 as well, because they use the existing camera and
+event path. The bridge's `Eufy discovery:` log
 lines still carry the records. With bridge 0.8.38 the download has no such
 records, a standalone camera's recordings are offered and fail as before, no
-camera gets the Refresh snapshot button and a standalone T84A1 has no events.
+camera gets the Refresh snapshot button, a standalone T84A1 has no events and
+a `T8210` or `T8210C` doorbell is still rejected as `unsupported_device`.
 Rollback: restore the bridge 0.8.38 app backup and integration 0.8.47. A
-standalone T84A1 then has no events again.
+standalone T84A1 then has no events again, and a `T8210` or `T8210C` doorbell
+is rejected again.
 
 ## 0.8.47 - 2026-10-15
 
