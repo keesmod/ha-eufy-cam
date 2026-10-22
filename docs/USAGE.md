@@ -204,10 +204,10 @@ second and rejected the list with `history_rejected` and `result_code=-1100`,
 twice. In the Eufy app the T8410s show only a continuous timeline and no
 separate event clips, and the T8410C shows no recordings. Reported, not
 independently reproduced. Recording playback on a standalone T8410 therefore
-does not work with the current request.
+does not work with the list query 10006 that bridge 0.8.38 sent.
 
 One reading is that a standalone T8410 on firmware 2.3.x accepts the database
-query 10006 that the list sends but does not answer it. That fits the public
+query 10006 that the list sent but does not answer it. That fits the public
 analog
 [bropat/eufy-security-client#963](https://github.com/bropat/eufy-security-client/issues/963),
 where a standalone E30 never answered 10006, and the camera's continuous-only
