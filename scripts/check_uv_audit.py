@@ -5,8 +5,9 @@ environment, and its homeassistant test pin brings packages that Home Assistant
 requires at one exact version. A fix for those arrives only with the Home
 Assistant release that moves the pin. Each exception names one locked version
 and its advisory IDs. It holds only while the newest homeassistant release on
-PyPI still requires exactly that version. Any other advisory, an adverse package
-status, a moved pin or a stale exception fails the check.
+PyPI still requires exactly that version. Any other advisory, a moved pin, a
+stale exception or an incomplete report fails the check. Adverse package
+statuses become warnings, because uv audit itself does not fail on them.
 """
 
 import json
@@ -70,12 +71,26 @@ def exact_pins(requires_dist):
     return pins
 
 
+def read_report(path):
+    """The uv audit JSON report, or SystemExit when uv wrote no complete report."""
+    try:
+        report = json.loads(Path(path).read_text())
+        complete = (
+            report["schema"]["version"] == "preview"
+            and isinstance(report["vulnerabilities"], list)
+            and isinstance(report["adverse_statuses"], list)
+        )
+    except (OSError, ValueError, KeyError, TypeError):
+        complete = False
+    if not complete:
+        raise SystemExit(f"{path} is not a complete uv audit report. Check the audit step's log.")
+    return report
+
+
 def problems(report, release, pins, exceptions=EXCEPTIONS):
     """Messages for every finding the exceptions do not cover, and every invalid exception."""
     messages = []
     accepted = {}
-    if report["adverse_statuses"]:
-        messages.append(f"uv audit reported {len(report['adverse_statuses'])} adverse package statuses")
     for vulnerability in report["vulnerabilities"]:
         dependency = vulnerability["dependency"]
         key = (normalize(dependency["name"]), dependency["version"])
@@ -96,7 +111,9 @@ def problems(report, release, pins, exceptions=EXCEPTIONS):
 
 
 def main():
-    report = json.loads(Path(sys.argv[1]).read_text())
+    report = read_report(sys.argv[1])
+    for status in report["adverse_statuses"]:
+        print("::warning title=uv audit adverse package status::" + json.dumps(status, sort_keys=True).replace("%", "%25"))
     with urllib.request.urlopen(PYPI, timeout=30) as response:
         info = json.load(response)["info"]
     messages = problems(report, info["version"], exact_pins(info["requires_dist"]))

@@ -19,8 +19,8 @@ raises the bridge as described in [the release guide](RELEASING.md#batch-release
 
 The audit reads the lockfile without installing packages or executing their
 lifecycle scripts. Any reported vulnerability or audit error fails the check.
-The only exception is a Python advisory of a version that Home Assistant pins
-exactly, as described under [Python development lock](#python-development-lock).
+The only exception is a listed Python advisory of a version that Home Assistant
+pins exactly, as described under [Python development lock](#python-development-lock).
 JSON reports are kept in the run artifacts for 14 days, including failed audits.
 A failed audit does not cancel checks of other package roots.
 
@@ -95,14 +95,20 @@ not ship.
 Until that Home Assistant release exists, `scripts/check_uv_audit.py` accepts
 an advisory of an exactly pinned package. It accepts only advisory IDs that it
 lists for that exact locked version, and only while the newest `homeassistant`
-release on PyPI still requires exactly that version. Any other advisory, an
-adverse package status, a pin that moved and a listed advisory that no longer
-appears all fail the check. When the newest Home Assistant release moves the
-pin, the daily audit fails. Then raise the `homeassistant` test pin, relock and
-remove the exception. Add an exception only in a reviewed PR, for a version that
-Home Assistant pins exactly, with each advisory ID. The exceptions for Pillow
-12.3.0 and uv 0.12.23 were accepted on 2026-10-22. homeassistant 2026.10.0 to
-2026.10.2 pin both, and the fixes are Pillow 13.0.0 and uv 0.13.4.
+release on PyPI still requires exactly that version. Any other advisory, a pin
+that moved, a listed advisory that no longer appears and an incomplete report
+all fail the check. Adverse package statuses such as archived or deprecated
+appear as warnings, because `uv audit` itself does not fail on them. When the
+newest Home Assistant release moves the pin, the Python audit fails in the
+daily run and in every PR, push and release run, so the required `ci` check
+blocks all merges. Then raise the `homeassistant` test pin, relock and remove
+the exception in one PR. That needs the pytest-homeassistant-custom-component
+release for the new Home Assistant version, and merges wait until it exists.
+Add an exception only in a reviewed PR, for a version that Home Assistant pins
+exactly, with each advisory ID. The exceptions for Pillow 12.3.0 and uv
+0.12.23 were accepted on 2026-10-22. homeassistant 2026.10.0 to 2026.10.2 pin
+both, and the fixes are Pillow 13.0.0 and uv 0.13.4. The uv exception covers
+only the locked package. CI runs the audit with uv 0.13.4, which has the fix.
 
 ## Local verification and limits
 
@@ -112,16 +118,18 @@ Run the same command from each package root with Node.js 24:
 npm audit --package-lock-only --ignore-scripts --include=dev --include=optional --include=peer
 ```
 
-Audit the Python lock from the repository root with uv 0.12.23. `uv audit` is a
-preview feature, so CI pins that exact uv version:
+Audit the Python lock from the repository root with uv 0.13.4. `uv audit` is a
+preview feature, so CI pins that exact uv version. Write the report outside the
+checkout:
 
 ```sh
-uv audit --frozen --preview-features audit-command,json-output --output-format json > uv-audit.json
-python3 scripts/check_uv_audit.py uv-audit.json
+uv audit --frozen --preview-features audit-command,json-output --output-format json > /tmp/uv-audit.json
+python3 scripts/check_uv_audit.py /tmp/uv-audit.json
 ```
 
-`uv audit` exits with status 1 when it finds advisories. CI then lets
-`scripts/check_uv_audit.py` decide. For scanner or registry failures, fix the
+`uv audit` exits with status 1 when it finds advisories, and also for user
+errors such as a missing lockfile. CI then lets `scripts/check_uv_audit.py`
+decide, and that script rejects a report that is empty or incomplete. For scanner or registry failures, fix the
 failure and rerun the check. Do not ignore any other exit status, remove
 development packages or run `npm audit fix --force` to make CI pass. Investigate reported vulnerabilities and review the update.
 

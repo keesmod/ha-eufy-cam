@@ -104,13 +104,16 @@ jobs:
           # version keeps the audit result and report format stable. This
           # setup-uv commit has no known checksum for it, so the checksum of
           # uv-x86_64-unknown-linux-gnu.tar.gz from the uv release is pinned.
-          version: '0.12.23'
-          checksum: '9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6'
+          # 0.13.4 is the first uv without the emSign root of
+          # GHSA-hq85-5cpj-mr62, which the audit accepts only for uv.lock.
+          version: '0.13.4'
+          checksum: '2b428396f12572d4429cf210ca234dd599a33b3af0958a4d5ed569d63e3f344f'
           enable-cache: false
       - name: Audit all locked Python packages without installing them
         timeout-minutes: 3
-        # Exit status 1 means findings, which the next step checks. Any other
-        # failure of the audit stops here.
+        # Exit status 1 means findings or a user error such as a missing
+        # lockfile. The next step accepts only a complete report. Any other
+        # exit status stops here.
         run: |
           status=0
           uv audit --frozen --preview-features audit-command,json-output --output-format json > uv-audit.json || status=$?
