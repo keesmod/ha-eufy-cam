@@ -4,7 +4,7 @@
   },
   "summary": {
     "audited_packages": 175,
-    "vulnerabilities": 30,
+    "vulnerabilities": 41,
     "adverse_statuses": 0
   },
   "vulnerabilities": [
@@ -16,6 +16,19 @@
       "id": "GHSA-22hg-r758-rrw9",
       "aliases": [
         "CVE-2026-112390"
+      ],
+      "fix_versions": [
+        "13.0.0"
+      ]
+    },
+    {
+      "dependency": {
+        "name": "pillow",
+        "version": "12.3.0"
+      },
+      "id": "GHSA-24rc-8hj2-v98c",
+      "aliases": [
+        "CVE-2026-96638"
       ],
       "fix_versions": [
         "13.0.0"
@@ -65,6 +78,19 @@
         "name": "pillow",
         "version": "12.3.0"
       },
+      "id": "GHSA-3j72-p6qg-6xp7",
+      "aliases": [
+        "CVE-2026-96642"
+      ],
+      "fix_versions": [
+        "13.0.0"
+      ]
+    },
+    {
+      "dependency": {
+        "name": "pillow",
+        "version": "12.3.0"
+      },
       "id": "GHSA-4558-3h8r-v8xp",
       "aliases": [
         "CVE-2026-112394"
@@ -81,6 +107,19 @@
       "id": "GHSA-462x-pgg6-55fp",
       "aliases": [
         "CVE-2026-112395"
+      ],
+      "fix_versions": [
+        "13.0.0"
+      ]
+    },
+    {
+      "dependency": {
+        "name": "pillow",
+        "version": "12.3.0"
+      },
+      "id": "GHSA-4rm8-3hmm-39fg",
+      "aliases": [
+        "CVE-2026-96641"
       ],
       "fix_versions": [
         "13.0.0"
@@ -156,6 +195,17 @@
         "name": "pillow",
         "version": "12.3.0"
       },
+      "id": "GHSA-78g4-xqwv-q3g8",
+      "aliases": [],
+      "fix_versions": [
+        "13.0.0"
+      ]
+    },
+    {
+      "dependency": {
+        "name": "pillow",
+        "version": "12.3.0"
+      },
       "id": "GHSA-7mwm-ghpf-9vrm",
       "aliases": [
         "CVE-2026-112402"
@@ -172,6 +222,19 @@
       "id": "GHSA-8g5g-8vmr-9782",
       "aliases": [
         "CVE-2026-112403"
+      ],
+      "fix_versions": [
+        "13.0.0"
+      ]
+    },
+    {
+      "dependency": {
+        "name": "pillow",
+        "version": "12.3.0"
+      },
+      "id": "GHSA-9v9v-9qvf-h2hj",
+      "aliases": [
+        "CVE-2026-96644"
       ],
       "fix_versions": [
         "13.0.0"
@@ -234,6 +297,45 @@
         "name": "pillow",
         "version": "12.3.0"
       },
+      "id": "GHSA-g4qv-2jxx-769h",
+      "aliases": [
+        "CVE-2026-96643"
+      ],
+      "fix_versions": [
+        "13.0.0"
+      ]
+    },
+    {
+      "dependency": {
+        "name": "pillow",
+        "version": "12.3.0"
+      },
+      "id": "GHSA-g7cr-3p24-7wf7",
+      "aliases": [
+        "CVE-2026-96778"
+      ],
+      "fix_versions": [
+        "13.0.0"
+      ]
+    },
+    {
+      "dependency": {
+        "name": "pillow",
+        "version": "12.3.0"
+      },
+      "id": "GHSA-g842-9rc4-69pw",
+      "aliases": [
+        "CVE-2026-96637"
+      ],
+      "fix_versions": [
+        "13.0.0"
+      ]
+    },
+    {
+      "dependency": {
+        "name": "pillow",
+        "version": "12.3.0"
+      },
       "id": "GHSA-gg2r-wvfm-q9rx",
       "aliases": [
         "CVE-2026-112892"
@@ -273,9 +375,35 @@
         "name": "pillow",
         "version": "12.3.0"
       },
+      "id": "GHSA-mrfp-p49p-3hf2",
+      "aliases": [
+        "CVE-2026-96640"
+      ],
+      "fix_versions": [
+        "13.0.0"
+      ]
+    },
+    {
+      "dependency": {
+        "name": "pillow",
+        "version": "12.3.0"
+      },
       "id": "GHSA-p4wg-p73j-c528",
       "aliases": [
         "CVE-2026-112895"
+      ],
+      "fix_versions": [
+        "13.0.0"
+      ]
+    },
+    {
+      "dependency": {
+        "name": "pillow",
+        "version": "12.3.0"
+      },
+      "id": "GHSA-p8hx-v2p6-rp84",
+      "aliases": [
+        "CVE-2026-96636"
       ],
       "fix_versions": [
         "13.0.0"
@@ -315,6 +443,19 @@
       "id": "GHSA-rfgq-q3w2-pmv2",
       "aliases": [
         "CVE-2026-112898"
+      ],
+      "fix_versions": [
+        "13.0.0"
+      ]
+    },
+    {
+      "dependency": {
+        "name": "pillow",
+        "version": "12.3.0"
+      },
+      "id": "GHSA-v9pv-5gc8-w2m6",
+      "aliases": [
+        "CVE-2026-96639"
       ],
       "fix_versions": [
         "13.0.0"
@@ -377,9 +518,9 @@
         "name": "uv",
         "version": "0.12.23"
       },
-      "id": "GHSA-hq85-5cpj-mr62",
+      "id": "PYSEC-2026-4321",
       "aliases": [
-        "PYSEC-2026-4321"
+        "GHSA-hq85-5cpj-mr62"
       ],
       "fix_versions": [
         "0.13.4"
@@ -390,9 +531,9 @@
         "name": "uv",
         "version": "0.12.23"
       },
-      "id": "PYSEC-2026-4321",
+      "id": "GHSA-hq85-5cpj-mr62",
       "aliases": [
-        "GHSA-hq85-5cpj-mr62"
+        "PYSEC-2026-4321"
       ],
       "fix_versions": [
         "0.13.4"

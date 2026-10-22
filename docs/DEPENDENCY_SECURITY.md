@@ -108,7 +108,9 @@ release for the new Home Assistant version, and merges wait until it exists.
 Add an exception only in a reviewed PR, for a version that Home Assistant pins
 exactly, with each advisory ID. The exceptions for Pillow 12.3.0 and uv
 0.12.23 were accepted on 2026-10-22. homeassistant 2026.10.0 to 2026.10.2 pin
-both, and the fixes are Pillow 13.0.0 and uv 0.13.4. The uv exception covers
+both, and the fixes are Pillow 13.0.0 and uv 0.13.4. Eleven further Pillow
+12.3.0 advisories, published later that day and also fixed in 13.0.0, were
+accepted the same day under the same condition. The uv exception covers
 only the locked package. CI runs the audit with uv 0.13.4, which has the fix.
 
 ## Local verification and limits

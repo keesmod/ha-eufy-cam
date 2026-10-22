@@ -12,8 +12,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import check_uv_audit as audit
 
-# Trimmed uv audit JSON report of uv.lock with certifi 2026.10.19, recorded with
-# uv 0.12.24. uv 0.13.4, which CI pins, writes the same shape.
+# Trimmed uv audit JSON report of uv.lock with certifi 2026.10.19, recorded by
+# CI with uv 0.13.4 in release rehearsal run 39833904160.
 FIXTURE = Path(__file__).with_name("uv-audit-2026-10-22.json")
 EXCEPTIONS = {("pillow", "12.3.0"): frozenset({"GHSA-a", "GHSA-b"})}
 PINS = audit.exact_pins(["Pillow==12.3.0", "certifi>=2021.5.30"])
@@ -109,7 +109,7 @@ class UvAuditTests(unittest.TestCase):
         output = self.run_main(FIXTURE.read_text())
         self.assertEqual(
             output,
-            "30 advisories accepted while homeassistant 2026.10.2 pins them: pillow 12.3.0, uv 0.12.23\n",
+            "41 advisories accepted while homeassistant 2026.10.2 pins them: pillow 12.3.0, uv 0.12.23\n",
         )
 
     def test_recorded_report_fails_once_home_assistant_moves_a_pin(self):
@@ -138,7 +138,7 @@ class UvAuditTests(unittest.TestCase):
                 '{"name": "x", "reason": "100%25 done", "status": "archived"}\n'
             )
         )
-        self.assertIn("30 advisories accepted", output)
+        self.assertIn("41 advisories accepted", output)
 
     def test_incomplete_report_fails_before_pypi(self):
         for text in ("", "{}", '{"schema": {"version": "preview"}, "vulnerabilities": {}}', "[]"):
