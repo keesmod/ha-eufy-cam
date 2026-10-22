@@ -115,7 +115,8 @@
   with "The experimental standalone camera connected on the local route, and
   its session later closed." That finding comes from the probe's close, not
   from a connection fault. An answer, also one with `history_rejected`, adds no
-  finding. See
+  finding. The probe has software coverage only, and no probe result on
+  hardware is recorded yet. See
   [standalone recording probe](docs/USAGE.md#standalone-recording-probe).
 - **Refresh snapshot** button for each camera, from bridge 0.8.39
   ([issue #182](https://github.com/keesmod/ha-eufy-cam/issues/182)). Until now
@@ -155,8 +156,8 @@
   camera's type 151 and its event code is 3101 (motion) or 3102 (person).
   Every other push stays refused, including guard mode, alarm, microSD and
   every T8410 or T8410C push. A person event has `recognition=unidentified`
-  and no name. No new option is needed. The events use the existing event path
-  of the integration and the cards.
+  and no name. No new option is needed. The events use the existing event
+  entity and automation event of the integration.
 - A standalone camera still gets no guard mode or alarm state. An event opens
   no camera connection and loads no image, so it brings no new event image and
   does not refresh the camera's snapshot. Standalone T8410 and T8410C cameras

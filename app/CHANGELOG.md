@@ -84,7 +84,8 @@
   shows a `station_connection` line with `phase=observation` and
   `status=disconnected` before the probe line, and the camera's device row in
   that report shows `owner_status=disconnected`. The option stays in stable
-  releases as a documented diagnostic, off by default.
+  releases as a documented diagnostic, off by default. The probe has software
+  coverage only, and no probe result on hardware is recorded yet.
 - Add `POST /v1/snapshot/{serial}/refresh`, which refreshes one camera's
   snapshot on demand
   ([issue #182](https://github.com/keesmod/ha-eufy-cam/issues/182)). Until now
