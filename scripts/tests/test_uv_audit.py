@@ -109,7 +109,7 @@ class UvAuditTests(unittest.TestCase):
         output = self.run_main(FIXTURE.read_text())
         self.assertEqual(
             output,
-            "30 advisories accepted while homeassistant 2026.10.2 pins them: pillow 12.3.0, uv 0.12.23\n",
+            "41 advisories accepted while homeassistant 2026.10.2 pins them: pillow 12.3.0, uv 0.12.23\n",
         )
 
     def test_recorded_report_fails_once_home_assistant_moves_a_pin(self):
@@ -138,7 +138,7 @@ class UvAuditTests(unittest.TestCase):
                 '{"name": "x", "reason": "100%25 done", "status": "archived"}\n'
             )
         )
-        self.assertIn("30 advisories accepted", output)
+        self.assertIn("41 advisories accepted", output)
 
     def test_incomplete_report_fails_before_pypi(self):
         for text in ("", "{}", '{"schema": {"version": "preview"}, "vulnerabilities": {}}', "[]"):
