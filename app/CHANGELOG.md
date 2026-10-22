@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.39 - Unreleased
+## 0.8.39 - 2026-10-22
 
 - Pin client 0.30.1 and record recording operations as `recording_query`
   records in the `Eufy discovery:` log lines and the bridge's diagnostics

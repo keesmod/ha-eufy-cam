@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.48 - Unreleased
+## 0.8.48 - 2026-10-22
 
 - **Download diagnostics** keeps a `recording_query` record in
   `support.recent_events` for recording operations, from bridge 0.8.39 with
