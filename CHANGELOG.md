@@ -193,6 +193,17 @@
   API show the reference and not that value. An invalid `/data/options.json`
   gives only the error name, such as `SyntaxError`, and no longer prints the
   file line holding the token. The 32-character minimum is unchanged.
+- A **Video Doorbell 2K** that arrives as `T8210` or `T8210C` with device
+  type 7 behind a HomeBase 3 now appears as a camera, from bridge 0.8.39 with
+  client 0.30.1 ([issue #198](https://github.com/keesmod/ha-eufy-cam/issues/198)).
+  Until now the client rejected it as `unsupported_device`, so Home Assistant
+  did not list it. It gets the camera, event and battery entities of the other
+  battery doorbells. Snapshots, live view and recordings need the HomeBase 3 on
+  firmware 2.0.9.7 or later, as for the C30 and C31. The client admits both
+  model codes on public evidence, because the report shows no received model
+  or type. Their coverage is synthetic, and the result on hardware is pending.
+  `T8212`, other suffixes and other device types stay unsupported. See
+  [discovery diagnostics](docs/DISCOVERY_DIAGNOSTICS.md#interpret-the-report).
 
 Upgrade: update the HACS integration to 0.8.48 and the bridge app to 0.8.39,
 then restart Home Assistant. Keep the same token and session. No configuration
@@ -202,13 +213,15 @@ download drops the `recording_query` records including the probe records, the
 `standalone_recording_probe` summary field, `standalone_pushes` and the attempt
 `cause` and `result_code`, a standalone camera's card shows the generic
 "Recordings: unavailable for this camera connection", and it has no Refresh
-snapshot button. Standalone T84A1 events reach integration 0.8.47 as well,
-because they use the existing event path. The bridge's `Eufy discovery:` log
+snapshot button. Standalone T84A1 events and a `T8210` or `T8210C` doorbell
+reach integration 0.8.47 as well, because they use the existing camera and
+event path. The bridge's `Eufy discovery:` log
 lines still carry the records. With bridge 0.8.38 the download has no such
 records, a standalone camera's recordings are offered and fail as before, no
 camera gets the Refresh snapshot button and a standalone T84A1 has no events.
 Rollback: restore the bridge 0.8.38 app backup and integration 0.8.47. A
-standalone T84A1 then has no events again.
+standalone T84A1 then has no events again, and a `T8210` or `T8210C` doorbell
+is rejected again.
 
 ## 0.8.47 - 2026-10-15
 

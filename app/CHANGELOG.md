@@ -170,6 +170,12 @@
   holding the token. The 32-character minimum is unchanged. CI now builds the
   app and starts it with synthetic options on amd64 and on aarch64. A camera
   result on aarch64 hardware is still pending.
+- Client 0.30.1 admits a Video Doorbell 2K that arrives as `T8210` or `T8210C`
+  with device type 7 behind a HomeBase 3 as a battery doorbell camera
+  ([issue #198](https://github.com/keesmod/ha-eufy-cam/issues/198)). Until now
+  the client rejected it with `unsupported_device`, and the bridge served no
+  camera for it. This rests on public evidence and synthetic tests. The result
+  on hardware is pending.
 
 Upgrade: keep the same token and session. Update the integration to 0.8.48 to
 keep the `recording_query` records and the attempt `cause` in **Download
@@ -183,8 +189,10 @@ on. Integration 0.8.48 also keeps its probe records and the summary field in
 that uses the new route. Integration 0.8.47 has no such button. Integration
 0.8.48 keeps `standalone_pushes` in **Download diagnostics**, and 0.8.47 drops
 it. Standalone T84A1 events reach both, because they use the existing event
-path. Rollback: restore the 0.8.38 app backup and integration 0.8.47. A
-standalone T84A1 then has no events again.
+path. A `T8210` or `T8210C` doorbell also appears with integration 0.8.47.
+Rollback: restore the 0.8.38 app backup and integration 0.8.47. A standalone
+T84A1 then has no events again, and a `T8210` or `T8210C` doorbell is rejected
+again.
 
 ## 0.8.38 - 2026-10-15
 
