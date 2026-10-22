@@ -7,8 +7,8 @@ Assistant release that moves the pin. Each exception names one locked version
 and its advisory IDs. It holds only while the newest homeassistant release on
 PyPI still requires exactly that version. Any other advisory, a moved pin, a
 stale exception, an incomplete report or another report schema version fails
-the check. Adverse package
-statuses become warnings, because uv audit itself does not fail on them.
+the check. Adverse package statuses become warnings, because uv audit itself
+does not fail on them.
 """
 
 import json
