@@ -109,7 +109,15 @@ jobs:
           enable-cache: false
       - name: Audit all locked Python packages without installing them
         timeout-minutes: 3
-        run: uv audit --frozen --preview-features audit-command,json-output --output-format json > uv-audit.json
+        # Exit status 1 means findings, which the next step checks. Any other
+        # failure of the audit stops here.
+        run: |
+          status=0
+          uv audit --frozen --preview-features audit-command,json-output --output-format json > uv-audit.json || status=$?
+          test "$status" -le 1
+      - name: Accept only advisories of versions that homeassistant pins exactly
+        timeout-minutes: 1
+        run: python3 scripts/check_uv_audit.py uv-audit.json
       - name: Keep the audit report even when vulnerabilities are found
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
