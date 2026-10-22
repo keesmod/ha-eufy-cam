@@ -12,8 +12,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import check_uv_audit as audit
 
-# Trimmed uv audit JSON report of uv.lock with certifi 2026.10.19, recorded with
-# uv 0.12.24. uv 0.13.4, which CI pins, writes the same shape.
+# Trimmed uv audit JSON report of uv.lock with certifi 2026.10.19, recorded by
+# CI with uv 0.13.4 in release rehearsal run 39833904160.
 FIXTURE = Path(__file__).with_name("uv-audit-2026-10-22.json")
 EXCEPTIONS = {("pillow", "12.3.0"): frozenset({"GHSA-a", "GHSA-b"})}
 PINS = audit.exact_pins(["Pillow==12.3.0", "certifi>=2021.5.30"])
