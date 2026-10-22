@@ -604,7 +604,7 @@ To collect the result:
    `-e EUFY_EXPERIMENTAL_STANDALONE=true -e EUFY_STANDALONE_RECORDING_PROBE=true`.
 3. Restart the app. Wait until the `Eufy discovery:` line with
    `"event":"summary"` appears before you open live view or recordings. Each
-   standalone camera can add up to about 15 seconds plus its connection.
+   standalone camera can add up to about 15 seconds after its connection.
 4. From the app log, paste verbatim the `Eufy discovery:` line with
    `"event":"connection"`, the line with `"event":"summary"` and the one line
    with `"query":"probe"` for each standalone camera. A camera without a probe

@@ -1,7 +1,7 @@
 # Changelog
 
-## 0.8.39-beta.5
-Unreleased
+## 0.8.39
+2026-10-22
 
 - Pin client 0.30.1 and record recording operations as `recording_query`
   records in the `Eufy discovery:` log lines and the bridge's diagnostics
@@ -27,16 +27,17 @@ Unreleased
   connect, the elapsed time and the HTTP status the bridge answered with. It
   has no ID, path, name or address. The bridge checks each value against its
   bound. A repeat of the previous record of the same owner and query in a
-  report adds no record, changed times or counts alone are a repeat.
+  report adds no record. A changed elapsed time, or a count that stays zero or
+  stays above zero, alone is a repeat.
 - A recording attempt in the diagnostics download keeps the client's code
   behind its `error` as `cause`, with the numeric `result_code`, for example
   `recording_cipher_unavailable` behind `recording_unavailable`. A transfer that
   ended incomplete gives `transfer_` plus the client's reason, such as
   `transfer_connection_lost`.
-- Observation only for a HomeBase. The HTTP status codes and bodies of its
-  recording requests stay the same, and so do the client's queries, page sizes, timeouts
-  and error codes. A failed or cancelled operation still closes the owner's
-  session.
+- The observation changes nothing for a HomeBase. It leaves the HTTP status
+  codes and bodies of its recording requests and the client's queries, page
+  sizes, timeouts and error codes unchanged. A failed or cancelled operation
+  still closes the owner's session.
 - Pin client 0.30.1, which reports the recordings of an experimental standalone
   T84A1, T8410 or T8410C as unavailable with reason
   `standalone_recordings_unverified`
@@ -50,9 +51,9 @@ Unreleased
   call. The bridge therefore writes no `recording_query` record of its operations,
   and the 15-second wait is gone. The device row's
   `media.recordings` in the `Eufy discovery:` log line and the diagnostics
-  download carries the reason. Snapshot and live view stay available. HomeBase
-  cameras, their requests and their recordings are unchanged, and this change
-  sends no new device request. Only the opt-in probe below adds one.
+  download carries the reason. Snapshot and live view stay available. This
+  change leaves HomeBase cameras, their requests and their recordings unchanged
+  and sends no new device request. Only the opt-in probe below adds one.
 - Add the app option `standalone_recording_probe` (Docker
   `EUFY_STANDALONE_RECORDING_PROBE=true`), off by default, with client 0.30.1
   and its `probeStandaloneRecordings`
@@ -71,11 +72,11 @@ Unreleased
 - The probe runs only in the login discovery. It never runs for a HomeBase or a
   camera behind one, and never in a discovery after a cloud reconnect. A login
   that is retried after a failure probes again. A probe failure is recorded and
-  never fails the discovery or the login. HomeBase requests, every other
-  payload, the recordings capability and the recording routes are unchanged,
-  so recordings on standalone cameras stay unavailable.
+  never fails the discovery or the login. The probe leaves HomeBase requests,
+  every other payload, the recordings capability and the recording routes
+  unchanged, so recordings on standalone cameras stay unavailable.
 - With the option on, the bridge reports ready later. Each standalone camera
-  adds up to about 15 seconds plus its connection, and the HomeBase cameras of
+  adds up to about 15 seconds after its connection, and the HomeBase cameras of
   a mixed setup wait too. Turn the option off before you enter your Eufy
   credentials again in Home Assistant, because that login waits for the
   discovery. A camera that does not answer within 15 seconds has its session closed. Live
@@ -84,11 +85,12 @@ Unreleased
   shows a `station_connection` line with `phase=observation` and
   `status=disconnected` before the probe line, and the camera's device row in
   that report shows `owner_status=disconnected`. The option stays in stable
-  releases as a documented diagnostic, off by default.
+  releases as a documented diagnostic, off by default. The probe has software
+  coverage only, and no probe result on hardware is recorded yet.
 - Add `POST /v1/snapshot/{serial}/refresh`, which refreshes one camera's
   snapshot on demand
   ([issue #182](https://github.com/keesmod/ha-eufy-cam/issues/182)). Until now
-  a snapshot was only the latest HomeBase cover or the last frame of a live
+  a snapshot was only the latest event cover or the last frame of a live
   view, and nothing could ask for a new one. The bridge starts the camera as a
   live view would, or joins the live session that already runs. A refresh that
   joins a session that is still starting, such as a second press, waits for
@@ -115,8 +117,9 @@ Unreleased
   and with `refresh_failed` (HTTP 502) when its session ended for another
   reason. A refresh takes at most 30 seconds, and a client that disconnects
   cancels it. Nothing refreshes by itself. Snapshot requests, card loads and
-  the event stream still never wake a camera.
-- A finished live view's last frame no longer reverts to the older HomeBase
+  the event stream still never wake a camera. The refresh has software
+  coverage only, and no hardware result is recorded yet.
+- A finished live view's last frame no longer reverts to the older event
   cover at the next unrelated update. The bridge copied every cover it held
   again on each backend update, such as a station state change, so the
   snapshot and its `snapshot_received_at` went back in time. It now copies a
@@ -134,8 +137,8 @@ Unreleased
   push, and every T8410 or T8410C push. No standalone push reaches the vendored
   station handler, so the camera gets no guard mode or alarm state. An event
   opens no camera connection and loads no image, so it brings no new event
-  image and does not refresh the snapshot. No new option is needed. HomeBase
-  cameras and their events are unchanged. Synthetic coverage only, the result
+  image and does not refresh the snapshot. No new option is needed. This change
+  leaves HomeBase cameras and their events unchanged. Synthetic coverage only, the result
   on hardware is pending.
 - Add `standalone_pushes` to the diagnostics download, the client's
   `standalonePushStatus` in snake_case: `arrived`, `admitted`, `refused` by
@@ -152,6 +155,35 @@ Unreleased
   unverified on hardware. It says that live view and snapshot are reported
   working, not independently reproduced, and that T84A1 motion and person
   events are experimental.
+- Update `protobufjs` from 8.8.0 to 8.8.1, which the client's cloud push
+  connection uses, and `strtok3` from 10.3.5 to 10.4.0, a dependency of
+  `file-type` that the client's vendored image download would use through
+  `image-type`. The client refuses that download before any byte is read, so
+  no image reaches `strtok3`. These two updates leave live view, snapshots,
+  recordings and events as they were. No published advisory covers the
+  previous versions.
+- When `token` is missing or shorter than 32 characters, the app logs one line
+  and stops ([issue #197](https://github.com/keesmod/ha-eufy-cam/issues/197)).
+  The line says what the app received, for example an empty token or a token
+  of 20 characters, and never contains the token. Bridge 0.8.38 logged only
+  "Configure a bridge token of at least 32 characters" with a stack trace. The
+  line also says that Home Assistant replaces a `!secret` reference with its
+  value from `secrets.yaml` before the app starts. It mentions this because
+  from Supervisor 2026.09.3 the Configuration tab and the app info in the
+  Supervisor API show the reference and not that value. An unreadable or
+  invalid `/data/options.json` gives only an error code or error name, such as
+  `ENOENT` or `SyntaxError`, without the parse error that quoted the file line
+  holding the token. The 32-character minimum is unchanged. CI now builds the
+  app and starts it with synthetic options on amd64 and on aarch64. A camera
+  result on aarch64 hardware is still pending.
+- Client 0.30.1 admits a Video Doorbell 2K that arrives as `T8210` or `T8210C`
+  with device type 7 behind a HomeBase 3 as a battery doorbell camera
+  ([issue #198](https://github.com/keesmod/ha-eufy-cam/issues/198)). Until now
+  the client rejected it with `unsupported_device`, and the bridge served no
+  camera for it. Under another parent, such as a HomeBase 2, the bridge now
+  serves it as a camera without media or events, with `unsupported_station`,
+  and an empty or self parent gives `invalid_device_relationship`. This rests
+  on public evidence and synthetic tests. The result on hardware is pending.
 
 Upgrade: keep the same token and session. Update the integration to 0.8.48 to
 keep the `recording_query` records and the attempt `cause` in **Download
@@ -165,8 +197,10 @@ on. Integration 0.8.48 also keeps its probe records and the summary field in
 that uses the new route. Integration 0.8.47 has no such button. Integration
 0.8.48 keeps `standalone_pushes` in **Download diagnostics**, and 0.8.47 drops
 it. Standalone T84A1 events reach both, because they use the existing event
-path. Rollback: restore the 0.8.38 app backup and integration 0.8.47. A
-standalone T84A1 then has no events again.
+path. A `T8210` or `T8210C` doorbell also appears with integration 0.8.47.
+Rollback: restore the 0.8.38 app backup and integration 0.8.47. A standalone
+T84A1 then has no events again, and a `T8210` or `T8210C` doorbell is rejected
+again.
 
 ## 0.8.38 - 2026-10-15
 

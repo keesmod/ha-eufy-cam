@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.39 - Unreleased
+## 0.8.39 - 2026-10-22
 
 - Pin client 0.30.1 and record recording operations as `recording_query`
   records in the `Eufy discovery:` log lines and the bridge's diagnostics
@@ -26,7 +26,8 @@
   connect, the elapsed time and the HTTP status the bridge answered with. It
   has no ID, path, name or address. The bridge checks each value against its
   bound. A repeat of the previous record of the same owner and query in a
-  report adds no record, changed times or counts alone are a repeat.
+  report adds no record. A changed elapsed time, or a count that stays zero or
+  stays above zero, alone is a repeat.
 - A recording attempt in the diagnostics download keeps the client's code
   behind its `error` as `cause`, with the numeric `result_code`, for example
   `recording_cipher_unavailable` behind `recording_unavailable`. A transfer that
@@ -74,7 +75,7 @@
   every other payload, the recordings capability and the recording routes
   unchanged, so recordings on standalone cameras stay unavailable.
 - With the option on, the bridge reports ready later. Each standalone camera
-  adds up to about 15 seconds plus its connection, and the HomeBase cameras of
+  adds up to about 15 seconds after its connection, and the HomeBase cameras of
   a mixed setup wait too. Turn the option off before you enter your Eufy
   credentials again in Home Assistant, because that login waits for the
   discovery. A camera that does not answer within 15 seconds has its session closed. Live
@@ -83,11 +84,12 @@
   shows a `station_connection` line with `phase=observation` and
   `status=disconnected` before the probe line, and the camera's device row in
   that report shows `owner_status=disconnected`. The option stays in stable
-  releases as a documented diagnostic, off by default.
+  releases as a documented diagnostic, off by default. The probe has software
+  coverage only, and no probe result on hardware is recorded yet.
 - Add `POST /v1/snapshot/{serial}/refresh`, which refreshes one camera's
   snapshot on demand
   ([issue #182](https://github.com/keesmod/ha-eufy-cam/issues/182)). Until now
-  a snapshot was only the latest HomeBase cover or the last frame of a live
+  a snapshot was only the latest event cover or the last frame of a live
   view, and nothing could ask for a new one. The bridge starts the camera as a
   live view would, or joins the live session that already runs. A refresh that
   joins a session that is still starting, such as a second press, waits for
@@ -114,8 +116,9 @@
   and with `refresh_failed` (HTTP 502) when its session ended for another
   reason. A refresh takes at most 30 seconds, and a client that disconnects
   cancels it. Nothing refreshes by itself. Snapshot requests, card loads and
-  the event stream still never wake a camera.
-- A finished live view's last frame no longer reverts to the older HomeBase
+  the event stream still never wake a camera. The refresh has software
+  coverage only, and no hardware result is recorded yet.
+- A finished live view's last frame no longer reverts to the older event
   cover at the next unrelated update. The bridge copied every cover it held
   again on each backend update, such as a station state change, so the
   snapshot and its `snapshot_received_at` went back in time. It now copies a
@@ -155,8 +158,8 @@
   connection uses, and `strtok3` from 10.3.5 to 10.4.0, a dependency of
   `file-type` that the client's vendored image download would use through
   `image-type`. The client refuses that download before any byte is read, so
-  no image reaches `strtok3`. Live view, snapshots,
-  recordings and events behave the same. No published advisory covers the
+  no image reaches `strtok3`. These two updates leave live view, snapshots,
+  recordings and events as they were. No published advisory covers the
   previous versions.
 - When `token` is missing or shorter than 32 characters, the app logs one line
   and stops ([issue #197](https://github.com/keesmod/ha-eufy-cam/issues/197)).
