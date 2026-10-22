@@ -347,7 +347,7 @@ What it sends and when:
 What it costs:
 
 - The bridge reports ready only after its login discovery, so each standalone
-  camera adds up to about 15 seconds plus its connection to startup. Home
+  camera adds up to about 15 seconds after its connection to startup. Home
   Assistant shows the integration as connecting until then. In a setup that
   also has a HomeBase, its cameras wait too.
 - Turn the option off before you enter your Eufy credentials again in Home

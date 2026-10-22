@@ -55,7 +55,8 @@
   report had a snapshot and live video working on that T8410C
   ([issue #168](https://github.com/keesmod/ha-eufy-cam/issues/168)).
   Reported, not independently reproduced. Recording playback on a standalone
-  T8410 therefore does not work with the current request. Why the T8410s do
+  T8410 therefore does not work with the list query 10006 that bridge 0.8.38
+  sent. Why the T8410s do
   not answer is not proven.
 - **Recordings on an experimental standalone camera** now show as not
   available instead of failing after a wait, from bridge 0.8.39 with client
@@ -102,7 +103,7 @@
   and leaves every other request and payload unchanged. It only reads. It
   downloads and deletes nothing, and the standalone cards keep showing
   recordings as not available. With the option on, the bridge reports ready
-  later. Each standalone camera adds up to about 15 seconds plus its
+  later. Each standalone camera adds up to about 15 seconds after its
   connection, and the HomeBase cameras of a mixed setup wait too. Turn the option off before you
   enter your Eufy credentials again in Home Assistant, because that login waits
   for the discovery and can exceed Home Assistant's one-minute bridge request
@@ -125,7 +126,8 @@
   one and then stops the camera with the normal confirmed stop. The camera's
   `snapshot_received_at` changes and the card shows the new picture. A camera
   that sends no picture in time fails the press with a short message after at
-  most about 30 seconds.
+  most about 30 seconds. The refresh has software coverage only, and no
+  hardware result is recorded yet.
 - Each press wakes the camera and costs battery like a short live view. It
   counts against the HomeBase live limit `live_max_streams_per_station` and is
   refused, not queued, while that limit is reached, while a recording is being
@@ -153,8 +155,8 @@
   camera's type 151 and its event code is 3101 (motion) or 3102 (person).
   Every other push stays refused, including guard mode, alarm, microSD and
   every T8410 or T8410C push. A person event has `recognition=unidentified`
-  and no name. No new option is needed, and the event path of the integration
-  and the card are unchanged.
+  and no name. No new option is needed. The events use the existing event path
+  of the integration and the cards.
 - A standalone camera still gets no guard mode or alarm state. An event opens
   no camera connection and loads no image, so it brings no new event image and
   does not refresh the camera's snapshot. Standalone T8410 and T8410C cameras
@@ -180,8 +182,8 @@
   vendored image download would use through `image-type`. The client refuses
   that download before any byte is read, so no image reaches `strtok3`. 10.4.0
   adds an optional buffer limit and fixes the cancellation of stream reads.
-  Live view,
-  snapshots, recordings and events behave the same. No published advisory
+  These two updates leave live view, snapshots, recordings and events as they
+  were. No published advisory
   covers `protobufjs` 8.8.0 or `strtok3` 10.3.5, so these are maintenance
   updates.
 - **Bridge app startup** from bridge 0.8.39
