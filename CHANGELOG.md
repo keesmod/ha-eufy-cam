@@ -41,11 +41,11 @@
   recordings…", "Recording unavailable. Load the date again." and "Device time".
   The Dutch texts change the same way. The cause of a failure is in the new
   record, not in the text.
-- Apart from the standalone refusal and the opt-in probe below, client 0.30.1
-  only observes the operation. Its queries, page sizes, timeouts and error
-  codes are unchanged, and a failed or cancelled operation still closes the
-  owner's session. For a
-  HomeBase, the bridge's HTTP answers keep their status codes and bodies. On 2026-10-16 the
+- The observation changes no recording operation. It keeps the queries, page
+  sizes, timeouts and error codes, a failed or cancelled operation still closes
+  the owner's session, and the bridge's HTTP answers for a HomeBase keep their
+  status codes and bodies. The standalone refusal and the opt-in probe below
+  are separate changes. On 2026-10-16 the
   [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152) reporter's
   records from integration 0.8.48-beta.1 and bridge 0.8.39-beta.1 showed two
   standalone T8410s on firmware 2.3.x acknowledging the list query

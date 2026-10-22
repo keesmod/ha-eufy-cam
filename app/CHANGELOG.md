@@ -32,10 +32,10 @@
   `recording_cipher_unavailable` behind `recording_unavailable`. A transfer that
   ended incomplete gives `transfer_` plus the client's reason, such as
   `transfer_connection_lost`.
-- Observation only for a HomeBase. The HTTP status codes and bodies of its
-  recording requests stay the same, and so do the client's queries, page sizes, timeouts
-  and error codes. A failed or cancelled operation still closes the owner's
-  session.
+- The observation changes nothing for a HomeBase. It leaves the HTTP status
+  codes and bodies of its recording requests and the client's queries, page
+  sizes, timeouts and error codes unchanged. A failed or cancelled operation
+  still closes the owner's session.
 - Pin client 0.30.1, which reports the recordings of an experimental standalone
   T84A1, T8410 or T8410C as unavailable with reason
   `standalone_recordings_unverified`
