@@ -129,7 +129,8 @@ python3 scripts/check_uv_audit.py /tmp/uv-audit.json
 
 `uv audit` exits with status 1 when it finds advisories, and also for user
 errors such as a missing lockfile. CI then lets `scripts/check_uv_audit.py`
-decide, and that script rejects a report that is empty or incomplete. For scanner or registry failures, fix the
+decide, and that script rejects a report that is empty or incomplete or has a
+schema version other than `preview`. For scanner or registry failures, fix the
 failure and rerun the check. Do not ignore any other exit status, remove
 development packages or run `npm audit fix --force` to make CI pass. Investigate reported vulnerabilities and review the update.
 

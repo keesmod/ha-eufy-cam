@@ -141,7 +141,7 @@ class UvAuditTests(unittest.TestCase):
         self.assertIn("30 advisories accepted", output)
 
     def test_incomplete_report_fails_before_pypi(self):
-        for text in ("", "{}", '{"schema": {"version": "1"}, "vulnerabilities": [], "adverse_statuses": []}', "[]"):
+        for text in ("", "{}", '{"schema": {"version": "preview"}, "vulnerabilities": {}}', "[]"):
             with self.subTest(text=text):
                 with (
                     tempfile.TemporaryDirectory() as temp,
@@ -157,6 +157,22 @@ class UvAuditTests(unittest.TestCase):
                     raised.exception.code,
                     f"{path} is not a complete uv audit report. Check the audit step's log.",
                 )
+
+    def test_other_schema_version_fails_before_pypi(self):
+        data = json.loads(FIXTURE.read_text())
+        data["schema"]["version"] = "1"
+        with tempfile.TemporaryDirectory() as temp, patch.object(audit.urllib.request, "urlopen") as urlopen:
+            path = Path(temp) / "uv-audit.json"
+            path.write_text(json.dumps(data))
+            with patch.object(sys, "argv", ["check_uv_audit.py", str(path)]):
+                with self.assertRaises(SystemExit) as raised:
+                    audit.main()
+        urlopen.assert_not_called()
+        self.assertEqual(
+            raised.exception.code,
+            f"{path} has uv audit schema version '1', and this script reads only 'preview'. "
+            "Update it for the pinned uv version.",
+        )
 
 
 if __name__ == "__main__":

@@ -75,15 +75,17 @@ def read_report(path):
     """The uv audit JSON report, or SystemExit when uv wrote no complete report."""
     try:
         report = json.loads(Path(path).read_text())
-        complete = (
-            report["schema"]["version"] == "preview"
-            and isinstance(report["vulnerabilities"], list)
-            and isinstance(report["adverse_statuses"], list)
-        )
+        version = report["schema"]["version"]
+        complete = isinstance(report["vulnerabilities"], list) and isinstance(report["adverse_statuses"], list)
     except (OSError, ValueError, KeyError, TypeError):
         complete = False
     if not complete:
         raise SystemExit(f"{path} is not a complete uv audit report. Check the audit step's log.")
+    if version != "preview":
+        raise SystemExit(
+            f"{path} has uv audit schema version {version!r}, and this script reads only 'preview'. "
+            "Update it for the pinned uv version."
+        )
     return report
 
 
