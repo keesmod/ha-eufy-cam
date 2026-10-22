@@ -12,8 +12,8 @@ try { options = JSON.parse(await readFile('/data/options.json', 'utf8')); }
 catch (error) { stop(`Cannot read the app options in /data/options.json (${error.code ?? error.name})`); }
 const token = options?.token;
 if (typeof token !== 'string' || token.length < 32) {
-  const received = token === undefined ? 'no token' : typeof token !== 'string' ? `a token of type ${typeof token}` : token === '' ? 'an empty token' : `a token of ${token.length} characters`;
-  // Supervisor shows a !secret reference but writes its value to options.json.
+  const received = token == null ? 'no token' : typeof token !== 'string' ? `a token of type ${typeof token}` : token === '' ? 'an empty token' : `a token of ${token.length} characters`;
+  // From Supervisor 2026.09.3 the UI and API show a !secret reference, while options.json gets its value.
   stop(`Configure a bridge token of at least 32 characters. This app received ${received}. Set token in this app's Configuration tab and save. Home Assistant replaces a !secret reference with its value from secrets.yaml before the app starts, so that value needs at least 32 characters as well.`);
 }
 const directory = '/data/eufy';

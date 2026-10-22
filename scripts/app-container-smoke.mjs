@@ -2,7 +2,7 @@
 // synthetic /data/options.json and starts bootstrap.mjs as the app's CMD does.
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 
 const options = '/data/options.json';
@@ -27,6 +27,7 @@ const rejected = [
   ['an empty token', JSON.stringify({ token: '', diagnostics: false }), tokenLine('an empty token')],
   ['a short token', JSON.stringify({ token: short, diagnostics: false }), tokenLine('a token of 31 characters')],
   ['no token', JSON.stringify({ diagnostics: false }), tokenLine('no token')],
+  ['a null token', JSON.stringify({ token: null }), tokenLine('no token')],
   ['a numeric token', JSON.stringify({ token: 12345678901234567890123456789012345 }), tokenLine('a token of type number')],
   ['null options', 'null', tokenLine('no token')],
   ['truncated JSON', `{\n  "token": "${short}"`, 'Cannot read the app options in /data/options.json (SyntaxError)\n'],
@@ -61,6 +62,11 @@ try {
   const directory = await stat('/data/eufy');
   assert.equal(directory.uid, 1000);
   assert.equal(directory.mode & 0o777, 0o700);
+  // The bootstrap process itself becomes the bridge, so its ids show the privilege drop.
+  const status = await readFile(`/proc/${child.pid}/status`, 'utf8');
+  assert.match(status, /^Uid:\s+1000\s+1000\s+1000\s+1000$/m);
+  assert.match(status, /^Gid:\s+1000\s+1000\s+1000\s+1000$/m);
+  assert.match(status, /^Groups:\s*$/m);
   console.log('A 32-character token passed bootstrap, the privilege drop and authentication');
 } finally {
   child.kill('SIGTERM');

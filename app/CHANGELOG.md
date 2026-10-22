@@ -162,10 +162,12 @@
   of 20 characters, and never contains the token. Bridge 0.8.38 logged only
   "Configure a bridge token of at least 32 characters" with a stack trace. The
   line also says that Home Assistant replaces a `!secret` reference with its
-  value from `secrets.yaml` before the app starts, because the Configuration
-  tab and the Supervisor API show the reference and not that value. An
-  unreadable or invalid `/data/options.json` gives its error code, without the
-  parse error that quoted the file line holding the token. The 32-character
+  value from `secrets.yaml` before the app starts. It mentions this because
+  from Supervisor 2026.09.3 the Configuration tab and the Supervisor API show
+  the reference and not that value. An unreadable or invalid
+  `/data/options.json` gives only an error code or error name, such as
+  `ENOENT` or `SyntaxError`, without the parse error that quoted the file line
+  holding the token. The 32-character
   minimum is unchanged. CI now builds the app and starts it with synthetic
   options on amd64 and on aarch64. A camera result on aarch64 hardware is
   still pending.
