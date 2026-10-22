@@ -295,9 +295,13 @@ another parent, such as a HomeBase 2, its `device` row shows
 Home Assistant shows it as a camera without media or events. An empty or self parent
 gives `relationship_reason=invalid_device_relationship` instead. `T8212`, other
 suffixes and other types stay `unsupported_device`. If the doorbell is still
-missing, its `issue` row shows the model and type it arrives with. If the
-report has no row for it at all, check that the doorbell is shared with the
-account the bridge uses. Not tested on hardware with this integration.
+missing, restart the bridge once and [collect the startup
+logs](#collect-the-startup-logs). Look for an `issue` row with
+`code=unsupported_device`. It shows the received `device_type`, and the
+`model` when it fits the bound described below, otherwise `model=unavailable`.
+If the report has no row for it at all, check that the doorbell is shared
+with the account the bridge uses. Not tested on hardware with this
+integration.
 
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
 [152-records]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780
