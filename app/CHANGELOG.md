@@ -89,7 +89,7 @@
 - Add `POST /v1/snapshot/{serial}/refresh`, which refreshes one camera's
   snapshot on demand
   ([issue #182](https://github.com/keesmod/ha-eufy-cam/issues/182)). Until now
-  a snapshot was only the latest HomeBase cover or the last frame of a live
+  a snapshot was only the latest event cover or the last frame of a live
   view, and nothing could ask for a new one. The bridge starts the camera as a
   live view would, or joins the live session that already runs. A refresh that
   joins a session that is still starting, such as a second press, waits for
@@ -118,7 +118,7 @@
   cancels it. Nothing refreshes by itself. Snapshot requests, card loads and
   the event stream still never wake a camera. The refresh has software
   coverage only, and no hardware result is recorded yet.
-- A finished live view's last frame no longer reverts to the older HomeBase
+- A finished live view's last frame no longer reverts to the older event
   cover at the next unrelated update. The bridge copied every cover it held
   again on each backend update, such as a station state change, so the
   snapshot and its `snapshot_received_at` went back in time. It now copies a

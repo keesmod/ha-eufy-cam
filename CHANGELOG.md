@@ -120,8 +120,8 @@
   [standalone recording probe](docs/USAGE.md#standalone-recording-probe).
 - **Refresh snapshot** button for each camera, from bridge 0.8.39
   ([issue #182](https://github.com/keesmod/ha-eufy-cam/issues/182)). Until now
-  a snapshot was only the latest picture the bridge already held, a HomeBase
-  event cover or the last frame of a live view, and nothing could ask a camera
+  a snapshot was only the latest picture the bridge already held, an event
+  cover or the last frame of a live view, and nothing could ask a camera
   for a new one. A press, also `button.press` from an automation, starts the
   camera like a live viewer, keeps a frame about one second after the first
   one and then stops the camera with the normal confirmed stop. The camera's
@@ -144,7 +144,7 @@
   **Download diagnostics** keeps the pipeline event `snapshot_refresh` of a
   live session a refresh attached to. Bridge 0.8.39 also keeps the last frame
   of a finished live view as the snapshot until a newer image arrives. Until
-  now the next unrelated bridge update could put the older HomeBase cover back.
+  now the next unrelated bridge update could put the older event cover back.
 - **Motion and person events for an experimental standalone T84A1**, from
   bridge 0.8.39 with client 0.30.1
   ([issue #185](https://github.com/keesmod/ha-eufy-cam/issues/185)). With
