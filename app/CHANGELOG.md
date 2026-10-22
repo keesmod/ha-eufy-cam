@@ -49,9 +49,9 @@
   call. The bridge therefore writes no `recording_query` record of its operations,
   and the 15-second wait is gone. The device row's
   `media.recordings` in the `Eufy discovery:` log line and the diagnostics
-  download carries the reason. Snapshot and live view stay available. HomeBase
-  cameras, their requests and their recordings are unchanged, and this change
-  sends no new device request. Only the opt-in probe below adds one.
+  download carries the reason. Snapshot and live view stay available. This
+  change leaves HomeBase cameras, their requests and their recordings unchanged
+  and sends no new device request. Only the opt-in probe below adds one.
 - Add the app option `standalone_recording_probe` (Docker
   `EUFY_STANDALONE_RECORDING_PROBE=true`), off by default, with client 0.30.1
   and its `probeStandaloneRecordings`
@@ -70,9 +70,9 @@
 - The probe runs only in the login discovery. It never runs for a HomeBase or a
   camera behind one, and never in a discovery after a cloud reconnect. A login
   that is retried after a failure probes again. A probe failure is recorded and
-  never fails the discovery or the login. HomeBase requests, every other
-  payload, the recordings capability and the recording routes are unchanged,
-  so recordings on standalone cameras stay unavailable.
+  never fails the discovery or the login. The probe leaves HomeBase requests,
+  every other payload, the recordings capability and the recording routes
+  unchanged, so recordings on standalone cameras stay unavailable.
 - With the option on, the bridge reports ready later. Each standalone camera
   adds up to about 15 seconds plus its connection, and the HomeBase cameras of
   a mixed setup wait too. Turn the option off before you enter your Eufy
@@ -133,8 +133,8 @@
   push, and every T8410 or T8410C push. No standalone push reaches the vendored
   station handler, so the camera gets no guard mode or alarm state. An event
   opens no camera connection and loads no image, so it brings no new event
-  image and does not refresh the snapshot. No new option is needed. HomeBase
-  cameras and their events are unchanged. Synthetic coverage only, the result
+  image and does not refresh the snapshot. No new option is needed. This change
+  leaves HomeBase cameras and their events unchanged. Synthetic coverage only, the result
   on hardware is pending.
 - Add `standalone_pushes` to the diagnostics download, the client's
   `standalonePushStatus` in snake_case: `arrived`, `admitted`, `refused` by
@@ -152,8 +152,10 @@
   working, not independently reproduced, and that T84A1 motion and person
   events are experimental.
 - Update `protobufjs` from 8.8.0 to 8.8.1, which the client's cloud push
-  connection uses, and `strtok3` from 10.3.5 to 10.4.0, which the client's
-  image type detection uses through `file-type`. Live view, snapshots,
+  connection uses, and `strtok3` from 10.3.5 to 10.4.0, a dependency of
+  `file-type` that the client's vendored image download would use through
+  `image-type`. The client refuses that download before any byte is read, so
+  no image reaches `strtok3`. Live view, snapshots,
   recordings and events behave the same. No published advisory covers the
   previous versions.
 - When `token` is missing or shorter than 32 characters, the app logs one line

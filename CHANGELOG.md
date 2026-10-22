@@ -75,9 +75,9 @@
   rejected it with `result_code=-1100`. The best next candidate, the database
   query 10017 in the shape the Eufy app sends, has public results on other
   standalone models but none on a T84xx camera. Only the opt-in probe of the
-  issue #178 entry below sends it. The issue #175 change adds no device request
-  and changes no payload. HomeBase cameras, their requests and their recordings
-  are unchanged.
+  issue #178 entry below sends it. The issue #175 change adds no device
+  request, changes no payload and leaves HomeBase cameras, their requests and
+  their recordings unchanged.
 - For such a camera the bridge refuses each recording request with
   `capability_unavailable` before any client call, so **Download diagnostics**
   has no `recording_query` record of its operations. Its device row shows
@@ -99,7 +99,7 @@
   record.
 - The option is off by default and stays in stable releases as a documented
   diagnostic. The probe sends nothing to a HomeBase or to a camera behind one,
-  and every other request and payload is unchanged. It only reads. It
+  and leaves every other request and payload unchanged. It only reads. It
   downloads and deletes nothing, and the standalone cards keep showing
   recordings as not available. With the option on, the bridge reports ready
   later. Each standalone camera adds up to about 15 seconds plus its
@@ -158,8 +158,8 @@
 - A standalone camera still gets no guard mode or alarm state. An event opens
   no camera connection and loads no image, so it brings no new event image and
   does not refresh the camera's snapshot. Standalone T8410 and T8410C cameras
-  still have no events. HomeBase cameras and their events are unchanged. The
-  events have synthetic test coverage only. No standalone T84A1 push has been
+  still have no events. This change leaves HomeBase cameras and their events
+  unchanged. The events have synthetic test coverage only. No standalone T84A1 push has been
   captured yet, so the result on hardware is pending.
 - **Download diagnostics** keeps `support.standalone_pushes`, the numbers-only
   push counts of the bridge's client, from bridge 0.8.39 with client 0.30.1.
@@ -176,9 +176,11 @@
   bridge 0.8.39. They replace 8.8.0 and 10.3.5 and reach the bridge through
   client 0.30.1. `protobufjs` decodes the messages of the client's cloud push
   connection, and 8.8.1 rejects an overflowing length prefix inside a decoded
-  message. `strtok3` reads the bytes for the client's image type detection
-  through `file-type`. 10.4.0 adds an optional buffer limit that `file-type`
-  does not set and fixes the cancellation of stream reads. Live view,
+  message. `strtok3` is a dependency of `file-type`, which the client's
+  vendored image download would use through `image-type`. The client refuses
+  that download before any byte is read, so no image reaches `strtok3`. 10.4.0
+  adds an optional buffer limit and fixes the cancellation of stream reads.
+  Live view,
   snapshots, recordings and events behave the same. No published advisory
   covers `protobufjs` 8.8.0 or `strtok3` 10.3.5, so these are maintenance
   updates.
