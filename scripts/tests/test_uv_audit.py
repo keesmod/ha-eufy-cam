@@ -159,20 +159,25 @@ class UvAuditTests(unittest.TestCase):
                 )
 
     def test_other_schema_version_fails_before_pypi(self):
-        data = json.loads(FIXTURE.read_text())
-        data["schema"]["version"] = "1"
-        with tempfile.TemporaryDirectory() as temp, patch.object(audit.urllib.request, "urlopen") as urlopen:
-            path = Path(temp) / "uv-audit.json"
-            path.write_text(json.dumps(data))
-            with patch.object(sys, "argv", ["check_uv_audit.py", str(path)]):
-                with self.assertRaises(SystemExit) as raised:
-                    audit.main()
-        urlopen.assert_not_called()
-        self.assertEqual(
-            raised.exception.code,
-            f"{path} has uv audit schema version '1', and this script reads only 'preview'. "
-            "Update it for the pinned uv version.",
-        )
+        recorded = json.loads(FIXTURE.read_text())
+        recorded["schema"]["version"] = "1"
+        for data in (recorded, {"schema": {"version": "1"}}, {"schema": {"version": "1"}, "findings": []}):
+            with self.subTest(data=list(data)):
+                with (
+                    tempfile.TemporaryDirectory() as temp,
+                    patch.object(audit.urllib.request, "urlopen") as urlopen,
+                ):
+                    path = Path(temp) / "uv-audit.json"
+                    path.write_text(json.dumps(data))
+                    with patch.object(sys, "argv", ["check_uv_audit.py", str(path)]):
+                        with self.assertRaises(SystemExit) as raised:
+                            audit.main()
+                urlopen.assert_not_called()
+                self.assertEqual(
+                    raised.exception.code,
+                    f"{path} has uv audit schema version '1', and this script reads only 'preview'. "
+                    "Update it for the pinned uv version.",
+                )
 
 
 if __name__ == "__main__":

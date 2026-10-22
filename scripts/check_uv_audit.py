@@ -6,7 +6,8 @@ requires at one exact version. A fix for those arrives only with the Home
 Assistant release that moves the pin. Each exception names one locked version
 and its advisory IDs. It holds only while the newest homeassistant release on
 PyPI still requires exactly that version. Any other advisory, a moved pin, a
-stale exception or an incomplete report fails the check. Adverse package
+stale exception, an incomplete report or another report schema version fails
+the check. Adverse package
 statuses become warnings, because uv audit itself does not fail on them.
 """
 
@@ -72,20 +73,20 @@ def exact_pins(requires_dist):
 
 
 def read_report(path):
-    """The uv audit JSON report, or SystemExit when uv wrote no complete report."""
+    """The uv audit JSON report, or SystemExit for an incomplete report or another schema version."""
+    incomplete = f"{path} is not a complete uv audit report. Check the audit step's log."
     try:
         report = json.loads(Path(path).read_text())
         version = report["schema"]["version"]
-        complete = isinstance(report["vulnerabilities"], list) and isinstance(report["adverse_statuses"], list)
     except (OSError, ValueError, KeyError, TypeError):
-        complete = False
-    if not complete:
-        raise SystemExit(f"{path} is not a complete uv audit report. Check the audit step's log.")
+        raise SystemExit(incomplete) from None
     if version != "preview":
         raise SystemExit(
             f"{path} has uv audit schema version {version!r}, and this script reads only 'preview'. "
             "Update it for the pinned uv version."
         )
+    if not (isinstance(report.get("vulnerabilities"), list) and isinstance(report.get("adverse_statuses"), list)):
+        raise SystemExit(incomplete)
     return report
 
 
