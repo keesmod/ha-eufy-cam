@@ -278,10 +278,14 @@ diagnostics download attached. Reported, not independently reproduced, and
 recorded in the client's [model matrix][84A1-matrix].
 
 On 2026-10-22 the reporter of [issue #198][198] described a Video Doorbell
-`T8210` under a HomeBase 3 that integration 0.8.47 does not list. The report
-shows no received model, type or firmware. Public reports show this doorbell
-arriving as `T8210` or as `T8210C`, both with type 7. Client 0.30.0 and earlier
-have no profile for either, so such a row is rejected with
+T8210 under a HomeBase 3 that integration 0.8.47 does not list. The report
+shows no received model, type or firmware. The reporter found no obvious
+reference to the doorbell in the bridge logs. From bridge 0.8.36 an unsupported
+`T8210` or `T8210C` row is logged at each discovery as
+`Eufy backend: unsupported_device` with its `device_model` and `device_type`,
+so whether their doorbell arrives as such a row is not known. Public reports
+show this doorbell arriving as `T8210` or as `T8210C`, both with type 7. Client
+0.30.0 and earlier have no profile for either, so such a row is rejected with
 `unsupported_device`. Client 0.30.1, included in bridge 0.8.39, admits exactly
 `T8210` and `T8210C` with type 7 under the HomeBase 3 policy. This rests on
 public evidence, recorded in the client's [model matrix][198-matrix]. Under
