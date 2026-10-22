@@ -278,8 +278,9 @@ diagnostics download attached. Reported, not independently reproduced, and
 recorded in the client's [model matrix][84A1-matrix].
 
 On 2026-10-22 the reporter of [issue #198][198] described a Video Doorbell
-T8210 under a HomeBase 3 that integration 0.8.47 does not list. The report
-shows no received model, type or firmware. The reporter found no obvious
+T8210 under a HomeBase 3 that integration 0.8.47 does not list. The issue has
+no discovery report or diagnostics download, so the received model, type and
+firmware are not known. The reporter found no obvious
 reference to the doorbell in the bridge logs. From bridge 0.8.36 an unsupported
 `T8210` or `T8210C` row is logged at each discovery as
 `Eufy backend: unsupported_device` with its `device_model` and `device_type`,
@@ -291,7 +292,7 @@ show this doorbell arriving as `T8210` or as `T8210C`, both with type 7. Client
 public evidence, recorded in the client's [model matrix][198-matrix]. Under
 another parent, such as a HomeBase 2, its `device` row shows
 `relationship=unsupported` with `relationship_reason=unsupported_station`, and
-Home Assistant shows it as a camera without media. An empty or self parent
+Home Assistant shows it as a camera without media or events. An empty or self parent
 gives `relationship_reason=invalid_device_relationship` instead. `T8212`, other
 suffixes and other types stay `unsupported_device`. If the doorbell is still
 missing, its `issue` row shows the model and type it arrives with. If the

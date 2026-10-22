@@ -201,10 +201,10 @@
   battery doorbells. Snapshots, live view and recordings need the HomeBase 3 on
   firmware 2.0.9.7 or later, as for the C30 and C31. Under another parent,
   such as a HomeBase 2, it now also appears as a camera, but without
-  snapshots, live view or recordings, with `unsupported_station`. An empty or
+  snapshots, live view, recordings or events, with `unsupported_station`. An empty or
   self parent gives `invalid_device_relationship` in the same way. The client
-  admits both model codes on public evidence, because the report shows no
-  received model or type. Their coverage is synthetic, and the result on
+  admits both model codes on public evidence, because issue #198 does not
+  show the received model or type. Their coverage is synthetic, and the result on
   hardware is pending. `T8212`, other suffixes and other device types stay
   unsupported. See
   [discovery diagnostics](docs/DISCOVERY_DIAGNOSTICS.md#interpret-the-report).
