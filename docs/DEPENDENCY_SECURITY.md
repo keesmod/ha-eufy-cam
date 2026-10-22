@@ -20,7 +20,8 @@ raises the bridge as described in [the release guide](RELEASING.md#batch-release
 The audit reads the lockfile without installing packages or executing their
 lifecycle scripts. Any reported vulnerability or audit error fails the check.
 The only exception is a listed Python advisory of a version that Home Assistant
-pins exactly, as described under [Python development lock](#python-development-lock).
+pins exactly, as described under
+[Python development lock](#python-development-lock).
 JSON reports are kept in the run artifacts for 14 days, including failed audits.
 A failed audit does not cancel checks of other package roots.
 
@@ -132,7 +133,8 @@ errors such as a missing lockfile. CI then lets `scripts/check_uv_audit.py`
 decide, and that script rejects a report that is empty or incomplete or has a
 schema version other than `preview`. For scanner or registry failures, fix the
 failure and rerun the check. Do not ignore any other exit status, remove
-development packages or run `npm audit fix --force` to make CI pass. Investigate reported vulnerabilities and review the update.
+development packages or run `npm audit fix --force` to make CI pass.
+Investigate reported vulnerabilities and review the update.
 
 Lockfile hashes verify the selected bytes, and audits detect known advisories.
 Neither proves that package code is safe. Copied protocol code requires source
