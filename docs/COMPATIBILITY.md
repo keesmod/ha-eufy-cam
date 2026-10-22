@@ -400,8 +400,9 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   that bridge.
 - **Video Doorbell 2K `T8210` and `T8210C`, type 7**, recognized behind a
   HomeBase 3 from bridge 0.8.39 with client 0.30.1, admitted on public evidence
-  after [issue #198](https://github.com/keesmod/ha-eufy-cam/issues/198). No
-  owner has reported either on this integration yet.
+  after [issue #198](https://github.com/keesmod/ha-eufy-cam/issues/198). The
+  reporter has not yet tested a bridge with this change, and the code their
+  doorbell arrives with is not known.
 - **eufyCam 3 `T8160-C`, type 19**, and **Indoor Cam Pan&Tilt 2K `T8410C`,
   type 31**, recognized behind a HomeBase 3 from bridge 0.8.36. `T8160-C` was
   reported. `T8410C` is admitted on public evidence. An owner reported all

@@ -174,8 +174,10 @@
   with device type 7 behind a HomeBase 3 as a battery doorbell camera
   ([issue #198](https://github.com/keesmod/ha-eufy-cam/issues/198)). Until now
   the client rejected it with `unsupported_device`, and the bridge served no
-  camera for it. This rests on public evidence and synthetic tests. The result
-  on hardware is pending.
+  camera for it. Under another parent, such as a HomeBase 2, the bridge now
+  serves it as a camera without media, with `unsupported_station`, and an
+  empty or self parent gives `invalid_device_relationship`. This rests on
+  public evidence and synthetic tests. The result on hardware is pending.
 
 Upgrade: keep the same token and session. Update the integration to 0.8.48 to
 keep the `recording_query` records and the attempt `cause` in **Download

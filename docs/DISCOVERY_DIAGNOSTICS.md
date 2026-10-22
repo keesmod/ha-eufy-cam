@@ -277,16 +277,20 @@ over several sessions. Recordings were not tested. The comment has no
 diagnostics download attached. Reported, not independently reproduced, and
 recorded in the client's [model matrix][84A1-matrix].
 
-On 2026-10-22 the reporter of [issue #198][198] described a Video Doorbell 2K
+On 2026-10-22 the reporter of [issue #198][198] described a Video Doorbell
 `T8210` under a HomeBase 3 that integration 0.8.47 does not list. The report
 shows no received model, type or firmware. Public reports show this doorbell
 arriving as `T8210` or as `T8210C`, both with type 7. Client 0.30.0 and earlier
 have no profile for either, so such a row is rejected with
 `unsupported_device`. Client 0.30.1, included in bridge 0.8.39, admits exactly
 `T8210` and `T8210C` with type 7 under the HomeBase 3 policy. This rests on
-public evidence, recorded in the client's [model matrix][198-matrix]. `T8212`,
-other suffixes and other types stay `unsupported_device`. If the doorbell is
-still missing, its `issue` row shows the model and type it arrives with. If the
+public evidence, recorded in the client's [model matrix][198-matrix]. Under
+another parent, such as a HomeBase 2, its `device` row shows
+`relationship=unsupported` with `relationship_reason=unsupported_station`, and
+Home Assistant shows it as a camera without media. An empty or self parent
+gives `relationship_reason=invalid_device_relationship` instead. `T8212`, other
+suffixes and other types stay `unsupported_device`. If the doorbell is still
+missing, its `issue` row shows the model and type it arrives with. If the
 report has no row for it at all, check that the doorbell is shared with the
 account the bridge uses. Not tested on hardware with this integration.
 

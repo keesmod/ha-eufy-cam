@@ -199,10 +199,14 @@
   Until now the client rejected it as `unsupported_device`, so Home Assistant
   did not list it. It gets the camera, event and battery entities of the other
   battery doorbells. Snapshots, live view and recordings need the HomeBase 3 on
-  firmware 2.0.9.7 or later, as for the C30 and C31. The client admits both
-  model codes on public evidence, because the report shows no received model
-  or type. Their coverage is synthetic, and the result on hardware is pending.
-  `T8212`, other suffixes and other device types stay unsupported. See
+  firmware 2.0.9.7 or later, as for the C30 and C31. Under another parent,
+  such as a HomeBase 2, it now also appears as a camera, but without
+  snapshots, live view or recordings, with `unsupported_station`. An empty or
+  self parent gives `invalid_device_relationship` in the same way. The client
+  admits both model codes on public evidence, because the report shows no
+  received model or type. Their coverage is synthetic, and the result on
+  hardware is pending. `T8212`, other suffixes and other device types stay
+  unsupported. See
   [discovery diagnostics](docs/DISCOVERY_DIAGNOSTICS.md#interpret-the-report).
 
 Upgrade: update the HACS integration to 0.8.48 and the bridge app to 0.8.39,
@@ -218,7 +222,8 @@ reach integration 0.8.47 as well, because they use the existing camera and
 event path. The bridge's `Eufy discovery:` log
 lines still carry the records. With bridge 0.8.38 the download has no such
 records, a standalone camera's recordings are offered and fail as before, no
-camera gets the Refresh snapshot button and a standalone T84A1 has no events.
+camera gets the Refresh snapshot button, a standalone T84A1 has no events and
+a `T8210` or `T8210C` doorbell is still rejected as `unsupported_device`.
 Rollback: restore the bridge 0.8.38 app backup and integration 0.8.47. A
 standalone T84A1 then has no events again, and a `T8210` or `T8210C` doorbell
 is rejected again.
