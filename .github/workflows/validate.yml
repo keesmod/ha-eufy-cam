@@ -48,7 +48,13 @@ jobs:
       - run: uv run mypy custom_components
       - run: uv run pytest --cov=custom_components.eufy_viewer --cov-report=term-missing --cov-fail-under=95
   app-package:
-    runs-on: ubuntu-latest
+    # The app's config.json lists amd64 and aarch64, and Supervisor builds the
+    # image on the user's machine. Build and start it natively on both.
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -57,6 +63,8 @@ jobs:
       - name: Stage the candidate app build context
         run: python3 scripts/prepare_ha_app.py --stage
       - run: docker build -t eufy-viewer-app:test artifacts/ha_app/eufy_viewer_bridge
+      - name: Start the app bootstrap with synthetic options
+        run: docker run --rm --network none -v "${{ github.workspace }}/scripts/app-container-smoke.mjs:/tmp/app-smoke.mjs:ro" --entrypoint node eufy-viewer-app:test /tmp/app-smoke.mjs
   bridge:
     runs-on: ubuntu-latest
     timeout-minutes: 10

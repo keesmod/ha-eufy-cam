@@ -182,6 +182,17 @@
   snapshots, recordings and events behave the same. No published advisory
   covers `protobufjs` 8.8.0 or `strtok3` 10.3.5, so these are maintenance
   updates.
+- **Bridge app startup** from bridge 0.8.39
+  ([issue #197](https://github.com/keesmod/ha-eufy-cam/issues/197)). When
+  `token` is missing or shorter than 32 characters, the app logs one line that
+  says what it received, for example an empty token or a token of 20
+  characters, and stops. The line never contains the token. It also says that
+  Home Assistant replaces a `!secret` reference with its value from
+  `secrets.yaml` before the app starts. It mentions this because from
+  Supervisor 2026.09.3 the Configuration tab and the app info in the Supervisor
+  API show the reference and not that value. An invalid `/data/options.json`
+  gives only the error name, such as `SyntaxError`, and no longer prints the
+  file line holding the token. The 32-character minimum is unchanged.
 
 Upgrade: update the HACS integration to 0.8.48 and the bridge app to 0.8.39,
 then restart Home Assistant. Keep the same token and session. No configuration
