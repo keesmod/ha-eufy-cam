@@ -1,11 +1,25 @@
 // Supervisor owns /data/options.json. Read it once, then drop root privileges.
+import { writeSync } from 'node:fs';
 import { readFile, mkdir, chown } from 'node:fs/promises';
-const options = JSON.parse(await readFile('/data/options.json', 'utf8'));
-if (typeof options.token !== 'string' || options.token.length < 32) throw new Error('Configure a bridge token of at least 32 characters');
+// One log line without option values. A synchronous write survives process.exit.
+function stop(message) {
+  writeSync(2, `${message}\n`);
+  process.exit(1);
+}
+let options;
+// A JSON parse error quotes the file line, which can hold the token.
+try { options = JSON.parse(await readFile('/data/options.json', 'utf8')); }
+catch (error) { stop(`Cannot read the app options in /data/options.json (${error.code ?? error.name})`); }
+const token = options?.token;
+if (typeof token !== 'string' || token.length < 32) {
+  const received = token == null ? 'no token' : typeof token !== 'string' ? `a token of type ${typeof token}` : token === '' ? 'an empty token' : `a token of ${token.length} character${token.length === 1 ? '' : 's'}`;
+  // From Supervisor 2026.09.3 the Configuration tab and the app info show a !secret reference, while options.json gets its value.
+  stop(`Configure a bridge token of at least 32 characters. This app received ${received}. Set token in this app's Configuration tab and save. Home Assistant replaces a !secret reference with its value from secrets.yaml before the app starts, so that value needs at least 32 characters as well.`);
+}
 const directory = '/data/eufy';
 await mkdir(directory, { recursive: true, mode: 0o700 });
 await chown(directory, 1000, 1000);
-process.env.EUFY_BRIDGE_TOKEN = options.token;
+process.env.EUFY_BRIDGE_TOKEN = token;
 process.env.EUFY_DATA_DIR = directory;
 // Host networking is required for the verified Mega LAN discovery path.
 // Only local HA and its managed media service need access to this API.
@@ -20,6 +34,8 @@ if (Number.isInteger(options.live_max_streams_per_station)) process.env.EUFY_LIV
 if (Number.isInteger(options.live_max_seconds_mains)) process.env.EUFY_LIVE_MAX_SECONDS_MAINS = String(options.live_max_seconds_mains);
 // Optional experimental standalone cameras, off unless explicitly true.
 if (options.experimental_standalone === true) process.env.EUFY_EXPERIMENTAL_STANDALONE = 'true';
+// Optional recording probe of experimental standalone cameras during the login discovery, off unless explicitly true.
+if (options.standalone_recording_probe === true) process.env.EUFY_STANDALONE_RECORDING_PROBE = 'true';
 // Old Supervisor options may still contain legacy. Only the Mega migration
 // service starts, and its saved-inventory gate prevents importing old credentials.
 process.env.EUFY_BACKEND = options.backend === 'legacy' ? 'mega' : (options.backend ?? 'mega');

@@ -3,7 +3,8 @@ import { EventEmitter } from 'node:events';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { JpegFramer } from './jpeg.js';
-import { StartNotIssued, StreamHub } from './streams.js';
+import { StartNotIssued, StreamHub, STATION_LIMIT_CLOSE_CODE, type Peer } from './streams.js';
+import { SnapshotError } from './errors.js';
 import { StreamDiagnostics } from './diagnostics.js';
 import { MediaRelay } from './media.js';
 import { LiveVideoDiagnostics, type LiveVideoObservation } from './live-video-diagnostics.js';
@@ -26,6 +27,10 @@ export type { Credentials, AuthState, CameraInfo } from './backend.js';
 const unavailable = async (): Promise<never> => {
   throw new Error('Recording backend unavailable');
 };
+// The hub's reasons for a camera or viewer that ran out of time. An unfinished
+// refresh only sees 'Viewer closed' when the hub lets its deadline lapse, and
+// it rejoins instead while the session still lives.
+const refreshTimeouts = new Set(['Viewing time limit or stalled camera', 'Viewer closed']);
 export class Eufy extends EventEmitter {
   migrationError: string | null = null;
   private backend?: Backend;
@@ -41,6 +46,8 @@ export class Eufy extends EventEmitter {
   private encoders = new Map<string, ChildProcessWithoutNullStreams>();
   private livePictures = new Map<string, Picture>();
   readonly pictures = new Map<string, Picture>();
+  /** The backend picture object last copied per camera, see bind(). */
+  private readonly backendPictures = new Map<string, Picture>();
   /** One bounded row per live session for the video path, kept next to the backend's audio rows. */
   readonly liveVideo = new LiveVideoDiagnostics();
   private readonly liveVideoRows = new Map<string, LiveVideoObservation>();
@@ -75,6 +82,9 @@ export class Eufy extends EventEmitter {
     started_events: 0,
     stopped_events: 0,
     frames: 0,
+    snapshot_refresh_requests: 0,
+    snapshot_refresh_completed: 0,
+    snapshot_refresh_failed: 0,
     last_start_request: null as string | null,
     last_stop_request: null as string | null,
     last_started_event: null as string | null,
@@ -85,6 +95,8 @@ export class Eufy extends EventEmitter {
   liveStreamsPerStation = 1;
   /** Configured session cap in seconds for cameras without a battery value, reported in state. */
   liveMaxSecondsMains = 120;
+  /** A refresh keeps a frame this long after its first, while a waking camera may still adjust exposure. */
+  snapshotRefreshSettleMs = 1000;
   readonly hub = new StreamHub({
     diagnostic: (serial, event) => this.diagnostics.mark(serial, event),
     admit: (serial) => {
@@ -252,6 +264,7 @@ export class Eufy extends EventEmitter {
         await this.backend?.close();
         this.backend = undefined;
         this.pictures.clear();
+        this.backendPictures.clear();
         const busy = () =>
           this.hub.active
             ? ('live_busy' as const)
@@ -293,7 +306,14 @@ export class Eufy extends EventEmitter {
   private bind(backend: Backend): void {
     backend.on('change', () => {
       this.auth = backend.auth;
-      for (const [serial, picture] of backend.pictures) this.pictures.set(serial, picture);
+      // The backend stores a new object per cover but emits change for any
+      // update. Copying only a new cover keeps a newer live frame or refreshed
+      // snapshot from reverting to the older cover.
+      for (const [serial, picture] of backend.pictures) {
+        if (this.backendPictures.get(serial) === picture) continue;
+        this.backendPictures.set(serial, picture);
+        this.pictures.set(serial, picture);
+      }
       this.emit('change');
     });
     backend.on('storage_error', () => this.emit('storage_error'));
@@ -306,6 +326,7 @@ export class Eufy extends EventEmitter {
     backend.on('camera-removed', (serial) => {
       this.hub.end(serial, 'Device removed');
       this.pictures.delete(serial);
+      this.backendPictures.delete(serial);
     });
     backend.on('live-stop', ({ serial, confirmed }) => {
       this.metrics.stopped_events++;
@@ -415,11 +436,84 @@ export class Eufy extends EventEmitter {
       throw new Error('Station still owned');
     return this.backend.recoverStation(serial);
   }
+  /**
+   * Wakes the camera as an internal hub viewer and keeps one of its frames as
+   * the snapshot. Admission, the HomeBase limit, timeouts, the confirmed stop
+   * and recovery stay the hub's job.
+   */
+  async refreshSnapshot(serial: string, signal?: AbortSignal): Promise<Picture> {
+    this.metrics.snapshot_refresh_requests++;
+    try {
+      const capabilities = this.backend?.inventory().find(camera => camera.serial === serial)?.capabilities;
+      if (capabilities?.snapshot.available === false || capabilities?.live.available === false) throw new SnapshotError('capability_unavailable');
+      if (this.auth.state !== 'connected' || !this.backend?.connected) throw new SnapshotError('not_connected');
+      if (this.recordings.busy) throw new SnapshotError('recording_busy');
+      if (this.hub.phase(serial) === 'stopping' || this.hub.recoveringStation) throw new SnapshotError('live_stopping');
+      return await this.captureSnapshot(serial, signal);
+    } catch (error) {
+      this.metrics.snapshot_refresh_failed++;
+      throw error;
+    }
+  }
+  private captureSnapshot(serial: string, signal?: AbortSignal): Promise<Picture> {
+    return new Promise((resolve, reject) => {
+      signal?.throwIfAborted();
+      const initial = this.pictures.get(serial);
+      let latest: Buffer | undefined, received = '', first: number | undefined, done = false;
+      const finish = (error?: unknown) => {
+        if (done) return;
+        // Done before the detach, so the close it causes is ignored.
+        done = true;
+        clearTimeout(guard);
+        signal?.removeEventListener('abort', aborted);
+        try {
+          if (error || !latest) { reject(error ?? new SnapshotError('refresh_failed')); return; }
+          // The session's newest decoded frame, also one the hub skipped for this viewer in
+          // the same FFmpeg chunk, so its promotion at the session end keeps this time.
+          // A camera that stopped by itself has promoted that frame already, so keep a
+          // picture stored during the refresh that is not older than this frame.
+          const live = this.livePictures.get(serial), stored = this.pictures.get(serial);
+          const picture = live ?? (stored && (stored.data === latest || (stored !== initial && stored.received >= received))
+            ? stored : { data: latest, mime: 'image/jpeg', received });
+          this.pictures.set(serial, picture);
+          this.metrics.snapshot_refresh_completed++;
+          resolve(picture);
+          if (picture !== stored) this.emit('change');
+        } finally { this.hub.detach(serial, peer); }
+      };
+      const peer: Peer = {
+        bufferedAmount: 0,
+        send: frame => {
+          latest = frame;
+          received = new Date().toISOString();
+          const now = performance.now();
+          first ??= now;
+          // Deferred, because the hub is still delivering this frame to other viewers.
+          if (now - first >= this.snapshotRefreshSettleMs) queueMicrotask(() => finish());
+          else queueMicrotask(() => { if (!done) this.hub.ack(serial, peer); });
+        },
+        close: (code, reason) => {
+          // A viewer that joins a session gets 10 s for a frame, also while the camera
+          // still starts. Rejoin while the session lives, so the hub's first-frame and
+          // stall timeouts decide. A refused rejoin has already closed this peer.
+          const phase = this.hub.phase(serial);
+          if (!done && !latest && reason === 'Viewer closed' && (phase === 'starting' || phase === 'playing') && this.hub.attach(serial, peer)) return;
+          finish(latest ? undefined : new SnapshotError(code === STATION_LIMIT_CLOSE_CODE ? 'station_limit'
+            : code === 1013 ? 'camera_busy' : refreshTimeouts.has(reason) ? 'refresh_timeout' : 'refresh_failed'));
+        },
+      };
+      const aborted = () => finish(signal?.reason ?? new SnapshotError('refresh_failed'));
+      const guard = setTimeout(() => finish(latest ? undefined : new SnapshotError('refresh_timeout')), 30_000);
+      signal?.addEventListener('abort', aborted, { once: true });
+      if (this.hub.attach(serial, peer)) this.diagnostics.mark(serial, 'snapshot_refresh');
+    });
+  }
   audioAttempt(serial: string): number | undefined { return this.backend?.audioAttempt?.(serial); }
   supportReport(): SupportReport {
     const setup = this.setupDiagnostics.report();
     const report = this.backend?.supportReport?.() ?? this.failedSupportReport ?? setup;
-    return {...report, live_video: this.liveVideo.report(this.liveMaxSecondsMains * 1000 + 900_000), cache_age_ms: report === this.failedSupportReport ? Math.max(0, Math.round(performance.now() - this.failedSupportAt)) : 0, software: diagnosticSoftware(), generated_at:setup.generated_at, recent_events:
+    // The failed report keeps the counts of its closed client, the setup report has none (#185).
+    return {...report, standalone_pushes: report.standalone_pushes ?? null, live_video: this.liveVideo.report(this.liveMaxSecondsMains * 1000 + 900_000), cache_age_ms: report === this.failedSupportReport ? Math.max(0, Math.round(performance.now() - this.failedSupportAt)) : 0, software: diagnosticSoftware(), generated_at:setup.generated_at, recent_events:
       report === setup ? setup.recent_events : [...report.recent_events, ...setup.recent_events]
         .sort((a,b) => String(a.timestamp).localeCompare(String(b.timestamp))).slice(-100)};
   }
