@@ -131,6 +131,24 @@ Update the candidate's `CHANGELOG.md` and, for bridge changes, `app/CHANGELOG.md
 sections with the user-visible behavior, upgrade steps, compatibility limits and
 rollback instructions. Rollback names the previous stable versions.
 
+Keep both sections short. They become the release notes of every beta and of the
+stable release, and the app store shows `app/CHANGELOG.md`:
+
+- One bullet per user-visible change, in at most two sentences, with the issue
+  link. Start with the feature or entity name in bold.
+- Leave out root-cause analysis, reporter evidence, diagnostic field lists,
+  test-coverage detail and lists of what stays unchanged. They belong in the
+  issue, the PR or the documentation, which the bullet can link.
+- Mark unconfirmed hardware with a short phrase, such as "experimental, not yet
+  confirmed on hardware".
+- Combine dependency and other maintenance updates into one bullet.
+- A later PR in the same batch edits the existing bullet. It adds no correction
+  or reference to another entry.
+- The Upgrade and Rollback paragraph takes at most three sentences. It names a
+  compatibility limit only when a supported combination breaks or loses a
+  feature.
+- A stable batch stays under about 300 words per section.
+
 All Validate checks must pass on the current PR commit. The final **ci** check
 fails if any prerequisite failed, timed out, was cancelled or skipped. Protect
 `main` by requiring a pull request, up-to-date branches, resolved conversations
@@ -176,7 +194,8 @@ whose merge updates the stable app, and both GitHub releases.
      README card resource to `?v=X.Y.Z`.
    - Date the heading in `CHANGELOG.md` and, for a new bridge, in
      `app/CHANGELOG.md`. Each section ends with one Upgrade and Rollback
-     paragraph that names the previous stable versions.
+     paragraph that names the previous stable versions. Condense both sections
+     to the changelog rules above first.
    - Run `python3 scripts/prepare_ha_app.py --release` when the bridge version
      changed. It writes `ha_app/` and an existing `ha_app_beta/` at the stable
      bridge. An integration-only release keeps both folders.
@@ -313,9 +332,10 @@ PR without delay.
    CI cannot prove physical sound, battery life or a live migration. Changes that
    do not affect hardware need no new physical tests. Record that rationale.
 5. Run **Release** again on the same `main` commit and version, tick **publish**,
-   and supply a sanitized acceptance summary or evidence link. The summary is
-   included in the public release notes. Never include credentials, serials,
-   recognized names, private footage or raw diagnostic logs.
+   and supply a sanitized acceptance summary of one sentence or an evidence link.
+   The summary is included in the public release notes. Never include
+   credentials, serials, recognized names, private footage or raw diagnostic
+   logs.
 6. The pipeline repeats validation, checks the requested version and current
    `main`, creates the exact tag and a draft, uploads the tested files, downloads
    and verifies them, then publishes. It downloads and verifies the public assets
