@@ -332,7 +332,7 @@ attempt](PLAYBACK_REPORT.md#recording-stages-and-limits) keeps the latter.
 | `pages` | Client `pages` | 0 to 4 | Query pages sent. A calendar sends one, a thumbnail or download none |
 | `query_limit` | Last page `limit` | 0 to 10000 | Rows requested by the last page. 20 for a probe, 0 for a calendar and without a page |
 | `query_answered` | Last page `answered` | Boolean | Whether the last page was answered. `false` without a page |
-| `ack_code` | Last page `ackCode` | -999999 to 999999 | The session's command result for the last page's query command. `null` without one |
+| `ack_code` | Last page `ackCode` | -999999 to 999999 | The session's command result for the last page's query command, observed until the operation ends. `null` without one |
 | `query_result_code` | Last page `resultCode` | -999999 to 999999 | The answer's database result (mIntRet). `null` without an answer |
 | `query_rows` | Last page `rows` | 0 to 10000 | Rows in the last page's answer. `null` without an answer |
 | `unhandled_replies` | Client `unhandledReplies` | 0 to 99 | Database replies the owner's session could not dispatch during the operation. A probe does not count replies with inner command 10013, the latest-info query every connection sends |
@@ -352,9 +352,12 @@ Some readings of a list that failed with `device_request_timeout` at `query`:
 with `unhandled_result_code=-6006` an answer without an inner command, and
 `parse_error` an answer the session could not parse. `history_rejected` at
 `validate` carries the database result in `result_code` and
-`query_result_code`. `rows_cipher_id` above 0 says that a download from a
-standalone owner will be refused with `recording_cipher_unavailable`. None of
-these values proves a cause on its own.
+`query_result_code`. On an answered page `ack_code=null` says only that no
+command result arrived before the answer. For a list, `rows_cipher_id` above 0
+says that a download from a standalone owner will be refused with
+`recording_cipher_unavailable`. A probe creates no recording ID, so its
+`rows_cipher_id` only counts records with a cipher ID. None of these values
+proves a cause on its own.
 
 Since bridge 0.8.39 with client 0.30.1, the app option
 `standalone_recording_probe` (Docker `EUFY_STANDALONE_RECORDING_PROBE`) makes

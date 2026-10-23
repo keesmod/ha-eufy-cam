@@ -621,6 +621,7 @@ How to read a probe record:
 | `status=completed` with `rows_own` above 0 | The camera listed records of its own for today. `rows_other_day`, `rows_invalid_time` and `rows_cipher_id` count those properties over every row of the page, not only the camera's own. Whether to open recordings for that model is a separate later decision |
 | `status=completed` with `rows_other_device` or `rows_station_mismatch` above 0 | The answer has records of another device, or records of the camera with another station serial or without a valid storage path, such as a record with only a picture |
 | `reason=history_rejected` at `validate` | The camera answered and rejected the query with the database result in `result_code` and `query_result_code`. Unlike a list, this keeps the camera's session open |
+| `ack_code=null` with `query_answered=true` | No command result arrived before the answer. The command result and the answer arrive as separate messages in no fixed order, and the probe ends with the answer. This shows neither a refusal nor silence |
 | `reason=device_request_timeout` at `query` with `ack_code=0` and `unhandled_replies=0` | The camera accepted the command but sent no answer within 15 seconds. The session is closed |
 | The same with a non-zero `ack_code` | The camera refused the command with that code |
 | The same with `ack_code=null` | The camera sent neither a command result nor an answer |
@@ -659,6 +660,22 @@ still has it. With `false` or no field the option is off, or the bridge
 predates the probe of 0.8.39. Integration 0.8.48 betas from before the probe
 show `query=null` for a probe record and drop the summary field, and integration
 0.8.47 drops the record. The app log lines carry both in full.
+
+The [issue #178 report of 2026-10-23](https://github.com/keesmod/ha-eufy-cam/issues/178#issuecomment-6372936541),
+with bridge 0.8.39, client 0.30.1 and integration 0.8.48, is a worked example.
+On a standalone T8410 with firmware 2.3.2.4 the probe ended after 362 ms with
+`status=completed`, `query_result_code=0` and `query_rows=0`, an empty page
+for that day. On a T8410 with firmware 2.3.1.6 and a microSD card, and on a
+T8410C with firmware 3.3.4.4 without one, it ended at `query_stage=validate`
+with `reason=history_rejected` and `result_code=-1100`. Both T8410 records have
+`ack_code=null` with `query_answered=true`, and the T8410C record has
+`ack_code=0`. Every record has `pages=1`, `query_limit=20`,
+`unhandled_replies=0`, `session_open=true` and `returned=null`. In an earlier
+beta run on 2026-10-19 one T8410 had `status=completed` with `query_rows=1`,
+`rows_own=1` and `rows_cipher_id=1`. Its `device_ref` does not say which T8410
+it was, because refs follow the order of each report. Reported, not
+independently reproduced. The readings are in the
+[model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-standalone-recording-probe-results-2026-10-23).
 
 ### Standalone push counts
 

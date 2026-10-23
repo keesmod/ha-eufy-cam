@@ -235,7 +235,7 @@ Only the opt-in
 [standalone recording probe](#standalone-recording-probe) adds one, with
 `query=probe`.
 
-No known request lists or plays the recordings of a standalone T8410, so the
+No known request lists and plays the recordings of a standalone T8410, so the
 client sends none when you open the recordings. The candidates, strongest
 first:
 
@@ -369,6 +369,18 @@ Each probed camera leaves one `recording_query` line with `"query":"probe"` in
 the app log, and the discovery `summary` line has
 `"standalone_recording_probe":true`. How to collect and read them is in
 [discovery diagnostics](DISCOVERY_DIAGNOSTICS.md#standalone-recording-probe).
+
+On 2026-10-23 the issue #152 reporter ran the probe with bridge 0.8.39 on
+three standalone cameras ([report](https://github.com/keesmod/ha-eufy-cam/issues/178#issuecomment-6372936541)).
+The T8410 with firmware 2.3.2.4 answered with an empty page for that day. The
+T8410 with firmware 2.3.1.6, which has a microSD card, and the T8410C without
+one rejected it with `result_code=-1100`. In an earlier beta run on
+2026-10-19 one of the two T8410s listed one record of its own for that day.
+So both T8410s answer this query, where neither answered the list query
+10006. One record in three T8410 runs is not a stable list, and no playback
+path exists for a standalone camera's records, so their recordings stay not
+available. Reported, not independently reproduced. The readings are in the
+[model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-standalone-recording-probe-results-2026-10-23).
 Integration 0.8.48 or newer keeps both in **Download diagnostics**.
 Integration 0.8.48 betas from before the probe replace the record's `query`
 with `null`
