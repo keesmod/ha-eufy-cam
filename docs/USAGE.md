@@ -255,8 +255,10 @@ first:
    `commands.md`, an app declaration from decompilation, not a hardware
    result). A standalone E30 answered 10017 while it stayed silent on 10006
    ([#963](https://github.com/bropat/eufy-security-client/issues/963),
-   reported). None of these covers a T84xx camera, and the reporter's T8410s
-   keep no event clips, so the expected answer is an empty list. A list would
+   reported). None of these public sources covers a T84xx camera. Because the
+   reporter's T8410s keep no event clips, an empty list was expected. The
+   reported T84xx results, one listed record among them, are under
+   [standalone recording probe](#standalone-recording-probe). A list would
    not play either, because no evidenced decryption path exists for a
    standalone camera's recordings. From bridge 0.8.39 the opt-in
    [standalone recording probe](#standalone-recording-probe) sends this
@@ -369,6 +371,11 @@ Each probed camera leaves one `recording_query` line with `"query":"probe"` in
 the app log, and the discovery `summary` line has
 `"standalone_recording_probe":true`. How to collect and read them is in
 [discovery diagnostics](DISCOVERY_DIAGNOSTICS.md#standalone-recording-probe).
+Integration 0.8.48 or newer keeps both in **Download diagnostics**.
+Integration 0.8.48 betas from before the probe replace the record's `query`
+with `null`
+and drop the summary field, and integration 0.8.47 drops the record. The app
+log shows both in full with any integration.
 
 On 2026-10-23 the issue #152 reporter ran the probe with bridge 0.8.39 on
 three standalone cameras ([report](https://github.com/keesmod/ha-eufy-cam/issues/178#issuecomment-6372936541)).
@@ -377,15 +384,12 @@ T8410 with firmware 2.3.1.6, which has a microSD card, and the T8410C without
 one rejected it with `result_code=-1100`. In an earlier beta run on
 2026-10-19 one of the two T8410s listed one record of its own for that day.
 So both T8410s answer this query, where neither answered the list query
-10006. One record in three T8410 runs is not a stable list, and no playback
-path exists for a standalone camera's records, so their recordings stay not
-available. Reported, not independently reproduced. The readings are in the
+10006. One record in three quoted T8410 probes over two runs, with an empty
+page and a rejection in the others, is too little evidence to open
+recordings, and the client has no playback path for a standalone camera's
+records. Their recordings stay not available. Reported, not independently
+reproduced. The readings are in the
 [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-standalone-recording-probe-results-2026-10-23).
-Integration 0.8.48 or newer keeps both in **Download diagnostics**.
-Integration 0.8.48 betas from before the probe replace the record's `query`
-with `null`
-and drop the summary field, and integration 0.8.47 drops the record. The app
-log shows both in full with any integration.
 
 ## Recovery and maintenance
 

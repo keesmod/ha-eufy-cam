@@ -621,7 +621,7 @@ How to read a probe record:
 | `status=completed` with `rows_own` above 0 | The camera listed records of its own for today. `rows_other_day`, `rows_invalid_time` and `rows_cipher_id` count those properties over every row of the page, not only the camera's own. Whether to open recordings for that model is a separate later decision |
 | `status=completed` with `rows_other_device` or `rows_station_mismatch` above 0 | The answer has records of another device, or records of the camera with another station serial or without a valid storage path, such as a record with only a picture |
 | `reason=history_rejected` at `validate` | The camera answered and rejected the query with the database result in `result_code` and `query_result_code`. Unlike a list, this keeps the camera's session open |
-| `ack_code=null` with `query_answered=true` | No command result arrived before the answer. The command result and the answer arrive as separate messages in no fixed order, and the probe ends with the answer. This shows neither a refusal nor silence |
+| `ack_code=null` with `query_answered=true` | The session reported no command result before the answer. The command result and the answer arrive as separate messages in no fixed order, and the probe ends with the answer. This shows neither a refusal nor silence |
 | `reason=device_request_timeout` at `query` with `ack_code=0` and `unhandled_replies=0` | The camera accepted the command but sent no answer within 15 seconds. The session is closed |
 | The same with a non-zero `ack_code` | The camera refused the command with that code |
 | The same with `ack_code=null` | The camera sent neither a command result nor an answer |
