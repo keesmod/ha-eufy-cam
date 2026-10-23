@@ -447,9 +447,11 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   answered it with an empty page, and the T8410 with firmware 2.3.1.6 and the
   T8410C rejected it with `result_code=-1100`. In an earlier beta run on
   2026-10-19 one of the two T8410s listed one record of its own
-  ([report](https://github.com/keesmod/ha-eufy-cam/issues/178#issuecomment-6372936541)). Their recordings stay not
-  available, because one record is not a stable list and the client has no
-  playback path for a standalone camera's records. Reported, not independently reproduced. From bridge 0.8.39 with client 0.30.1 the standalone
+  ([report](https://github.com/keesmod/ha-eufy-cam/issues/178#issuecomment-6372936541)). One record in three quoted
+  T8410 probes over two runs, with an empty page and a rejection in the
+  others, is too little evidence to open recordings, and the client has no
+  playback path for a standalone camera's records. Their recordings stay not
+  available. Reported, not independently reproduced. From bridge 0.8.39 with client 0.30.1 the standalone
   T84A1 also delivers motion and person events on that route
   ([issue #185](https://github.com/keesmod/ha-eufy-cam/issues/185)). This is
   experimental with synthetic coverage only, and the hardware result is

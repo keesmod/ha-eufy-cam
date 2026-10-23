@@ -352,8 +352,9 @@ Some readings of a list that failed with `device_request_timeout` at `query`:
 with `unhandled_result_code=-6006` an answer without an inner command, and
 `parse_error` an answer the session could not parse. `history_rejected` at
 `validate` carries the database result in `result_code` and
-`query_result_code`. On an answered page `ack_code=null` says only that the
-session reported no command result before the answer. For a list, `rows_cipher_id` above 0
+`query_result_code`. On a probe's answered page `ack_code=null` says only
+that the session reported no command result before the answer, which ends the
+probe. For a list, `rows_cipher_id` above 0
 says that a download from a standalone owner will be refused with
 `recording_cipher_unavailable`. A probe creates no recording ID, so its
 `rows_cipher_id` only counts records with a cipher ID. None of these values
