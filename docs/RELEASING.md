@@ -131,16 +131,22 @@ Update the candidate's `CHANGELOG.md` and, for bridge changes, `app/CHANGELOG.md
 sections with the user-visible behavior, upgrade steps, compatibility limits and
 rollback instructions. Rollback names the previous stable versions.
 
-Keep both sections short. They become the release notes of every beta and of the
-stable release, and the app store shows `app/CHANGELOG.md`:
+Keep these sections short. The `CHANGELOG.md` section becomes the release notes
+of every beta and of the stable release, and the app store shows
+`app/CHANGELOG.md`:
 
-- One bullet per user-visible change, in at most two sentences, with the issue
-  link. Start with the feature or entity name in bold.
+- Use a flat bullet list without `###` subheadings, one bullet per user-visible
+  change. Each bullet starts with the feature or entity name in bold and takes
+  at most two sentences, with the issue link, or the PR link when there is no
+  issue.
 - Leave out root-cause analysis, reporter evidence, diagnostic field lists,
   test-coverage detail and lists of what stays unchanged. They belong in the
   issue, the PR or the documentation, which the bullet can link.
-- Mark unconfirmed hardware with a short phrase, such as "experimental, not yet
-  confirmed on hardware".
+- Give the hardware status in a short phrase, such as "confirmed on hardware",
+  "reported, not reproduced" or "experimental, not yet confirmed on hardware".
+  A known problem or missing support gets its own bullet. This keeps the
+  statuses separate, as the
+  [hardware coverage rules](#hardware-coverage-and-release-scope) require.
 - Combine dependency and other maintenance updates into one bullet.
 - A later PR in the same batch edits the existing bullet. It adds no correction
   or reference to another entry.
@@ -194,8 +200,10 @@ whose merge updates the stable app, and both GitHub releases.
      README card resource to `?v=X.Y.Z`.
    - Date the heading in `CHANGELOG.md` and, for a new bridge, in
      `app/CHANGELOG.md`. Each section ends with one Upgrade and Rollback
-     paragraph that names the previous stable versions. Condense both sections
-     to the changelog rules above first.
+     paragraph that names the previous stable versions. Condense the sections
+     this release dates to the changelog rules above before you run
+     `prepare_ha_app.py --release`, which copies `app/CHANGELOG.md` into the
+     store folders.
    - Run `python3 scripts/prepare_ha_app.py --release` when the bridge version
      changed. It writes `ha_app/` and an existing `ha_app_beta/` at the stable
      bridge. An integration-only release keeps both folders.
@@ -218,7 +226,9 @@ whose merge updates the stable app, and both GitHub releases.
    [development](DEVELOPMENT.md#maintainer-bench).
 7. Follow up with the reporters of every issue referenced since the previous
    stable tag. Collect them from `git log --format=%B vPREVIOUS..HEAD`, with
-   `refs #N` and `refs <repo>#N`, and from the changelog links. When the run
+   `refs #N` and `refs <repo>#N`, and from the changelog links in
+   `git log -p vPREVIOUS..HEAD -- CHANGELOG.md app/CHANGELOG.md`, which also
+   shows links that the release PR condensed away. When the run
    released the client, do the same in eufy-mega-client for its range.
 8. Lift the freeze. The run is complete.
 
@@ -239,7 +249,7 @@ fall under the standing approval and need no batch run.
    run, with **publish** ticked, without a separate rehearsal. That run still
    validates, builds and verifies the package before it creates the tag. An
    acceptance text without hardware results is enough, for example
-   `Prerelease for opt-in testing of #149. CI only, no hardware result yet.`
+   `CI only, no hardware result yet for #149.`
 
 The notes open with a sentence that this is a prerelease of `X.Y.Z` for opt-in
 testing, followed by the current `X.Y.Z` section. A beta must be newer than every
