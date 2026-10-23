@@ -228,9 +228,10 @@ whose merge updates the stable app, and both GitHub releases.
    stable tag. Collect them from `git log --format=%B vPREVIOUS..HEAD`, with
    `refs #N` and `refs <repo>#N`, and from the `keesmod` issue links in the
    released `CHANGELOG.md` and `app/CHANGELOG.md` sections as they stood before
-   the release PR condensed them, in `git show <release PR commit>^:<file>`. A
-   section that the release PR adds itself is read from the release PR. When
-   the run released the client, do the same in eufy-mega-client for its range.
+   the release PR condensed them, in `git show <release PR commit>^:<file>`.
+   Links that the release PR adds, also in a section it adds itself, are read
+   from the release PR. When the run released the client, do the same in
+   eufy-mega-client for its range.
 8. Lift the freeze. The run is complete.
 
 ## Betas
