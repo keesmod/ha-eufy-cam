@@ -226,10 +226,11 @@ whose merge updates the stable app, and both GitHub releases.
    [development](DEVELOPMENT.md#maintainer-bench).
 7. Follow up with the reporters of every issue referenced since the previous
    stable tag. Collect them from `git log --format=%B vPREVIOUS..HEAD`, with
-   `refs #N` and `refs <repo>#N`, and from the links on the added (`+`) lines of
-   `git log -p -U0 vPREVIOUS..HEAD -- CHANGELOG.md app/CHANGELOG.md`. These
-   include links that the release PR condensed away. When the run
-   released the client, do the same in eufy-mega-client for its range.
+   `refs #N` and `refs <repo>#N`, and from the `keesmod` issue links in the
+   released `CHANGELOG.md` and `app/CHANGELOG.md` sections as they stood before
+   the release PR condensed them, in `git show <release PR commit>^:<file>`. A
+   section that the release PR adds itself is read from the release PR. When
+   the run released the client, do the same in eufy-mega-client for its range.
 8. Lift the freeze. The run is complete.
 
 ## Betas
