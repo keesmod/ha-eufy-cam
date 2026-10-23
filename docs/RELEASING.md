@@ -131,6 +131,30 @@ Update the candidate's `CHANGELOG.md` and, for bridge changes, `app/CHANGELOG.md
 sections with the user-visible behavior, upgrade steps, compatibility limits and
 rollback instructions. Rollback names the previous stable versions.
 
+Keep these sections short. The `CHANGELOG.md` section becomes the release notes
+of every beta and of the stable release, and the app store shows
+`app/CHANGELOG.md`:
+
+- Use a flat bullet list without `###` subheadings, one bullet per user-visible
+  change. Each bullet starts with the feature or entity name in bold and takes
+  at most two sentences, with the issue link, or the PR link when there is no
+  issue.
+- Leave out root-cause analysis, reporter evidence, diagnostic field lists,
+  test-coverage detail and lists of what stays unchanged. They belong in the
+  issue, the PR or the documentation, which the bullet can link.
+- Give the hardware status in a short phrase, such as "confirmed on hardware",
+  "reported, not reproduced" or "experimental, not yet confirmed on hardware".
+  A known problem or missing support gets its own bullet. This keeps the
+  statuses separate, as the
+  [hardware coverage rules](#hardware-coverage-and-release-scope) require.
+- Combine dependency and other maintenance updates into one bullet.
+- A later PR in the same batch edits the existing bullet. It adds no correction
+  or reference to another entry.
+- The Upgrade and Rollback paragraph takes at most three sentences. It names a
+  compatibility limit only when a supported combination breaks or loses a
+  feature.
+- A stable batch stays under about 300 words per section.
+
 All Validate checks must pass on the current PR commit. The final **ci** check
 fails if any prerequisite failed, timed out, was cancelled or skipped. Protect
 `main` by requiring a pull request, up-to-date branches, resolved conversations
@@ -176,7 +200,10 @@ whose merge updates the stable app, and both GitHub releases.
      README card resource to `?v=X.Y.Z`.
    - Date the heading in `CHANGELOG.md` and, for a new bridge, in
      `app/CHANGELOG.md`. Each section ends with one Upgrade and Rollback
-     paragraph that names the previous stable versions.
+     paragraph that names the previous stable versions. Condense the sections
+     this release dates to the changelog rules above before you run
+     `prepare_ha_app.py --release`, which copies `app/CHANGELOG.md` into the
+     store folders.
    - Run `python3 scripts/prepare_ha_app.py --release` when the bridge version
      changed. It writes `ha_app/` and an existing `ha_app_beta/` at the stable
      bridge. An integration-only release keeps both folders.
@@ -199,8 +226,12 @@ whose merge updates the stable app, and both GitHub releases.
    [development](DEVELOPMENT.md#maintainer-bench).
 7. Follow up with the reporters of every issue referenced since the previous
    stable tag. Collect them from `git log --format=%B vPREVIOUS..HEAD`, with
-   `refs #N` and `refs <repo>#N`, and from the changelog links. When the run
-   released the client, do the same in eufy-mega-client for its range.
+   `refs #N` and `refs <repo>#N`, and from the `keesmod` issue links in the
+   released `CHANGELOG.md` and `app/CHANGELOG.md` sections as they stood before
+   the release PR condensed them, in `git show <release PR commit>^:<file>`.
+   Links that the release PR adds, also in a section it adds itself, are read
+   from the release PR. When the run released the client, do the same in
+   eufy-mega-client for its range.
 8. Lift the freeze. The run is complete.
 
 ## Betas
@@ -220,7 +251,7 @@ fall under the standing approval and need no batch run.
    run, with **publish** ticked, without a separate rehearsal. That run still
    validates, builds and verifies the package before it creates the tag. An
    acceptance text without hardware results is enough, for example
-   `Prerelease for opt-in testing of #149. CI only, no hardware result yet.`
+   `CI only, no hardware result yet for #149.`
 
 The notes open with a sentence that this is a prerelease of `X.Y.Z` for opt-in
 testing, followed by the current `X.Y.Z` section. A beta must be newer than every
@@ -313,9 +344,10 @@ PR without delay.
    CI cannot prove physical sound, battery life or a live migration. Changes that
    do not affect hardware need no new physical tests. Record that rationale.
 5. Run **Release** again on the same `main` commit and version, tick **publish**,
-   and supply a sanitized acceptance summary or evidence link. The summary is
-   included in the public release notes. Never include credentials, serials,
-   recognized names, private footage or raw diagnostic logs.
+   and supply a sanitized acceptance summary of one sentence or an evidence link.
+   The summary is included in the public release notes. Never include
+   credentials, serials, recognized names, private footage or raw diagnostic
+   logs.
 6. The pipeline repeats validation, checks the requested version and current
    `main`, creates the exact tag and a draft, uploads the tested files, downloads
    and verifies them, then publishes. It downloads and verifies the public assets
