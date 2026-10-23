@@ -226,9 +226,9 @@ whose merge updates the stable app, and both GitHub releases.
    [development](DEVELOPMENT.md#maintainer-bench).
 7. Follow up with the reporters of every issue referenced since the previous
    stable tag. Collect them from `git log --format=%B vPREVIOUS..HEAD`, with
-   `refs #N` and `refs <repo>#N`, and from the changelog links in
-   `git log -p vPREVIOUS..HEAD -- CHANGELOG.md app/CHANGELOG.md`, which also
-   shows links that the release PR condensed away. When the run
+   `refs #N` and `refs <repo>#N`, and from the links on the added (`+`) lines of
+   `git log -p -U0 vPREVIOUS..HEAD -- CHANGELOG.md app/CHANGELOG.md`. These
+   include links that the release PR condensed away. When the run
    released the client, do the same in eufy-mega-client for its range.
 8. Lift the freeze. The run is complete.
 
