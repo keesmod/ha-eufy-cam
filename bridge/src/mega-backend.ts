@@ -421,7 +421,7 @@ export class MegaBackend extends EventEmitter implements Backend {
         let phase: 'connect' | 'refresh_state' = 'connect';
         const stages = connectionStages();
         try {
-          await client.connectStation(station.id, { onProgress: stages.onProgress, onLookup: stages.onLookup });
+          await client.connectStation(station.id, { onProgress: stages.onProgress, onLookup: stages.onLookup, onKeySetup: stages.onKeySetup });
           phase = 'refresh_state';
           this.stationStates.set(station.id, await client.refreshStationState(station.id));
           // The refresh_state record reports the connect attempt before it, so
@@ -452,7 +452,7 @@ export class MegaBackend extends EventEmitter implements Backend {
         const stages = connectionStages();
         let connected = false;
         try {
-          await client.connectStation(relationship.ownerId, { onProgress: stages.onProgress, onLookup: stages.onLookup });
+          await client.connectStation(relationship.ownerId, { onProgress: stages.onProgress, onLookup: stages.onLookup, onKeySetup: stages.onKeySetup });
           this.discoveryDiagnostics.station(relationship.ownerId, 'connect', 'connected', undefined, stages.detail);
           connected = true;
         } catch (error) {
@@ -537,7 +537,7 @@ export class MegaBackend extends EventEmitter implements Backend {
           let phase: 'connect' | 'refresh_state' = 'connect';
           const stages = connectionStages();
           try {
-            await this.client.connectStation(id, { onProgress: stages.onProgress, onLookup: stages.onLookup });
+            await this.client.connectStation(id, { onProgress: stages.onProgress, onLookup: stages.onLookup, onKeySetup: stages.onKeySetup });
             phase = 'refresh_state';
             this.stationStates.set(id, await this.client.refreshStationState(id));
             this.discoveryDiagnostics.station(id, phase, this.stationStates.get(id)!.connected ? 'connected' : 'disconnected', undefined, stages.detail);

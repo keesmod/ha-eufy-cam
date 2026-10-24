@@ -181,7 +181,7 @@ selects the record shape:
 | `end` | Report number and number of device/issue rows emitted |
 | `cloud` | Named allowlisted operation, HTTP status, numeric result and elapsed milliseconds |
 | `connection` | Authentication or push-event phase, outcome, push status and software versions |
-| `station_connection` | Report number, anonymous device reference, model, connect/refresh/observation phase, status and validated reason code, a failed connect's `stage`, and since bridge 0.8.38 the bounded lookup fields of the connect attempt behind the record |
+| `station_connection` | Report number, anonymous device reference, model, connect/refresh/observation phase, status and validated reason code, a failed connect's `stage`, since bridge 0.8.38 the bounded lookup fields of the connect attempt behind the record, and since bridge 0.8.40 its bounded key setup fields |
 | `recording_query` | Since bridge 0.8.39 with client 0.30.1, one recording operation on its owner: report number, the owner's anonymous reference and model, operation, owner type, status, reason and result code, how far it got, the device's answer to its last query page, database replies the session could not use, row counts of an answered list and the HTTP status the bridge answered with |
 | `fault` | Validated error code and report number when available |
 
@@ -257,6 +257,30 @@ value that is not a real boolean and a reply class outside the fixed set, and
 never serializes the observation object. The `Eufy discovery:` log lines and the
 bridge download carry the same records. The HA download applies the same bounds
 and replaces any other value with `null`.
+
+Since bridge 0.8.40 with client 0.30.2, the same records also say how far the
+command key got after `session_open`
+([client #142](https://github.com/keesmod/eufy-mega-client/issues/142)). The
+source is the client's `connectStation` `onKeySetup` observation, see the
+[library API](https://github.com/keesmod/eufy-mega-client/blob/main/docs/API.md#station-key-setup-observation-0302),
+and the `elapsedMs` of the `session_open` stage from `onProgress`:
+
+| Field | Bound | Meaning |
+|---|---|---|
+| `session_open_ms` | 0 to 120000 | Milliseconds from the start of the attempt to `session_open` |
+| `key_request_sends` | 0 to 999 | Command key requests sent, the first and every resend |
+| `key_request_acknowledged` | boolean | Whether the station acknowledged a key request |
+| `key_result_wait_expired` | boolean | Whether an acknowledged request waited 5 seconds without an answer |
+| `key_answers` | 0 to 999 | Key answers the session received |
+| `key_data_datagrams` | 0 to 999 | DATA datagrams the session received |
+| `key_other_messages` | 0 to 999 | Complete messages that are not a key answer |
+| `key_heartbeats` | 0 to 999 | PING and PONG datagrams the session received |
+| `key_ended` | boolean | Whether the station ended the session |
+
+They are on the same records as the lookup fields and follow the same carrier,
+revalidation and download rules. They are absent when the attempt's session
+never opened. `session_open_ms` stays when the observation itself cannot be
+read. The values contain no ID, address, cipher ID, key or payload.
 
 A missing field means no observation, for example from an older bridge or
 client, an attempt that ended before `lookup`, such as one refused with
@@ -445,8 +469,9 @@ finding for it yet. The schema stays `2` because the record is additive.
   a `station_connection` record with lookup fields repeats the previous record
   only when its coarse lookup class is the same as well. The class is whether
   each count is zero, plus each boolean and the reply class, so changed counts
-  alone add no record and a changed outcome does. A record without lookup
-  fields does not end a repeat. Since bridge 0.8.39 a `recording_query`
+  alone add no record and a changed outcome does. Since bridge 0.8.40 the key
+  setup fields count in that class the same way. A record without lookup or key
+  setup fields does not end a repeat. Since bridge 0.8.39 a `recording_query`
   record repeats the previous record of the same owner and `query` in the same
   report when every value except `elapsed_ms` is the same, with `query_rows`,
   `unhandled_replies`, each `rows_` count and each lookup count reduced to

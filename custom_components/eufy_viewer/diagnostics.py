@@ -94,6 +94,16 @@ _NUMBERS = {
         ).split(),
         (0, 999),
     ),
+    # The command key setup of a station connection attempt and the time its
+    # session opened, bridge 0.8.40 (client #142).
+    "session_open_ms": (0, 120000),
+    **dict.fromkeys(
+        (
+            "key_request_sends key_answers key_data_datagrams key_other_messages "
+            "key_heartbeats"
+        ).split(),
+        (0, 999),
+    ),
     # What the device answered to a recording query, bridge 0.8.39. The row
     # counts are of a query page, not the discovery rows counted in rows.
     "pages": (0, 4),
@@ -120,7 +130,8 @@ _BOOLEANS = set(
         "inventory_available truncated unchanged inventory_address "
         "experimental_standalone lookup_broadcast_enabled "
         "inventory_address_on_subnet inventory_address_shared "
-        "session_open query_answered standalone_recording_probe"
+        "session_open query_answered standalone_recording_probe "
+        "key_request_acknowledged key_result_wait_expired key_ended"
     ).split()
 )
 _VERSIONS = set("firmware hardware parent_firmware node".split())

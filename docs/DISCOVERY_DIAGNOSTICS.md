@@ -9,6 +9,7 @@ No live stream or optional debug logging is needed to generate discovery evidenc
 
 | Collection method | Bridge | Bundled library | HA integration |
 |---|---|---|---|
+| [Key setup fields](#key-setup-fields-of-a-connection-attempt) that say what a station connection attempt saw between `session_open` and the command key | 0.8.40 | 0.30.2 | 0.8.49 for the download |
 | [Standalone push counts](#standalone-push-counts) in `support.standalone_pushes` | 0.8.39 | 0.30.1 | 0.8.48 for the download |
 | [Standalone recording probe](#standalone-recording-probe) records with `query=probe` and the `standalone_recording_probe` summary field | 0.8.39 | 0.30.1 | 0.8.48 for the download |
 | [Recording query records](#failed-recordings) that say how a recording list, calendar, thumbnail or download ended | 0.8.39 | 0.30.1 | 0.8.48 for the download |
@@ -496,6 +497,39 @@ is always its latest attempt. Without the fields the bridge, its client or the
 integration is older, or the attempt ended before its lookup. Integration 0.8.46
 drops them from **Download diagnostics**, so use the bridge log lines in that
 case.
+
+### Key setup fields of a connection attempt
+
+Since bridge 0.8.40 with client 0.30.2, an attempt whose session opened also
+shows how far the command key got. The fields are on the same `station_connection`
+records as the lookup fields and in the bridge's `Eufy discovery:` log lines.
+Integration 0.8.48 and older drops them from **Download diagnostics**, so use
+the log lines with an older integration. They are counts and booleans, never an
+ID, address, cipher ID, key or payload. The
+[client documentation](https://github.com/keesmod/eufy-mega-client/blob/main/docs/API.md#station-key-setup-observation-0302)
+describes the observation.
+
+| Field | What it shows |
+|---|---|
+| `session_open_ms` | Milliseconds from the start of the attempt to `session_open`. The attempt ends after 20000 |
+| `key_request_sends` | Command key requests sent, the first and every resend, up to 999 |
+| `key_request_acknowledged` | Whether the station acknowledged a key request |
+| `key_result_wait_expired` | Whether an acknowledged request waited 5 seconds without an answer |
+| `key_answers` | Key answers the session received |
+| `key_data_datagrams` | DATA datagrams the session received |
+| `key_other_messages` | Complete messages the session received that are not a key answer |
+| `key_heartbeats` | PING and PONG datagrams the session received |
+| `key_ended` | Whether the station ended the session |
+
+For an attempt that failed at `stage=session_open`:
+`key_request_acknowledged=false` with `key_heartbeats` above 0 means the camera
+kept the session alive but did not take the key request.
+`key_result_wait_expired=true` with `key_answers=0` means it took the request
+and did not answer. `key_other_messages` above 0 means it sent something else
+instead. A `session_open_ms` close to 20000 leaves the key no time. None of
+these values proves a cause on its own. The assessment adds no finding for them
+yet. Include the record in
+[client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
 
 ### Failed recordings
 
