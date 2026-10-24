@@ -106,12 +106,14 @@ blocks all merges. Then raise the `homeassistant` test pin, relock and remove
 the exception in one PR. That needs the pytest-homeassistant-custom-component
 release for the new Home Assistant version, and merges wait until it exists.
 Add an exception only in a reviewed PR, for a version that Home Assistant pins
-exactly, with each advisory ID. The exceptions for Pillow 12.3.0 and uv
-0.12.23 were accepted on 2026-10-22. homeassistant 2026.10.0 to 2026.10.2 pin
-both, and the fixes are Pillow 13.0.0 and uv 0.13.4. Eleven further Pillow
-12.3.0 advisories, published later that day and also fixed in 13.0.0, were
-accepted the same day under the same condition. The uv exception covers
-only the locked package. CI runs the audit with uv 0.13.4, which has the fix.
+exactly, with each advisory ID. The exception for Pillow 12.3.0 was accepted
+on 2026-10-22 and extended the same day with eleven advisories published
+later. Two more, published on 2026-10-23, were added on 2026-10-24 under the
+same condition. homeassistant 2026.10.0 to 2026.10.3 pin Pillow 12.3.0, and
+the fix is Pillow 13.0.0. The exception for uv 0.12.23, accepted on
+2026-10-22, was removed on 2026-10-24. That day the test pin moved to
+homeassistant 2026.10.3, which pins uv 0.13.5, and the lock no longer holds
+uv 0.12.23. CI runs the audit with uv 0.13.4.
 
 ## Local verification and limits
 

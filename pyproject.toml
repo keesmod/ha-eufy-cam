@@ -6,7 +6,7 @@ dependencies = []
 
 [dependency-groups]
 dev = [
-    "homeassistant==2026.10.0",
+    "homeassistant==2026.10.3",
     "pytest-homeassistant-custom-component",
     "ruff",
     "mypy",
