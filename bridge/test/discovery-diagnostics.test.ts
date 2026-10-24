@@ -420,6 +420,29 @@ test('hostile key setup values are left out and each count keeps its bound (#142
   }
 });
 
+test('a changed key setup outcome adds a record, changed counts alone do not (#142)', () => {
+  const f=collect();
+  f.reporter.prepare(result());
+  const fail=(keySetup: StationKeySetupObservation, sessionOpenMs=400)=>
+    f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'session_open',lookup:silentLookup,sessionOpenMs,keySetup});
+  fail({...unansweredKey,requestAcknowledged:false,resultWaitExpired:false});
+  // More resends and a later handshake with the same outcome are a repeat.
+  fail({...unansweredKey,requestAcknowledged:false,resultWaitExpired:false,requestSends:190},900);
+  fail({...unansweredKey,ended:true,otherMessages:2});
+  const rows=f.reporter.report().recent_events.filter(r=>r.event==='station_connection');
+  assert.deepEqual(rows.map(r=>[r.key_request_acknowledged,r.key_ended,r.key_other_messages,r.session_open_ms]),
+    [[false,false,0,400],[true,true,2,400]]);
+});
+
+test('session_open_ms keeps its bounds (#142)', () => {
+  for (const [value,expected] of [[0,0],[120000,120000],[120001,undefined],[-1,undefined],[1.5,undefined]]) {
+    const f=collect();
+    f.reporter.prepare(result());
+    f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'session_open',sessionOpenMs:value});
+    assert.equal(f.reporter.report().recent_events[0]!.session_open_ms,expected,`${value}`);
+  }
+});
+
 test('each lookup count keeps its bounds and leaves out the value past them (#152)', () => {
   const bounds = [
     ['rounds','lookup_rounds',99], ['broadcastTargets','lookup_broadcast_targets',16],

@@ -1241,14 +1241,20 @@ test('the idle reconnect of a HomeBase records its lookup like a discovery conne
       options = value;
       value?.onProgress?.({ stage: 'lookup', elapsedMs: 0, inventoryAddress: true });
       value?.onLookup?.({ ...lookupSeen, rounds: 0, broadcastEnabled: false });
+      value?.onKeySetup?.({
+        requestSends: 0, requestAcknowledged: false, resultWaitExpired: false, answers: 0,
+        dataDatagrams: 0, otherMessages: 0, heartbeats: 0, ended: false,
+      });
       throw new EufyError('device_request_timeout');
     };
     f.client.emit('station', { id: 'BASE', connected: false });
     await (f.backend as unknown as { refresh(): Promise<void> }).refresh();
     assert.equal(typeof options?.onLookup, 'function');
+    assert.equal(typeof options?.onKeySetup, 'function');
     const failure = f.backend.supportReport().recent_events.filter((r) => r.event === 'station_connection').at(-1)!;
     assert.deepEqual([failure.phase, failure.status, failure.stage], ['connect', 'error', 'lookup']);
     assert.deepEqual([failure.lookup_rounds, failure.lookup_broadcast_enabled], [0, false]);
+    assert.deepEqual([failure.key_request_sends, failure.key_request_acknowledged], [0, false]);
     // A successful idle reconnect reports its lookup on the refresh_state record.
     f.client.connectStation = async (_id: string, value?: any) => {
       value?.onLookup?.({ ...lookupSeen, rounds: 1, datagrams: 1, ownReplies: 1, ownRound: 0, inventoryReply: 'own' });

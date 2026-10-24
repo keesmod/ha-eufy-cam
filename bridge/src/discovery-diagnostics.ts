@@ -495,7 +495,9 @@ export class DiscoveryDiagnostics {
     const lookup = detail?.lookup === undefined ? {} : lookupFields(detail.lookup);
     // The key setup of the same attempt, on the same records as its lookup (#142).
     const keySetup = detail === undefined ? {} : keySetupFields(detail);
-    const outcome = lookupClass(lookup);
+    // The key setup counts in the coarse outcome too, so a changed key outcome
+    // adds a record (#142).
+    const outcome = lookupClass({ ...lookup, ...keySetup });
     const previous = this.stationEvents.get(ref);
     this.stationOutcomes.set(id, status);
     // Only a repeat of the previous record is left out, so the latest record of
