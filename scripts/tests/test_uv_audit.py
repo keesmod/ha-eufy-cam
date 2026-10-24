@@ -12,12 +12,12 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import check_uv_audit as audit
 
-# Trimmed uv audit JSON report of uv.lock with certifi 2026.10.19, recorded by
-# CI with uv 0.13.4 in release rehearsal run 39833904160.
-FIXTURE = Path(__file__).with_name("uv-audit-2026-10-22.json")
+# Trimmed uv audit JSON report of uv.lock with homeassistant 2026.10.3, recorded
+# with uv 0.13.4 on 2026-10-24.
+FIXTURE = Path(__file__).with_name("uv-audit-2026-10-24.json")
 EXCEPTIONS = {("pillow", "12.3.0"): frozenset({"GHSA-a", "GHSA-b"})}
 PINS = audit.exact_pins(["Pillow==12.3.0", "certifi>=2021.5.30"])
-HOME_ASSISTANT = ["Pillow==12.3.0", "uv==0.12.23", "certifi>=2021.5.30"]
+HOME_ASSISTANT = ["Pillow==12.3.0", "uv==0.13.5", "certifi>=2021.5.30"]
 
 
 def finding(name, version, identifier):
@@ -30,11 +30,11 @@ def report(*vulnerabilities):
 
 class UvAuditTests(unittest.TestCase):
     def check(self, data, pins=PINS):
-        return audit.problems(data, "2026.10.2", pins, EXCEPTIONS)
+        return audit.problems(data, "2026.10.3", pins, EXCEPTIONS)
 
     def run_main(self, data, requires_dist=HOME_ASSISTANT):
         """Run main() on data as report file text, with PyPI answering requires_dist."""
-        pypi = json.dumps({"info": {"version": "2026.10.2", "requires_dist": requires_dist}}).encode()
+        pypi = json.dumps({"info": {"version": "2026.10.3", "requires_dist": requires_dist}}).encode()
         output = io.StringIO()
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "uv-audit.json"
@@ -78,7 +78,7 @@ class UvAuditTests(unittest.TestCase):
                 self.assertEqual(
                     self.check(data, pins),
                     [
-                        "homeassistant 2026.10.2 no longer requires pillow==12.3.0. "
+                        "homeassistant 2026.10.3 no longer requires pillow==12.3.0. "
                         "Raise the homeassistant test pin, relock and remove this exception."
                     ],
                 )
@@ -105,19 +105,19 @@ class UvAuditTests(unittest.TestCase):
             {"pillow": "12.3.0", "uv": "0.12.23", "zope-interface": "7.0"},
         )
 
-    def test_recorded_report_passes_while_home_assistant_pins_both(self):
+    def test_recorded_report_passes_while_home_assistant_pins_pillow(self):
         output = self.run_main(FIXTURE.read_text())
         self.assertEqual(
             output,
-            "41 advisories accepted while homeassistant 2026.10.2 pins them: pillow 12.3.0, uv 0.12.23\n",
+            "41 advisories accepted while homeassistant 2026.10.3 pins them: pillow 12.3.0\n",
         )
 
     def test_recorded_report_fails_once_home_assistant_moves_a_pin(self):
         with self.assertRaises(SystemExit) as raised:
-            self.run_main(FIXTURE.read_text(), ["Pillow==13.0.0", "uv==0.12.23"])
+            self.run_main(FIXTURE.read_text(), ["Pillow==13.0.0", "uv==0.13.5"])
         self.assertEqual(
             raised.exception.code,
-            "homeassistant 2026.10.2 no longer requires pillow==12.3.0. "
+            "homeassistant 2026.10.3 no longer requires pillow==12.3.0. "
             "Raise the homeassistant test pin, relock and remove this exception.",
         )
 
@@ -127,6 +127,13 @@ class UvAuditTests(unittest.TestCase):
         with self.assertRaises(SystemExit) as raised:
             self.run_main(json.dumps(data))
         self.assertEqual(raised.exception.code, "certifi 2026.10.19: GHSA-new is not an accepted advisory")
+
+    def test_uv_0_12_23_is_no_longer_accepted(self):
+        data = json.loads(FIXTURE.read_text())
+        data["vulnerabilities"].append(finding("uv", "0.12.23", "GHSA-hq85-5cpj-mr62"))
+        with self.assertRaises(SystemExit) as raised:
+            self.run_main(json.dumps(data))
+        self.assertEqual(raised.exception.code, "uv 0.12.23: GHSA-hq85-5cpj-mr62 is not an accepted advisory")
 
     def test_adverse_statuses_are_warnings(self):
         data = json.loads(FIXTURE.read_text())

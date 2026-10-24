@@ -9,7 +9,7 @@ python3 scripts/prepare_ha_app.py --stage
 docker build -t eufy-viewer-app:test artifacts/ha_app/eufy_viewer_bridge
 ```
 
-Baseline: Python 3.14.2+, Node 24+, FFmpeg. Tests run against Home Assistant 2026.10.0. The minimum supported release stays 2026.9.0. Dependencies are locked in `uv.lock`, `bridge/package-lock.json` and `frontend/package-lock.json`.
+Baseline: Python 3.14.2+, Node 24+, FFmpeg. Tests run against Home Assistant 2026.10.3. The minimum supported release stays 2026.9.0. Dependencies are locked in `uv.lock`, `bridge/package-lock.json` and `frontend/package-lock.json`.
 
 ```sh
 uv sync --frozen
