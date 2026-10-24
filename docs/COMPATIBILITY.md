@@ -432,8 +432,9 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   with firmware 1.1.0.4 connect at the first discovery, with a snapshot and
   live video with audio working over several sessions
   ([report](https://github.com/keesmod/eufy-mega-client/issues/142#issuecomment-6236984885)).
-  Its recordings were not tested. Reported, not independently reproduced. No known request lists or plays the
-  recordings of a standalone T8410, and none is confirmed on the T8410C or
+  Its recordings were not tested. Reported, not independently reproduced. When
+  bridge 0.8.39 was released, no known request listed or played the
+  recordings of a standalone T8410, and none was confirmed on the T8410C or
   T84A1. From bridge 0.8.39 with client 0.30.1 and integration 0.8.48, the
   recordings of all three models on that route therefore show as not
   available, with reason `standalone_recordings_unverified`, and the bridge sends them no recording request when their recordings are
@@ -441,8 +442,16 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   ([issue #175](https://github.com/keesmod/ha-eufy-cam/issues/175)). Only the
   opt-in [standalone recording probe](USAGE.md#standalone-recording-probe) from
   bridge 0.8.39 sends one read-only 10017 query to each such camera at login
-  ([issue #178](https://github.com/keesmod/ha-eufy-cam/issues/178)). No probe
-  result is recorded yet. From bridge 0.8.39 with client 0.30.1 the standalone
+  ([issue #178](https://github.com/keesmod/ha-eufy-cam/issues/178)). With bridge
+  0.8.39 on 2026-10-23 the issue #152 reporter's T8410 with firmware 2.3.2.4
+  answered it with an empty page, and the T8410 with firmware 2.3.1.6 and the
+  T8410C rejected it with `result_code=-1100`. In an earlier beta run on
+  2026-10-19 one of the two T8410s listed one record of its own
+  ([report](https://github.com/keesmod/ha-eufy-cam/issues/178#issuecomment-6372936541)). One record in three quoted
+  T8410 probes over two runs, with an empty page and a rejection in the
+  others, is too little evidence to open recordings, and the client has no
+  playback path for a standalone camera's records. Their recordings stay not
+  available. Reported, not independently reproduced. From bridge 0.8.39 with client 0.30.1 the standalone
   T84A1 also delivers motion and person events on that route
   ([issue #185](https://github.com/keesmod/ha-eufy-cam/issues/185)). This is
   experimental with synthetic coverage only, and the hardware result is
