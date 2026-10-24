@@ -156,9 +156,35 @@
         "name": "pillow",
         "version": "12.3.0"
       },
+      "id": "GHSA-5x8w-8jj5-q52h",
+      "aliases": [
+        "CVE-2026-112398"
+      ],
+      "fix_versions": [
+        "13.0.0"
+      ]
+    },
+    {
+      "dependency": {
+        "name": "pillow",
+        "version": "12.3.0"
+      },
       "id": "GHSA-5xm2-6676-qcp9",
       "aliases": [
         "CVE-2026-112399"
+      ],
+      "fix_versions": [
+        "13.0.0"
+      ]
+    },
+    {
+      "dependency": {
+        "name": "pillow",
+        "version": "12.3.0"
+      },
+      "id": "GHSA-654x-cwwv-5j9c",
+      "aliases": [
+        "CVE-2026-114501"
       ],
       "fix_versions": [
         "13.0.0"
@@ -511,32 +537,6 @@
       ],
       "fix_versions": [
         "13.0.0"
-      ]
-    },
-    {
-      "dependency": {
-        "name": "uv",
-        "version": "0.12.23"
-      },
-      "id": "PYSEC-2026-4321",
-      "aliases": [
-        "GHSA-hq85-5cpj-mr62"
-      ],
-      "fix_versions": [
-        "0.13.4"
-      ]
-    },
-    {
-      "dependency": {
-        "name": "uv",
-        "version": "0.12.23"
-      },
-      "id": "GHSA-hq85-5cpj-mr62",
-      "aliases": [
-        "PYSEC-2026-4321"
-      ],
-      "fix_versions": [
-        "0.13.4"
       ]
     }
   ],

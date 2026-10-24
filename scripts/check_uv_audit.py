@@ -19,7 +19,7 @@ import urllib.request
 
 PYPI = "https://pypi.org/pypi/homeassistant/json"
 EXCEPTIONS = {
-    # homeassistant 2026.10.0 to 2026.10.2 require Pillow==12.3.0. Fixed in 13.0.0.
+    # homeassistant 2026.10.0 to 2026.10.3 require Pillow==12.3.0. Fixed in 13.0.0.
     ("pillow", "12.3.0"): frozenset(
         {
             "GHSA-22hg-r758-rrw9",
@@ -33,7 +33,9 @@ EXCEPTIONS = {
             "GHSA-4rm8-3hmm-39fg",
             "GHSA-4rr5-89j8-mwwm",
             "GHSA-58r4-6rv3-gfh8",
+            "GHSA-5x8w-8jj5-q52h",
             "GHSA-5xm2-6676-qcp9",
+            "GHSA-654x-cwwv-5j9c",
             "GHSA-65qm-jvmh-6pqg",
             "GHSA-74r2-7ff9-mjj2",
             "GHSA-78g4-xqwv-q3g8",
@@ -63,8 +65,6 @@ EXCEPTIONS = {
             "GHSA-xvh5-g6gv-559v",
         }
     ),
-    # homeassistant 2026.10.0 to 2026.10.2 require uv==0.12.23. Fixed in 0.13.4.
-    ("uv", "0.12.23"): frozenset({"GHSA-hq85-5cpj-mr62", "PYSEC-2026-4321"}),
 }
 
 
