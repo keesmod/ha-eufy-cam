@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.49 - Unreleased
+
+- **Download diagnostics** keeps the key setup fields of a station connection
+  attempt from bridge 0.8.40. They show how far the command key got when a
+  standalone camera such as the T8424 stops at `session_open`
+  ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142),
+  [fields](docs/DISCOVERY_DIAGNOSTICS.md#key-setup-fields-of-a-connection-attempt)).
+  Diagnostics only, not yet confirmed on hardware.
+
+Upgrade: install with bridge 0.8.40-beta.1 or newer. Rollback: 0.8.48 with
+bridge 0.8.39.
+
 ## 0.8.48 - 2026-10-22
 
 - **Download diagnostics** keeps a `recording_query` record in

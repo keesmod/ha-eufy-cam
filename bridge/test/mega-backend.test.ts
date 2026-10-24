@@ -769,7 +769,7 @@ for (const empty of [false,true])
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
       assert.equal(summary.experimental_standalone,false);
-      assert.equal(summary.software.library,'0.30.1');
+      assert.equal(summary.software.library,'0.30.2-beta.1');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
@@ -1183,6 +1183,50 @@ test('discovery connects pass onLookup, and each lookup reaches the log line and
       .filter((r) => r.event === 'station_connection');
     assert.deepEqual(logged, download);
     assert.doesNotMatch(JSON.stringify(bridge.supportReport()) + JSON.stringify(output.mock.calls), /PRIVATE|192\.0\.2\.7|WALL|BASE|CAM/);
+  } finally {
+    await bridge.close();
+  }
+});
+test('a standalone connect that stops at session_open reports its key setup in the log line and the download (#142)', async t => {
+  const {Eufy}=await import('../src/eufy.js');
+  const {logDiscoveryDiagnostic}=await import('../src/backend-log.js');
+  const f = fixture(undefined, undefined, true);
+  const options = new Map<string, any>();
+  const connect = f.client.connectStation;
+  f.client.connectStation = async (id: string, value?: any) => {
+    options.set(id, value);
+    if (id === 'BASE') return connect();
+    value?.onProgress?.({ stage: 'lookup', elapsedMs: 0, inventoryAddress: true });
+    value?.onProgress?.({ stage: 'station_found', elapsedMs: 120 });
+    value?.onProgress?.({ stage: 'session_open', elapsedMs: 180 });
+    value?.onLookup?.({ ...lookupSeen, rounds: 1, datagrams: 1, ownReplies: 1, ownRound: 0, inventoryReply: 'own' });
+    value?.onKeySetup?.({
+      requestSends: 199, requestAcknowledged: false, resultWaitExpired: false, answers: 0,
+      dataDatagrams: 0, otherMessages: 0, heartbeats: 4, ended: false, key: 'PRIVATE_KEY',
+    });
+    throw new EufyError('device_request_timeout');
+  };
+  f.client.discoverDevices = async () => standaloneInventory(true);
+  const bridge = new Eufy(f.storage, 'mega', false, () => f.backend);
+  const output = t.mock.method(console, 'info', () => {});
+  bridge.on('discovery_diagnostic', logDiscoveryDiagnostic);
+  try {
+    await bridge.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    for (const id of ['BASE', 'WALL']) assert.equal(typeof options.get(id)?.onKeySetup, 'function', id);
+    const download = bridge.supportReport().recent_events.filter((r) => r.event === 'station_connection');
+    const wall = download.find((r) => r.model === 'T84A1')!;
+    assert.deepEqual([wall.phase, wall.status, wall.stage, wall.reason], ['connect', 'error', 'session_open', 'device_request_timeout']);
+    assert.deepEqual(
+      [wall.session_open_ms, wall.key_request_sends, wall.key_request_acknowledged, wall.key_result_wait_expired,
+        wall.key_answers, wall.key_data_datagrams, wall.key_other_messages, wall.key_heartbeats, wall.key_ended],
+      [180, 199, false, false, 0, 0, 0, 4, false],
+    );
+    const logged = output.mock.calls
+      .filter((call) => call.arguments[0] === 'Eufy discovery:')
+      .map((call) => JSON.parse(call.arguments[1] as string))
+      .filter((r) => r.event === 'station_connection');
+    assert.deepEqual(logged, download);
+    assert.doesNotMatch(JSON.stringify(bridge.supportReport()) + JSON.stringify(output.mock.calls), /PRIVATE|WALL|BASE/);
   } finally {
     await bridge.close();
   }

@@ -7,6 +7,7 @@ import type {
   DiscoveryResult,
   RecordingObservation,
   StationConnectionProgress,
+  StationKeySetupObservation,
   StationLookupObservation,
   StationState,
 } from '@keesmod/eufy-mega-client';
@@ -39,6 +40,10 @@ export interface StationConnectionDetail {
   inventoryAddress?: boolean;
   /** What the attempt's local lookup saw, from client 0.30.0. Revalidated before it is reported. */
   lookup?: StationLookupObservation;
+  /** Milliseconds from the attempt's start to `session_open`, from the library's progress. */
+  sessionOpenMs?: number;
+  /** What the session saw between `session_open` and the command key, from client 0.30.2. Revalidated before it is reported. */
+  keySetup?: StationKeySetupObservation;
 }
 /**
  * Records the last stage a station connection reached and what its local lookup
@@ -48,6 +53,7 @@ export function connectionAttempt(): {
   detail: StationConnectionDetail;
   onProgress: (progress: StationConnectionProgress) => void;
   onLookup: (observation: StationLookupObservation) => void;
+  onKeySetup: (observation: StationKeySetupObservation) => void;
 } {
   const detail: StationConnectionDetail = { stage: 'none' };
   return {
@@ -58,11 +64,16 @@ export function connectionAttempt(): {
       detail.stage = progress.stage;
       if (typeof progress.inventoryAddress === 'boolean')
         detail.inventoryAddress = progress.inventoryAddress;
+      if (progress.stage === 'session_open') detail.sessionOpenMs = progress.elapsedMs;
     },
     // Observation only (#152). The diagnostics revalidate each value before
     // they report it, and the library ignores anything this throws.
     onLookup: (observation) => {
       detail.lookup = observation;
+    },
+    // Observation only (#142), revalidated like the lookup.
+    onKeySetup: (observation) => {
+      detail.keySetup = observation;
     },
   };
 }
@@ -86,6 +97,43 @@ export interface RecordingQueryReport {
   returned?: number;
 }
 type LookupFields = Record<string, number | boolean | string>;
+/**
+ * Flat fields for the command key setup of one connection attempt (#142), with
+ * the time its session opened. Each value is revalidated here. An integer out
+ * of its range or a value that is not a real boolean is left out, and the
+ * observation itself is never serialized.
+ */
+function keySetupFields(detail: StationConnectionDetail): LookupFields {
+  const time: LookupFields = {};
+  const opened = integer(detail.sessionOpenMs, 0, 120000);
+  if (opened !== null) time.session_open_ms = opened;
+  const fields: LookupFields = { ...time };
+  try {
+    const value: unknown = detail.keySetup;
+    if (!value || typeof value !== 'object') return fields;
+    const key = value as Record<string, unknown>;
+    const count = (name: string, raw: unknown) => {
+      const safe = integer(raw, 0, 999);
+      if (safe !== null) fields[name] = safe;
+    };
+    const bool = (name: string, raw: unknown) => {
+      if (typeof raw === 'boolean') fields[name] = raw;
+    };
+    count('key_request_sends', key.requestSends);
+    bool('key_request_acknowledged', key.requestAcknowledged);
+    bool('key_result_wait_expired', key.resultWaitExpired);
+    count('key_answers', key.answers);
+    count('key_data_datagrams', key.dataDatagrams);
+    count('key_other_messages', key.otherMessages);
+    count('key_heartbeats', key.heartbeats);
+    bool('key_ended', key.ended);
+    return fields;
+  } catch {
+    // Diagnostics never alter discovery. An observation that cannot be read is
+    // omitted, and the time of the stage stays.
+    return time;
+  }
+}
 const lookupReplies: ReadonlySet<unknown> = new Set(['none', 'own', 'account', 'foreign', 'near']);
 /**
  * Flat fields for the local lookup of one connection attempt (#152). Each value
@@ -445,6 +493,8 @@ export class DiscoveryDiagnostics {
     // connect and on the record that reports a successful one. For a HomeBase
     // that is the refresh_state record after its connect.
     const lookup = detail?.lookup === undefined ? {} : lookupFields(detail.lookup);
+    // The key setup of the same attempt, on the same records as its lookup (#142).
+    const keySetup = detail === undefined ? {} : keySetupFields(detail);
     const outcome = lookupClass(lookup);
     const previous = this.stationEvents.get(ref);
     this.stationOutcomes.set(id, status);
@@ -485,6 +535,7 @@ export class DiscoveryDiagnostics {
               : {}),
           }),
       ...lookup,
+      ...keySetup,
     });
   }
   /**

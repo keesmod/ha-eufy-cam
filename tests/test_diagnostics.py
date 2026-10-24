@@ -790,6 +790,63 @@ def test_station_connection_stage_and_suffixed_models_survive_download():
         assert _fields({**row, "model": model})["model"] == "unavailable"
 
 
+_KEY_COUNTS = (
+    "key_request_sends key_answers key_data_datagrams key_other_messages key_heartbeats"
+).split()
+_KEY_FLAGS = "key_request_acknowledged key_result_wait_expired key_ended".split()
+
+
+def test_station_connection_key_setup_fields_survive_download_within_their_bounds():
+    # Bridge 0.8.40 with client 0.30.2 reports the attempt's key setup (client #142).
+    row = {
+        "event": "station_connection",
+        "phase": "connect",
+        "status": "error",
+        "reason": "device_request_timeout",
+        "model": "T8424",
+        "stage": "session_open",
+        "session_open_ms": 450,
+        "key_request_sends": 199,
+        "key_request_acknowledged": False,
+        "key_result_wait_expired": False,
+        "key_answers": 0,
+        "key_data_datagrams": 0,
+        "key_other_messages": 0,
+        "key_heartbeats": 4,
+        "key_ended": False,
+    }
+    assert _fields(row) == row
+    edges = {"session_open_ms": 120000, **dict.fromkeys(_KEY_COUNTS, 999)}
+    assert _fields({**row, **edges}) == {**row, **edges}
+    integers = [-1, 1.0, "3", True, None, [1], {"value": 1}]
+    hostile = {
+        "session_open_ms": [120001, *integers],
+        **{key: [1000, 2**53, *integers] for key in _KEY_COUNTS},
+        **{key: [1, 0, "true", "PRIVATE", None, [True]] for key in _KEY_FLAGS},
+    }
+    for key, values in hostile.items():
+        for value in values:
+            assert _fields({**row, key: value}) == {**row, key: None}, (key, value)
+    # The observation never arrives as an object, and unknown key fields are dropped.
+    result = support_report(
+        {
+            "schema": 2,
+            "generated_at": STAMP,
+            "last_discovery": [],
+            "recent_events": [
+                {
+                    **row,
+                    "keySetup": {"key": "PRIVATE_KEY"},
+                    "key_cipher_id": 7,
+                    "key_payload": "PRIVATE",
+                }
+            ],
+        }
+    )
+    assert result["recent_events"] == [row]
+    assert "PRIVATE" not in json.dumps(result)
+
+
 _LOOKUP_COUNTS = (
     "lookup_send_errors lookup_datagrams lookup_other_headers lookup_own_replies "
     "lookup_account_replies lookup_foreign_replies lookup_near_replies"

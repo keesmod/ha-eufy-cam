@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import type { DiscoveryResult, Diagnostic, CameraCapabilities, RecordingObservation, StationLookupObservation } from '@keesmod/eufy-mega-client';
+import type { DiscoveryResult, Diagnostic, CameraCapabilities, RecordingObservation, StationKeySetupObservation, StationLookupObservation } from '@keesmod/eufy-mega-client';
 import {
-  DiscoveryDiagnostics, diagnosticCode, diagnosticModel, diagnosticReleaseVersion, diagnosticSoftware, diagnosticVersion,
+  DiscoveryDiagnostics, connectionAttempt, diagnosticCode, diagnosticModel, diagnosticReleaseVersion, diagnosticSoftware, diagnosticVersion,
   standalonePushReport,
   type RecordingQueryReport,
 } from '../src/discovery-diagnostics.js';
@@ -33,7 +33,7 @@ test('support report includes software, inventory, anonymous ownership, firmware
     {snapshot:capability,live:capability,recordings:capability}]]),new Map());
   const rows=f.rows();
   assert.equal(rows.length,6);
-  assert.equal(rows[0].software.library,'0.30.1');
+  assert.equal(rows[0].software.library,'0.30.2-beta.1');
   assert.equal(rows[0].software.bridge,diagnosticSoftware().bridge);
   assert.deepEqual([rows[0].cameras,rows[0].stations,rows[0].issues],[1,1,2]);
   assert.equal(rows[2].owner_ref,1);
@@ -353,6 +353,71 @@ test('a changed boolean alone is a new lookup outcome (#152)', () => {
   fail({broadcastEnabled:false,inventoryAddressShared:true});
   const rows=f.reporter.report().recent_events.filter(row=>row.event==='station_connection');
   assert.deepEqual(rows.map(row=>[row.lookup_broadcast_enabled,row.inventory_address_shared]),[[true,false],[false,false],[false,true]]);
+});
+
+// What the session of one attempt saw between session_open and the key, as client 0.30.2 reports it (#142).
+const unansweredKey: StationKeySetupObservation = {
+  requestSends: 3, requestAcknowledged: true, resultWaitExpired: true, answers: 0,
+  dataDatagrams: 0, otherMessages: 0, heartbeats: 4, ended: false,
+};
+const keyKeys = (row: Record<string, unknown>) =>
+  Object.keys(row).filter(key => key.startsWith('key_') || key === 'session_open_ms');
+
+test('the key setup of an attempt and the time its session opened are flat fields on its record (#142)', () => {
+  const f=collect();
+  f.reporter.prepare(result());
+  const stages=connectionAttempt();
+  stages.onProgress({stage:'lookup',elapsedMs:0,inventoryAddress:true});
+  stages.onProgress({stage:'station_found',elapsedMs:300});
+  stages.onProgress({stage:'session_open',elapsedMs:450});
+  stages.onLookup(silentLookup);
+  stages.onKeySetup(unansweredKey);
+  f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',stages.detail);
+  const [row]=f.reporter.report().recent_events.filter(r=>r.event==='station_connection');
+  assert.deepEqual(Object.fromEntries(keyKeys(row!).map(key=>[key,row![key]])),{
+    session_open_ms:450, key_request_sends:3, key_request_acknowledged:true, key_result_wait_expired:true,
+    key_answers:0, key_data_datagrams:0, key_other_messages:0, key_heartbeats:4, key_ended:false,
+  });
+  assert.deepEqual([row!.stage,row!.lookup_rounds],['session_open',3]);
+  // The log line carries the same record, and never the observation itself.
+  assert.deepEqual(f.rows().filter(r=>r.event==='station_connection'),[row]);
+  assert.ok(f.rows().every(r=>!('keySetup' in r) && !('detail' in r)));
+  // An attempt that never opened its session has none of the fields.
+  const g=collect();
+  g.reporter.prepare(result());
+  g.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'lookup',lookup:silentLookup});
+  assert.deepEqual(keyKeys(g.reporter.report().recent_events[0]!),[]);
+});
+
+test('hostile key setup values are left out and each count keeps its bound (#142)', () => {
+  const hostile = {
+    requestSends:1000, requestAcknowledged:'true', resultWaitExpired:1, answers:-1, dataDatagrams:1.5,
+    otherMessages:'2', heartbeats:999, ended:null, cipherId:7, key:'PRIVATE_KEY', address:'192.168.1.2',
+  } as unknown as StationKeySetupObservation;
+  const f=collect();
+  f.reporter.prepare(result());
+  f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'session_open',sessionOpenMs:120001,keySetup:hostile});
+  const [row]=f.reporter.report().recent_events;
+  assert.deepEqual(keyKeys(row!),['key_heartbeats']);
+  assert.doesNotMatch(f.lines.join('\n'),/PRIVATE|192\.168|cipher/);
+  for (const value of ['PRIVATE_TOKEN', 7, null, new Proxy({}, {get:()=>{throw new Error('PRIVATE_TOKEN');}})]) {
+    const g=collect();
+    g.reporter.prepare(result());
+    assert.doesNotThrow(()=>g.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',
+      {stage:'session_open',sessionOpenMs:20000,keySetup:value as unknown as StationKeySetupObservation}));
+    const [r]=g.reporter.report().recent_events;
+    assert.deepEqual(keyKeys(r!),['session_open_ms']);
+    assert.equal(r!.reason,'device_request_timeout');
+  }
+  for (const key of ['requestSends','answers','dataDatagrams','otherMessages','heartbeats'] as const) {
+    for (const [value,expected] of [[0,0],[999,999],[1000,undefined]]) {
+      const g=collect();
+      g.reporter.prepare(result());
+      g.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'session_open',keySetup:{...unansweredKey,[key]:value}});
+      const field=`key_${key.replace(/[A-Z]/g,c=>`_${c.toLowerCase()}`)}`;
+      assert.equal(g.reporter.report().recent_events[0]![field],expected,`${key} ${value}`);
+    }
+  }
 });
 
 test('each lookup count keeps its bounds and leaves out the value past them (#152)', () => {
