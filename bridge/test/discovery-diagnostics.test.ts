@@ -411,7 +411,8 @@ test('hostile key setup values are left out and each count keeps its bound (#142
     assert.deepEqual(keyKeys(r!),['session_open_ms']);
     assert.equal(r!.reason,'device_request_timeout');
   }
-  for (const key of ['requestSends','answers','dataDatagrams','otherMessages','heartbeats'] as const) {
+  for (const key of ['requestSends','answers','dataDatagrams','otherMessages','heartbeats',
+    'results','controlMessages','mediaDatagrams','repeatedDatagrams'] as const) {
     for (const [value,expected] of [[0,0],[999,999],[1000,undefined]]) {
       const g=collect();
       g.reporter.prepare(result());
@@ -446,11 +447,18 @@ test('a key request result, its return code and the other commands are flat fiel
   for (const [value,expected] of [[-999999,-999999],[999999,999999],[1000000,undefined],[-1.5,undefined],['-103',undefined]] as const)
     assert.equal(read({...answered,resultCode:value}).key_result_code,expected,`${value}`);
   assert.equal(read({...answered,resultEncrypted:'true'}).key_result_encrypted,undefined);
-  // Only the first three commands count, each a protocol number up to 65535.
-  const commands=read({...answered,otherCommands:[65536,'PRIVATE',65535,7]});
+  // Only the first three commands count, each a protocol number from 0 to 65535.
+  const commands=read({...answered,otherCommands:[65536,-1,65535,7]});
   assert.deepEqual(
     [commands.key_other_command_1,commands.key_other_command_2,commands.key_other_command_3,commands.key_other_command_4],
     [undefined,undefined,65535,undefined]);
+  // A list whose own methods are replaced cannot choose a field name.
+  const tampered=[1100,1350,7];
+  Object.assign(tampered,{slice:()=>({forEach:(f: (v: unknown, i: unknown)=>void)=>f(7,'PRIVATE_ID')})});
+  const named=read({...answered,otherCommands:tampered});
+  assert.deepEqual(keyKeys(named).filter(key=>key.startsWith('key_other_command')),
+    ['key_other_command_1','key_other_command_2','key_other_command_3']);
+  assert.doesNotMatch(JSON.stringify(named),/PRIVATE/);
   for (const value of ['1100',{0:1100},null]) {
     const r=read({...answered,otherCommands:value});
     assert.deepEqual(keyKeys(r).filter(key=>key.startsWith('key_other_command')),[]);
@@ -470,6 +478,20 @@ test('a changed key setup outcome adds a record, changed counts alone do not (#1
   const rows=f.reporter.report().recent_events.filter(r=>r.event==='station_connection');
   assert.deepEqual(rows.map(r=>[r.key_request_acknowledged,r.key_ended,r.key_other_messages,r.session_open_ms]),
     [[false,false,0,400],[true,true,2,400]]);
+  // A return code and a command number count by their exact value, a result count by whether it is zero.
+  const g=collect();
+  g.reporter.prepare(result());
+  const again=(keySetup: StationKeySetupObservation)=>
+    g.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'session_open',lookup:silentLookup,keySetup});
+  const coded={...unansweredKey,resultWaitExpired:false,results:1,resultCode:-103,otherMessages:1,otherCommands:[1100]};
+  again(unansweredKey);
+  again(coded);
+  again({...coded,results:2});
+  again({...coded,resultCode:-1});
+  again({...coded,resultCode:-1,otherCommands:[1350]});
+  const codes=g.reporter.report().recent_events.filter(r=>r.event==='station_connection');
+  assert.deepEqual(codes.map(r=>[r.key_results,r.key_result_code,r.key_other_command_1]),
+    [[0,undefined,undefined],[1,-103,1100],[1,-1,1100],[1,-1,1350]]);
 });
 
 test('session_open_ms keeps its bounds (#142)', () => {

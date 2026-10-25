@@ -490,7 +490,8 @@ its own. A connected attempt carries the same fields, on the `connect` record of
 a standalone camera and on the `refresh_state` record that follows a HomeBase's
 connect. Within one report, a later failed attempt of the same HomeBase with the
 same stage, reason and coarse lookup outcome adds no record. The coarse outcome
-is whether each count is above 0, plus each boolean and the reply class. The
+is whether each count is above 0, plus each boolean, the reply class and the
+exact `key_result_code` and `key_other_command_` numbers. The
 counts, including the round count the assessment quotes, can then come from the
 first such attempt. A standalone camera connects once per report, so its record
 is always its latest attempt. Without the fields the bridge, its client or the
@@ -504,8 +505,9 @@ Since bridge 0.8.40 with client 0.30.2, an attempt whose session opened also
 shows how far the command key got. The fields are on the same `station_connection`
 records as the lookup fields and in the bridge's `Eufy discovery:` log lines.
 Integration 0.8.48 and older drops them from **Download diagnostics**, so use
-the log lines with an older integration. They are counts and booleans, never an
-ID, address, cipher ID, key or payload. The
+the log lines with an older integration. They are counts, booleans, a return
+code and command numbers, never an ID, address, cipher ID, key or payload. A
+return code and a command number are protocol numbers, not identifiers. The
 [client documentation](https://github.com/keesmod/eufy-mega-client/blob/main/docs/API.md#station-key-setup-observation-0302)
 describes the observation.
 
@@ -520,16 +522,13 @@ describes the observation.
 | `key_other_messages` | Complete messages the session received that are not a key answer |
 | `key_heartbeats` | PING and PONG datagrams the session received |
 | `key_ended` | Whether the station ended the session |
-| `key_results` | Command results on the DATA channel matched to the key request. They carry no key and end the answer wait. After return code 503 the session resends the request. Since bridge 0.8.40-beta.2 |
-| `key_result_code` | Return code of the latest unencrypted result, absent when none arrived. Since bridge 0.8.40-beta.2 |
-| `key_result_encrypted` | Whether a result arrived encrypted, so its return code was not readable. Since bridge 0.8.40-beta.2 |
-| `key_control_messages` | Messages of `key_other_messages` on the CONTROL channel. The rest came on the DATA channel. Since bridge 0.8.40-beta.2 |
-| `key_other_command_1` to `_3` | The first three distinct command numbers among `key_other_messages`. Since bridge 0.8.40-beta.2 |
-| `key_media_datagrams` | VIDEO and BINARY datagrams, not parsed before a stream starts. Since bridge 0.8.40-beta.2 |
-| `key_repeated_datagrams` | DATA datagrams the station resent after they were processed. Since bridge 0.8.40-beta.2 |
-
-The fields since bridge 0.8.40-beta.2 need client 0.30.2-beta.2. Integration
-0.8.49-beta.1 and older drops them from the download, so use the log lines.
+| `key_results` | Command results on the DATA channel matched to the key request. They carry no key and end the answer wait. After return code 503 the session resends the request |
+| `key_result_code` | Return code of the latest unencrypted result, absent when none arrived |
+| `key_result_encrypted` | Whether a result arrived encrypted, so its return code was not readable |
+| `key_control_messages` | Messages of `key_other_messages` on the CONTROL channel. The rest came on the DATA channel |
+| `key_other_command_1` to `_3` | The first three distinct command numbers among `key_other_messages` |
+| `key_media_datagrams` | VIDEO and BINARY datagrams, not parsed before a stream starts |
+| `key_repeated_datagrams` | DATA datagrams the station resent after they were processed |
 
 For an attempt that failed at `stage=session_open`:
 `key_request_acknowledged=false` with `key_heartbeats` above 0 means the camera

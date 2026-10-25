@@ -134,11 +134,14 @@ function keySetupFields(detail: StationConnectionDetail): LookupFields {
     if (code !== null) fields.key_result_code = code;
     bool('key_result_encrypted', key.resultEncrypted);
     count('key_control_messages', key.controlMessages);
-    if (Array.isArray(key.otherCommands))
-      key.otherCommands.slice(0, 3).forEach((raw: unknown, index: number) => {
-        const command = integer(raw, 0, 65535);
-        if (command !== null) fields[`key_other_command_${index + 1}`] = command;
-      });
+    if (Array.isArray(key.otherCommands)) {
+      const commands: readonly unknown[] = key.otherCommands;
+      // A fixed loop and fixed names, so the list cannot choose a field name.
+      for (const [index, name] of ['key_other_command_1', 'key_other_command_2', 'key_other_command_3'].entries()) {
+        const command = integer(commands[index], 0, 65535);
+        if (command !== null) fields[name] = command;
+      }
+    }
     count('key_media_datagrams', key.mediaDatagrams);
     count('key_repeated_datagrams', key.repeatedDatagrams);
     return fields;
@@ -190,15 +193,23 @@ function lookupFields(value: unknown): LookupFields {
     return {};
   }
 }
+/** Protocol numbers that are an outcome by their exact value, not counts (#142). */
+const exactClassFields: ReadonlySet<string> = new Set([
+  'key_result_code', 'key_other_command_1', 'key_other_command_2', 'key_other_command_3',
+]);
 /**
  * The coarse outcome of a lookup for the repeat check: whether each count is
- * zero, and each boolean and the reply class. Changed counts alone are a repeat.
+ * zero, each boolean and the reply class, and the exact return code and command
+ * numbers of the key setup. Changed counts alone are a repeat.
  */
 const lookupClass = (fields: LookupFields): string | null =>
   Object.keys(fields).length === 0
     ? null
     : JSON.stringify(
-        Object.entries(fields).map(([key, value]) => [key, typeof value === 'number' ? value > 0 : value]),
+        Object.entries(fields).map(([key, value]) => [
+          key,
+          typeof value === 'number' && !exactClassFields.has(key) ? value > 0 : value,
+        ]),
       );
 /** An opted-in standalone camera that is its own experimental owner. */
 export const experimentalOwner = (

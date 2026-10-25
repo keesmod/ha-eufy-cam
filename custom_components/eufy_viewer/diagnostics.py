@@ -106,7 +106,7 @@ _NUMBERS = {
         (0, 999),
     ),
     # The result to the key request and the commands of the other messages,
-    # bridge 0.8.40-beta.2. Protocol numbers, not identifiers.
+    # bridge 0.8.40 (client #142). Protocol numbers, not identifiers.
     "key_result_code": (-999999, 999999),
     **dict.fromkeys(
         "key_other_command_1 key_other_command_2 key_other_command_3".split(),

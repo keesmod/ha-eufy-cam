@@ -819,7 +819,6 @@ def test_station_connection_key_setup_fields_survive_download_within_their_bound
         "key_other_messages": 0,
         "key_heartbeats": 4,
         "key_ended": False,
-        # Bridge 0.8.40-beta.2 with client 0.30.2-beta.2.
         "key_results": 1,
         "key_result_code": -103,
         "key_result_encrypted": False,
@@ -838,6 +837,7 @@ def test_station_connection_key_setup_fields_survive_download_within_their_bound
         **dict.fromkeys(_KEY_COMMANDS, 65535),
     }
     assert _fields({**row, **edges}) == {**row, **edges}
+    assert _fields({**row, "key_result_code": 999999})["key_result_code"] == 999999
     integers = [1.0, "3", True, None, [1], {"value": 1}]
     hostile = {
         "session_open_ms": [120001, -1, *integers],

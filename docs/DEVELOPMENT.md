@@ -276,16 +276,15 @@ and the `elapsedMs` of the `session_open` stage from `onProgress`:
 | `key_other_messages` | 0 to 999 | Complete messages that are not a key answer |
 | `key_heartbeats` | 0 to 999 | PING and PONG datagrams the session received |
 | `key_ended` | boolean | Whether the station ended the session |
-| `key_results` | 0 to 999 | Command results on the DATA channel matched to the key request, since 0.8.40-beta.2 |
-| `key_result_code` | -999999 to 999999 | Return code of the latest unencrypted result, since 0.8.40-beta.2 |
-| `key_result_encrypted` | boolean | Whether a result arrived encrypted, since 0.8.40-beta.2 |
-| `key_control_messages` | 0 to 999 | Other messages on the CONTROL channel, since 0.8.40-beta.2 |
-| `key_other_command_1` to `_3` | 0 to 65535 | The first three distinct command numbers among the other messages, since 0.8.40-beta.2 |
-| `key_media_datagrams` | 0 to 999 | VIDEO and BINARY datagrams, since 0.8.40-beta.2 |
-| `key_repeated_datagrams` | 0 to 999 | DATA datagrams resent after they were processed, since 0.8.40-beta.2 |
+| `key_results` | 0 to 999 | Command results on the DATA channel matched to the key request |
+| `key_result_code` | -999999 to 999999 | Return code of the latest unencrypted result |
+| `key_result_encrypted` | boolean | Whether a result arrived encrypted |
+| `key_control_messages` | 0 to 999 | Other messages on the CONTROL channel |
+| `key_other_command_1` to `_3` | 0 to 65535 | The first three distinct command numbers among the other messages |
+| `key_media_datagrams` | 0 to 999 | VIDEO and BINARY datagrams |
+| `key_repeated_datagrams` | 0 to 999 | DATA datagrams resent after they were processed |
 
-The fields since 0.8.40-beta.2 come from client 0.30.2-beta.2. The bridge
-reads at most three entries of the client's `otherCommands` list.
+The bridge reads at most three entries of the client's `otherCommands` list.
 
 The key setup fields are on the same records as the lookup fields and follow the same carrier,
 revalidation and download rules. They are absent when the attempt's session
@@ -481,7 +480,8 @@ finding for it yet. The schema stays `2` because the record is additive.
   only when its coarse lookup class is the same as well. The class is whether
   each count is zero, plus each boolean and the reply class, so changed counts
   alone add no record and a changed outcome does. Since bridge 0.8.40 the key
-  setup fields count in that class the same way. A record without lookup or key
+  setup fields count in that class the same way, except `key_result_code` and
+  the `key_other_command_` fields, which count by their exact value. A record without lookup or key
   setup fields does not end a repeat. Since bridge 0.8.39 a `recording_query`
   record repeats the previous record of the same owner and `query` in the same
   report when every value except `elapsed_ms` is the same, with `query_rows`,
