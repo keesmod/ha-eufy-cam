@@ -127,7 +127,7 @@ function keySetupFields(detail: StationConnectionDetail): LookupFields {
     count('key_other_messages', key.otherMessages);
     count('key_heartbeats', key.heartbeats);
     bool('key_ended', key.ended);
-    // Client 0.30.2-beta.2: a DATA channel result to the key request and the
+    // Client 0.30.2: a DATA channel result to the key request and the
     // kind of the other messages, protocol numbers only.
     count('key_results', key.results);
     const code = integer(key.resultCode, -999999, 999999);
