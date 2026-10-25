@@ -127,6 +127,23 @@ function keySetupFields(detail: StationConnectionDetail): LookupFields {
     count('key_other_messages', key.otherMessages);
     count('key_heartbeats', key.heartbeats);
     bool('key_ended', key.ended);
+    // Client 0.30.2: a DATA channel result to the key request and the
+    // kind of the other messages, protocol numbers only.
+    count('key_results', key.results);
+    const code = integer(key.resultCode, -999999, 999999);
+    if (code !== null) fields.key_result_code = code;
+    bool('key_result_encrypted', key.resultEncrypted);
+    count('key_control_messages', key.controlMessages);
+    if (Array.isArray(key.otherCommands)) {
+      const commands: readonly unknown[] = key.otherCommands;
+      // A fixed loop and fixed names, so the list cannot choose a field name.
+      for (const [index, name] of ['key_other_command_1', 'key_other_command_2', 'key_other_command_3'].entries()) {
+        const command = integer(commands[index], 0, 65535);
+        if (command !== null) fields[name] = command;
+      }
+    }
+    count('key_media_datagrams', key.mediaDatagrams);
+    count('key_repeated_datagrams', key.repeatedDatagrams);
     return fields;
   } catch {
     // Diagnostics never alter discovery. An observation that cannot be read is
@@ -176,15 +193,23 @@ function lookupFields(value: unknown): LookupFields {
     return {};
   }
 }
+/** Protocol numbers that are an outcome by their exact value, not counts (#142). */
+const exactClassFields: ReadonlySet<string> = new Set([
+  'key_result_code', 'key_other_command_1', 'key_other_command_2', 'key_other_command_3',
+]);
 /**
  * The coarse outcome of a lookup for the repeat check: whether each count is
- * zero, and each boolean and the reply class. Changed counts alone are a repeat.
+ * zero, each boolean and the reply class, and the exact return code and command
+ * numbers of the key setup. Changed counts alone are a repeat.
  */
 const lookupClass = (fields: LookupFields): string | null =>
   Object.keys(fields).length === 0
     ? null
     : JSON.stringify(
-        Object.entries(fields).map(([key, value]) => [key, typeof value === 'number' ? value > 0 : value]),
+        Object.entries(fields).map(([key, value]) => [
+          key,
+          typeof value === 'number' && !exactClassFields.has(key) ? value > 0 : value,
+        ]),
       );
 /** An opted-in standalone camera that is its own experimental owner. */
 export const experimentalOwner = (
