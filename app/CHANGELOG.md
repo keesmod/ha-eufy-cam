@@ -3,8 +3,8 @@
 ## 0.8.40 - Unreleased
 
 - **Key setup fields**: pin client 0.30.2 and add the command key setup of
-  a station connection attempt to its `station_connection` record in the log and
-  the download
+  a station connection attempt, including a result to the key request, to its
+  `station_connection` record in the log and the download
   ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142)).
   Diagnostics only, not yet confirmed on hardware.
 

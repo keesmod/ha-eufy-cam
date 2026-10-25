@@ -791,9 +791,14 @@ def test_station_connection_stage_and_suffixed_models_survive_download():
 
 
 _KEY_COUNTS = (
-    "key_request_sends key_answers key_data_datagrams key_other_messages key_heartbeats"
+    "key_request_sends key_answers key_data_datagrams key_other_messages "
+    "key_heartbeats key_results key_control_messages key_media_datagrams "
+    "key_repeated_datagrams"
 ).split()
-_KEY_FLAGS = "key_request_acknowledged key_result_wait_expired key_ended".split()
+_KEY_FLAGS = (
+    "key_request_acknowledged key_result_wait_expired key_ended key_result_encrypted"
+).split()
+_KEY_COMMANDS = "key_other_command_1 key_other_command_2 key_other_command_3".split()
 
 
 def test_station_connection_key_setup_fields_survive_download_within_their_bounds():
@@ -814,14 +819,31 @@ def test_station_connection_key_setup_fields_survive_download_within_their_bound
         "key_other_messages": 0,
         "key_heartbeats": 4,
         "key_ended": False,
+        "key_results": 1,
+        "key_result_code": -103,
+        "key_result_encrypted": False,
+        "key_control_messages": 2,
+        "key_other_command_1": 1100,
+        "key_other_command_2": 1350,
+        "key_other_command_3": 0,
+        "key_media_datagrams": 20,
+        "key_repeated_datagrams": 7,
     }
     assert _fields(row) == row
-    edges = {"session_open_ms": 120000, **dict.fromkeys(_KEY_COUNTS, 999)}
+    edges = {
+        "session_open_ms": 120000,
+        "key_result_code": -999999,
+        **dict.fromkeys(_KEY_COUNTS, 999),
+        **dict.fromkeys(_KEY_COMMANDS, 65535),
+    }
     assert _fields({**row, **edges}) == {**row, **edges}
-    integers = [-1, 1.0, "3", True, None, [1], {"value": 1}]
+    assert _fields({**row, "key_result_code": 999999})["key_result_code"] == 999999
+    integers = [1.0, "3", True, None, [1], {"value": 1}]
     hostile = {
-        "session_open_ms": [120001, *integers],
-        **{key: [1000, 2**53, *integers] for key in _KEY_COUNTS},
+        "session_open_ms": [120001, -1, *integers],
+        "key_result_code": [1000000, -1000000, *integers],
+        **{key: [1000, 2**53, -1, *integers] for key in _KEY_COUNTS},
+        **{key: [65536, -1, *integers] for key in _KEY_COMMANDS},
         **{key: [1, 0, "true", "PRIVATE", None, [True]] for key in _KEY_FLAGS},
     }
     for key, values in hostile.items():

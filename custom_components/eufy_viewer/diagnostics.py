@@ -100,9 +100,17 @@ _NUMBERS = {
     **dict.fromkeys(
         (
             "key_request_sends key_answers key_data_datagrams key_other_messages "
-            "key_heartbeats"
+            "key_heartbeats key_results key_control_messages key_media_datagrams "
+            "key_repeated_datagrams"
         ).split(),
         (0, 999),
+    ),
+    # The result to the key request and the commands of the other messages,
+    # bridge 0.8.40 (client #142). Protocol numbers, not identifiers.
+    "key_result_code": (-999999, 999999),
+    **dict.fromkeys(
+        "key_other_command_1 key_other_command_2 key_other_command_3".split(),
+        (0, 65535),
     ),
     # What the device answered to a recording query, bridge 0.8.39. The row
     # counts are of a query page, not the discovery rows counted in rows.
@@ -131,7 +139,8 @@ _BOOLEANS = set(
         "experimental_standalone lookup_broadcast_enabled "
         "inventory_address_on_subnet inventory_address_shared "
         "session_open query_answered standalone_recording_probe "
-        "key_request_acknowledged key_result_wait_expired key_ended"
+        "key_request_acknowledged key_result_wait_expired key_ended "
+        "key_result_encrypted"
     ).split()
 )
 _VERSIONS = set("firmware hardware parent_firmware node".split())
