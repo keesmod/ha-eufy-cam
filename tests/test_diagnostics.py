@@ -793,10 +793,11 @@ def test_station_connection_stage_and_suffixed_models_survive_download():
 _KEY_COUNTS = (
     "key_request_sends key_answers key_data_datagrams key_other_messages "
     "key_heartbeats key_results key_control_messages key_media_datagrams "
-    "key_repeated_datagrams"
+    "key_repeated_datagrams key_signed_messages"
 ).split()
 _KEY_FLAGS = (
-    "key_request_acknowledged key_result_wait_expired key_ended key_result_encrypted"
+    "key_request_acknowledged key_result_wait_expired key_ended key_result_encrypted "
+    "key_without_answer"
 ).split()
 _KEY_COMMANDS = "key_other_command_1 key_other_command_2 key_other_command_3".split()
 
@@ -828,6 +829,8 @@ def test_station_connection_key_setup_fields_survive_download_within_their_bound
         "key_other_command_3": 0,
         "key_media_datagrams": 20,
         "key_repeated_datagrams": 7,
+        "key_signed_messages": 2,
+        "key_without_answer": True,
     }
     assert _fields(row) == row
     edges = {

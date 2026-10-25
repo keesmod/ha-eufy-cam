@@ -33,7 +33,7 @@ test('support report includes software, inventory, anonymous ownership, firmware
     {snapshot:capability,live:capability,recordings:capability}]]),new Map());
   const rows=f.rows();
   assert.equal(rows.length,6);
-  assert.equal(rows[0].software.library,'0.30.2-beta.2');
+  assert.equal(rows[0].software.library,'0.30.2-beta.3');
   assert.equal(rows[0].software.bridge,diagnosticSoftware().bridge);
   assert.deepEqual([rows[0].cameras,rows[0].stations,rows[0].issues],[1,1,2]);
   assert.equal(rows[2].owner_ref,1);
@@ -360,6 +360,7 @@ const unansweredKey: StationKeySetupObservation = {
   requestSends: 3, requestAcknowledged: true, resultWaitExpired: true, answers: 0,
   dataDatagrams: 0, otherMessages: 0, heartbeats: 4, ended: false,
   results: 0, resultEncrypted: false, controlMessages: 0, otherCommands: [], mediaDatagrams: 0, repeatedDatagrams: 0,
+  signedMessages: 0, keyWithoutAnswer: false,
 };
 const keyKeys = (row: Record<string, unknown>) =>
   Object.keys(row).filter(key => key.startsWith('key_') || key === 'session_open_ms');
@@ -379,6 +380,7 @@ test('the key setup of an attempt and the time its session opened are flat field
     session_open_ms:450, key_request_sends:3, key_request_acknowledged:true, key_result_wait_expired:true,
     key_answers:0, key_data_datagrams:0, key_other_messages:0, key_heartbeats:4, key_ended:false,
     key_results:0, key_result_encrypted:false, key_control_messages:0, key_media_datagrams:0, key_repeated_datagrams:0,
+    key_signed_messages:0, key_without_answer:false,
   });
   assert.deepEqual([row!.stage,row!.lookup_rounds],['session_open',3]);
   // The log line carries the same record, and never the observation itself.
@@ -412,7 +414,7 @@ test('hostile key setup values are left out and each count keeps its bound (#142
     assert.equal(r!.reason,'device_request_timeout');
   }
   for (const key of ['requestSends','answers','dataDatagrams','otherMessages','heartbeats',
-    'results','controlMessages','mediaDatagrams','repeatedDatagrams'] as const) {
+    'results','controlMessages','mediaDatagrams','repeatedDatagrams','signedMessages'] as const) {
     for (const [value,expected] of [[0,0],[999,999],[1000,undefined]]) {
       const g=collect();
       g.reporter.prepare(result());
@@ -447,6 +449,8 @@ test('a key request result, its return code and the other commands are flat fiel
   for (const [value,expected] of [[-999999,-999999],[999999,999999],[1000000,undefined],[-1.5,undefined],['-103',undefined]] as const)
     assert.equal(read({...answered,resultCode:value}).key_result_code,expected,`${value}`);
   assert.equal(read({...answered,resultEncrypted:'true'}).key_result_encrypted,undefined);
+  assert.equal(read({...answered,keyWithoutAnswer:true}).key_without_answer,true);
+  assert.equal(read({...answered,keyWithoutAnswer:1}).key_without_answer,undefined);
   // Only the first three commands count, each a protocol number from 0 to 65535.
   const commands=read({...answered,otherCommands:[65536,-1,65535,7]});
   assert.deepEqual(
@@ -492,6 +496,16 @@ test('a changed key setup outcome adds a record, changed counts alone do not (#1
   const codes=g.reporter.report().recent_events.filter(r=>r.event==='station_connection');
   assert.deepEqual(codes.map(r=>[r.key_results,r.key_result_code,r.key_other_command_1]),
     [[0,undefined,undefined],[1,-103,1100],[1,-1,1100],[1,-1,1350]]);
+  // A key set without an answer is an outcome, more signed messages alone are not.
+  const h=collect();
+  h.reporter.prepare(result());
+  const keyed=(keySetup: StationKeySetupObservation)=>
+    h.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'session_open',lookup:silentLookup,keySetup});
+  keyed({...unansweredKey,signedMessages:1});
+  keyed({...unansweredKey,signedMessages:2});
+  keyed({...unansweredKey,signedMessages:2,keyWithoutAnswer:true});
+  assert.deepEqual(h.reporter.report().recent_events.filter(r=>r.event==='station_connection')
+    .map(r=>[r.key_signed_messages,r.key_without_answer]),[[1,false],[2,true]]);
 });
 
 test('session_open_ms keeps its bounds (#142)', () => {

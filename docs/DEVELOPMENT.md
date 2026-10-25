@@ -283,6 +283,8 @@ and the `elapsedMs` of the `session_open` stage from `onProgress`:
 | `key_other_command_1` to `_3` | 0 to 65535 | The first three distinct command numbers among the other messages |
 | `key_media_datagrams` | 0 to 999 | VIDEO and BINARY datagrams |
 | `key_repeated_datagrams` | 0 to 999 | DATA datagrams resent after they were processed |
+| `key_signed_messages` | 0 to 999 | Other messages that arrived signed |
+| `key_without_answer` | boolean | Whether the session set the LAN-derived key without a key answer |
 
 The bridge reads at most three entries of the client's `otherCommands` list.
 

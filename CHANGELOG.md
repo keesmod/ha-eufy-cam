@@ -9,6 +9,11 @@
   ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142),
   [fields](docs/DISCOVERY_DIAGNOSTICS.md#key-setup-fields-of-a-connection-attempt)),
   diagnostics only and not yet confirmed on hardware.
+- **Key without a key answer**: with bridge 0.8.40, an experimental standalone
+  camera that answers the key request with a successful result and no key gets
+  its LAN-derived key from the client
+  ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142)).
+  Experimental, not yet confirmed on hardware.
 
 Upgrade: install with bridge 0.8.40 or newer. Rollback: 0.8.48 with
 bridge 0.8.39.
