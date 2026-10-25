@@ -276,11 +276,22 @@ and the `elapsedMs` of the `session_open` stage from `onProgress`:
 | `key_other_messages` | 0 to 999 | Complete messages that are not a key answer |
 | `key_heartbeats` | 0 to 999 | PING and PONG datagrams the session received |
 | `key_ended` | boolean | Whether the station ended the session |
+| `key_results` | 0 to 999 | Command results on the DATA channel matched to the key request, since 0.8.40-beta.2 |
+| `key_result_code` | -999999 to 999999 | Return code of the latest unencrypted result, since 0.8.40-beta.2 |
+| `key_result_encrypted` | boolean | Whether a result arrived encrypted, since 0.8.40-beta.2 |
+| `key_control_messages` | 0 to 999 | Other messages on the CONTROL channel, since 0.8.40-beta.2 |
+| `key_other_command_1` to `_3` | 0 to 65535 | The first three distinct command numbers among the other messages, since 0.8.40-beta.2 |
+| `key_media_datagrams` | 0 to 999 | VIDEO and BINARY datagrams, since 0.8.40-beta.2 |
+| `key_repeated_datagrams` | 0 to 999 | DATA datagrams resent after they were processed, since 0.8.40-beta.2 |
 
-They are on the same records as the lookup fields and follow the same carrier,
+The fields since 0.8.40-beta.2 come from client 0.30.2-beta.2. The bridge
+reads at most three entries of the client's `otherCommands` list.
+
+The key setup fields are on the same records as the lookup fields and follow the same carrier,
 revalidation and download rules. They are absent when the attempt's session
 never opened. `session_open_ms` stays when the observation itself cannot be
-read. The values contain no ID, address, cipher ID, key or payload.
+read. The values contain no ID, address, cipher ID, key or payload. A return
+code and a command number are protocol numbers, not identifiers.
 
 A missing field means no observation, for example from an older bridge or
 client, an attempt that ended before `lookup`, such as one refused with

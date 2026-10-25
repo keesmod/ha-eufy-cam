@@ -33,7 +33,7 @@ test('support report includes software, inventory, anonymous ownership, firmware
     {snapshot:capability,live:capability,recordings:capability}]]),new Map());
   const rows=f.rows();
   assert.equal(rows.length,6);
-  assert.equal(rows[0].software.library,'0.30.2-beta.1');
+  assert.equal(rows[0].software.library,'0.30.2-beta.2');
   assert.equal(rows[0].software.bridge,diagnosticSoftware().bridge);
   assert.deepEqual([rows[0].cameras,rows[0].stations,rows[0].issues],[1,1,2]);
   assert.equal(rows[2].owner_ref,1);
@@ -359,6 +359,7 @@ test('a changed boolean alone is a new lookup outcome (#152)', () => {
 const unansweredKey: StationKeySetupObservation = {
   requestSends: 3, requestAcknowledged: true, resultWaitExpired: true, answers: 0,
   dataDatagrams: 0, otherMessages: 0, heartbeats: 4, ended: false,
+  results: 0, resultEncrypted: false, controlMessages: 0, otherCommands: [], mediaDatagrams: 0, repeatedDatagrams: 0,
 };
 const keyKeys = (row: Record<string, unknown>) =>
   Object.keys(row).filter(key => key.startsWith('key_') || key === 'session_open_ms');
@@ -377,6 +378,7 @@ test('the key setup of an attempt and the time its session opened are flat field
   assert.deepEqual(Object.fromEntries(keyKeys(row!).map(key=>[key,row![key]])),{
     session_open_ms:450, key_request_sends:3, key_request_acknowledged:true, key_result_wait_expired:true,
     key_answers:0, key_data_datagrams:0, key_other_messages:0, key_heartbeats:4, key_ended:false,
+    key_results:0, key_result_encrypted:false, key_control_messages:0, key_media_datagrams:0, key_repeated_datagrams:0,
   });
   assert.deepEqual([row!.stage,row!.lookup_rounds],['session_open',3]);
   // The log line carries the same record, and never the observation itself.
@@ -417,6 +419,42 @@ test('hostile key setup values are left out and each count keeps its bound (#142
       const field=`key_${key.replace(/[A-Z]/g,c=>`_${c.toLowerCase()}`)}`;
       assert.equal(g.reporter.report().recent_events[0]![field],expected,`${key} ${value}`);
     }
+  }
+});
+
+test('a key request result, its return code and the other commands are flat fields within their bounds (#142)', () => {
+  const answered = {
+    ...unansweredKey, resultWaitExpired:false, otherMessages:5, dataDatagrams:32,
+    results:1, resultCode:-103, controlMessages:2, otherCommands:[1100, 1350, 0], mediaDatagrams:20, repeatedDatagrams:7,
+  };
+  const f=collect();
+  f.reporter.prepare(result());
+  f.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'session_open',keySetup:answered});
+  const [row]=f.reporter.report().recent_events;
+  assert.deepEqual(
+    [row!.key_results,row!.key_result_code,row!.key_result_encrypted,row!.key_control_messages,
+      row!.key_other_command_1,row!.key_other_command_2,row!.key_other_command_3,
+      row!.key_media_datagrams,row!.key_repeated_datagrams],
+    [1,-103,false,2,1100,1350,0,20,7]);
+  const read=(keySetup: unknown)=>{
+    const g=collect();
+    g.reporter.prepare(result());
+    g.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',
+      {stage:'session_open',keySetup:keySetup as StationKeySetupObservation});
+    return g.reporter.report().recent_events[0]!;
+  };
+  for (const [value,expected] of [[-999999,-999999],[999999,999999],[1000000,undefined],[-1.5,undefined],['-103',undefined]] as const)
+    assert.equal(read({...answered,resultCode:value}).key_result_code,expected,`${value}`);
+  assert.equal(read({...answered,resultEncrypted:'true'}).key_result_encrypted,undefined);
+  // Only the first three commands count, each a protocol number up to 65535.
+  const commands=read({...answered,otherCommands:[65536,'PRIVATE',65535,7]});
+  assert.deepEqual(
+    [commands.key_other_command_1,commands.key_other_command_2,commands.key_other_command_3,commands.key_other_command_4],
+    [undefined,undefined,65535,undefined]);
+  for (const value of ['1100',{0:1100},null]) {
+    const r=read({...answered,otherCommands:value});
+    assert.deepEqual(keyKeys(r).filter(key=>key.startsWith('key_other_command')),[]);
+    assert.equal(r.key_results,1);
   }
 });
 

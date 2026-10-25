@@ -520,13 +520,26 @@ describes the observation.
 | `key_other_messages` | Complete messages the session received that are not a key answer |
 | `key_heartbeats` | PING and PONG datagrams the session received |
 | `key_ended` | Whether the station ended the session |
+| `key_results` | Command results on the DATA channel matched to the key request. They carry no key and end the answer wait. After return code 503 the session resends the request. Since bridge 0.8.40-beta.2 |
+| `key_result_code` | Return code of the latest unencrypted result, absent when none arrived. Since bridge 0.8.40-beta.2 |
+| `key_result_encrypted` | Whether a result arrived encrypted, so its return code was not readable. Since bridge 0.8.40-beta.2 |
+| `key_control_messages` | Messages of `key_other_messages` on the CONTROL channel. The rest came on the DATA channel. Since bridge 0.8.40-beta.2 |
+| `key_other_command_1` to `_3` | The first three distinct command numbers among `key_other_messages`. Since bridge 0.8.40-beta.2 |
+| `key_media_datagrams` | VIDEO and BINARY datagrams, not parsed before a stream starts. Since bridge 0.8.40-beta.2 |
+| `key_repeated_datagrams` | DATA datagrams the station resent after they were processed. Since bridge 0.8.40-beta.2 |
+
+The fields since bridge 0.8.40-beta.2 need client 0.30.2-beta.2. Integration
+0.8.49-beta.1 and older drops them from the download, so use the log lines.
 
 For an attempt that failed at `stage=session_open`:
 `key_request_acknowledged=false` with `key_heartbeats` above 0 means the camera
 kept the session alive but did not take the key request.
 `key_result_wait_expired=true` with `key_answers=0` means it took the request
 and did not answer. `key_other_messages` above 0 means it sent something else
-instead. A `session_open_ms` close to 20000 leaves the key no time. None of
+instead. `key_results` above 0 with `key_result_wait_expired=false` means it
+answered the key request as a command result without a key.
+`key_result_code` shows what it returned, unless `key_result_encrypted=true`. A `session_open_ms` close to 20000
+leaves the key no time. None of
 these values proves a cause on its own. The assessment adds no finding for them
 yet. Include the record in
 [client #142](https://github.com/keesmod/eufy-mega-client/issues/142).

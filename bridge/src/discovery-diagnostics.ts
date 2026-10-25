@@ -127,6 +127,20 @@ function keySetupFields(detail: StationConnectionDetail): LookupFields {
     count('key_other_messages', key.otherMessages);
     count('key_heartbeats', key.heartbeats);
     bool('key_ended', key.ended);
+    // Client 0.30.2-beta.2: a DATA channel result to the key request and the
+    // kind of the other messages, protocol numbers only.
+    count('key_results', key.results);
+    const code = integer(key.resultCode, -999999, 999999);
+    if (code !== null) fields.key_result_code = code;
+    bool('key_result_encrypted', key.resultEncrypted);
+    count('key_control_messages', key.controlMessages);
+    if (Array.isArray(key.otherCommands))
+      key.otherCommands.slice(0, 3).forEach((raw: unknown, index: number) => {
+        const command = integer(raw, 0, 65535);
+        if (command !== null) fields[`key_other_command_${index + 1}`] = command;
+      });
+    count('key_media_datagrams', key.mediaDatagrams);
+    count('key_repeated_datagrams', key.repeatedDatagrams);
     return fields;
   } catch {
     // Diagnostics never alter discovery. An observation that cannot be read is
