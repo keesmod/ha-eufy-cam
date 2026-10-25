@@ -538,16 +538,16 @@ kept the session alive but did not take the key request.
 `key_result_wait_expired=true` with `key_answers=0` means it took the request
 and did not answer. `key_other_messages` above 0 means it sent something else
 instead. `key_results` above 0 with `key_result_wait_expired=false` means it
-answered the key request as a command result without a key.
-`key_result_code` shows what it returned, unless `key_result_encrypted=true`.
-With `key_result_code=0` an experimental standalone camera then gets its
-LAN-derived key 5 seconds later, and `key_without_answer=true` is on its
-`connect` record. Its first snapshot or live view shows whether it accepts that
-key. A `session_open_ms` close to 20000
-leaves the key no time. None of
-these values proves a cause on its own. The assessment adds no finding for them
-yet. Include the record in
+answered the key request as a command result without a key. `key_result_code`
+shows what it returned, unless `key_result_encrypted=true`. A `session_open_ms`
+close to 20000 leaves the key no time. None of these values proves a cause on
+its own. The assessment adds no finding for them yet. Include the record in
 [client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
+
+With `key_result_code=0` and no key answer within 5 seconds, an experimental
+standalone camera gets its LAN-derived key from the client, and its `connect`
+record shows `key_without_answer=true`. Its first snapshot or live view shows
+whether it accepts that key.
 
 ### Failed recordings
 

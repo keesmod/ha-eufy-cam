@@ -10,8 +10,7 @@
 - **Key without a key answer**: an experimental standalone camera that answers
   the key request with a successful result and no key now gets its LAN-derived
   key ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142)).
-  HomeBase cameras are unchanged, and whether a standalone T8424 then works is
-  not yet known.
+  Experimental, not yet confirmed on hardware.
 
 Upgrade: integration 0.8.49 shows the fields in the download, older
 integrations drop them. Rollback: bridge 0.8.39.

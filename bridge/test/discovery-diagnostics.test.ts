@@ -496,6 +496,16 @@ test('a changed key setup outcome adds a record, changed counts alone do not (#1
   const codes=g.reporter.report().recent_events.filter(r=>r.event==='station_connection');
   assert.deepEqual(codes.map(r=>[r.key_results,r.key_result_code,r.key_other_command_1]),
     [[0,undefined,undefined],[1,-103,1100],[1,-1,1100],[1,-1,1350]]);
+  // A key set without an answer is an outcome, more signed messages alone are not.
+  const h=collect();
+  h.reporter.prepare(result());
+  const keyed=(keySetup: StationKeySetupObservation)=>
+    h.reporter.station('PRIVATE_BASE','connect','error','device_request_timeout',{stage:'session_open',lookup:silentLookup,keySetup});
+  keyed({...unansweredKey,signedMessages:1});
+  keyed({...unansweredKey,signedMessages:2});
+  keyed({...unansweredKey,signedMessages:2,keyWithoutAnswer:true});
+  assert.deepEqual(h.reporter.report().recent_events.filter(r=>r.event==='station_connection')
+    .map(r=>[r.key_signed_messages,r.key_without_answer]),[[1,false],[2,true]]);
 });
 
 test('session_open_ms keeps its bounds (#142)', () => {
