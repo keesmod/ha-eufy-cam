@@ -144,6 +144,8 @@ function keySetupFields(detail: StationConnectionDetail): LookupFields {
     }
     count('key_media_datagrams', key.mediaDatagrams);
     count('key_repeated_datagrams', key.repeatedDatagrams);
+    count('key_signed_messages', key.signedMessages);
+    bool('key_without_answer', key.keyWithoutAnswer);
     return fields;
   } catch {
     // Diagnostics never alter discovery. An observation that cannot be read is

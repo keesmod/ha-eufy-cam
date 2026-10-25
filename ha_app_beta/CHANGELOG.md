@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.40-beta.2
+## 0.8.40-beta.3
 Unreleased
 
 - **Key setup fields**: pin client 0.30.2 and add the command key setup of
@@ -8,6 +8,10 @@ Unreleased
   `station_connection` record in the log and the download
   ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142)).
   Diagnostics only, not yet confirmed on hardware.
+- **Key without a key answer**: an experimental standalone camera that answers
+  the key request with a successful result and no key now gets its LAN-derived
+  key ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142)).
+  Experimental, not yet confirmed on hardware.
 
 Upgrade: integration 0.8.49 shows the fields in the download, older
 integrations drop them. Rollback: bridge 0.8.39.
