@@ -529,6 +529,8 @@ describes the observation.
 | `key_other_command_1` to `_3` | The first three distinct command numbers among `key_other_messages` |
 | `key_media_datagrams` | VIDEO and BINARY datagrams, not parsed before a stream starts |
 | `key_repeated_datagrams` | DATA datagrams the station resent after they were processed |
+| `key_signed_messages` | Messages of `key_other_messages` that arrived signed, which means encrypted |
+| `key_without_answer` | Whether the session set the LAN-derived key itself after a successful result without a key answer. Only an experimental standalone camera does that |
 
 For an attempt that failed at `stage=session_open`:
 `key_request_acknowledged=false` with `key_heartbeats` above 0 means the camera
@@ -537,7 +539,11 @@ kept the session alive but did not take the key request.
 and did not answer. `key_other_messages` above 0 means it sent something else
 instead. `key_results` above 0 with `key_result_wait_expired=false` means it
 answered the key request as a command result without a key.
-`key_result_code` shows what it returned, unless `key_result_encrypted=true`. A `session_open_ms` close to 20000
+`key_result_code` shows what it returned, unless `key_result_encrypted=true`.
+With `key_result_code=0` an experimental standalone camera then gets its
+LAN-derived key 5 seconds later, and `key_without_answer=true` is on its
+`connect` record. Its first snapshot or live view shows whether it accepts that
+key. A `session_open_ms` close to 20000
 leaves the key no time. None of
 these values proves a cause on its own. The assessment adds no finding for them
 yet. Include the record in

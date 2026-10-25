@@ -101,7 +101,7 @@ _NUMBERS = {
         (
             "key_request_sends key_answers key_data_datagrams key_other_messages "
             "key_heartbeats key_results key_control_messages key_media_datagrams "
-            "key_repeated_datagrams"
+            "key_repeated_datagrams key_signed_messages"
         ).split(),
         (0, 999),
     ),
@@ -140,7 +140,7 @@ _BOOLEANS = set(
         "inventory_address_on_subnet inventory_address_shared "
         "session_open query_answered standalone_recording_probe "
         "key_request_acknowledged key_result_wait_expired key_ended "
-        "key_result_encrypted"
+        "key_result_encrypted key_without_answer"
     ).split()
 )
 _VERSIONS = set("firmware hardware parent_firmware node".split())
