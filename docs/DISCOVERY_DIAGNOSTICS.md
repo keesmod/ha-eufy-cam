@@ -441,7 +441,7 @@ same `stage` values as a HomeBase. The assessment reports such a camera as
 
 | Result | Meaning |
 |---|---|
-| `owner_status=connected` | The lookup, handshake and command key setup completed. The client sets the key locally once the session answers, so this does not yet show that the camera accepts it |
+| `owner_status=connected` | The lookup, handshake and command key setup completed. The client sets the key locally once the session answers, or goes on without a command key when `key_without_answer=true`, so this does not yet show that the camera accepts its commands |
 | `stage=none` | The attempt stopped before the lookup. The `reason` says why, for example `invalid_connection_credentials` when `descriptor` lacks `did` or `admin_user` |
 | `stage=lookup` | The camera did not answer the local lookup |
 | `stage=station_found` | The camera answered the lookup but did not complete the P2P handshake |
@@ -450,8 +450,8 @@ same `stage` values as a HomeBase. The assessment reports such a camera as
 After a connected result, the media rows and a snapshot, live view and
 recording attempt show whether the camera answers those commands on its own
 storage. The first answered snapshot, recording or live result shows whether
-the camera accepts the command key. A live view or snapshot shows that in the
-viewer. From bridge 0.8.39 with client 0.30.1 the camera's `media.recordings`
+the camera accepts the command key, or commands without one when
+`key_without_answer=true`. A live view or snapshot shows that in the viewer. From bridge 0.8.39 with client 0.30.1 the camera's `media.recordings`
 has `reason=standalone_recordings_unverified` and no recording request is
 sent, see [failed recordings](#failed-recordings). The only exception is the
 opt-in [standalone recording probe](#standalone-recording-probe) at login.

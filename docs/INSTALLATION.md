@@ -157,12 +157,7 @@ git clone --branch v0.8.47-beta.1 --depth 1 https://github.com/keesmod/ha-eufy-c
 
 Keep the previous image and the volume backup to return to the stable bridge.
 
-If you build from the release zip files instead of a Git checkout, build with
-`--no-cache`, for example `docker build --no-cache` or
-`docker compose build --no-cache`. The files in those zips can carry the same
-timestamps as the previous beta, so Docker may reuse the old layers. Afterwards
-check that `/app/package.json` in the new container names the beta bridge
-version.
+If you build from the release zip files instead of a Git checkout, build without the layer cache, for example `docker build --no-cache -t eufy-viewer-bridge:<version> ./bridge` or `docker compose build --no-cache`. Every file in those zips carries the same fixed timestamp, so Docker may reuse the layers of the previous beta. Afterwards check the bridge version with `docker exec eufy-viewer-bridge cat /app/package.json`.
 
 
 

@@ -485,7 +485,7 @@ the rest of the row:
 
 | Field | Stage |
 | --- | --- |
-| `session_ready_ms` | The camera's P2P session is connected and encrypted. With `live_max_streams_per_station` above 1 this is the camera's own session |
+| `session_ready_ms` | The camera's P2P session is connected, and encrypted unless an experimental standalone camera went on without a command key. With `live_max_streams_per_station` above 1 this is the camera's own session |
 | `issued_ms` | START was handed to that session |
 | `result_ms` and `return_code` | The station answered START, with its numeric return code, 0 for success |
 | `no_data_end_ms` | The P2P library ended the stream because no media followed, 5 s after the station's answer or 20 s after START without one |
