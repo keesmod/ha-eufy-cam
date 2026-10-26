@@ -406,10 +406,11 @@ does not prove that it works.
 
 With the [opt-in](USAGE.md#experimental-standalone-cameras), a standalone
 `T84A1` row, from bridge 0.8.35 with client 0.29.1 a standalone `T8410` row,
-and from bridge 0.8.38 with client 0.30.0 a standalone `T8410C` row, has
+from bridge 0.8.38 with client 0.30.0 a standalone `T8410C` row, and from
+bridge 0.8.40 with client 0.30.2 a standalone `T8424` row, has
 `relationship_transport=experimental` and no `relationship_reason`. Any other
-standalone model, a T8410 on bridge 0.8.34 or a T8410C on bridge 0.8.36 or
-0.8.37 keeps `relationship_transport=null` and
+standalone model, a T8410 on bridge 0.8.34, a T8410C on bridge 0.8.36 or
+0.8.37 or a T8424 before bridge 0.8.40 keeps `relationship_transport=null` and
 `standalone_transport_unverified` without a connection attempt, even with the
 option on.
 
@@ -748,7 +749,7 @@ from before the push counts drop the key. HomeBase pushes are never counted.
 |---|---|
 | `arrived` | Push deliveries that named a standalone camera |
 | `admitted` | Of those, passed on as a motion or person event |
-| `refused.events_not_enabled` | The camera's model has no standalone events. Every T8410 and T8410C push counts here |
+| `refused.events_not_enabled` | The camera's model has no standalone events. Every T8410, T8410C and T8424 push counts here |
 | `refused.owner_unavailable` | The camera was not set up, or it or its session had failed |
 | `refused.serial_mismatch` | The device or station serial of the push was not the camera's own, an empty value included |
 | `refused.type_mismatch` | The push type was not the camera's inventory device type, 151 for the T84A1. A cloud alarm push of type 10900 or 11000 counts here |

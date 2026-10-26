@@ -4,8 +4,7 @@
 
 - **Download diagnostics** keeps the key setup fields of a station connection
   attempt from bridge 0.8.40, including a result to the key request. They show
-  how far the command key got when a standalone camera such as the T8424 stops
-  at `session_open`
+  how far the command key got when a standalone camera stops at `session_open`
   ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142),
   [fields](docs/DISCOVERY_DIAGNOSTICS.md#key-setup-fields-of-a-connection-attempt)),
   diagnostics only and not yet confirmed on hardware.
@@ -13,7 +12,13 @@
   camera that answers the key request with a successful result and no key goes
   on without command encryption
   ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142)).
-  Experimental, not yet confirmed on hardware.
+  Experimental, reported working on a standalone T8424.
+- **Standalone T8424**: with bridge 0.8.40 and `experimental_standalone`, a
+  standalone Floodlight Cam 2K `T8424` gets its own local session with snapshot
+  and live view
+  ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142),
+  [usage](docs/USAGE.md#experimental-standalone-cameras)). Reported working on
+  firmware 2.1.1.5, not independently reproduced.
 
 Upgrade: install with bridge 0.8.40 or newer. Rollback: 0.8.48 with
 bridge 0.8.39.
