@@ -441,21 +441,22 @@ same `stage` values as a HomeBase. The assessment reports such a camera as
 
 | Result | Meaning |
 |---|---|
-| `owner_status=connected` | The lookup, handshake and command key setup completed. The client sets the key locally once the session answers, so this does not yet show that the camera accepts it |
+| `owner_status=connected` | The lookup, handshake and command key setup completed. The client sets the key locally once the session answers, or goes on without a command key when `key_without_answer=true`, so this does not yet show that the camera accepts its commands |
 | `stage=none` | The attempt stopped before the lookup. The `reason` says why, for example `invalid_connection_credentials` when `descriptor` lacks `did` or `admin_user` |
 | `stage=lookup` | The camera did not answer the local lookup |
 | `stage=station_found` | The camera answered the lookup but did not complete the P2P handshake |
 | `stage=session_open` | The P2P session opened but the command key was not established |
 
-After a connected result, the media rows and a snapshot, live view and
-recording attempt show whether the camera answers those commands on its own
-storage. The first answered snapshot, recording or live result shows whether
-the camera accepts the command key. A live view or snapshot shows that in the
-viewer. From bridge 0.8.39 with client 0.30.1 the camera's `media.recordings`
-has `reason=standalone_recordings_unverified` and no recording request is
-sent, see [failed recordings](#failed-recordings). The only exception is the
-opt-in [standalone recording probe](#standalone-recording-probe) at login.
-Include the complete download in
+After a connected result, the media rows and a snapshot, live view and recording
+attempt show whether the camera answers those commands on its own storage. The
+first answered snapshot, recording or live result shows whether the camera
+accepts the command key, or commands without one when `key_without_answer=true`.
+A live view or snapshot shows that in the viewer. From bridge 0.8.39 with client
+0.30.1 the camera's `media.recordings` has
+`reason=standalone_recordings_unverified` and no recording request is sent, see
+[failed recordings](#failed-recordings). The only exception is the opt-in
+[standalone recording probe](#standalone-recording-probe) at login. Include the
+complete download in
 [client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
 
 ### Lookup fields of a connection attempt
@@ -530,7 +531,7 @@ describes the observation.
 | `key_media_datagrams` | VIDEO and BINARY datagrams, not parsed before a stream starts |
 | `key_repeated_datagrams` | DATA datagrams the station resent after they were processed |
 | `key_signed_messages` | Messages of `key_other_messages` that arrived signed, which means encrypted |
-| `key_without_answer` | Whether the session set the LAN-derived key itself after a successful result without a key answer. Only an experimental standalone camera does that |
+| `key_without_answer` | Whether the session went on without a command key after a successful result without a key answer, so its commands are not encrypted. Only an experimental standalone camera does that |
 
 For an attempt that failed at `stage=session_open`:
 `key_request_acknowledged=false` with `key_heartbeats` above 0 means the camera
@@ -545,9 +546,10 @@ its own. The assessment adds no finding for them yet. Include the record in
 [client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
 
 With `key_result_code=0` and no key answer within 5 seconds, an experimental
-standalone camera gets its LAN-derived key from the client, and its `connect`
-record shows `key_without_answer=true`. Its first snapshot or live view shows
-whether it accepts that key.
+standalone camera goes on without command encryption, and its `connect` record
+shows `key_without_answer=true`. Its commands, including the account ID they
+carry, then cross the LAN readable. Its first snapshot or live view shows whether
+it answers them.
 
 ### Failed recordings
 

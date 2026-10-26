@@ -155,7 +155,11 @@ in the `Eufy discovery:` report and in **Download diagnostics**, and as an
 
 With the option on, the bridge connects to each admitted camera at every
 discovery, normally at startup, over the same local lookup and command key it
-uses for a HomeBase. Each camera that does not answer adds up to 20 seconds to
+uses for a HomeBase. From bridge 0.8.40 with client 0.30.2, an admitted camera
+that answers the key request with a successful result and no key gets its
+commands without encryption, so they cross your LAN readable, including the
+account ID they carry, see
+[key setup fields](DISCOVERY_DIAGNOSTICS.md#key-setup-fields-of-a-connection-attempt). Each camera that does not answer adds up to 20 seconds to
 startup. The camera's snapshot and live view are offered as experimental
 features and work only if that session works. From bridge 0.8.39 with client
 0.30.1 its recordings show as not available, see below. On
