@@ -456,8 +456,8 @@ A live view or snapshot shows that in the viewer. From bridge 0.8.39 with client
 `reason=standalone_recordings_unverified` and no recording request is sent, see
 [failed recordings](#failed-recordings). The only exception is the opt-in
 [standalone recording probe](#standalone-recording-probe) at login. Include the
-complete download in [client
-#142](https://github.com/keesmod/eufy-mega-client/issues/142).
+complete download in
+[client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
 
 ### Lookup fields of a connection attempt
 
