@@ -131,10 +131,10 @@ Cameras that are not connected to a HomeBase normally show their snapshot, live
 and recording features as unsupported with `standalone_transport_unverified`.
 From bridge 0.8.34 the app option `experimental_standalone: true` (Docker:
 `EUFY_EXPERIMENTAL_STANDALONE=true`) lets a standalone Wall Light Cam S100
-`T84A1`, Indoor Cam 2K Pan & Tilt `T8410` or Indoor Cam Pan&Tilt 2K `T8410C`
-try its own local session. The T8410 needs bridge 0.8.35 or newer and the
-T8410C bridge 0.8.38 or newer. The option is off by default. Only these three
-models are included, and no other camera or HomeBase changes. Update the
+`T84A1`, Indoor Cam 2K Pan & Tilt `T8410`, Indoor Cam Pan&Tilt 2K `T8410C` or
+Floodlight Cam 2K `T8424` try its own local session. The T8410 needs bridge
+0.8.35 or newer, the T8410C bridge 0.8.38 or newer and the T8424 bridge 0.8.40
+or newer. The option is off by default. Only these four models are included, and no other camera or HomeBase changes. Update the
 integration to 0.8.43 or newer before turning it on.
 
 Any other standalone camera that the bundled library keeps at
@@ -159,8 +159,8 @@ uses for a HomeBase. From bridge 0.8.40 with client 0.30.2, an admitted camera
 that answers the key request with a successful result and no key gets its
 commands without encryption, so they cross your LAN readable, including the
 account ID they carry, see
-[key setup fields](DISCOVERY_DIAGNOSTICS.md#key-setup-fields-of-a-connection-attempt). Each camera that does not answer adds up to 20 seconds to
-startup. The camera's snapshot and live view are offered as experimental
+[key setup fields](DISCOVERY_DIAGNOSTICS.md#key-setup-fields-of-a-connection-attempt).
+Each camera that does not answer adds up to 20 seconds to startup. The camera's snapshot and live view are offered as experimental
 features and work only if that session works. From bridge 0.8.39 with client
 0.30.1 its recordings show as not available, see below. On
 [issue #152](https://github.com/keesmod/ha-eufy-cam/issues/152), live video was
@@ -176,12 +176,15 @@ standalone T8410C with firmware 3.3.4.4, another firmware line than the T8410
 On 2026-10-17 a standalone T84A1 with firmware 1.1.0.4 was reported with a
 snapshot and live video with audio working
 ([report](https://github.com/keesmod/eufy-mega-client/issues/142#issuecomment-6236984885)).
+On 2026-10-26 a standalone T8424 with firmware 2.1.1.5 was reported with a
+snapshot and live video with audio working, without command encryption
+([report](https://github.com/keesmod/eufy-mega-client/issues/142#issuecomment-6422927610)).
 These results are reported, not independently reproduced.
 Recordings that would need a cloud key cannot be downloaded. From bridge 0.8.39
 with client 0.30.1 a standalone T84A1 delivers motion and person events, see
-[standalone T84A1 events](#standalone-t84a1-events). The T8410 and T8410C still
-have no events, and guard mode and alarm state are not part of this route for
-any of the three.
+[standalone T84A1 events](#standalone-t84a1-events). The T8410, T8410C and T8424
+still have no events, and guard mode and alarm state are not part of this route
+for any of the four.
 
 Recordings on a standalone camera are not confirmed to work. On 2026-10-15 the
 issue #152 reporter's standalone T8410 on firmware 2.3.2.4 showed live view,
@@ -221,7 +224,7 @@ Neither reading is proven.
 
 From integration 0.8.48 with bridge 0.8.39 and client 0.30.1
 ([issue #175](https://github.com/keesmod/ha-eufy-cam/issues/175)), the
-recordings of a standalone T84A1, T8410 or T8410C on the experimental route
+recordings of a standalone T84A1, T8410, T8410C or T8424 on the experimental route
 show as not available, with reason `standalone_recordings_unverified`. The
 card disables its Recordings button and shows "Recordings: not available on
 the standalone camera connection", in Dutch "Opnames: niet beschikbaar via de
@@ -307,8 +310,8 @@ needed for the events, only for the push counts in **Download diagnostics**.
 - An event opens no camera connection and loads no image. It brings no new
   event image, and it does not refresh the camera's snapshot. Use **Refresh
   snapshot** or live view for a new picture.
-- A standalone `T8410` or `T8410C` has no events. Its pushes are refused and
-  counted with `events_not_enabled`.
+- A standalone `T8410`, `T8410C` or `T8424` has no events. Its pushes are
+  refused and counted with `events_not_enabled`.
 - HomeBase cameras and their events are unchanged.
 
 This is experimental. Its tests use synthetic pushes, and no standalone T84A1

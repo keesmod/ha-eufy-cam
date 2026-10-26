@@ -68,9 +68,9 @@ export function liveMaxSecondsMains(value?: string): number {
 }
 /**
  * Parse EUFY_EXPERIMENTAL_STANDALONE, true or false. Unset keeps it off. With it,
- * a standalone camera whose library profile allows it, T84A1, T8410 and T8410C today,
- * opens its own local session. Live view and snapshot are reported working on
- * all three, not independently reproduced. A standalone T84A1 also delivers
+ * a standalone camera whose library profile allows it, T84A1, T8410, T8410C and
+ * T8424 today, opens its own local session. Live view and snapshot are reported
+ * working on all four, not independently reproduced. A standalone T84A1 also delivers
  * motion and person events from client 0.30.1, without a hardware result (#185).
  */
 export function experimentalStandalone(value?: string): boolean {

@@ -769,7 +769,7 @@ for (const empty of [false,true])
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
       assert.equal(summary.experimental_standalone,false);
-      assert.equal(summary.software.library,'0.30.2-beta.4');
+      assert.equal(summary.software.library,'0.30.2-beta.5');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
@@ -1341,10 +1341,10 @@ function rawStandalone(id: string, parent: string, model: string, type: number, 
   };
 }
 
-// The T8410 rows mirror ha-eufy-cam#152 and the T8410C row #168: standalone type 31
-// cameras without a HomeBase.
+// The T8410 rows mirror ha-eufy-cam#152, the T8410C row #168 and the T8424 row
+// keesmod/eufy-mega-client#142: standalone cameras without a HomeBase.
 for (const enabled of [true, false])
-  test(`raw standalone T84A1, T8410 and T8410C rows through the shipped client ${enabled ? 'each connect and report presence only' : 'stay unverified'}`, async () => {
+  test(`raw standalone T84A1, T8410, T8410C and T8424 rows through the shipped client ${enabled ? 'each connect and report presence only' : 'stay unverified'}`, async () => {
     const f = fixture(undefined, undefined, enabled);
     const events: unknown[] = [];
     f.backend.on('standalone_not_admitted', (model) => events.push(model));
@@ -1361,6 +1361,7 @@ for (const enabled of [true, false])
       rawStandalone('PAN_A', '', 'T8410', 31, '2.3.2.4', '192.168.1.41'),
       rawStandalone('PAN_B', 'PAN_B', 'T8410', 31, '2.3.1.6', '192.168.1.42'),
       rawStandalone('PAN_C', '', 'T8410C', 31, '3.3.4.4', '192.168.1.43'),
+      rawStandalone('FLOOD', '', 'T8424', 39, '2.1.1.5', '192.168.1.44'),
     ];
     // The installed library's discovery, with only the cloud boundary synthetic.
     const actual = Object.assign(Object.create(EufyMegaClient.prototype), {
@@ -1370,7 +1371,7 @@ for (const enabled of [true, false])
     f.client.discoverDevices = () => actual.discoverDevices();
     try {
       assert.equal((await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' })).state, 'connected');
-      assert.deepEqual([...connected].sort(), enabled ? ['BASE', 'PAN_A', 'PAN_B', 'PAN_C', 'WALL'] : ['BASE']);
+      assert.deepEqual([...connected].sort(), enabled ? ['BASE', 'FLOOD', 'PAN_A', 'PAN_B', 'PAN_C', 'WALL'] : ['BASE']);
       const report = f.backend.supportReport();
       const wall = report.last_discovery.filter((r) => r.event === 'device' && r.model === 'T84A1');
       const pans = report.last_discovery.filter((r) => r.event === 'device' && r.model === 'T8410');
@@ -1380,13 +1381,16 @@ for (const enabled of [true, false])
       const pansC = report.last_discovery.filter((r) => r.event === 'device' && r.model === 'T8410C');
       assert.equal(pansC.length, 1);
       assert.equal(pansC[0]!.firmware, '3.3.4.4');
-      for (const row of [...wall, ...pans, ...pansC]) {
+      const flood = report.last_discovery.filter((r) => r.event === 'device' && r.model === 'T8424');
+      assert.equal(flood.length, 1);
+      assert.equal(flood[0]!.firmware, '2.1.1.5');
+      for (const row of [...wall, ...pans, ...pansC, ...flood]) {
         assert.equal(row.relationship_transport, enabled ? 'experimental' : null);
         assert.equal(row.relationship_reason, enabled ? null : 'standalone_transport_unverified');
         assert.equal(row.owner_status, enabled ? 'connected' : 'not_applicable');
         assert.deepEqual(row.descriptor, { did: true, license: true, admin_user: true, lan_address: true });
       }
-      assert.doesNotMatch(JSON.stringify(report), /PRIVATE|192\.168\.1\.4[0-3]|WALL|BASE|PAN_/);
+      assert.doesNotMatch(JSON.stringify(report), /PRIVATE|192\.168\.1\.4[0-4]|WALL|BASE|PAN_|FLOOD/);
       // Admitted models are never named, and with the option off nothing is (#154).
       assert.deepEqual(events, []);
       assert.equal(report.last_discovery[0]!.experimental_standalone, enabled);
