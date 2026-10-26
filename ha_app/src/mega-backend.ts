@@ -68,9 +68,9 @@ export function liveMaxSecondsMains(value?: string): number {
 }
 /**
  * Parse EUFY_EXPERIMENTAL_STANDALONE, true or false. Unset keeps it off. With it,
- * a standalone camera whose library profile allows it, T84A1, T8410 and T8410C today,
- * opens its own local session. Live view and snapshot are reported working on
- * all three, not independently reproduced. A standalone T84A1 also delivers
+ * a standalone camera whose library profile allows it, T84A1, T8410, T8410C and
+ * T8424 today, opens its own local session. Live view and snapshot are reported
+ * working on all four, not independently reproduced. A standalone T84A1 also delivers
  * motion and person events from client 0.30.1, without a hardware result (#185).
  */
 export function experimentalStandalone(value?: string): boolean {
@@ -421,7 +421,7 @@ export class MegaBackend extends EventEmitter implements Backend {
         let phase: 'connect' | 'refresh_state' = 'connect';
         const stages = connectionStages();
         try {
-          await client.connectStation(station.id, { onProgress: stages.onProgress, onLookup: stages.onLookup });
+          await client.connectStation(station.id, { onProgress: stages.onProgress, onLookup: stages.onLookup, onKeySetup: stages.onKeySetup });
           phase = 'refresh_state';
           this.stationStates.set(station.id, await client.refreshStationState(station.id));
           // The refresh_state record reports the connect attempt before it, so
@@ -452,7 +452,7 @@ export class MegaBackend extends EventEmitter implements Backend {
         const stages = connectionStages();
         let connected = false;
         try {
-          await client.connectStation(relationship.ownerId, { onProgress: stages.onProgress, onLookup: stages.onLookup });
+          await client.connectStation(relationship.ownerId, { onProgress: stages.onProgress, onLookup: stages.onLookup, onKeySetup: stages.onKeySetup });
           this.discoveryDiagnostics.station(relationship.ownerId, 'connect', 'connected', undefined, stages.detail);
           connected = true;
         } catch (error) {
@@ -537,7 +537,7 @@ export class MegaBackend extends EventEmitter implements Backend {
           let phase: 'connect' | 'refresh_state' = 'connect';
           const stages = connectionStages();
           try {
-            await this.client.connectStation(id, { onProgress: stages.onProgress, onLookup: stages.onLookup });
+            await this.client.connectStation(id, { onProgress: stages.onProgress, onLookup: stages.onLookup, onKeySetup: stages.onKeySetup });
             phase = 'refresh_state';
             this.stationStates.set(id, await this.client.refreshStationState(id));
             this.discoveryDiagnostics.station(id, phase, this.stationStates.get(id)!.connected ? 'connected' : 'disconnected', undefined, stages.detail);

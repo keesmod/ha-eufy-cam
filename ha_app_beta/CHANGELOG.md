@@ -1,25 +1,13 @@
 # Changelog
 
-## 0.8.40-beta.5
-Unreleased
+## 0.8.40
+2026-10-26
 
-- **Key setup fields**: pin client 0.30.2 and add the command key setup of
-  a station connection attempt, including a result to the key request, to its
-  `station_connection` record in the log and the download
-  ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142)).
-  Diagnostics only, reported in the log of a standalone T8424.
-- **Key without a key answer**: an experimental standalone camera that answers
-  the key request with a successful result and no key now goes on without
-  command encryption
-  ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142)).
-  Experimental, reported working on a standalone T8424.
-- **Standalone T8424**: with `experimental_standalone`, a standalone Floodlight
-  Cam 2K `T8424` gets its own local session with snapshot and live view
-  ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142)).
-  Reported working on firmware 2.1.1.5, not independently reproduced.
+- Added the standalone Floodlight Cam 2K `T8424` behind `experimental_standalone` ([#142](https://github.com/keesmod/eufy-mega-client/issues/142)).
+- Experimental standalone cameras that offer no command key now connect without command encryption ([#142](https://github.com/keesmod/eufy-mega-client/issues/142)).
+- Added key setup fields to the `station_connection` log record ([#142](https://github.com/keesmod/eufy-mega-client/issues/142)).
 
-Upgrade: integration 0.8.49 shows the fields in the download, older
-integrations drop them. Rollback: bridge 0.8.39.
+Upgrade: update the integration to 0.8.49 as well. Rollback: bridge 0.8.39.
 
 ## 0.8.39 - 2026-10-22
 

@@ -7,6 +7,7 @@ import type {
   DiscoveryResult,
   RecordingObservation,
   StationConnectionProgress,
+  StationKeySetupObservation,
   StationLookupObservation,
   StationState,
 } from '@keesmod/eufy-mega-client';
@@ -39,6 +40,10 @@ export interface StationConnectionDetail {
   inventoryAddress?: boolean;
   /** What the attempt's local lookup saw, from client 0.30.0. Revalidated before it is reported. */
   lookup?: StationLookupObservation;
+  /** Milliseconds from the attempt's start to `session_open`, from the library's progress. */
+  sessionOpenMs?: number;
+  /** What the session saw between `session_open` and the command key, from client 0.30.2. Revalidated before it is reported. */
+  keySetup?: StationKeySetupObservation;
 }
 /**
  * Records the last stage a station connection reached and what its local lookup
@@ -48,6 +53,7 @@ export function connectionAttempt(): {
   detail: StationConnectionDetail;
   onProgress: (progress: StationConnectionProgress) => void;
   onLookup: (observation: StationLookupObservation) => void;
+  onKeySetup: (observation: StationKeySetupObservation) => void;
 } {
   const detail: StationConnectionDetail = { stage: 'none' };
   return {
@@ -58,11 +64,16 @@ export function connectionAttempt(): {
       detail.stage = progress.stage;
       if (typeof progress.inventoryAddress === 'boolean')
         detail.inventoryAddress = progress.inventoryAddress;
+      if (progress.stage === 'session_open') detail.sessionOpenMs = progress.elapsedMs;
     },
     // Observation only (#152). The diagnostics revalidate each value before
     // they report it, and the library ignores anything this throws.
     onLookup: (observation) => {
       detail.lookup = observation;
+    },
+    // Observation only (#142), revalidated like the lookup.
+    onKeySetup: (observation) => {
+      detail.keySetup = observation;
     },
   };
 }
@@ -86,6 +97,62 @@ export interface RecordingQueryReport {
   returned?: number;
 }
 type LookupFields = Record<string, number | boolean | string>;
+/**
+ * Flat fields for the command key setup of one connection attempt (#142), with
+ * the time its session opened. Each value is revalidated here. An integer out
+ * of its range or a value that is not a real boolean is left out, and the
+ * observation itself is never serialized.
+ */
+function keySetupFields(detail: StationConnectionDetail): LookupFields {
+  const time: LookupFields = {};
+  const opened = integer(detail.sessionOpenMs, 0, 120000);
+  if (opened !== null) time.session_open_ms = opened;
+  const fields: LookupFields = { ...time };
+  try {
+    const value: unknown = detail.keySetup;
+    if (!value || typeof value !== 'object') return fields;
+    const key = value as Record<string, unknown>;
+    const count = (name: string, raw: unknown) => {
+      const safe = integer(raw, 0, 999);
+      if (safe !== null) fields[name] = safe;
+    };
+    const bool = (name: string, raw: unknown) => {
+      if (typeof raw === 'boolean') fields[name] = raw;
+    };
+    count('key_request_sends', key.requestSends);
+    bool('key_request_acknowledged', key.requestAcknowledged);
+    bool('key_result_wait_expired', key.resultWaitExpired);
+    count('key_answers', key.answers);
+    count('key_data_datagrams', key.dataDatagrams);
+    count('key_other_messages', key.otherMessages);
+    count('key_heartbeats', key.heartbeats);
+    bool('key_ended', key.ended);
+    // Client 0.30.2: a DATA channel result to the key request and the
+    // kind of the other messages, protocol numbers only.
+    count('key_results', key.results);
+    const code = integer(key.resultCode, -999999, 999999);
+    if (code !== null) fields.key_result_code = code;
+    bool('key_result_encrypted', key.resultEncrypted);
+    count('key_control_messages', key.controlMessages);
+    if (Array.isArray(key.otherCommands)) {
+      const commands: readonly unknown[] = key.otherCommands;
+      // A fixed loop and fixed names, so the list cannot choose a field name.
+      for (const [index, name] of ['key_other_command_1', 'key_other_command_2', 'key_other_command_3'].entries()) {
+        const command = integer(commands[index], 0, 65535);
+        if (command !== null) fields[name] = command;
+      }
+    }
+    count('key_media_datagrams', key.mediaDatagrams);
+    count('key_repeated_datagrams', key.repeatedDatagrams);
+    count('key_signed_messages', key.signedMessages);
+    bool('key_without_answer', key.keyWithoutAnswer);
+    return fields;
+  } catch {
+    // Diagnostics never alter discovery. An observation that cannot be read is
+    // omitted, and the time of the stage stays.
+    return time;
+  }
+}
 const lookupReplies: ReadonlySet<unknown> = new Set(['none', 'own', 'account', 'foreign', 'near']);
 /**
  * Flat fields for the local lookup of one connection attempt (#152). Each value
@@ -128,15 +195,23 @@ function lookupFields(value: unknown): LookupFields {
     return {};
   }
 }
+/** Protocol numbers that are an outcome by their exact value, not counts (#142). */
+const exactClassFields: ReadonlySet<string> = new Set([
+  'key_result_code', 'key_other_command_1', 'key_other_command_2', 'key_other_command_3',
+]);
 /**
  * The coarse outcome of a lookup for the repeat check: whether each count is
- * zero, and each boolean and the reply class. Changed counts alone are a repeat.
+ * zero, each boolean and the reply class, and the exact return code and command
+ * numbers of the key setup. Changed counts alone are a repeat.
  */
 const lookupClass = (fields: LookupFields): string | null =>
   Object.keys(fields).length === 0
     ? null
     : JSON.stringify(
-        Object.entries(fields).map(([key, value]) => [key, typeof value === 'number' ? value > 0 : value]),
+        Object.entries(fields).map(([key, value]) => [
+          key,
+          typeof value === 'number' && !exactClassFields.has(key) ? value > 0 : value,
+        ]),
       );
 /** An opted-in standalone camera that is its own experimental owner. */
 export const experimentalOwner = (
@@ -445,7 +520,11 @@ export class DiscoveryDiagnostics {
     // connect and on the record that reports a successful one. For a HomeBase
     // that is the refresh_state record after its connect.
     const lookup = detail?.lookup === undefined ? {} : lookupFields(detail.lookup);
-    const outcome = lookupClass(lookup);
+    // The key setup of the same attempt, on the same records as its lookup (#142).
+    const keySetup = detail === undefined ? {} : keySetupFields(detail);
+    // The key setup counts in the coarse outcome too, so a changed key outcome
+    // adds a record (#142).
+    const outcome = lookupClass({ ...lookup, ...keySetup });
     const previous = this.stationEvents.get(ref);
     this.stationOutcomes.set(id, status);
     // Only a repeat of the previous record is left out, so the latest record of
@@ -485,6 +564,7 @@ export class DiscoveryDiagnostics {
               : {}),
           }),
       ...lookup,
+      ...keySetup,
     });
   }
   /**
