@@ -1,7 +1,15 @@
 # Changelog
 
-## 0.8.39
-2026-10-22
+## 0.8.40
+2026-10-26
+
+- Added the standalone Floodlight Cam 2K `T8424` behind `experimental_standalone` ([#142](https://github.com/keesmod/eufy-mega-client/issues/142)).
+- Experimental standalone cameras that offer no command key now connect without command encryption ([#142](https://github.com/keesmod/eufy-mega-client/issues/142)).
+- Added key setup fields to the `station_connection` log record ([#142](https://github.com/keesmod/eufy-mega-client/issues/142)).
+
+Upgrade: update the integration to 0.8.49 as well. Rollback: bridge 0.8.39.
+
+## 0.8.39 - 2026-10-22
 
 - Pin client 0.30.1 and record recording operations as `recording_query`
   records in the `Eufy discovery:` log lines and the bridge's diagnostics
