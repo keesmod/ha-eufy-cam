@@ -530,7 +530,7 @@ describes the observation.
 | `key_media_datagrams` | VIDEO and BINARY datagrams, not parsed before a stream starts |
 | `key_repeated_datagrams` | DATA datagrams the station resent after they were processed |
 | `key_signed_messages` | Messages of `key_other_messages` that arrived signed, which means encrypted |
-| `key_without_answer` | Whether the session set the LAN-derived key itself after a successful result without a key answer. Only an experimental standalone camera does that |
+| `key_without_answer` | Whether the session went on without a command key after a successful result without a key answer, so its commands are not encrypted. Only an experimental standalone camera does that |
 
 For an attempt that failed at `stage=session_open`:
 `key_request_acknowledged=false` with `key_heartbeats` above 0 means the camera
@@ -545,9 +545,10 @@ its own. The assessment adds no finding for them yet. Include the record in
 [client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
 
 With `key_result_code=0` and no key answer within 5 seconds, an experimental
-standalone camera gets its LAN-derived key from the client, and its `connect`
-record shows `key_without_answer=true`. Its first snapshot or live view shows
-whether it accepts that key.
+standalone camera goes on without command encryption, and its `connect` record
+shows `key_without_answer=true`. Its commands, including the account ID they
+carry, then cross the LAN readable. Its first snapshot or live view shows whether
+it answers them.
 
 ### Failed recordings
 
