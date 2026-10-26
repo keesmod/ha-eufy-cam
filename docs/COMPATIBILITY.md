@@ -435,8 +435,8 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   ([report](https://github.com/keesmod/eufy-mega-client/issues/142#issuecomment-6236984885)).
   Its recordings were not tested. On 2026-10-26, with bridge 0.8.40-beta.4 and
   a local profile entry, the issue #129 reporter had a snapshot and live video
-  with audio input on a standalone T8424 with firmware 2.1.1.5, whose commands
-  go without encryption
+  with audio input on a standalone T8424 with firmware 2.1.1.5, assigned to a
+  HomeBase 3 as storage only, whose commands go without encryption
   ([report](https://github.com/keesmod/eufy-mega-client/issues/142#issuecomment-6422927610)).
   Reported, not independently reproduced. When
   bridge 0.8.39 was released, no known request listed or played the
@@ -467,6 +467,7 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   and [standalone T84A1 events](USAGE.md#standalone-t84a1-events).
 - **Standalone Floodlight Cam 2K `T8424`, type 39**, is recognized as a
   standalone camera from bridge 0.8.29. From bridge 0.8.40 it can try its own
-  local session with `experimental_standalone`, see above. Without the option,
-  or under a HomeBase that stores its video, its snapshot, live view and
+  local session with `experimental_standalone`, see above. A HomeBase 3 that
+  only stores its video does not change that. Without the option, or when the
+  inventory lists it under a HomeBase 3 parent, its snapshot, live view and
   recordings stay unsupported.
