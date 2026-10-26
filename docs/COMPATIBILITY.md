@@ -415,10 +415,11 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   from bridge 0.8.38, and a reported standalone result is listed below. Owners
   use Pan & Tilt names for both `T8410` and `T8410C`, so check the model code
   in **Download diagnostics**, not the product name.
-- **Standalone Wall Light Cam S100 `T84A1`, Indoor Cam 2K Pan & Tilt `T8410`
-  and Indoor Cam Pan&Tilt 2K `T8410C`** can try their own local session with
-  the opt-in `experimental_standalone` option, the T84A1 from bridge 0.8.34,
-  the T8410 from bridge 0.8.35 and the T8410C from bridge 0.8.38. A reporter had a snapshot and live video working on a
+- **Standalone Wall Light Cam S100 `T84A1`, Indoor Cam 2K Pan & Tilt `T8410`,
+  Indoor Cam Pan&Tilt 2K `T8410C` and Floodlight Cam 2K `T8424`** can try their
+  own local session with the opt-in `experimental_standalone` option, the T84A1
+  from bridge 0.8.34, the T8410 from bridge 0.8.35, the T8410C from bridge
+  0.8.38 and the T8424 from bridge 0.8.40. A reporter had a snapshot and live video working on a
   standalone T8410 with firmware 2.3.2.4 on 2026-10-13, and live video on one
   with firmware 2.3.1.6 on 2026-10-15, after that camera had first ended its
   connection at the lookup
@@ -432,11 +433,16 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   with firmware 1.1.0.4 connect at the first discovery, with a snapshot and
   live video with audio working over several sessions
   ([report](https://github.com/keesmod/eufy-mega-client/issues/142#issuecomment-6236984885)).
-  Its recordings were not tested. Reported, not independently reproduced. When
+  Its recordings were not tested. On 2026-10-26, with bridge 0.8.40-beta.4 and
+  a local profile entry, the issue #129 reporter had a snapshot and live video
+  with audio input on a standalone T8424 with firmware 2.1.1.5, whose commands
+  go without encryption
+  ([report](https://github.com/keesmod/eufy-mega-client/issues/142#issuecomment-6422927610)).
+  Reported, not independently reproduced. When
   bridge 0.8.39 was released, no known request listed or played the
   recordings of a standalone T8410, and none was confirmed on the T8410C or
   T84A1. From bridge 0.8.39 with client 0.30.1 and integration 0.8.48, the
-  recordings of all three models on that route therefore show as not
+  recordings of those models on that route therefore show as not
   available, with reason `standalone_recordings_unverified`, and the bridge sends them no recording request when their recordings are
   opened. Snapshot and live view stay experimental
   ([issue #175](https://github.com/keesmod/ha-eufy-cam/issues/175)). Only the
@@ -455,10 +461,12 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   T84A1 also delivers motion and person events on that route
   ([issue #185](https://github.com/keesmod/ha-eufy-cam/issues/185)). This is
   experimental with synthetic coverage only, and the hardware result is
-  pending. The T8410 and T8410C have no events, and none of the three gets
-  guard mode or alarm state. See
+  pending. The T8410, T8410C and T8424 have no events, and none of the four
+  gets guard mode or alarm state. See
   [experimental standalone cameras](USAGE.md#experimental-standalone-cameras)
   and [standalone T84A1 events](USAGE.md#standalone-t84a1-events).
 - **Standalone Floodlight Cam 2K `T8424`, type 39**, is recognized as a
-  standalone camera from bridge 0.8.29, without a connection route for its
-  snapshot, live view or recordings, also with `experimental_standalone` on.
+  standalone camera from bridge 0.8.29. From bridge 0.8.40 it can try its own
+  local session with `experimental_standalone`, see above. Without the option,
+  or under a HomeBase that stores its video, its snapshot, live view and
+  recordings stay unsupported.

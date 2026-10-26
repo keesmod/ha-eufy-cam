@@ -4,8 +4,7 @@
 
 - **Download diagnostics** keeps the key setup fields of a station connection
   attempt from bridge 0.8.40, including a result to the key request. They show
-  how far the command key got when a standalone camera such as the T8424 stops
-  at `session_open`
+  how far the command key got when a standalone camera stops at `session_open`
   ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142),
   [fields](docs/DISCOVERY_DIAGNOSTICS.md#key-setup-fields-of-a-connection-attempt)),
   diagnostics only and not yet confirmed on hardware.

@@ -6,7 +6,7 @@
   a station connection attempt, including a result to the key request, to its
   `station_connection` record in the log and the download
   ([client #142](https://github.com/keesmod/eufy-mega-client/issues/142)).
-  Diagnostics only, not yet confirmed on hardware.
+  Diagnostics only, reported in the log of a standalone T8424.
 - **Key without a key answer**: an experimental standalone camera that answers
   the key request with a successful result and no key now goes on without
   command encryption
