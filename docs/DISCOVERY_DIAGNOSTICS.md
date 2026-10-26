@@ -447,16 +447,17 @@ same `stage` values as a HomeBase. The assessment reports such a camera as
 | `stage=station_found` | The camera answered the lookup but did not complete the P2P handshake |
 | `stage=session_open` | The P2P session opened but the command key was not established |
 
-After a connected result, the media rows and a snapshot, live view and
-recording attempt show whether the camera answers those commands on its own
-storage. The first answered snapshot, recording or live result shows whether
-the camera accepts the command key, or commands without one when
-`key_without_answer=true`. A live view or snapshot shows that in the viewer. From bridge 0.8.39 with client 0.30.1 the camera's `media.recordings`
-has `reason=standalone_recordings_unverified` and no recording request is
-sent, see [failed recordings](#failed-recordings). The only exception is the
-opt-in [standalone recording probe](#standalone-recording-probe) at login.
-Include the complete download in
-[client #142](https://github.com/keesmod/eufy-mega-client/issues/142).
+After a connected result, the media rows and a snapshot, live view and recording
+attempt show whether the camera answers those commands on its own storage. The
+first answered snapshot, recording or live result shows whether the camera
+accepts the command key, or commands without one when `key_without_answer=true`.
+A live view or snapshot shows that in the viewer. From bridge 0.8.39 with client
+0.30.1 the camera's `media.recordings` has
+`reason=standalone_recordings_unverified` and no recording request is sent, see
+[failed recordings](#failed-recordings). The only exception is the opt-in
+[standalone recording probe](#standalone-recording-probe) at login. Include the
+complete download in [client
+#142](https://github.com/keesmod/eufy-mega-client/issues/142).
 
 ### Lookup fields of a connection attempt
 
