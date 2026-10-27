@@ -136,9 +136,9 @@ of every beta and of the stable release, and the app store shows
 `app/CHANGELOG.md`:
 
 - Use a flat bullet list without `###` subheadings, one bullet per user-visible
-  change. Each bullet starts with the feature or entity name in bold and takes
-  at most two sentences, with the issue link, or the PR link when there is no
-  issue.
+  change. Each bullet is one short line in plain words, such as "Added the
+  Floodlight Cam 2K `T8424`", with the issue link, or the PR link when there is
+  no issue.
 - Leave out root-cause analysis, reporter evidence, diagnostic field lists,
   test-coverage detail and lists of what stays unchanged. They belong in the
   issue, the PR or the documentation, which the bullet can link.
