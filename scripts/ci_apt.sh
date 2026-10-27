@@ -30,6 +30,8 @@ case "${1:-}" in
     # A run that failed before start has nothing to compare and saves nothing.
     changed=false
     if [ -f "$listing" ]; then
+      # Drop packages the mirror no longer offers, so the cache stays bounded.
+      sudo apt-get autoclean -qq || true
       current=$(cd "$archives" && ls -- *.deb 2> /dev/null || true)
       [ "$current" = "$(cat "$listing")" ] || changed=true
     fi
