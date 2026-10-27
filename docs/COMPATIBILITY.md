@@ -433,11 +433,11 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   with firmware 1.1.0.4 connect at the first discovery, with a snapshot and
   live video with audio working over several sessions
   ([report](https://github.com/keesmod/eufy-mega-client/issues/142#issuecomment-6236984885)).
-  Its recordings were not tested. On 2026-10-26, with bridge 0.8.40-beta.4 and
-  a local profile entry, the issue #129 reporter had a snapshot and live video
-  with audio input on a standalone T8424 with firmware 2.1.1.5, assigned to a
+  Its recordings were not tested. On 2026-10-27, with bridge 0.8.40 and no
+  local profile entry, the issue #129 reporter had a snapshot and live video
+  with audio on a standalone T8424 with firmware 2.1.1.5, assigned to a
   HomeBase 3 as storage only, whose commands go without encryption
-  ([report](https://github.com/keesmod/eufy-mega-client/issues/142#issuecomment-6422927610)).
+  ([report](https://github.com/keesmod/eufy-mega-client/issues/142#issuecomment-6436025222)).
   Reported, not independently reproduced. When
   bridge 0.8.39 was released, no known request listed or played the
   recordings of a standalone T8410, and none was confirmed on the T8410C or
