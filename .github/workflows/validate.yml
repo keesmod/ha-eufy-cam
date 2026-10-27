@@ -15,6 +15,25 @@ concurrency:
   group: validate-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
 jobs:
+  # A documentation-only pull request into main or branch push skips the
+  # build, test and package jobs. main and every release run keep the
+  # complete workflow.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      docs_only: ${{ steps.scope.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect a documentation-only change
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: python3 scripts/ci_scope.py
   dependency-security:
     uses: ./.github/workflows/dependency-security.yml
   home-assistant-checks:
@@ -35,6 +54,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/release.py check
   home-assistant:
+    needs: changes
+    if: ${{ needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -48,6 +69,8 @@ jobs:
       - run: uv run mypy custom_components
       - run: uv run pytest --cov=custom_components.eufy_viewer --cov-report=term-missing --cov-fail-under=95
   app-package:
+    needs: changes
+    if: ${{ needs.changes.outputs.docs_only != 'true' }}
     # The app's config.json lists amd64 and aarch64, and Supervisor builds the
     # image on the user's machine. Build and start it natively on both.
     strategy:
@@ -66,6 +89,8 @@ jobs:
       - name: Start the app bootstrap with synthetic options
         run: docker run --rm --network none -v "${{ github.workspace }}/scripts/app-container-smoke.mjs:/tmp/app-smoke.mjs:ro" --entrypoint node eufy-viewer-app:test /tmp/app-smoke.mjs
   bridge:
+    needs: changes
+    if: ${{ needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -89,6 +114,8 @@ jobs:
       - run: docker run --rm --network none -e EUFY_BRIDGE_TOKEN=00000000000000000000000000000000 -v "${{ github.workspace }}/scripts/container-smoke.mjs:/tmp/smoke.mjs:ro" --entrypoint node eufy-viewer-bridge:test /tmp/smoke.mjs
       - run: docker run --rm --network none -v "${{ github.workspace }}/scripts/container-media-smoke.mjs:/tmp/media-smoke.mjs:ro" --entrypoint node eufy-viewer-bridge:test /tmp/media-smoke.mjs
   card:
+    needs: changes
+    if: ${{ needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -138,11 +165,13 @@ jobs:
           compression-level: 0
   ci:
     if: ${{ always() }}
-    needs: [dependency-security, home-assistant-checks, release-checks, home-assistant, app-package, bridge, card, release-package]
+    needs: [changes, dependency-security, home-assistant-checks, release-checks, home-assistant, app-package, bridge, card, release-package]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Require every check to succeed
         env:
           RESULTS: ${{ toJson(needs) }}
-        run: python3 -c 'import json,os; assert all(j["result"] == "success" for j in json.loads(os.environ["RESULTS"]).values())'
+          # Only these jobs may be skipped, and only for a documentation-only change.
+          SKIPPABLE: ${{ needs.changes.outputs.docs_only == 'true' && 'home-assistant app-package bridge card release-package' || '' }}
+        run: python3 -c 'import json,os; skip=os.environ["SKIPPABLE"].split(); assert all(j["result"] == "success" or (n in skip and j["result"] == "skipped") for n, j in json.loads(os.environ["RESULTS"]).items())'
