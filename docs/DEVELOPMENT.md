@@ -59,6 +59,9 @@ release is needed.
 
 The required `ci` check covers release metadata, workflow validation, HA tests,
 HACS, hassfest, app packaging, bridge tests, the card and verified release ZIPs.
+A change to Markdown at the root or under `docs/` only skips the build and test
+jobs, see
+[the docs-only Validate](RELEASING.md#prepare-a-pull-request).
 After merging, verify it on `main`. Use **Actions → Release** for a rehearsal and
 then explicit publication. See [the release flow](RELEASING.md) for the complete
 procedure, checksums, acceptance evidence and failed-run recovery.

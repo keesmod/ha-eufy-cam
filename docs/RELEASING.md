@@ -156,10 +156,20 @@ of every beta and of the stable release, and the app store shows
 - A stable batch stays under about 300 words per section.
 
 All Validate checks must pass on the current PR commit. The final **ci** check
-fails if any prerequisite failed, timed out, was cancelled or skipped. Protect
-`main` by requiring a pull request, up-to-date branches, resolved conversations
-and the GitHub Actions `ci` check; disallow force pushes and branch deletion.
-No second maintainer approval is required for this single-maintainer project.
+fails if any prerequisite failed, timed out, was cancelled or skipped.
+
+A pull request, or a push to a branch other than `main`, that changes only
+Markdown at the root or under `docs/` runs a shorter Validate.
+`scripts/ci_scope.py` detects it. The release, workflow, dependency, HACS and
+hassfest checks still run. The HA tests, app packaging, bridge, card and release
+package jobs are skipped, and **ci** accepts only those as skipped. A push to
+`main` and every Release run keep the complete workflow. Such a pull request
+needs no blind review rounds.
+
+Protect `main` by requiring a pull request, up-to-date branches, resolved
+conversations and the GitHub Actions `ci` check; disallow force pushes and
+branch deletion. No second maintainer approval is required for this
+single-maintainer project.
 
 After merge, check `ci` on the resulting `main` commit. Branch CI alone is not
 release evidence. Each Release run calls the same complete Validate workflow
