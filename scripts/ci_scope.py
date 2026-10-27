@@ -2,8 +2,9 @@
 
 A documentation-only change lets Validate skip its build, test and packaging
 work. Pushes to main, pull requests into another branch, release runs and every
-other event keep the complete workflow. This script and scripts/tests/test_ci_scope.py are byte-identical in
-eufy-mega-client and ha-eufy-cam. Uses only Python's stdlib.
+other event keep the complete workflow. This script and
+scripts/tests/test_ci_scope.py are byte-identical in eufy-mega-client and
+ha-eufy-cam. Uses only Python's stdlib.
 """
 
 import os
