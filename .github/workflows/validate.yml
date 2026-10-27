@@ -92,7 +92,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -100,26 +100,33 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: bridge/package-lock.json
-      # The Ubuntu mirror is sometimes very slow, so the packages come from the
-      # cache while the runner image is unchanged.
-      - name: Key the apt package cache to the runner image
+      # The Ubuntu mirror is sometimes very slow, so apt packages come from
+      # earlier runs where possible, see scripts/ci_apt.sh.
+      - name: Key the apt package cache
         id: apt
-        run: echo "key=apt-ffmpeg-$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+        run: scripts/ci_apt.sh keys bridge
       - name: Restore the apt packages
-        id: apt-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/apt-archives/*.deb
           key: ${{ steps.apt.outputs.key }}
+          restore-keys: |
+            ${{ steps.apt.outputs.image }}
+            ${{ steps.apt.outputs.os }}
       - name: Install ffmpeg
         timeout-minutes: 8
         run: |
-          mkdir -p ~/apt-archives/partial
+          scripts/ci_apt.sh start
           sudo apt-get update
-          sudo apt-get install -y -o Dir::Cache::Archives="$HOME/apt-archives" ffmpeg
-      # Saved right after the install, so a later test failure keeps the cache.
+          sudo apt-get install -y ffmpeg
+      # Also after a failed or timed-out install, so the next run continues
+      # from what this one downloaded.
+      - name: Check for new apt packages
+        id: apt-changed
+        if: ${{ always() }}
+        run: scripts/ci_apt.sh changed
       - name: Save the apt packages
-        if: ${{ steps.apt-cache.outputs.cache-hit != 'true' }}
+        if: ${{ always() && steps.apt-changed.outputs.changed == 'true' }}
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/apt-archives/*.deb
@@ -148,30 +155,25 @@ jobs:
           node-version: '24'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      # The Ubuntu mirror is sometimes very slow, so the packages come from the
-      # cache while the runner image is unchanged.
-      - name: Key the apt package cache to the runner image
+      # The Ubuntu mirror is sometimes very slow, so apt packages come from
+      # earlier runs where possible, see scripts/ci_apt.sh.
+      - name: Key the apt package cache
         id: apt
-        run: echo "key=apt-ffmpeg-coturn-$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+        run: scripts/ci_apt.sh keys card
       - name: Restore the apt packages
-        id: apt-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/apt-archives/*.deb
           key: ${{ steps.apt.outputs.key }}
+          restore-keys: |
+            ${{ steps.apt.outputs.image }}
+            ${{ steps.apt.outputs.os }}
       - name: Install ffmpeg and coturn
         timeout-minutes: 8
         run: |
-          mkdir -p ~/apt-archives/partial
+          scripts/ci_apt.sh start
           sudo apt-get update
-          sudo apt-get install -y -o Dir::Cache::Archives="$HOME/apt-archives" ffmpeg coturn
-      # Saved right after the install, so a later test failure keeps the cache.
-      - name: Save the apt packages
-        if: ${{ steps.apt-cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ~/apt-archives/*.deb
-          key: ${{ steps.apt.outputs.key }}
+          sudo apt-get install -y ffmpeg coturn
       - run: npm ci --ignore-scripts
         working-directory: bridge
       - name: Install verified go2rtc for real WebRTC tests
@@ -183,7 +185,20 @@ jobs:
       - run: npm ci --ignore-scripts
         working-directory: frontend
       - run: npx playwright install --with-deps chromium
+        timeout-minutes: 8
         working-directory: frontend
+      # Also after a failed or timed-out install, so the next run continues
+      # from what this one downloaded.
+      - name: Check for new apt packages
+        id: apt-changed
+        if: ${{ always() }}
+        run: scripts/ci_apt.sh changed
+      - name: Save the apt packages
+        if: ${{ always() && steps.apt-changed.outputs.changed == 'true' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/apt-archives/*.deb
+          key: ${{ steps.apt.outputs.key }}
       - run: npm run build
         working-directory: frontend
       - run: git diff --exit-code -- custom_components/eufy_viewer/frontend
