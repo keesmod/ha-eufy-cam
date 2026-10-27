@@ -1,8 +1,8 @@
 """Tell Validate whether a pull request or branch changes only documentation.
 
 A documentation-only change lets Validate skip its build, test and packaging
-jobs. Pushes to main, release runs and every other event keep the complete
-workflow. This script and scripts/tests/test_ci_scope.py are byte-identical in
+work. Pushes to main, pull requests into another branch, release runs and every
+other event keep the complete workflow. This script and scripts/tests/test_ci_scope.py are byte-identical in
 eufy-mega-client and ha-eufy-cam. Uses only Python's stdlib.
 """
 
@@ -25,12 +25,17 @@ def git(*args):
     ).stdout
 
 
-def base(event, ref, pull_base):
+def base(event, ref, pull_base, pull_base_ref):
     """The commit to compare with, or None when the full workflow must run."""
+    # A pull request stacked on another branch runs everything, so its green
+    # check stays valid when it is later retargeted to main.
     if event == "pull_request":
-        return pull_base or None
+        return (pull_base or None) if pull_base_ref == "main" else None
     if event == "push" and ref != "refs/heads/main":
-        return git("merge-base", "origin/main", "HEAD").strip()
+        try:
+            return git("merge-base", "origin/main", "HEAD").strip()
+        except subprocess.CalledProcessError:
+            return None  # No history shared with main.
     return None
 
 
@@ -52,6 +57,7 @@ def main():
         os.environ.get("GITHUB_EVENT_NAME", ""),
         os.environ.get("GITHUB_REF", ""),
         os.environ.get("BASE_SHA", ""),
+        os.environ.get("BASE_REF", ""),
     )
     result = "true" if start and docs_only(changed(start)) else "false"
     print(f"Documentation-only change: {result}")

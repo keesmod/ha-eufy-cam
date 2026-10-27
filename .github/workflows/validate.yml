@@ -15,8 +15,9 @@ concurrency:
   group: validate-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
 jobs:
-  # A documentation-only pull request or branch skips the build, test and
-  # package jobs. main and every release run keep the complete workflow.
+  # A documentation-only pull request into main or branch push skips the
+  # build, test and package jobs. main and every release run keep the
+  # complete workflow.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -31,6 +32,7 @@ jobs:
         id: scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: python3 scripts/ci_scope.py
   dependency-security:
     uses: ./.github/workflows/dependency-security.yml

@@ -13,8 +13,14 @@ import ci_scope  # noqa: E402
 
 
 def git(root, *args):
+    # The clone has no repository config, and CI runners have no global one.
+    identity = ("-c", "user.name=CI", "-c", "user.email=ci@example.invalid")
     return subprocess.run(
-        ["git", *args], cwd=root, check=True, capture_output=True, text=True
+        ["git", *identity, *args],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
 
 
@@ -46,8 +52,6 @@ class ScopeTest(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
         git(self.root, "init", "-q", "-b", "main")
-        git(self.root, "config", "user.email", "ci@example.invalid")
-        git(self.root, "config", "user.name", "CI")
         (self.root / "docs").mkdir()
         (self.root / "docs" / "GUIDE.md").write_text("guide\n")
         (self.root / "code.py").write_text("code\n")
@@ -67,13 +71,16 @@ class ScopeTest(unittest.TestCase):
             git(self.clone, *command)
         git(self.clone, "commit", "-q", "-m", "change")
 
-    def run_main(self, event, ref="refs/heads/topic", pull_base=""):
+    def run_main(
+        self, event, ref="refs/heads/topic", pull_base="", base_ref="main"
+    ):
         output = self.root / "output"
         output.write_text("")
         environment = {
             "GITHUB_EVENT_NAME": event,
             "GITHUB_REF": ref,
             "BASE_SHA": pull_base,
+            "BASE_REF": base_ref,
             "GITHUB_OUTPUT": str(output),
         }
         with patch.dict(os.environ, environment), patch("builtins.print"):
@@ -106,6 +113,19 @@ class ScopeTest(unittest.TestCase):
     def test_a_pull_request_without_its_base_runs_everything(self):
         self.edit_docs()
         self.assertEqual(self.run_main("pull_request"), "docs_only=false\n")
+
+    def test_a_pull_request_into_another_branch_runs_everything(self):
+        self.edit_docs()
+        self.assertEqual(
+            self.run_main("pull_request", pull_base=self.base, base_ref="topic"),
+            "docs_only=false\n",
+        )
+
+    def test_a_branch_without_history_shared_with_main_runs_everything(self):
+        git(self.clone, "switch", "-q", "--orphan", "unrelated")
+        (self.clone / "README.md").write_text("readme\n")
+        self.commit(("add", "README.md"))
+        self.assertEqual(self.run_main("push"), "docs_only=false\n")
 
     def test_a_code_change_runs_everything(self):
         self.edit_docs()
