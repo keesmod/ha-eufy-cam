@@ -120,3 +120,23 @@ for (const codec of ['h264', 'hevc']) {
     console.log(`live size change: ${sizes.length} frames decoded, 0 dropped in ${progress.length} progress blocks, one output size`);
   } finally { clearTimeout(timer); session.stop(); video.destroy(); }
 }
+// A portrait HEVC source above the 1080p pixel count, like the T8213 doorbell,
+// leaves within 1920 wide and the pixel count of 1920x1080 with the FFmpeg of
+// this image (#186).
+{
+  const videoBytes = ffmpeg(['-f', 'lavfi', '-i', 'testsrc=size=1600x2300:rate=15', '-t', '0.4', '-pix_fmt', 'yuv420p', '-c:v', 'libx265', '-preset', 'ultrafast', '-threads', '1', '-x265-params', 'pools=none:frame-threads=1', '-f', 'hevc', 'pipe:1']);
+  const video = new PassThrough(), chunks = [];
+  let ended;
+  const done = new Promise(resolve => { ended = resolve; });
+  const session = new LiveTranscoder('synthetic', 'hevc', video, 15, 'software', new StreamDiagnostics(), chunk => chunks.push(chunk), ended, () => {});
+  const timer = setTimeout(() => { session.stop(); ended(); }, 10000);
+  try {
+    session.start(); video.end(videoBytes); await done;
+    const probe = spawnSync('ffprobe', ['-v', 'error', '-f', 'mpegts', '-show_entries', 'stream=width,height,level', '-of', 'json', 'pipe:0'], { input: Buffer.concat(chunks), timeout: 5000 });
+    assert.equal(probe.status, 0);
+    const [stream] = JSON.parse(probe.stdout).streams;
+    assert.deepEqual([stream.width, stream.height], [1200, 1726]);
+    assert.ok(stream.level <= 41, `level ${stream.level}`);
+    console.log(`live portrait 1600x2300 hevc: ${stream.width}x${stream.height} at level ${stream.level}`);
+  } finally { clearTimeout(timer); session.stop(); video.destroy(); }
+}

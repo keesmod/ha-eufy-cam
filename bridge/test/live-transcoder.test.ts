@@ -58,7 +58,7 @@ test('bitrate cap accepts k/M suffixes, derives half as VBV window and rejects a
     assert.throws(() => liveRateControl(bad), /EUFY_LIVE_MAX_BITRATE/, bad);
 });
 test('software command is video-only, rate bounded and wall-clock stamped', () => {
-  assert.deepEqual(liveArgs('h264', 15, 'software', undefined, 1790000000123), ['-hide_banner', '-loglevel', 'error', '-progress', 'pipe:3', '-stats_period', '1', '-threads', '1', '-probesize', '32768', '-analyzeduration', '100000', '-framerate', '15', '-f', 'h264', '-i', 'pipe:0', '-map', '0:v:0', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '26', '-maxrate', '4000000', '-bufsize', '2000000', '-pix_fmt', 'yuv420p', '-vf', "setpts='(time(0)-1790000000.123)/TB',scale='min(1920,iw)':-2", '-threads', '1', '-g', '30', '-fps_mode', 'vfr', '-enc_time_base', '1:90000', '-mpegts_flags', '+resend_headers', '-muxdelay', '0', '-muxpreload', '0', '-f', 'mpegts', 'pipe:1']);
+  assert.deepEqual(liveArgs('h264', 15, 'software', undefined, 1790000000123), ['-hide_banner', '-loglevel', 'error', '-progress', 'pipe:3', '-stats_period', '1', '-threads', '1', '-probesize', '32768', '-analyzeduration', '100000', '-framerate', '15', '-f', 'h264', '-i', 'pipe:0', '-map', '0:v:0', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '26', '-maxrate', '4000000', '-bufsize', '2000000', '-pix_fmt', 'yuv420p', '-vf', "setpts='(time(0)-1790000000.123)/TB',scale='min(min(1920,iw),trunc(sqrt(2073600*iw/ih)/2)*2)':-2", '-threads', '1', '-g', '30', '-fps_mode', 'vfr', '-enc_time_base', '1:90000', '-mpegts_flags', '+resend_headers', '-muxdelay', '0', '-muxpreload', '0', '-f', 'mpegts', 'pipe:1']);
   for (const codec of ['h264', 'hevc'] as const) for (const mode of ['software', 'nvidia'] as const) {
     const args = liveArgs(codec, 15, mode, liveRateControl('2500k'));
     // No second input, no audio stream and no audio encoder anywhere. Fd 3
@@ -87,7 +87,7 @@ test('NVIDIA uses input CUDA decode with host scaling and low latency H264 encod
     const args = liveArgs(codec, 15, 'nvidia', undefined, 1790000000123);
     assert.ok(args.indexOf('-hwaccel') < args.indexOf('-i'));
     assert.ok(args.includes('h264_nvenc')); assert.ok(args.includes('ull'));
-    assert.ok(args.includes("setpts='(time(0)-1790000000.123)/TB',scale='min(1920,iw)':-2"));
+    assert.ok(args.includes("setpts='(time(0)-1790000000.123)/TB',scale='min(min(1920,iw),trunc(sqrt(2073600*iw/ih)/2)*2)':-2"));
     assert.ok(!args.includes('libx264')); assert.ok(!args.includes('scale_cuda'));
     assert.deepEqual(args.slice(args.indexOf('-rc'), args.indexOf('-rc') + 8), ['-rc', 'cbr', '-b:v', '4000000', '-maxrate', '4000000', '-bufsize', '1000000']);
   }
@@ -197,6 +197,32 @@ test('complex synthetic video remains decodable and bounded with the software de
     // A 4 Mbit/s cap at 15 announced frames bounds 45 noisy 720p frames to about 1.5 MB.
     assert.ok(output.length < 2_000_000, `bounded output, got ${output.length} bytes`);
   } finally { producer.kill('SIGKILL'); encoder.kill('SIGKILL'); }
+});
+
+test('real FFmpeg keeps live output within 1920 wide and the pixel count of 1920x1080', { timeout: 30000 }, async () => {
+  const { spawnSync } = await import('node:child_process');
+  // A portrait doorbell such as the T8213 sends 1600x2300. Unscaled, that left
+  // at H.264 level 5.0, above what 1080p-class hardware decoders accept (#186).
+  // 16:9 and smaller 4:3 sources keep their former output size.
+  const cases = [['1600x2300', 1200, 1726], ['2560x1440', 1920, 1080], ['1600x1200', 1600, 1200]] as const;
+  for (const [size, width, height] of cases) {
+    const producer = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', `testsrc=size=${size}:rate=15`, '-t', '1', '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-threads', '1', '-preset', 'ultrafast', '-f', 'h264', 'pipe:1']);
+    const encoder = liveSpawn(liveArgs('h264', 15, 'software'));
+    const chunks: Buffer[] = [];
+    producer.stderr.resume(); encoder.stderr!.resume(); (encoder.stdio[3] as Readable).resume();
+    producer.stdout.pipe(encoder.stdin!);
+    encoder.stdout!.on('data', chunk => chunks.push(chunk));
+    try {
+      const results = await Promise.all([once(producer, 'close'), once(encoder, 'close')]);
+      assert.equal(results[0][0], 0, size); assert.equal(results[1][0], 0, size);
+      const probe = spawnSync('ffprobe', ['-v', 'error', '-f', 'mpegts', '-show_entries', 'stream=width,height,level', '-of', 'json', 'pipe:0'], { input: Buffer.concat(chunks) });
+      assert.equal(probe.status, 0, probe.stderr.toString());
+      const stream = JSON.parse(probe.stdout.toString()).streams[0] as { width: number; height: number; level: number };
+      assert.deepEqual([stream.width, stream.height], [width, height], size);
+      // Level 4.1 allows 8,192 macroblocks per frame. 1200x1726 has 8,100.
+      assert.ok(stream.level <= 41, `${size} leaves at level ${stream.level}`);
+    } finally { producer.kill('SIGKILL'); encoder.kill('SIGKILL'); }
+  }
 });
 
 test('real FFmpeg stamps output with arrival time, not the announced rate, without dropping frames', { timeout: 20000 }, async () => {
