@@ -61,7 +61,7 @@ export function liveArgs(codec: 'h264' | 'hevc', fps: number, mode: LiveAccelera
   // At most 1920 wide and at most the pixel count of 1920x1080, which keeps
   // keyframes smaller and the frame within what 1080p-class hardware decoders
   // accept. 16:9 sources still leave at 1920x1080. Larger 4:3 and portrait
-  // sources used to leave at level 5.0. Now 4:3, 3:4, 9:16 and the 1600x2300
+  // sources used to need level 5.0 or higher. Now 4:3, 3:4, 9:16 and the 1600x2300
   // doorbell, at 1200x1726, stay within the 8,192 macroblocks of H.264 level
   // 4.1 (#186). Padding to whole macroblocks takes some other shapes, such as
   // 16:10 and 3:2, slightly above that, but within the 8,704 of level 4.2.
