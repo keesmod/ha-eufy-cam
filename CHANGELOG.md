@@ -2,7 +2,7 @@
 
 ## 0.8.50 - Unreleased
 
-- Updated the bridge dependency `qs` to 6.16.1 ([#217](https://github.com/keesmod/ha-eufy-cam/pull/217)).
+- Updated the bridge dependency `qs` to 6.16.1 ([#226](https://github.com/keesmod/ha-eufy-cam/pull/226)).
 
 Upgrade: the change is in bridge 0.8.41. Rollback: 0.8.49 with bridge 0.8.40.
 
