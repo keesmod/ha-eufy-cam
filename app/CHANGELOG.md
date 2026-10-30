@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.41 - Unreleased
+
+- Updated the bridge dependency `qs` to 6.16.1 ([#217](https://github.com/keesmod/ha-eufy-cam/pull/217)).
+
+Upgrade: works with every supported integration. Rollback: bridge 0.8.40.
+
 ## 0.8.40 - 2026-10-26
 
 - Added the standalone Floodlight Cam 2K `T8424` behind `experimental_standalone` ([#142](https://github.com/keesmod/eufy-mega-client/issues/142)).

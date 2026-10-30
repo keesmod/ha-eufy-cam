@@ -13,8 +13,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import check_uv_audit as audit
 
 # Trimmed uv audit JSON report of uv.lock with homeassistant 2026.10.3, recorded
-# with uv 0.13.4 on 2026-10-24.
-FIXTURE = Path(__file__).with_name("uv-audit-2026-10-24.json")
+# with uv 0.13.4 by CI on 2026-10-30. It reports each of 18 advisories twice, as
+# a GHSA record and as a PYSEC record whose aliases name that GHSA.
+FIXTURE = Path(__file__).with_name("uv-audit-2026-10-30.json")
 EXCEPTIONS = {("pillow", "12.3.0"): frozenset({"GHSA-a", "GHSA-b"})}
 PINS = audit.exact_pins(["Pillow==12.3.0", "certifi>=2021.5.30"])
 HOME_ASSISTANT = ["Pillow==12.3.0", "uv==0.13.5", "certifi>=2021.5.30"]
@@ -109,7 +110,7 @@ class UvAuditTests(unittest.TestCase):
         output = self.run_main(FIXTURE.read_text())
         self.assertEqual(
             output,
-            "41 advisories accepted while homeassistant 2026.10.3 pins them: pillow 12.3.0\n",
+            "59 advisories accepted while homeassistant 2026.10.3 pins them: pillow 12.3.0\n",
         )
 
     def test_recorded_report_fails_once_home_assistant_moves_a_pin(self):
@@ -145,7 +146,7 @@ class UvAuditTests(unittest.TestCase):
                 '{"name": "x", "reason": "100%25 done", "status": "archived"}\n'
             )
         )
-        self.assertIn("41 advisories accepted", output)
+        self.assertIn("59 advisories accepted", output)
 
     def test_incomplete_report_fails_before_pypi(self):
         for text in ("", "{}", '{"schema": {"version": "preview"}, "vulnerabilities": {}}', "[]"):
