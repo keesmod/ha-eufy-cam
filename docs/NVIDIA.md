@@ -89,7 +89,8 @@ to recover the normal software installation. See
 `software`. Other values fail configuration validation with a fixed error.
 
 The NVIDIA command requests CUDA decoding, transfers frames to system memory for
-the existing maximum-1920-pixel scaler, and uses `h264_nvenc` with low-latency
+the existing scaler, which caps the output at 1920 pixels wide and, from
+bridge 0.8.41, at the pixel count of 1920×1080, and uses `h264_nvenc` with low-latency
 settings. Audio never enters this encoder; it travels on its own late-audio
 route. GPU memory transfers and CPU scaling remain, so this is not a fully
 GPU-resident pipeline. NVENC targets `EUFY_LIVE_MAX_BITRATE` (default 4 Mbit/s)
