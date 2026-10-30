@@ -206,22 +206,24 @@ test('real FFmpeg keeps live output within 1920 wide and the pixel count of 1920
   // 16:9 and smaller 4:3 sources keep their former output size.
   const cases = [['1600x2300', 1200, 1726], ['2560x1440', 1920, 1080], ['1600x1200', 1600, 1200]] as const;
   for (const [size, width, height] of cases) {
-    const producer = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', `testsrc=size=${size}:rate=15`, '-t', '1', '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-threads', '1', '-preset', 'ultrafast', '-f', 'h264', 'pipe:1']);
+    // The whole input is written at once, so an encoder that exits early cannot strand a producer.
+    const source = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', `testsrc=size=${size}:rate=15`, '-t', '1', '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-threads', '1', '-preset', 'ultrafast', '-f', 'h264', 'pipe:1'], { maxBuffer: 64 * 1024 * 1024 });
+    assert.equal(source.status, 0, source.stderr.toString());
     const encoder = liveSpawn(liveArgs('h264', 15, 'software'));
-    const chunks: Buffer[] = [];
-    producer.stderr.resume(); encoder.stderr!.resume(); (encoder.stdio[3] as Readable).resume();
-    producer.stdout.pipe(encoder.stdin!);
-    encoder.stdout!.on('data', chunk => chunks.push(chunk));
+    const chunks: Buffer[] = []; let stderr = '';
+    encoder.stdout!.on('data', chunk => chunks.push(chunk)); encoder.stderr!.on('data', chunk => { stderr += chunk.toString(); });
+    (encoder.stdio[3] as Readable).resume();
+    encoder.stdin!.on('error', () => {});
+    encoder.stdin!.end(source.stdout);
     try {
-      const results = await Promise.all([once(producer, 'close'), once(encoder, 'close')]);
-      assert.equal(results[0][0], 0, size); assert.equal(results[1][0], 0, size);
+      assert.equal((await once(encoder, 'close'))[0], 0, `${size}: ${stderr}`);
       const probe = spawnSync('ffprobe', ['-v', 'error', '-f', 'mpegts', '-show_entries', 'stream=width,height,level', '-of', 'json', 'pipe:0'], { input: Buffer.concat(chunks) });
       assert.equal(probe.status, 0, probe.stderr.toString());
       const stream = JSON.parse(probe.stdout.toString()).streams[0] as { width: number; height: number; level: number };
       assert.deepEqual([stream.width, stream.height], [width, height], size);
       // Level 4.1 allows 8,192 macroblocks per frame. 1200x1726 has 8,100.
       assert.ok(stream.level <= 41, `${size} leaves at level ${stream.level}`);
-    } finally { producer.kill('SIGKILL'); encoder.kill('SIGKILL'); }
+    } finally { encoder.kill('SIGKILL'); }
   }
 });
 

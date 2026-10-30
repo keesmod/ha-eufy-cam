@@ -58,12 +58,13 @@ export function liveArgs(codec: 'h264' | 'hevc', fps: number, mode: LiveAccelera
   // A VBV cap keeps keyframe bursts and busy scenes within what a WiFi viewer
   // decodes in time; an unconstrained ultrafast CRF encode does not.
   else args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-crf', '26', '-maxrate', String(rate.maxrate), '-bufsize', String(rate.bufsize));
-  // At most 1920 wide and at most the pixel count of 1920x1080, so a portrait
-  // or 4:3 source above 1080p stays within the H.264 level 4.x frame size of
-  // 1080p-class hardware decoders and keeps its keyframes smaller. 16:9 sources
-  // still leave at 1920x1080. A 1600x2300 doorbell leaves at 1200x1726, level
-  // 4.0, instead of unscaled at level 5.0 (#186). FFmpeg's min takes two
-  // arguments, and x264 needs an even width.
+  // At most 1920 wide and at most the pixel count of 1920x1080, which keeps
+  // keyframes smaller and the frame within what 1080p-class hardware decoders
+  // accept. 16:9, 4:3, their portrait forms and the 1600x2300 doorbell, now
+  // 1200x1726, stay within the 8,192 macroblocks of H.264 level 4.1 instead of
+  // level 5.0 (#186). Padding to whole macroblocks takes some 16:10 and 3:2
+  // sizes up to about 8,300, level 4.2. 16:9 sources still leave at 1920x1080.
+  // FFmpeg's min takes two arguments, and x264 needs an even width.
   args.push('-pix_fmt', 'yuv420p', '-vf', `${wallclockStamp},scale='min(min(1920,iw),trunc(sqrt(2073600*iw/ih)/2)*2)':-2`, '-threads', '1', '-g', '30');
   args.push('-fps_mode', 'vfr', '-enc_time_base', '1:90000');
   args.push('-mpegts_flags', '+resend_headers', '-muxdelay', '0', '-muxpreload', '0', '-f', 'mpegts', 'pipe:1');
