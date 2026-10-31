@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { timingSafeEqual } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import type { Credentials, Eufy } from "./eufy.js";
-import { PresetError, RecordingError, SnapshotError, StationError, presetIndex } from "./errors.js";
+import { PresetError, RecordingError, SnapshotError, StationError } from "./errors.js";
 import type { Notification } from "./notifications.js";
 import type { Peer } from "./streams.js";
 import { MigrationError } from './migration.js';
@@ -56,9 +56,7 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
       if (request.method === "POST" && preset) {
         if (!eufy.hasCamera(preset[1]!)) { json(response, 404, { error: "not_found" }); return; }
         // A sent move cannot be recalled, so a client that leaves does not cancel it, like /mode (#229).
-        const index = presetIndex((await body(request)).preset);
-        if (!eufy.presets) throw new PresetError("not_connected");
-        await eufy.presets.move(preset[1]!, index);
+        await eufy.movePreset(preset[1]!, (await body(request)).preset);
         json(response, 200, { accepted: true }); return;
       }
       if (request.method === "POST" && url.pathname === "/v1/login") {

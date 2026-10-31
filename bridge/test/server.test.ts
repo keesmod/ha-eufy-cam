@@ -509,13 +509,16 @@ test('snapshot refresh is an authenticated POST for a known camera that maps ref
 
 test('preset move is an authenticated POST for a known camera that accepts only 0..3 and maps refusals to fixed codes (#229)', async () => {
   const { PresetError } = await import('../src/errors.js');
+  const { Eufy: Bridge } = await import('../src/eufy.js');
   const calls: unknown[][] = [];
   let next: () => Promise<void> = async () => {};
   const metrics = { commands: 7, accepted: 3, rejected: 1, unconfirmed: 1, refused: 2 };
-  const fake: EventEmitter & { presets?: unknown } = Object.assign(new EventEmitter(), {
+  const fake: EventEmitter & { presets?: unknown; hub: StreamHub } = Object.assign(new EventEmitter(), {
     auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(),
     hub: new StreamHub({ start: async () => { assert.fail('A preset move never starts live view'); }, stop: async () => {}, disposeMedia: () => {} }),
     presets: { metrics, move: (...args: unknown[]) => { calls.push(args); return next(); } } as unknown,
+    // The route moves through the bridge's own guard against the hub.
+    movePreset: Bridge.prototype.movePreset,
   });
   const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -550,6 +553,12 @@ test('preset move is an authenticated POST for a known camera that accepts only 
     }
     // The move gets no signal, so a client that leaves cannot recall it.
     assert.deepEqual(calls, [['CAM123', 0], ['CAM123', 1], ['CAM123', 2], ['CAM123', 3]]);
+    // A HomeBase recovery refuses the move before the backend.
+    Object.defineProperty(fake.hub, 'recoveringStation', { value: true, configurable: true });
+    const recovering = await post('{"preset":1}');
+    assert.equal(recovering.status, 409); assert.deepEqual(await recovering.json(), { error: 'station_busy' });
+    delete (fake.hub as { recoveringStation?: boolean }).recoveringStation;
+    assert.equal(calls.length, 4);
     for (const [code, status] of [['invalid_preset', 400], ['capability_unavailable', 503], ['not_connected', 503], ['preset_not_sent', 503],
       ['station_busy', 409], ['preset_rejected', 502], ['preset_unconfirmed', 504]] as const) {
       next = async () => { throw new PresetError(code); };

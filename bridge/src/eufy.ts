@@ -4,7 +4,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { JpegFramer } from './jpeg.js';
 import { StartNotIssued, StreamHub, STATION_LIMIT_CLOSE_CODE, type Peer } from './streams.js';
-import { SnapshotError } from './errors.js';
+import { PresetError, SnapshotError, presetIndex } from './errors.js';
 import { StreamDiagnostics } from './diagnostics.js';
 import { MediaRelay } from './media.js';
 import { LiveVideoDiagnostics, type LiveVideoObservation } from './live-video-diagnostics.js';
@@ -459,6 +459,21 @@ export class Eufy extends EventEmitter {
       this.metrics.snapshot_refresh_failed++;
       throw error;
     }
+  }
+  /**
+   * A preset move (#229). An unconfirmed live stop leaves the primary session
+   * free in the client while the hub keeps the camera stopping and then
+   * recovers its HomeBase. A move in that window could make the recovery fail,
+   * so it is refused before any client call, with the hub fields that the
+   * refresh and recordings guards use. The hub does not know HomeBases, so
+   * this holds for every camera, like the recordings guard.
+   */
+  async movePreset(serial: string, preset: unknown): Promise<void> {
+    const index = presetIndex(preset);
+    const presets = this.presets;
+    if (!presets) throw new PresetError('not_connected');
+    if (this.hub.recoveringStation || this.hub.quarantined) throw new PresetError('station_busy');
+    await presets.move(serial, index);
   }
   private captureSnapshot(serial: string, signal?: AbortSignal): Promise<Picture> {
     return new Promise((resolve, reject) => {

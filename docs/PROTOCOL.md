@@ -183,6 +183,14 @@ So is a move right after a snapshot refresh, until the refresh's live session
 confirmed its stop. Above 1, live views use their own sessions and a move can
 run during live view.
 
+The bridge also refuses a move with `station_busy`, before any client call,
+while it still holds an unconfirmed live stop or recovers a HomeBase. After a
+live stop that the camera did not confirm, the client frees its session, but the
+bridge keeps the camera stopping and starts a HomeBase recovery about 9 seconds
+later, which takes at most 28 seconds. A move in that window could make the
+recovery fail. The bridge does not track which HomeBase a stopping camera uses,
+so this applies to every camera, as it does for recordings.
+
 The client waits at most 40 seconds for the HomeBase after the send. The bridge
 bounds the whole move, the connection included, at 50 seconds. A client that
 closes the request does not cancel the move, because a sent move cannot be
@@ -198,7 +206,7 @@ retried. After a 502 or 504 the camera may have moved. Failures use allowlisted 
 |---|---|---|
 | 400 | `invalid_preset` | `preset` is not an integer from 0 to 3 |
 | 404 | `not_found` | The camera is not in the inventory |
-| 409 | `station_busy` | A command, a recording or a live session holds the HomeBase, or its connection is busy |
+| 409 | `station_busy` | A command, a recording or a live session holds the HomeBase, or its connection is busy, or the bridge still holds an unconfirmed live stop or recovers a HomeBase |
 | 502 | `preset_rejected` | The HomeBase answered with a non-zero code |
 | 503 | `capability_unavailable` | The camera's `presets` capability is unavailable |
 | 503 | `not_connected` | The Eufy account or backend is not connected |
