@@ -391,6 +391,12 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   reported a snapshot, live view, recording playback and motion events behind a
   HomeBase 3 on integration 0.8.42. Audio and other event types were not
   reported. Reported, not independently reproduced.
+- **eufyCam 2C Pro `T8142-Z`, type 15**, recognized behind a HomeBase 3 from
+  bridge 0.8.41 with client 0.30.3, after
+  [issue #236](https://github.com/keesmod/ha-eufy-cam/issues/236). Snapshot,
+  live view and recordings use the HomeBase 3 owner and firmware checks, not
+  the model-only route of `T8142`. The reporter has not yet tested a bridge
+  with this change.
 - **eufyCam 2C `T8113-Z`, type 8**, recognized from bridge 0.8.29. Before that
   release an owner reported snapshots, live view and HomeBase recordings behind
   a HomeBase 3 with a local test profile. Reported, not independently

@@ -304,6 +304,22 @@ If the report has no row for it at all, check that the doorbell is shared
 with the account the bridge uses. Not tested on hardware with this
 integration.
 
+On 2026-10-31 the reporter of [issue #236][236] ran integration 0.8.49 and
+bridge 0.8.40 with client 0.30.2 on Home Assistant 2026.10.4. The bridge logged
+`Eufy backend: unsupported_device device_model=T8142-Z device_type=15`, and the
+discovery report shows three rejected rows with `code=unsupported_device` and
+`parent_status=present`. The report form names them eufyCam 2C Pro, on camera
+firmware 3.3.8 under a T8030 on firmware 3.8.7.4. Only the exact `T8142` was
+admitted for type 15. Client 0.30.3, included in bridge 0.8.41, admits exactly
+`T8142-Z` with type 15 under the H3 media policy, which checks the actual
+HomeBase 3 owner and its firmware. It does not join the closed model-only
+policy of `T8142`. Under another parent, such as a HomeBase 2, its `device`
+row shows `relationship=unsupported` with
+`relationship_reason=unsupported_station`, and Home Assistant shows it as a
+camera without media or events. Other suffixes, including `T8142R`, and other
+types stay `unsupported_device`. The client's [model matrix][236-matrix] records the
+reported tuple. Not tested on hardware with this integration.
+
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
 [152-records]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780
 [168]: https://github.com/keesmod/ha-eufy-cam/issues/168
@@ -322,6 +338,8 @@ integration.
 [149-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-issue-149-0292
 [198]: https://github.com/keesmod/ha-eufy-cam/issues/198
 [198-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#public-t8210-and-t8210c-type-7-evidence-0301
+[236]: https://github.com/keesmod/ha-eufy-cam/issues/236
+[236-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-t8142-z-0303
 
 `ref`, `owner_ref` and `device_ref` are anonymous references within a report.
 `inventory_row` is a separate zero-based source position. Use the `report` number

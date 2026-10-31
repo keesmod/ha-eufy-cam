@@ -801,7 +801,7 @@ for (const empty of [false,true])
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
       assert.equal(summary.experimental_standalone,false);
-      assert.equal(summary.software.library,'0.30.3-beta.2');
+      assert.equal(summary.software.library,'0.30.3-beta.3');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
@@ -1500,6 +1500,56 @@ for (const enabled of [true, false])
       await f.backend.close();
     }
   });
+
+// #236: a raw T8142-Z row goes through the installed client, so a pin without the
+// T8142-Z admission fails here even when its version string matches the notes.
+test('raw T8142-Z rows through the shipped client become HomeBase 3 cameras (#236)', async () => {
+  const f = fixture();
+  const faults: unknown[][] = [];
+  f.backend.on('backend_fault', (...args) => faults.push(args));
+  const row = (device_sn: string, parent_sn: string, device_model: string, device_type: number, main_sw_version: string) => ({
+    category: 'eufy_security',
+    device_sn,
+    parent_sn,
+    device_model,
+    device_type,
+    main_sw_version,
+    device_name: 'PRIVATE_NAME',
+    p2p_did: 'PRIVATE_DID',
+    p2p_license: 'PRIVATE_LICENSE',
+    member: { admin_user_id: 'PRIVATE_ADMIN' },
+    params: [{ param_type: 1176, param_value: '192.168.1.42' }],
+  });
+  const rows = [
+    row('BASE', '', 'T8030', 18, '3.8.7.4'),
+    row('H3_PRO_A', 'BASE', 'T8142-Z', 15, '3.3.8'),
+    row('H3_PRO_B', 'BASE', 'T8142-Z', 15, '3.3.8'),
+    row('H3_OTHER', 'BASE', 'T8142-V', 15, '3.3.8'),
+  ];
+  // The installed library's discovery, with only the cloud boundary synthetic.
+  const actual = Object.assign(Object.create(EufyMegaClient.prototype), {
+    experimentalStandalone: false,
+    cloud: { call: async () => ({ devices: rows }) },
+  }) as EufyMegaClient;
+  f.client.discoverDevices = () => actual.discoverDevices();
+  try {
+    assert.equal((await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' })).state, 'connected');
+    // Only the exact pair is admitted. Another suffix keeps its logged rejection.
+    assert.deepEqual(faults, [['unsupported_device', 'device_model=T8142-V device_type=15']]);
+    const report = f.backend.supportReport();
+    const cameras = report.last_discovery
+      .filter((r) => r.event === 'device' && r.model !== 'T8030')
+      .map((r) => [r.model, r.relationship, r.relationship_reason, r.owner_status]);
+    assert.deepEqual(cameras, [
+      ['T8142-Z', 'station', null, 'connected'],
+      ['T8142-Z', 'station', null, 'connected'],
+    ]);
+    assert.deepEqual(f.backend.inventory().map((camera) => camera.model), ['T8142-Z', 'T8142-Z']);
+    assert.doesNotMatch(JSON.stringify(report), /PRIVATE|192\.168\.1\.42|BASE|H3_/);
+  } finally {
+    await f.backend.close();
+  }
+});
 
 // #154: with the opt-in, each standalone row the installed client keeps at
 // standalone_transport_unverified is named once per discovery by model code only.
