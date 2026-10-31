@@ -194,6 +194,11 @@ export class LivePacing {
     // The library destroys a replaced stream without ending it. The paced
     // stream then closes the same way, as the library's stream did before.
     source.once('close', () => track.destroy());
+    // The library's streams always carry the client's own error listener, so
+    // an error never reached the process as an uncaught exception, also on
+    // the paths where the bridge only drains a stream. The paced streams keep
+    // that. Consumers still receive the error through their own listeners.
+    track.output.on('error', () => {});
     return track.output;
   }
 }

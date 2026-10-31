@@ -182,6 +182,14 @@ test('LivePacing routes timings by kind and mirrors end, close and errors of the
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(errors[0]?.message, 'transport');
   assert.equal(videoEnded, true);
+  // A paced stream that only gets drained, with no error listener of its own,
+  // does not turn the library's error into an uncaught exception.
+  const drained = new PassThrough(), quiet = new PassThrough();
+  const third = new LivePacing(LIVE_PLAYOUT_DELAY_MS, () => clock).attach(drained, quiet);
+  third.video.resume();
+  drained.destroy(new Error('transport'));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(third.video.destroyed, true);
   const replaced = new PassThrough(), other = new PassThrough();
   const second = new LivePacing(LIVE_PLAYOUT_DELAY_MS, () => clock).attach(replaced, other);
   replaced.destroy();
