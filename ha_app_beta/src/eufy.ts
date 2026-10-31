@@ -4,7 +4,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { JpegFramer } from './jpeg.js';
 import { StartNotIssued, StreamHub, STATION_LIMIT_CLOSE_CODE, type Peer } from './streams.js';
-import { SnapshotError } from './errors.js';
+import { PresetError, SnapshotError, presetIndex } from './errors.js';
 import { StreamDiagnostics } from './diagnostics.js';
 import { MediaRelay } from './media.js';
 import { LiveVideoDiagnostics, type LiveVideoObservation } from './live-video-diagnostics.js';
@@ -73,6 +73,9 @@ export class Eufy extends EventEmitter {
   get stations() {
     return this.backend?.stations;
   }
+  get presets() {
+    return this.backend?.presets;
+  }
   get notifications() {
     return this.backend?.notifications;
   }
@@ -97,6 +100,8 @@ export class Eufy extends EventEmitter {
   liveMaxSecondsMains = 120;
   /** A refresh keeps a frame this long after its first, while a waking camera may still adjust exposure. */
   snapshotRefreshSettleMs = 1000;
+  /** Preset moves handed to the backend and not yet settled. A HomeBase recovery waits for them (#229). */
+  private movesInFlight = 0;
   readonly hub = new StreamHub({
     diagnostic: (serial, event) => this.diagnostics.mark(serial, event),
     admit: (serial) => {
@@ -105,6 +110,7 @@ export class Eufy extends EventEmitter {
     },
     bound: (serial) => this.backend?.liveBoundMs?.(serial) ?? 120_000,
     recover: (serial) => this.recoverStation(serial),
+    idle: () => this.movesInFlight === 0,
     start: async (serial) => {
       if (this.recordings.busy) throw new StartNotIssued(new Error('Recording operation in progress'));
       if (!this.backend?.connected) throw new StartNotIssued(new Error('Disconnected'));
@@ -455,6 +461,27 @@ export class Eufy extends EventEmitter {
     } catch (error) {
       this.metrics.snapshot_refresh_failed++;
       throw error;
+    }
+  }
+  /**
+   * A preset move (#229). A running HomeBase recovery, bounded by
+   * recoverStation, refuses it before any client call, and so does a due
+   * recovery that waits only for moves in flight, so moves cannot postpone it
+   * without bound. A camera that is only stopping, also after a failed
+   * recovery, does not. The hub starts no recovery while a move is in flight,
+   * so neither can make the other fail. The check and the count have no await
+   * between them.
+   */
+  async movePreset(serial: string, preset: unknown): Promise<void> {
+    const index = presetIndex(preset);
+    const presets = this.presets;
+    if (!presets) throw new PresetError('not_connected');
+    if (this.hub.recoveringStation || this.hub.recoveryDue) throw new PresetError('station_busy');
+    this.movesInFlight++;
+    try {
+      await presets.move(serial, index);
+    } finally {
+      this.movesInFlight--;
     }
   }
   private captureSnapshot(serial: string, signal?: AbortSignal): Promise<Picture> {

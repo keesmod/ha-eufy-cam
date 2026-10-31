@@ -25,7 +25,10 @@ export interface MediaCapability {
   status: 'experimental' | 'unsupported';
   reason: string | null;
 }
-export type CameraCapabilities = Record<'snapshot' | 'live' | 'recordings', MediaCapability>;
+export type CameraCapabilities = Record<'snapshot' | 'live' | 'recordings', MediaCapability> & {
+  /** Preset moves from client 0.30.3. Absent from older clients, which is unavailable (#229). */
+  presets?: MediaCapability;
+};
 export interface CameraInfo {
   serial: string;
   name: string;
@@ -96,6 +99,12 @@ export interface BackendStations {
   setMode(serial: string, mode: unknown): Promise<void>;
   close(): void;
 }
+/** Preset moves for cameras whose `presets` capability is available (#229). */
+export interface BackendPresets {
+  readonly metrics: { commands: number; accepted: number; rejected: number; unconfirmed: number; refused: number };
+  /** Resolves once the HomeBase accepted the move, which is not move completion. */
+  move(serial: string, preset: unknown): Promise<void>;
+}
 export interface NotificationMetrics {
   push_connected: boolean;
   received: number;
@@ -123,6 +132,7 @@ export interface Backend extends EventEmitter {
   readonly auth: AuthState;
   readonly recordings: BackendRecordings;
   readonly stations: BackendStations | undefined;
+  readonly presets?: BackendPresets;
   readonly notifications: { metrics: NotificationMetrics; close(): void };
   readonly pictures: Map<string, Picture>;
   login(credentials?: Credentials, options?: LoginOptions): Promise<AuthState>;
