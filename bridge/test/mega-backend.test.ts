@@ -2539,6 +2539,7 @@ const confirmed = async () => ({ confirmed: true, reason: 'device' as const });
 const moved = (f: ReturnType<typeof presetFixture>) => f.moves.map(({ id, preset }) => [id, preset]);
 test('a preset move while a camera is stopping and no recovery runs reaches the client once (#229)', async (t) => {
   const { f, bridge, recoveries, ticks } = await stoppingBridge(t, confirmed);
+  assert.equal(bridge.hub.recoveryDue, false, 'The stop attempts are not done yet');
   await bridge.movePreset('CAM', 1);
   assert.deepEqual(moved(f), [['CAM', 1]]);
   assert.deepEqual(f.backend.presets.metrics, { commands: 1, accepted: 1, rejected: 0, unconfirmed: 0, refused: 0 });
@@ -2576,6 +2577,8 @@ test('a HomeBase recovery waits for a preset move in flight and starts on a late
   let answer!: () => void;
   f.client.moveToPreset = async (id: string, preset: number, signal?: AbortSignal) => {
     f.moves.push({ id, preset, signal });
+    // Only the first move hangs, so a move that wrongly passes the guard fails the test at once.
+    if (f.moves.length > 1) return { preset, elapsedMs: 1 };
     await new Promise<void>((resolve) => {
       answer = resolve;
     });
@@ -2589,6 +2592,10 @@ test('a HomeBase recovery waits for a preset move in flight and starts on a late
   assert.deepEqual(recoveries, [], 'No recovery races a move in flight');
   assert.equal(bridge.hub.recoveringStation, false);
   assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 0, recovery_completed: 0, recovery_failed: 0 });
+  // The due recovery refuses new moves, so moves cannot postpone it without bound.
+  assert.equal(bridge.hub.recoveryDue, true);
+  await assert.rejects(bridge.movePreset('CAM', 1), { code: 'station_busy', status: 409 });
+  assert.deepEqual(moved(f), [['CAM', 3]], 'The refused move never reaches the client');
   // A failed move releases the HomeBase as well.
   answer();
   await assert.rejects(move, { code: 'preset_unconfirmed', status: 504 });
@@ -2611,6 +2618,7 @@ test('a preset move after a failed HomeBase recovery reaches the client once (#2
   assert.deepEqual(recoveries, ['CAM']);
   assert.equal(bridge.hub.phase('CAM'), 'stopping');
   assert.equal(bridge.hub.recoveringStation, false);
+  assert.equal(bridge.hub.recoveryDue, false, 'A failed recovery is never due again');
   await bridge.movePreset('CAM', 0);
   assert.deepEqual(moved(f), [['CAM', 0]]);
   assert.deepEqual(f.backend.presets.metrics, { commands: 1, accepted: 1, rejected: 0, unconfirmed: 0, refused: 0 });

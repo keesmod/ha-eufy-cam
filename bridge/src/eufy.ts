@@ -465,16 +465,18 @@ export class Eufy extends EventEmitter {
   }
   /**
    * A preset move (#229). A running HomeBase recovery, bounded by
-   * recoverStation, refuses it before any client call. A camera that is only
-   * stopping, also after a failed recovery, does not. The hub starts no
-   * recovery while a move is in flight, so neither can make the other fail.
-   * The check and the count have no await between them.
+   * recoverStation, refuses it before any client call, and so does a due
+   * recovery that waits only for moves in flight, so moves cannot postpone it
+   * without bound. A camera that is only stopping, also after a failed
+   * recovery, does not. The hub starts no recovery while a move is in flight,
+   * so neither can make the other fail. The check and the count have no await
+   * between them.
    */
   async movePreset(serial: string, preset: unknown): Promise<void> {
     const index = presetIndex(preset);
     const presets = this.presets;
     if (!presets) throw new PresetError('not_connected');
-    if (this.hub.recoveringStation) throw new PresetError('station_busy');
+    if (this.hub.recoveringStation || this.hub.recoveryDue) throw new PresetError('station_busy');
     this.movesInFlight++;
     try {
       await presets.move(serial, index);
