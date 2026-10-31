@@ -23,6 +23,7 @@
     "live_max_bitrate": "str?",
     "live_max_streams_per_station": "int(1,4)?",
     "live_max_seconds_mains": "int(120,3600)?",
+    "live_smoothing": "bool?",
     "experimental_standalone": "bool?",
     "standalone_recording_probe": "bool?"
   }

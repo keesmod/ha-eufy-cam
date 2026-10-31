@@ -336,7 +336,7 @@ export class Eufy extends EventEmitter {
     });
     backend.on(
       'live-start',
-      ({ serial, videoCodec, audioSupported, fps, video, audio }: LiveMedia) => {
+      ({ serial, videoCodec, audioSupported, fps, video, audio, source }: LiveMedia) => {
         this.metrics.started_events++;
         this.metrics.last_started_event = new Date().toISOString();
         // Audio rides its own reader, so its transport failing ends only the
@@ -361,13 +361,15 @@ export class Eufy extends EventEmitter {
         this.diagnostics.mark(serial, codec);
         const row = this.liveVideoRows.get(serial);
         row?.correlate(this.backend?.audioAttempt?.(serial));
-        row?.attach(video, codec);
+        // Diagnostics observe the P2P input, before any pacing on the camera's clock.
+        const input = source ?? { video, audio };
+        row?.attach(input.video, codec);
         // The library's startup classification is observation only. It no
         // longer selects a pipeline: audio always travels through the late
         // audio reader, and audio_late marks its first complete frame.
         this.diagnostics.mark(serial, audioSupported ? 'audio_supported' : 'audio_absent');
-        video.once('data', () => this.diagnostics.mark(serial, 'video_input'));
-        audio.once('data', () => this.diagnostics.mark(serial, 'audio_input'));
+        input.video.once('data', () => this.diagnostics.mark(serial, 'video_input'));
+        input.audio.once('data', () => this.diagnostics.mark(serial, 'audio_input'));
         this.media.start(serial, codec, video, audio, fps, row);
         const encoder = spawn(
           'ffmpeg',
