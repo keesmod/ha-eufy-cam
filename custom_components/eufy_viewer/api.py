@@ -130,6 +130,39 @@ async def check_snapshot_error(response: aiohttp.ClientResponse) -> None:
         raise BridgeSnapshotError(code, response.status)
 
 
+class BridgePresetError(BridgeError):
+    """An allowlisted preset move failure safe to display to the user."""
+
+    def __init__(self, code: str, status: int) -> None:
+        super().__init__(code)
+        self.code = code
+        self.status = status
+
+
+# Mirrors the bridge's PresetError statuses. A code with another status stays
+# generic. The integration validates the preset itself, so invalid_preset is
+# not displayed.
+PRESET_ERRORS = {
+    "capability_unavailable": 503,
+    "not_connected": 503,
+    "preset_not_sent": 503,
+    "station_busy": 409,
+    "preset_rejected": 502,
+    "preset_unconfirmed": 504,
+    "not_found": 404,
+}
+
+
+async def check_preset_error(response: aiohttp.ClientResponse) -> None:
+    """Forward only known codes, never arbitrary bridge error details."""
+    if response.status not in PRESET_ERRORS.values():
+        return
+    data = json.loads(await read_bounded(response.content, 4096))
+    code = data.get("error") if isinstance(data, dict) else None
+    if isinstance(code, str) and PRESET_ERRORS.get(code) == response.status:
+        raise BridgePresetError(code, response.status)
+
+
 class BridgeAuthError(BridgeError):
     """Bridge rejected its access token."""
 
@@ -212,6 +245,7 @@ class BridgeState:
     recording_playback: bool = False
     live_max_seconds_mains: int = LIVE_BOUND_DEFAULT_SECONDS
     snapshot_refresh: bool = False
+    preset_move: bool = False
 
     def live_bound_seconds(self, serial: str) -> int:
         """Mirror the bridge's cap for one camera.
@@ -269,7 +303,9 @@ class BridgeState:
                 raw_capabilities = item.get("capabilities", {})
                 if not isinstance(raw_capabilities, dict):
                     raise ValueError
-                for feature in ("snapshot", "live", "recordings"):
+                # Bridges before 0.8.41 report no presets. Gate on its explicit
+                # availability, never on permits(), which admits an absent key.
+                for feature in ("snapshot", "live", "recordings", "presets"):
                     if feature not in raw_capabilities:
                         continue
                     raw = raw_capabilities[feature]
@@ -297,6 +333,7 @@ class BridgeState:
                             "device_initialization_failed",
                             "unknown_camera",
                             "unknown_station",
+                            "operation_outside_hardware_scope",
                         }
                         else None,
                     }
@@ -384,6 +421,7 @@ class BridgeState:
                 mains,
                 type(data.get("snapshot_refresh")) is int
                 and data["snapshot_refresh"] == 1,
+                type(data.get("preset_move")) is int and data["preset_move"] == 1,
             )
         except (KeyError, TypeError, ValueError) as err:
             raise BridgeError("Invalid bridge protocol") from err
@@ -449,6 +487,8 @@ class BridgeClient:
                             await check_recording_error(response)
                         if path.startswith("/v1/snapshot/"):
                             await check_snapshot_error(response)
+                        if re.fullmatch(r"/v1/cameras/[^/]+/preset", path):
+                            await check_preset_error(response)
                         raise BridgeError("Bridge request failed")
                     raw = await read_bounded(
                         response.content,
@@ -510,6 +550,20 @@ class BridgeClient:
         if not isinstance(received, str) or not 1 <= len(received) <= 64:
             raise BridgeError("Invalid snapshot refresh response")
         return received
+
+    async def move_to_preset(self, serial: str, preset: int) -> None:
+        """Send one move to a saved preset, wire index 0 to 3, and never retry it.
+
+        The bridge answers once the HomeBase accepted the command, not once the
+        camera stopped moving. It bounds the wait inside this request's timeout.
+        """
+        if type(preset) is not int or not 0 <= preset <= 3:
+            raise BridgeError("Invalid preset")
+        result = await self.request(
+            "POST", f"/v1/cameras/{serial}/preset", {"preset": preset}
+        )
+        if not isinstance(result, dict) or result.get("accepted") is not True:
+            raise BridgeError("HomeBase did not confirm the preset move")
 
     async def recording_thumbnail(self, serial: str, recording_id: str) -> bytes:
         """Thumbnails retain their small independent response budget."""

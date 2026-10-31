@@ -93,6 +93,9 @@
     "button": {
       "refresh_snapshot": {
         "name": "Snapshot vernieuwen"
+      },
+      "preset": {
+        "name": "Naar voorinstelling {number}"
       }
     }
   },
@@ -126,6 +129,30 @@
     },
     "snapshot_refresh_failed": {
       "message": "De snapshot kon niet worden vernieuwd. Controleer de verbinding met de bridge en probeer het opnieuw."
+    },
+    "preset_capability_unavailable": {
+      "message": "Deze camera kan via de huidige verbinding niet naar een voorinstelling draaien."
+    },
+    "preset_not_connected": {
+      "message": "De bridge is niet met Eufy verbonden. Er is geen beweging verstuurd."
+    },
+    "preset_not_sent": {
+      "message": "De bridge kon de HomeBase niet bereiken. Er is geen beweging verstuurd."
+    },
+    "preset_station_busy": {
+      "message": "De HomeBase is bezig met live beeld, een opname of een ander commando, of de bridge herstelt een live beeld. Probeer het later opnieuw."
+    },
+    "preset_rejected": {
+      "message": "De HomeBase weigerde de beweging."
+    },
+    "preset_unconfirmed": {
+      "message": "De HomeBase bevestigde de beweging niet. De camera kan toch bewogen zijn."
+    },
+    "preset_not_found": {
+      "message": "De bridge kent deze camera niet."
+    },
+    "preset_failed": {
+      "message": "De camera kon niet naar de voorinstelling draaien. Controleer de verbinding met de bridge."
     }
   }
 }

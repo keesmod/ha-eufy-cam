@@ -28,10 +28,11 @@ import {
 import { RecordingTranscoder } from './recording-media.js';
 import { LivePacing } from './camera-clock.js';
 import { MegaRecordings } from './mega-recordings.js';
-import { RecordingError, StationError } from './errors.js';
+import { PresetError, RecordingError, StationError, presetIndex } from './errors.js';
 import type { LiveAdmission } from './streams.js';
 import type {
   Backend,
+  BackendPresets,
   BackendStations,
   Credentials,
   LoginOptions,
@@ -185,6 +186,69 @@ class MegaStations implements BackendStations {
     this.states.clear();
   }
 }
+/**
+ * The fixed bridge code for a failed preset move (#229). Only preset_rejected
+ * and preset_unconfirmed can follow a send. Every other library code is raised
+ * before it, so nothing moved.
+ */
+function presetCode(error: unknown): PresetError['code'] {
+  // An error the library did not classify leaves open whether the move was sent.
+  if (!(error instanceof EufyError)) return 'preset_unconfirmed';
+  switch (error.code) {
+    case 'preset_move_unconfirmed':
+      return 'preset_unconfirmed';
+    case 'preset_move_rejected':
+      return 'preset_rejected';
+    case 'station_busy':
+    case 'connection_busy':
+      return 'station_busy';
+    case 'operation_outside_hardware_scope':
+    case 'camera_media_unverified':
+    case 'unknown_camera':
+      return 'capability_unavailable';
+    case 'invalid_preset':
+      return 'invalid_preset';
+    default:
+      return 'preset_not_sent';
+  }
+}
+/**
+ * Preset moves (#229). The library owns admission, the busy rule, the single
+ * send and its 40-second result bound. The bridge refuses a camera without an
+ * available presets capability before the client and never retries or queues a
+ * move. A result is HomeBase acceptance, not move completion.
+ */
+class MegaPresets implements BackendPresets {
+  /** Requests that reached the client, then their outcome. Numbers only. */
+  readonly metrics = { commands: 0, accepted: 0, rejected: 0, unconfirmed: 0, refused: 0 };
+  constructor(
+    private client: () => EufyMegaClient | undefined,
+    /** True only for a known camera whose last presets capability is available. */
+    private admitted: (serial: string) => boolean,
+    private changed: () => void,
+  ) {}
+  async move(serial: string, preset: unknown): Promise<void> {
+    const index = presetIndex(preset);
+    const client = this.client();
+    if (!client?.connected) throw new PresetError('not_connected');
+    if (!this.admitted(serial)) throw new PresetError('capability_unavailable');
+    this.metrics.commands++;
+    try {
+      // Room for a connect before the client's own 40-second bound. An abort
+      // after the send still ends unconfirmed in the client.
+      await client.moveToPreset(serial, index, AbortSignal.timeout(50000));
+      this.metrics.accepted++;
+    } catch (error) {
+      const code = presetCode(error);
+      if (code === 'preset_rejected') this.metrics.rejected++;
+      else if (code === 'preset_unconfirmed') this.metrics.unconfirmed++;
+      else this.metrics.refused++;
+      throw new PresetError(code);
+    } finally {
+      this.changed();
+    }
+  }
+}
 
 /** Only library-owned types enter the bridge. This adapter has no SDK fallback. */
 export class MegaBackend extends EventEmitter implements Backend {
@@ -208,6 +272,7 @@ export class MegaBackend extends EventEmitter implements Backend {
   readonly pictures = new Map<string, Picture>();
   readonly recordings: MegaRecordings;
   readonly stations: MegaStations;
+  readonly presets: MegaPresets;
   constructor(
     private storage: Storage,
     private readonly liveBusy: () => boolean | 'live_busy' | 'live_stopping',
@@ -248,6 +313,11 @@ export class MegaBackend extends EventEmitter implements Backend {
       () => this.client,
       () => [...this.devices.values()],
       this.stationStates,
+      () => this.emit('change'),
+    );
+    this.presets = new MegaPresets(
+      () => this.client,
+      (serial) => this.hasCamera(serial) && this.capabilities.get(serial)?.presets?.available === true,
       () => this.emit('change'),
     );
   }

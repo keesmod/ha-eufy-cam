@@ -471,3 +471,10 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   only stores its video does not change that. Without the option, or when the
   inventory lists it under a HomeBase 3 parent, its snapshot, live view and
   recordings stay unsupported.
+- **SoloCam S340 `T8170`, type 48**, behind a HomeBase 3 gets four preset
+  buttons from integration 0.8.50 with bridge 0.8.41 and client 0.30.3
+  ([issue #229](https://github.com/keesmod/ha-eufy-cam/issues/229)). This is
+  software only and not yet confirmed on hardware. Whether a HomeBase 3 answers
+  the move, whether button 1 is the app's preset 1 and whether a move starts
+  motion events or recordings are not known. No other pan and tilt camera gets
+  preset buttons. See [preset positions](USAGE.md#preset-positions).

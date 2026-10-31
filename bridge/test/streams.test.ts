@@ -165,6 +165,21 @@ test("recovery waits for other viewers and pending starts; failed reset retains 
   assert.equal(recoveries, 1); assert.equal(hub.recoveryMetrics.recovery_failed, 1);
 });
 
+test("recovery waits while the control reports a command in flight and starts on a later idle tick (#229)", async () => {
+  let now = 0; let idle = false; let recoveries = 0; let checks = 0;
+  const hub = new StreamHub({ start: async () => {}, stop: async () => {}, disposeMedia: () => {}, idle: () => { checks++; return idle; }, recover: async () => { recoveries++; return new Promise(() => {}); } }, () => now);
+  const a = fixture().peer(); hub.attach("a", a); hub.detach("a", a);
+  await new Promise(resolve => setImmediate(resolve));
+  now = 3000; hub.tick(); assert.equal(hub.recoveryDue, false);
+  for (now = 6000; now <= 30_000; now += 3000) hub.tick();
+  assert.ok(checks > 0); assert.equal(recoveries, 0); assert.equal(hub.recoveringStation, false);
+  assert.equal(hub.recoveryMetrics.recovery_attempts, 0); assert.equal(hub.quarantined, 1);
+  assert.equal(hub.recoveryDue, true);
+  idle = true; hub.tick();
+  assert.equal(recoveries, 1); assert.equal(hub.recoveringStation, true); assert.equal(hub.recoveryMetrics.recovery_attempts, 1);
+  assert.equal(hub.recoveryDue, false);
+});
+
 test("phase and station recovery are readable and reading them changes no session", async () => {
   let now = 0; let confirm!: (serials: string[]) => void; const stops: string[] = [];
   const hub = new StreamHub({ start: async () => {}, stop: async s => { stops.push(s); }, disposeMedia: () => {}, recover: async () => new Promise(resolve => { confirm = resolve; }) }, () => now);

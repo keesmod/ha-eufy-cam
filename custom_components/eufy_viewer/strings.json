@@ -93,6 +93,9 @@
     "button": {
       "refresh_snapshot": {
         "name": "Refresh snapshot"
+      },
+      "preset": {
+        "name": "Move to preset {number}"
       }
     }
   },
@@ -126,6 +129,30 @@
     },
     "snapshot_refresh_failed": {
       "message": "Could not refresh the snapshot. Check the bridge connection and try again."
+    },
+    "preset_capability_unavailable": {
+      "message": "This camera cannot move to a preset on its current connection."
+    },
+    "preset_not_connected": {
+      "message": "The bridge is not connected to Eufy. No move was sent."
+    },
+    "preset_not_sent": {
+      "message": "The bridge could not reach the HomeBase. No move was sent."
+    },
+    "preset_station_busy": {
+      "message": "The HomeBase is busy with live view, a recording or another command, or the bridge is recovering a live view. Try again later."
+    },
+    "preset_rejected": {
+      "message": "The HomeBase refused the move."
+    },
+    "preset_unconfirmed": {
+      "message": "The HomeBase did not confirm the move. The camera may still have moved."
+    },
+    "preset_not_found": {
+      "message": "The bridge does not know this camera."
+    },
+    "preset_failed": {
+      "message": "Could not move the camera to the preset. Check the bridge connection."
     }
   }
 }

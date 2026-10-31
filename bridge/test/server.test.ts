@@ -53,9 +53,11 @@ test('state reports the configured per-station live limit', async () => {
   try {
     const response = await fetch(`http://127.0.0.1:${address.port}/v1/state`, { headers: { Authorization: `Bearer ${token}` } });
     assert.equal(response.status, 200);
-    const state = await response.json() as { live_max_streams_per_station: number; live_max_seconds_mains: number; protocol: number; snapshot_refresh: number };
+    const state = await response.json() as { live_max_streams_per_station: number; live_max_seconds_mains: number; protocol: number; snapshot_refresh: number; preset_move: number };
     assert.equal(state.protocol, 1);
     assert.equal(state.snapshot_refresh, 1, 'The integration offers the refresh only when the bridge advertises it');
+    assert.equal(state.preset_move, 1, 'The integration offers preset buttons only when the bridge advertises the route');
+    assert.equal('preset_metrics' in state, false, 'Without a backend there are no preset metrics');
     assert.equal(state.live_max_streams_per_station, 2);
     assert.equal(state.live_max_seconds_mains, 1800);
   } finally { server.emit('shutdown'); server.close(); await once(server, 'close'); }
@@ -502,5 +504,77 @@ test('snapshot refresh is an authenticated POST for a known camera that maps ref
     await waiting; client.abort();
     assert.equal(await pending, 'cancelled');
     await cancelled;
+  } finally { server.emit('shutdown'); server.closeAllConnections(); server.close(); await once(server, 'close'); }
+});
+
+test('preset move is an authenticated POST for a known camera that accepts only 0..3 and maps refusals to fixed codes (#229)', async () => {
+  const { PresetError } = await import('../src/errors.js');
+  const { Eufy: Bridge } = await import('../src/eufy.js');
+  const calls: unknown[][] = [];
+  let next: () => Promise<void> = async () => {};
+  const metrics = { commands: 7, accepted: 3, rejected: 1, unconfirmed: 1, refused: 2 };
+  const fake: EventEmitter & { presets?: unknown; hub: StreamHub } = Object.assign(new EventEmitter(), {
+    auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(),
+    hub: new StreamHub({ start: async () => { assert.fail('A preset move never starts live view'); }, stop: async () => {}, disposeMedia: () => {} }),
+    presets: { metrics, move: (...args: unknown[]) => { calls.push(args); return next(); } } as unknown,
+    // The route moves through the bridge's own guard against the hub.
+    movePreset: Bridge.prototype.movePreset,
+  });
+  const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const base = `http://127.0.0.1:${address.port}`;
+  const url = `${base}/v1/cameras/CAM123/preset`;
+  const headers = { Authorization: `Bearer ${token}` };
+  const post = (body: string, target = url) => fetch(target, { method: 'POST', headers, body });
+  try {
+    assert.equal((await fetch(url, { method: 'POST', body: '{"preset":0}' })).status, 401);
+    const unknown = await post('{"preset":0}', `${base}/v1/cameras/OTHER/preset`);
+    assert.equal(unknown.status, 404); assert.deepEqual(await unknown.json(), { error: 'not_found' });
+    for (const [method, path] of [['GET', '/v1/cameras/CAM123/preset'], ['PUT', '/v1/cameras/CAM123/preset'], ['POST', '/v1/cameras/CAM123'],
+      ['POST', '/v1/cameras/CAM123/preset/x'], ['POST', '/v1/camera/CAM123/preset'], ['POST', '/v1/cameras/CAM 123/preset']]) {
+      const response = await fetch(base + path, { method, headers, ...(method === 'GET' ? {} : { body: '{"preset":0}' }) });
+      assert.equal(response.status, 404, `${method} ${path}`); assert.deepEqual(await response.json(), { error: 'not_found' });
+    }
+    // Only a JSON integer from 0 to 3 is a preset, never its app number or an enum name.
+    for (const value of ['{}', '{"preset":4}', '{"preset":-1}', '{"preset":1.5}', '{"preset":"1"}', '{"preset":true}', '{"preset":"PRESET_1"}', '{"preset":null}', '{"preset":[0]}', '{"preset":1e400}']) {
+      const response = await post(value);
+      assert.equal(response.status, 400, value); assert.deepEqual(await response.json(), { error: 'invalid_preset' }, value);
+    }
+    for (const value of ['', 'not json', '4', 'null', '[0]', '"preset"', JSON.stringify({ preset: 0, padding: 'x'.repeat(8192) })]) {
+      const response = await post(value);
+      assert.equal(response.status, 400, value.slice(0, 20)); assert.equal(await response.text(), '{"error":"request_failed"}');
+    }
+    assert.deepEqual(calls, []);
+    for (const preset of [0, 1, 2, 3]) {
+      const moved = await post(JSON.stringify({ preset }));
+      assert.equal(moved.status, 200); assert.equal(moved.headers.get('cache-control'), 'no-store');
+      assert.deepEqual(await moved.json(), { accepted: true });
+    }
+    // The move gets no signal, so a client that leaves cannot recall it.
+    assert.deepEqual(calls, [['CAM123', 0], ['CAM123', 1], ['CAM123', 2], ['CAM123', 3]]);
+    // A HomeBase recovery refuses the move before the backend.
+    Object.defineProperty(fake.hub, 'recoveringStation', { value: true, configurable: true });
+    const recovering = await post('{"preset":1}');
+    assert.equal(recovering.status, 409); assert.deepEqual(await recovering.json(), { error: 'station_busy' });
+    delete (fake.hub as { recoveringStation?: boolean }).recoveringStation;
+    assert.equal(calls.length, 4);
+    for (const [code, status] of [['invalid_preset', 400], ['capability_unavailable', 503], ['not_connected', 503], ['preset_not_sent', 503],
+      ['station_busy', 409], ['preset_rejected', 502], ['preset_unconfirmed', 504]] as const) {
+      next = async () => { throw new PresetError(code); };
+      const response = await post('{"preset":2}');
+      assert.equal(response.status, status, code); assert.deepEqual(await response.json(), { error: code });
+    }
+    next = async () => { throw new Error('PRIVATE upstream detail'); };
+    const failed = await post('{"preset":2}');
+    assert.equal(failed.status, 400); assert.equal(await failed.text(), '{"error":"request_failed"}');
+    const state = await (await fetch(`${base}/v1/state`, { headers })).json() as { preset_move: number; preset_metrics: unknown };
+    assert.equal(state.preset_move, 1); assert.deepEqual(state.preset_metrics, metrics);
+    // Without a backend the route refuses before any move.
+    fake.presets = undefined;
+    calls.length = 0;
+    const disconnected = await post('{"preset":0}');
+    assert.equal(disconnected.status, 503); assert.deepEqual(await disconnected.json(), { error: 'not_connected' });
+    assert.deepEqual(calls, []);
   } finally { server.emit('shutdown'); server.closeAllConnections(); server.close(); await once(server, 'close'); }
 });
