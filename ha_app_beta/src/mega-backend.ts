@@ -26,6 +26,7 @@ import {
   type StandalonePushReport,
 } from './discovery-diagnostics.js';
 import { RecordingTranscoder } from './recording-media.js';
+import { LivePacing } from './camera-clock.js';
 import { MegaRecordings } from './mega-recordings.js';
 import { RecordingError, StationError } from './errors.js';
 import type { LiveAdmission } from './streams.js';
@@ -221,6 +222,8 @@ export class MegaBackend extends EventEmitter implements Backend {
     readonly experimentalStandalone = false,
     /** Probe the recordings of each experimental standalone camera in the login discovery (#178). */
     readonly standaloneRecordingProbe = false,
+    /** Release live frames on the camera's clock (#231). */
+    readonly liveSmoothing = true,
   ) {
     super();
     if (!Number.isInteger(liveStreamsPerStation) || liveStreamsPerStation < 1 || liveStreamsPerStation > 4)
@@ -673,7 +676,13 @@ export class MegaBackend extends EventEmitter implements Backend {
     this.streams.set(serial, owned);
     owned.starting = (async () => {
       try {
-        const handle = await this.client!.startLive(serial, { signal: abort.signal, maxDurationMs: bound, onProgress });
+        const pacing = this.liveSmoothing ? new LivePacing() : undefined;
+        const handle = await this.client!.startLive(serial, {
+          signal: abort.signal,
+          maxDurationMs: bound,
+          onProgress,
+          onFrameTiming: pacing?.timing,
+        });
         owned.handle = handle;
         void handle.ended.then((result) => {
           owned.audio.finish('ended', result.confirmed);
@@ -681,6 +690,7 @@ export class MegaBackend extends EventEmitter implements Backend {
           this.emit('live-stop', { serial, confirmed: result.confirmed });
         });
         const metadata = handle.metadata;
+        const paced = pacing?.attach(handle.video, handle.audio);
         const media: LiveMedia = {
           serial,
           videoCodec:
@@ -691,8 +701,9 @@ export class MegaBackend extends EventEmitter implements Backend {
                 : null,
           audioSupported: ['aac', 'aac-lc', 'aac-eld'].includes(metadata.audioCodec),
           fps: metadata.fps,
-          video: handle.video,
-          audio: handle.audio,
+          video: paced?.video ?? handle.video,
+          audio: paced?.audio ?? handle.audio,
+          ...(paced ? { source: { video: handle.video, audio: handle.audio } } : {}),
         };
         owned.audio.attach(handle.audio, metadata.audioCodec, media.audioSupported, () => handle.metadata.audioCodec);
         this.emit('live-start', media);
