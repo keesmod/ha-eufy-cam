@@ -109,6 +109,11 @@ export interface LiveMedia {
   fps: number;
   video: Readable;
   audio: Readable;
+  /**
+   * The library's own streams when `video` and `audio` are paced on the
+   * camera's clock. Diagnostics observe the P2P input here.
+   */
+  source?: { video: Readable; audio: Readable };
 }
 export interface Backend extends EventEmitter {
   recordAudioEvent?(serial: string, event: DiagnosticEvent): void;

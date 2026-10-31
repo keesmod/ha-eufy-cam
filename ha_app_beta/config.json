@@ -1,6 +1,6 @@
 {
   "name": "Eufy Security Viewer Bridge (beta)",
-  "version": "0.8.41-beta.1",
+  "version": "0.8.41-beta.2",
   "slug": "eufy_viewer_bridge_beta",
   "description": "Beta channel of the Eufy Security Viewer Bridge for opt-in testing. Run only one of the two bridge apps.",
   "url": "https://github.com/keesmod/ha-eufy-cam",
@@ -24,6 +24,7 @@
     "live_max_bitrate": "str?",
     "live_max_streams_per_station": "int(1,4)?",
     "live_max_seconds_mains": "int(120,3600)?",
+    "live_smoothing": "bool?",
     "experimental_standalone": "bool?",
     "standalone_recording_probe": "bool?"
   },
