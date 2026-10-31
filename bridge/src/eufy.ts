@@ -100,6 +100,8 @@ export class Eufy extends EventEmitter {
   liveMaxSecondsMains = 120;
   /** A refresh keeps a frame this long after its first, while a waking camera may still adjust exposure. */
   snapshotRefreshSettleMs = 1000;
+  /** Preset moves handed to the backend and not yet settled. A HomeBase recovery waits for them (#229). */
+  private movesInFlight = 0;
   readonly hub = new StreamHub({
     diagnostic: (serial, event) => this.diagnostics.mark(serial, event),
     admit: (serial) => {
@@ -108,6 +110,7 @@ export class Eufy extends EventEmitter {
     },
     bound: (serial) => this.backend?.liveBoundMs?.(serial) ?? 120_000,
     recover: (serial) => this.recoverStation(serial),
+    idle: () => this.movesInFlight === 0,
     start: async (serial) => {
       if (this.recordings.busy) throw new StartNotIssued(new Error('Recording operation in progress'));
       if (!this.backend?.connected) throw new StartNotIssued(new Error('Disconnected'));
@@ -461,19 +464,23 @@ export class Eufy extends EventEmitter {
     }
   }
   /**
-   * A preset move (#229). An unconfirmed live stop leaves the primary session
-   * free in the client while the hub keeps the camera stopping and then
-   * recovers its HomeBase. A move in that window could make the recovery fail,
-   * so it is refused before any client call, with the hub fields that the
-   * refresh and recordings guards use. The hub does not know HomeBases, so
-   * this holds for every camera, like the recordings guard.
+   * A preset move (#229). A running HomeBase recovery, bounded by
+   * recoverStation, refuses it before any client call. A camera that is only
+   * stopping, also after a failed recovery, does not. The hub starts no
+   * recovery while a move is in flight, so neither can make the other fail.
+   * The check and the count have no await between them.
    */
   async movePreset(serial: string, preset: unknown): Promise<void> {
     const index = presetIndex(preset);
     const presets = this.presets;
     if (!presets) throw new PresetError('not_connected');
-    if (this.hub.recoveringStation || this.hub.quarantined) throw new PresetError('station_busy');
-    await presets.move(serial, index);
+    if (this.hub.recoveringStation) throw new PresetError('station_busy');
+    this.movesInFlight++;
+    try {
+      await presets.move(serial, index);
+    } finally {
+      this.movesInFlight--;
+    }
   }
   private captureSnapshot(serial: string, signal?: AbortSignal): Promise<Picture> {
     return new Promise((resolve, reject) => {

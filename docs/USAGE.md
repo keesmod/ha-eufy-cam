@@ -120,7 +120,7 @@ From integration 0.8.50 with bridge 0.8.41 a SoloCam S340 (`T8170`) on a HomeBas
 Know these limits before you use the buttons in an automation:
 
 - The press ends when the HomeBase accepts the move, not when the camera stops. There is no position or completion signal, so no preset shows as the current one.
-- A move is refused, not queued, while the HomeBase is busy with live view, a recording or another command. Home Assistant then shows an error that says why. With the default `live_max_streams_per_station` of 1 every live view and every **Refresh snapshot** on that HomeBase blocks a move until it has stopped, and so does an inline card with `live_autostart`. With a value of 2 or more each live camera streams on its own session and leaves the HomeBase free for a move, see [live cameras per HomeBase](#live-cameras-per-homebase). A move is also refused while the bridge still holds a live stop that a camera did not confirm, or recovers a HomeBase after such a stop. That can last up to about 40 seconds and applies to every camera.
+- A move is refused, not queued, while the HomeBase is busy with live view, a recording or another command. Home Assistant then shows an error that says why. With the default `live_max_streams_per_station` of 1 every live view and every **Refresh snapshot** on that HomeBase blocks a move until it has stopped, and so does an inline card with `live_autostart`. With a value of 2 or more each live camera streams on its own session and leaves the HomeBase free for a move, see [live cameras per HomeBase](#live-cameras-per-homebase). A move is also refused while the bridge recovers a HomeBase after a live stop that a camera did not confirm, for at most about 28 seconds. Such a recovery waits for a move that is still running.
 - When the HomeBase does not confirm a move, the camera may still have moved. The bridge never repeats a move by itself.
 - Whether a move starts motion events or recordings has not been tested.
 - Every move wakes a battery camera, like every refresh.
@@ -139,6 +139,14 @@ conditions:
     before: sunset
 actions:
   - sequence:
+      - condition: not
+        conditions:
+          - condition: state
+            entity_id: button.garden_move_to_preset_2
+            state: unavailable
+          - condition: state
+            entity_id: button.garden_refresh_snapshot
+            state: unavailable
       - action: button.press
         target:
           entity_id: button.garden_move_to_preset_2
@@ -166,9 +174,9 @@ actions:
 mode: single
 ```
 
-When the move to the sky or the refresh fails, Home Assistant skips the rest of the group, so it keeps no copy of an old or wrong view. `continue_on_error: true` on the group lets the automation go on after any failure in it. The refresh can start while the camera is still moving, because the answer to a move does not mean that the camera has stopped. If the picture shows a moving view, add a short `delay` in the group before the refresh.
+When the move to the sky or the refresh fails, Home Assistant skips the rest of the group, so it keeps no copy of an old or wrong view. `continue_on_error: true` on the group lets the automation go on after any failure in it. Home Assistant skips a press on an unavailable button without an error, so the group starts with a condition that ends only the group when the sky button or the refresh button is unavailable. The condition checks them once, when the group starts. The refresh can start while the camera is still moving, because the answer to a move does not mean that the camera has stopped. If the picture shows a moving view, add a short `delay` in the group before the refresh.
 
-The move back always runs, also when the group failed. The first press waits 10 seconds for the live session of the refresh to stop. A slow stop or the bridge's HomeBase recovery can refuse moves for up to about 40 seconds, so a second press follows 30 seconds later. It repeats the same absolute position, which is harmless, but wakes a battery camera once more.
+The move back also runs after a failed or skipped group. It can still be refused while live view runs on that HomeBase with the default limit of 1, or while the bridge recovers a HomeBase. It is skipped without an error while the button is unavailable. The camera then stays at the sky preset until a later move back succeeds. The first press waits 10 seconds for the live session of the refresh to stop. A second press follows 30 seconds later in case a slow stop or a recovery refused the first. It repeats the same absolute position, which is harmless, but wakes a battery camera once more. As a safeguard, add a second automation that presses **Move to preset 1** at sunset.
 
 The camera entity shows the sky picture only until a newer image arrives, so the automation keeps a copy in the media folder, `/media` on Home Assistant OS, which `camera.snapshot` may write to by default. After the first run, add the **Local file** integration for `/media/garden_sky.jpg` and show its camera on the dashboard. Home Assistant serves it through its authenticated camera proxy. Do not use `/config/www`, which Home Assistant serves at `/local` without login and with a 31-day browser cache.
 

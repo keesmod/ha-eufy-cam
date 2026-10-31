@@ -140,7 +140,7 @@
       "message": "The bridge could not reach the HomeBase. No move was sent."
     },
     "preset_station_busy": {
-      "message": "The HomeBase is busy with live view, a recording or another command. Try again in a few seconds."
+      "message": "The HomeBase is busy with live view, a recording or another command, or the bridge is recovering a live view. Try again later."
     },
     "preset_rejected": {
       "message": "The HomeBase refused the move."

@@ -1,5 +1,5 @@
 import { tmpdir } from 'node:os';
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 process.env.EUFY_DATA_DIR = tmpdir();
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -2486,68 +2486,132 @@ test('every library failure of a preset move becomes a fixed code and is counted
     await f.backend.close();
   }
 });
-test('a preset move is refused before the client while the hub holds an unconfirmed stop or recovers the HomeBase (#229)', async (t) => {
+const settle = async () => {
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+};
+/**
+ * A bridge whose camera reached START and never answered, so no stop can
+ * confirm it. The client freed its session and the hub keeps the camera
+ * stopping. After three stop attempts three seconds apart a tick may start the
+ * one-shot HomeBase recovery, which calls `recover` (#229).
+ */
+async function stoppingBridge(t: TestContext, recover: () => Promise<{ confirmed: boolean; reason: 'device' }>) {
   const { Eufy } = await import('../src/eufy.js');
   const f = presetFixture(presetsAvailable);
   let issued!: () => void;
   const reached = new Promise<void>((resolve) => {
     issued = resolve;
   });
-  // A start that reached the camera and never answered, so no stop can confirm it.
   f.client.startLive = async (_id: string, options?: { signal?: AbortSignal; onProgress?: (progress: { stage: string; elapsedMs: number }) => void }) => {
     options?.onProgress?.({ stage: 'start_issued', elapsedMs: 1 });
     issued();
     return new Promise<never>((_resolve, reject) =>
       options?.signal?.addEventListener('abort', () => reject(new EufyError('cancelled')), { once: true }));
   };
-  let recover!: () => void;
   const recoveries: string[] = [];
   f.client.ensureLiveStopped = (id: string) => {
     recoveries.push(id);
-    return new Promise((resolve) => {
-      recover = () => resolve({ confirmed: true, reason: 'device' });
-    });
+    return recover();
   };
   let clock = performance.now();
   t.mock.method(performance, 'now', () => clock);
-  const settle = async () => {
-    for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
-  };
   const bridge = new Eufy(f.storage, 'mega', false, () => f.backend);
-  try {
-    await bridge.login(presetLogin);
-    const viewer = { bufferedAmount: 0, send: () => {}, close: () => {} };
-    assert.equal(bridge.hub.attach('CAM', viewer), true);
-    await reached;
-    bridge.hub.detach('CAM', viewer);
-    await settle();
-    // The client freed its session, the hub still waits for the confirmed stop.
-    assert.equal(bridge.hub.phase('CAM'), 'stopping');
-    assert.equal(bridge.hub.active, 0);
-    await assert.rejects(bridge.movePreset('CAM', 1), { code: 'station_busy', status: 409 });
-    // Three stop attempts three seconds apart, then the one-shot HomeBase recovery.
-    for (let i = 0; i < 3; i++) {
+  t.after(() => bridge.close());
+  await bridge.login(presetLogin);
+  const viewer = { bufferedAmount: 0, send: () => {}, close: () => {} };
+  assert.equal(bridge.hub.attach('CAM', viewer), true);
+  await reached;
+  bridge.hub.detach('CAM', viewer);
+  await settle();
+  assert.equal(bridge.hub.phase('CAM'), 'stopping');
+  assert.equal(bridge.hub.active, 0);
+  assert.equal(bridge.hub.recoveringStation, false);
+  const ticks = async (count: number) => {
+    for (let i = 0; i < count; i++) {
       clock += 3000;
       bridge.hub.tick();
       await settle();
     }
-    assert.deepEqual(recoveries, ['CAM']);
-    assert.equal(bridge.hub.recoveringStation, true);
-    await assert.rejects(bridge.movePreset('CAM', 1), { code: 'station_busy', status: 409 });
-    // A recovery that is still running holds the HomeBase also after the camera confirmed its stop.
-    bridge.hub.stopped('CAM');
-    assert.equal(bridge.hub.phase('CAM'), undefined);
-    await assert.rejects(bridge.movePreset('CAM', 2), { code: 'station_busy', status: 409 });
-    assert.deepEqual(f.moves, [], 'No refused move reaches the client');
-    assert.deepEqual(f.backend.presets.metrics, { commands: 0, accepted: 0, rejected: 0, unconfirmed: 0, refused: 0 });
-    recover();
-    await settle();
-    assert.equal(bridge.hub.recoveringStation, false);
-    assert.equal(bridge.hub.quarantined, 0);
-    await bridge.movePreset('CAM', 2);
-    assert.deepEqual(f.moves.map(({ id, preset }) => [id, preset]), [['CAM', 2]]);
-    assert.deepEqual(f.backend.presets.metrics, { commands: 1, accepted: 1, rejected: 0, unconfirmed: 0, refused: 0 });
-  } finally {
-    await bridge.close();
-  }
+  };
+  return { f, bridge, recoveries, ticks };
+}
+const confirmed = async () => ({ confirmed: true, reason: 'device' as const });
+const moved = (f: ReturnType<typeof presetFixture>) => f.moves.map(({ id, preset }) => [id, preset]);
+test('a preset move while a camera is stopping and no recovery runs reaches the client once (#229)', async (t) => {
+  const { f, bridge, recoveries, ticks } = await stoppingBridge(t, confirmed);
+  await bridge.movePreset('CAM', 1);
+  assert.deepEqual(moved(f), [['CAM', 1]]);
+  assert.deepEqual(f.backend.presets.metrics, { commands: 1, accepted: 1, rejected: 0, unconfirmed: 0, refused: 0 });
+  // A settled move leaves the HomeBase to the recovery.
+  await ticks(3);
+  assert.deepEqual(recoveries, ['CAM']);
+  assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 1, recovery_completed: 1, recovery_failed: 0 });
+  assert.deepEqual(moved(f), [['CAM', 1]]);
+});
+test('a preset move during a running HomeBase recovery is refused before the client (#229)', async (t) => {
+  let recover!: () => void;
+  const { f, bridge, recoveries, ticks } = await stoppingBridge(t, () => new Promise((resolve) => {
+    recover = () => resolve({ confirmed: true, reason: 'device' });
+  }));
+  await ticks(3);
+  assert.deepEqual(recoveries, ['CAM']);
+  assert.equal(bridge.hub.recoveringStation, true);
+  await assert.rejects(bridge.movePreset('CAM', 1), { code: 'station_busy', status: 409 });
+  // A recovery that is still running holds the HomeBase also after the camera confirmed its stop.
+  bridge.hub.stopped('CAM');
+  assert.equal(bridge.hub.phase('CAM'), undefined);
+  await assert.rejects(bridge.movePreset('CAM', 2), { code: 'station_busy', status: 409 });
+  assert.deepEqual(f.moves, [], 'No refused move reaches the client');
+  assert.deepEqual(f.backend.presets.metrics, { commands: 0, accepted: 0, rejected: 0, unconfirmed: 0, refused: 0 });
+  recover();
+  await settle();
+  assert.equal(bridge.hub.recoveringStation, false);
+  assert.equal(bridge.hub.quarantined, 0);
+  await bridge.movePreset('CAM', 2);
+  assert.deepEqual(moved(f), [['CAM', 2]]);
+  assert.deepEqual(f.backend.presets.metrics, { commands: 1, accepted: 1, rejected: 0, unconfirmed: 0, refused: 0 });
+});
+test('a HomeBase recovery waits for a preset move in flight and starts on a later tick (#229)', async (t) => {
+  const { f, bridge, recoveries, ticks } = await stoppingBridge(t, confirmed);
+  let answer!: () => void;
+  f.client.moveToPreset = async (id: string, preset: number, signal?: AbortSignal) => {
+    f.moves.push({ id, preset, signal });
+    await new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    throw new EufyError('preset_move_unconfirmed');
+  };
+  const move = bridge.movePreset('CAM', 3);
+  await settle();
+  assert.deepEqual(moved(f), [['CAM', 3]]);
+  // Well past the third stop attempt the move still holds the HomeBase.
+  await ticks(6);
+  assert.deepEqual(recoveries, [], 'No recovery races a move in flight');
+  assert.equal(bridge.hub.recoveringStation, false);
+  assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 0, recovery_completed: 0, recovery_failed: 0 });
+  // A failed move releases the HomeBase as well.
+  answer();
+  await assert.rejects(move, { code: 'preset_unconfirmed', status: 504 });
+  assert.deepEqual(recoveries, []);
+  await ticks(1);
+  assert.deepEqual(recoveries, ['CAM']);
+  assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 1, recovery_completed: 1, recovery_failed: 0 });
+  assert.equal(bridge.hub.phase('CAM'), undefined);
+  assert.deepEqual(moved(f), [['CAM', 3]]);
+});
+test('a preset move after a failed HomeBase recovery reaches the client once (#229)', async (t) => {
+  const { f, bridge, recoveries, ticks } = await stoppingBridge(t, async () => {
+    throw new EufyError('station_busy');
+  });
+  await ticks(3);
+  assert.deepEqual(recoveries, ['CAM']);
+  assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 1, recovery_completed: 0, recovery_failed: 1 });
+  // The hub keeps the camera stopping until a bridge restart and never retries the recovery.
+  await ticks(10);
+  assert.deepEqual(recoveries, ['CAM']);
+  assert.equal(bridge.hub.phase('CAM'), 'stopping');
+  assert.equal(bridge.hub.recoveringStation, false);
+  await bridge.movePreset('CAM', 0);
+  assert.deepEqual(moved(f), [['CAM', 0]]);
+  assert.deepEqual(f.backend.presets.metrics, { commands: 1, accepted: 1, rejected: 0, unconfirmed: 0, refused: 0 });
 });

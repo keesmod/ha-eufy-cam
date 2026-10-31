@@ -29,6 +29,11 @@ export interface Control {
   bound?(serial: string): number;
   start(serial: string): Promise<void>;
   recover?(serial: string): Promise<string[]>;
+  /**
+   * True when no preset move or other bridge-owned HomeBase command is in
+   * flight. A recovery waits for it, so it never races a command (#229).
+   */
+  idle?(): boolean;
   stop(serial: string): Promise<void>;
   disposeMedia(serial: string): void;
 }
@@ -177,8 +182,9 @@ export class StreamHub {
       if (camera.phase === "stopping") {
         if (camera.retries < 3 && time >= camera.nextStop) this.requestStop(serial, camera);
         // Stop can be a no-op for a start that never delivered video. Reset the
-        // shared transport once, only after all owners and pending starts leave.
-        if (camera.retries >= 3 && time >= camera.nextStop && !camera.recoveryAttempted && !this.recovering && this.active === 0 && ![...this.cameras.values()].some(c => c.startPending) && this.control.recover) {
+        // shared transport once, only after all owners, pending starts and
+        // bridge-owned commands leave.
+        if (camera.retries >= 3 && time >= camera.nextStop && !camera.recoveryAttempted && !this.recovering && this.active === 0 && (this.control.idle?.() ?? true) && ![...this.cameras.values()].some(c => c.startPending) && this.control.recover) {
           camera.recoveryAttempted = true; this.recovering = true; this.recoveryMetrics.recovery_attempts++;
           void this.control.recover(serial).then(serials => {
             for (const recovered of serials) if (this.cameras.get(recovered)?.phase === "stopping") this.stopped(recovered);

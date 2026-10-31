@@ -140,7 +140,7 @@
       "message": "De bridge kon de HomeBase niet bereiken. Er is geen beweging verstuurd."
     },
     "preset_station_busy": {
-      "message": "De HomeBase is bezig met live beeld, een opname of een ander commando. Probeer het over een paar seconden opnieuw."
+      "message": "De HomeBase is bezig met live beeld, een opname of een ander commando, of de bridge herstelt een live beeld. Probeer het later opnieuw."
     },
     "preset_rejected": {
       "message": "De HomeBase weigerde de beweging."
