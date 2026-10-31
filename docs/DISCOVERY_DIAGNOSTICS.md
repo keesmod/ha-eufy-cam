@@ -313,8 +313,11 @@ firmware 3.3.8 under a T8030 on firmware 3.8.7.4. Only the exact `T8142` was
 admitted for type 15. Client 0.30.3, included in bridge 0.8.41, admits exactly
 `T8142-Z` with type 15 under the H3 media policy, which checks the actual
 HomeBase 3 owner and its firmware. It does not join the closed model-only
-policy of `T8142`. Other suffixes, including `T8142R`, and other types stay
-`unsupported_device`. The client's [model matrix][236-matrix] records the
+policy of `T8142`. Under another parent, such as a HomeBase 2, its `device`
+row shows `relationship=unsupported` with
+`relationship_reason=unsupported_station`, and Home Assistant shows it as a
+camera without media or events. Other suffixes, including `T8142R`, and other
+types stay `unsupported_device`. The client's [model matrix][236-matrix] records the
 reported tuple. Not tested on hardware with this integration.
 
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
