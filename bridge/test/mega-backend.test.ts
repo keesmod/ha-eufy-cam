@@ -25,7 +25,7 @@ import {
   recordingProbeNotice,
 } from '../src/mega-backend.js';
 import { Storage } from '../src/storage.js';
-import { backendName } from '../src/backend.js';
+import { backendName, type LiveMedia } from '../src/backend.js';
 import { MegaRecordings } from '../src/mega-recordings.js';
 const devices: Device[] = [
   {
@@ -96,7 +96,7 @@ test('recording cancellation before the media handle arrives is counted and rele
   assert.equal(recordings.busy, false);
   assert.equal(recordings.metrics.cancelled, 1);
 });
-function fixture(limit?: number, mainsSeconds?: number, standalone?: boolean, probe?: boolean) {
+function fixture(limit?: number, mainsSeconds?: number, standalone?: boolean, probe?: boolean, smoothing?: boolean) {
   const calls: string[] = [];
   // Each standalone recording probe the backend asks the client for (#178).
   const probes: { id: string; options: unknown }[] = [];
@@ -150,8 +150,9 @@ function fixture(limit?: number, mainsSeconds?: number, standalone?: boolean, pr
       commandSent: true,
       state: { ...state, guardMode: mode, currentMode: mode },
     }),
-    startLive: async (id: string, options?: { maxDurationMs?: number; onProgress?: (progress: { stage: string; elapsedMs: number }) => void }) => {
+    startLive: async (id: string, options?: { maxDurationMs?: number; onProgress?: (progress: { stage: string; elapsedMs: number }) => void; onFrameTiming?: (timing: unknown) => void }) => {
       calls.push('start');
+      timings.push(options?.onFrameTiming);
       bounds.push(options?.maxDurationMs ?? null);
       options?.onProgress?.({ stage: 'metadata', elapsedMs: 12 });
       let finish!: (value: { confirmed: boolean; reason: 'device' }) => void;
@@ -195,6 +196,7 @@ function fixture(limit?: number, mainsSeconds?: number, standalone?: boolean, pr
   };
   storage.write = async () => {};
   const bounds: (number | null)[] = [];
+  const timings: unknown[] = [];
   const options: ClientOptions[] = [];
   const backend = new MegaBackend(
     storage,
@@ -209,8 +211,9 @@ function fixture(limit?: number, mainsSeconds?: number, standalone?: boolean, pr
     mainsSeconds,
     standalone,
     probe,
+    smoothing,
   );
-  return { backend, client, calls, reads, storage, options, bounds, probes };
+  return { backend, client, calls, reads, storage, options, bounds, probes, timings };
 }
 /** The client's observation of a standalone probe answered with an empty page (#178). */
 function probeAnswer(change: Partial<RecordingObservation> = {}): RecordingObservation {
@@ -271,6 +274,29 @@ test('the library\'s live start stages reach the caller unchanged', async () => 
     await f.backend.stopLive('CAM');
   } finally {
     await f.backend.close();
+  }
+});
+test('live media is paced on the camera clock by default and observed at the library streams', async () => {
+  for (const smoothing of [undefined, false]) {
+    const f = fixture(undefined, undefined, undefined, undefined, smoothing);
+    try {
+      await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+      const media: LiveMedia[] = [];
+      f.backend.on('live-start', (event: LiveMedia) => media.push(event));
+      await f.backend.startLive('CAM');
+      if (smoothing === false) {
+        assert.equal(f.timings[0], undefined, 'no timing callback without smoothing');
+        assert.equal(media[0]?.source, undefined);
+      } else {
+        assert.equal(typeof f.timings[0], 'function');
+        assert.ok(media[0]?.source, 'diagnostics get the library streams');
+        assert.notEqual(media[0]?.video, media[0]?.source?.video);
+        assert.notEqual(media[0]?.audio, media[0]?.source?.audio);
+      }
+      await f.backend.stopLive('CAM');
+    } finally {
+      await f.backend.close();
+    }
   }
 });
 test('EUFY_LIVE_MAX_STREAMS_PER_STATION accepts whole numbers from 1 to 4 and defaults to 1', () => {
@@ -769,7 +795,7 @@ for (const empty of [false,true])
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
       assert.equal(summary.experimental_standalone,false);
-      assert.equal(summary.software.library,'0.30.2');
+      assert.equal(summary.software.library,'0.30.3-beta.1');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);

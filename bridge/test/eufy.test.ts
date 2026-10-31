@@ -152,6 +152,34 @@ test('shared bridge converts real media, keeps video through audio failure and r
   }
 });
 
+test('live diagnostics observe the library streams when the media is paced on the camera clock (#231)', { timeout: 10_000 }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'eufy-viewer-test-'));
+  const storage = new Storage(directory);
+  const backend = fixtureBackend();
+  const diagnosticEvents: string[] = [];
+  backend.recordAudioEvent = (_serial, event) => { diagnosticEvents.push(event); };
+  backend.startLive = async () => {};
+  backend.stopLive = async () => {};
+  const bridge = new Eufy(storage, 'mega', false, () => backend);
+  const source = { video: new PassThrough(), audio: new PassThrough() };
+  const paced = { video: new PassThrough(), audio: new PassThrough() };
+  try {
+    assert.equal((await bridge.login({ username: 'test@example.invalid', password: 'fixture-only', country: 'NL' })).state, 'connected');
+    bridge.hub.attach('CAM123', { bufferedAmount: 0, send: () => {}, close: () => {} });
+    backend.emit('live-start', { serial: 'CAM123', videoCodec: 'h264', audioSupported: true, fps: 15, video: paced.video, audio: paced.audio, source });
+    // Bytes reach the library streams while the paced streams still hold them.
+    source.video.write(Buffer.from([0, 0, 0, 1, 0x65, 0]));
+    source.audio.write(Buffer.from([0xff, 0xf1, 0x50]));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.ok(diagnosticEvents.includes('video_input'), 'video input is marked at the library stream');
+    assert.ok(diagnosticEvents.includes('audio_input'), 'audio input is marked at the library stream');
+    assert.equal(bridge.supportReport().live_video![0]!.input.chunks, 1, 'the P2P input stage counts the library stream');
+  } finally {
+    bridge.hub.close();
+    await bridge.close(); await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('saved login stays connecting through delayed initialization and retries boot network failures', async t => {
   const storage = new Storage('/unused');
   t.mock.method(storage, 'read', async (name: string) => name === 'mega-credentials.json' ? JSON.stringify({ username: 'fixture', password: 'fixture', country: 'NL' }) : undefined);
