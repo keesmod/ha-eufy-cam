@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { timingSafeEqual } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import type { Credentials, Eufy } from "./eufy.js";
-import { RecordingError, SnapshotError, StationError } from "./errors.js";
+import { PresetError, RecordingError, SnapshotError, StationError } from "./errors.js";
 import type { Notification } from "./notifications.js";
 import type { Peer } from "./streams.js";
 import { MigrationError } from './migration.js';
@@ -26,7 +26,7 @@ function json(response: ServerResponse, status: number, value: unknown): void {
 }
 export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 1024, perMessageDeflate: false });
-  const state = () => ({ protocol: 1, recording_playback: 1, snapshot_refresh: 1, migration: { version: 1, error: eufy.migrationError }, backend: eufy.backendName, transports: ["jpeg", "webrtc"], live_max_streams_per_station: eufy.liveStreamsPerStation, live_max_seconds_mains: eufy.liveMaxSecondsMains, bridge_id: bridgeId, auth: eufy.auth.state, notification_metrics: eufy.notifications?.metrics, cameras: eufy.inventory(), stations: eufy.stations?.inventory() ?? [], alarm_metrics: eufy.stations?.metrics, recording_metrics: eufy.recordings ? { ...eufy.recordings.metrics, active: eufy.recordings.busy } : undefined, stream_metrics: { ...eufy.metrics, ...eufy.hub.recoveryMetrics, active_cameras: eufy.hub.active, quarantined: eufy.hub.quarantined } });
+  const state = () => ({ protocol: 1, recording_playback: 1, snapshot_refresh: 1, preset_move: 1, migration: { version: 1, error: eufy.migrationError }, backend: eufy.backendName, transports: ["jpeg", "webrtc"], live_max_streams_per_station: eufy.liveStreamsPerStation, live_max_seconds_mains: eufy.liveMaxSecondsMains, bridge_id: bridgeId, auth: eufy.auth.state, notification_metrics: eufy.notifications?.metrics, cameras: eufy.inventory(), stations: eufy.stations?.inventory() ?? [], alarm_metrics: eufy.stations?.metrics, preset_metrics: eufy.presets?.metrics, recording_metrics: eufy.recordings ? { ...eufy.recordings.metrics, active: eufy.recordings.busy } : undefined, stream_metrics: { ...eufy.metrics, ...eufy.hub.recoveryMetrics, active_cameras: eufy.hub.active, quarantined: eufy.hub.quarantined } });
   const server = createServer((request, response) => {
     const media = /^\/v1\/media\/([a-f0-9]{64})(\/audio)?$/.exec(new URL(request.url ?? "/", "http://bridge").pathname);
     if (request.method === "GET" && media) {
@@ -50,6 +50,13 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         const input = await body(request);
         if (!eufy.stations) throw new StationError("station_unavailable");
         await eufy.stations.setMode(station[1]!, input.mode);
+        json(response, 200, { accepted: true }); return;
+      }
+      const preset = /^\/v1\/cameras\/([A-Za-z0-9_-]{1,64})\/preset$/.exec(url.pathname);
+      if (request.method === "POST" && preset) {
+        if (!eufy.hasCamera(preset[1]!)) { json(response, 404, { error: "not_found" }); return; }
+        // A sent move cannot be recalled, so a client that leaves does not cancel it, like /mode (#229).
+        await eufy.movePreset(preset[1]!, (await body(request)).preset);
         json(response, 200, { accepted: true }); return;
       }
       if (request.method === "POST" && url.pathname === "/v1/login") {
@@ -120,7 +127,7 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
         response.writeHead(200, { "Content-Type": picture.mime, "Content-Length": picture.data.length, "Cache-Control": "no-store" }); response.end(picture.data); return;
       }
       json(response, 404, { error: "not_found" });
-    })().catch(error => { if (error instanceof MigrationError && !response.headersSent) { json(response, 409, { error: error.code }); return; } const known = error instanceof RecordingError || error instanceof StationError || error instanceof SnapshotError; if (!response.headersSent) json(response, known ? error.status : 400, { error: known ? error.code : "request_failed" }); else response.destroy(); });
+    })().catch(error => { if (error instanceof MigrationError && !response.headersSent) { json(response, 409, { error: error.code }); return; } const known = error instanceof RecordingError || error instanceof StationError || error instanceof SnapshotError || error instanceof PresetError; if (!response.headersSent) json(response, known ? error.status : 400, { error: known ? error.code : "request_failed" }); else response.destroy(); });
   });
   server.requestTimeout = 60_000; server.headersTimeout = 10_000;
   server.on("upgrade", (request, socket, head) => {
