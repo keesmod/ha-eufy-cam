@@ -23,8 +23,10 @@ Anker.
 - Camera event entities, battery sensors, and HomeBase alarm and Guard Mode
   entities for automations. See [events and notifications](docs/NOTIFICATIONS.md).
 
-Talkback, PTZ control, recording live video, HLS and permanent RTSP streams are
-not provided.
+A SoloCam S340 (`T8170`) on a HomeBase 3 gets experimental buttons that move
+it to a preset saved in the Eufy app, see [preset positions](docs/USAGE.md#preset-positions).
+Talkback, other pan and tilt control, recording live video, HLS and permanent
+RTSP streams are not provided.
 See [snapshot and streaming limits](docs/USAGE.md#honest-snapshot-and-streaming-limits).
 
 ## Before you start

@@ -73,6 +73,9 @@ export class Eufy extends EventEmitter {
   get stations() {
     return this.backend?.stations;
   }
+  get presets() {
+    return this.backend?.presets;
+  }
   get notifications() {
     return this.backend?.notifications;
   }

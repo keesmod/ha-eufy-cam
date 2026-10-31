@@ -5,8 +5,9 @@
 - Live video is capped at the pixel count of 1920×1080, so the `T8213` doorbell streams 1200×1726 ([#186](https://github.com/keesmod/ha-eufy-cam/issues/186)), not yet confirmed on hardware.
 - Updated the bridge dependency `qs` to 6.16.1 ([#226](https://github.com/keesmod/ha-eufy-cam/pull/226)).
 - Live video no longer freezes briefly at each camera key frame ([#231](https://github.com/keesmod/ha-eufy-cam/issues/231)), not yet confirmed on hardware.
+- Added preset buttons for the SoloCam S340 `T8170` on a HomeBase 3 ([#229](https://github.com/keesmod/ha-eufy-cam/issues/229)), not yet confirmed on hardware.
 
-Upgrade: all changes are in bridge 0.8.41, and live view starts about 0.7 s later. Set `live_smoothing: false` to keep the previous behavior. Rollback: 0.8.49 with bridge 0.8.40.
+Upgrade: update the bridge to 0.8.41 first, then the integration, and live view starts about 0.7 s later. Set `live_smoothing: false` to keep the previous behavior. Rollback: 0.8.49 with bridge 0.8.40.
 
 ## 0.8.49 - 2026-10-26
 

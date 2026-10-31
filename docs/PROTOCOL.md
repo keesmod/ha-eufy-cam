@@ -7,6 +7,7 @@ Control routes require `Authorization: Bearer <bridge token>`. The media-only ro
 | `GET /v1/state` | Protocol version, stable bridge ID, account state, cached camera inventory, configured live limit per HomeBase | None |
 | `POST /v1/login` | Account credentials or verification/captcha response | Login/discovery only |
 | `GET /v1/snapshot/{serial}` | Cached JPEG/PNG; 404 if absent | None |
+| `POST /v1/cameras/{serial}/preset` | Moves the camera to a saved preset, body `{"preset": 0..3}`, returns `{"accepted": true}` once the HomeBase accepted it, see [preset moves](#preset-moves-0841) | Moves the camera. Never starts live view |
 | `POST /v1/snapshot/{serial}/refresh` | Stores a fresh live frame as the snapshot and returns `{snapshot_received_at}`, see [snapshot refresh](#snapshot-refresh-0839) | Wakes the camera as an internal live viewer with the same admission, limits and confirmed stop. Joins a running session without starting or stopping it |
 | `WS /v1/events` | Initial state followed by push updates | None |
 | `GET /v1/media/{grant}` | Existing MPEG-TS feed, 256-bit grant | Cannot start or renew; closes when owning viewer ends |
@@ -151,6 +152,62 @@ JSON error codes:
 `stream_metrics` in `/v1/state` counts `snapshot_refresh_requests`,
 `snapshot_refresh_completed` and `snapshot_refresh_failed`. Live diagnostics
 mark the session with the `snapshot_refresh` event.
+
+## Preset moves, 0.8.41
+
+`/v1/state` advertises `preset_move: 1`, and integration 0.8.50 offers its
+preset buttons only then
+([issue #229](https://github.com/keesmod/ha-eufy-cam/issues/229)).
+`POST /v1/cameras/{serial}/preset` takes `{"preset": N}`, where `N` is the wire
+index 0 to 3. The Eufy app labels its presets 1 to 4, so app preset 1 is index
+0. That mapping is not yet confirmed on hardware. The bridge accepts only a JSON
+integer from 0 to 3. A string such as `"1"` or `"PRESET_1"` is refused. A body
+that is not a JSON object or is larger than 8192 bytes gets 400
+`request_failed`, as on the other routes.
+
+Only a camera whose `presets` capability is available can move, see
+[camera capabilities](CAMERA_CAPABILITIES.md). With client 0.30.3 that is only
+the SoloCam S340 `T8170` on a HomeBase 3. This is software that is not yet
+confirmed on hardware. The bridge hands a move to the client once. It never
+retries or queues a move. Success is HTTP 200 with `{"accepted": true}`. It
+means that the HomeBase accepted the move. It does not mean that the camera
+finished moving or reached the position. There is no position or completion
+signal, and preset names cannot be read. Whether a move causes motion events or
+recordings is untested. The bridge forwards every event unchanged.
+
+The client refuses a move with `station_busy` while a command, a recording
+operation, or a live start or stream on the primary session holds the HomeBase.
+With the default `live_max_streams_per_station` of 1, live view uses the primary
+session. A move during live view on any camera of that HomeBase is then refused.
+So is a move right after a snapshot refresh, until the refresh's live session
+confirmed its stop. Above 1, live views use their own sessions and a move can
+run during live view.
+
+The client waits at most 40 seconds for the HomeBase after the send. The bridge
+bounds the whole move, the connection included, at 50 seconds. A client that
+closes the request does not cancel the move, because a sent move cannot be
+recalled. When the client's own bound or an abort ended the wait, or the
+session closed or failed, the client closes the HomeBase session so that no queued copy is sent
+later. The bridge reconnects an idle HomeBase within about a minute while no
+live view or recording runs.
+
+A 409 or 503 refusal came before the send. It moved nothing and can be
+retried. After a 502 or 504 the camera may have moved. Failures use allowlisted JSON error codes:
+
+| Status | Code | Meaning |
+|---|---|---|
+| 400 | `invalid_preset` | `preset` is not an integer from 0 to 3 |
+| 404 | `not_found` | The camera is not in the inventory |
+| 409 | `station_busy` | A command, a recording or a live session holds the HomeBase, or its connection is busy |
+| 502 | `preset_rejected` | The HomeBase answered with a non-zero code |
+| 503 | `capability_unavailable` | The camera's `presets` capability is unavailable |
+| 503 | `not_connected` | The Eufy account or backend is not connected |
+| 503 | `preset_not_sent` | The client could not send the move, for example because the HomeBase connection failed |
+| 504 | `preset_unconfirmed` | No acceptance arrived after the send. The camera may still have moved |
+
+`preset_metrics` in `/v1/state` counts the `commands` that reached the client
+and their outcomes `accepted`, `rejected`, `unconfirmed` and `refused`. A
+refusal by the bridge itself is not counted.
 
 ## Existing recordings
 

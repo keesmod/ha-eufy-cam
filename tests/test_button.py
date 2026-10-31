@@ -12,6 +12,7 @@ from homeassistant.setup import async_setup_component
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eufy_viewer.api import (
+    PRESET_ERRORS,
     SNAPSHOT_ERRORS,
     BridgeAuthError,
     BridgeClient,
@@ -19,6 +20,7 @@ from custom_components.eufy_viewer.api import (
     BridgeSnapshotError,
     BridgeState,
 )
+from custom_components.eufy_viewer.button import preset_error_key
 from custom_components.eufy_viewer.const import DOMAIN
 from custom_components.eufy_viewer.diagnostics import video_report
 
@@ -154,14 +156,28 @@ async def test_refresh_snapshot_reports_a_rejected_token(
 
 
 def test_every_error_code_has_a_message_in_each_language():
-    expected = {f"snapshot_refresh_{code}" for code in SNAPSHOT_ERRORS} | {
-        "snapshot_refresh_failed"
+    expected = (
+        {f"snapshot_refresh_{code}" for code in SNAPSHOT_ERRORS}
+        | {"snapshot_refresh_failed"}
+        | {preset_error_key(code) for code in PRESET_ERRORS}
+        | {"preset_failed"}
+    )
+    assert {preset_error_key(code) for code in PRESET_ERRORS} == {
+        "preset_capability_unavailable",
+        "preset_not_connected",
+        "preset_not_sent",
+        "preset_station_busy",
+        "preset_rejected",
+        "preset_unconfirmed",
+        "preset_not_found",
     }
     for path in ("strings.json", "translations/en.json", "translations/nl.json"):
         data = json.loads((COMPONENT / path).read_text(encoding="utf-8"))
         assert set(data["exceptions"]) == expected
-        assert all(row["message"] for row in data["exceptions"].values())
+        # Home Assistant drops the final period, the tests rely on it.
+        assert all(row["message"].endswith(".") for row in data["exceptions"].values())
         assert data["entity"]["button"]["refresh_snapshot"]["name"]
+        assert "{number}" in data["entity"]["button"]["preset"]["name"]
 
 
 def test_diagnostics_keep_the_snapshot_refresh_pipeline_event():
