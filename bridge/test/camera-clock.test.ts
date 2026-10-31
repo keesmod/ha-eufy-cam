@@ -99,17 +99,22 @@ test('invalid and overlapping timings are ignored', async (t) => {
   assert.equal(Buffer.concat(f.releases.map((r) => r.data)).toString(), 'abcdefgh', 'bytes after the only valid timing pass through behind it');
 });
 
-test('a camera clock jump restarts the anchor instead of holding frames for seconds', async (t) => {
+test('a backward camera clock jump restarts the anchor, so the next frame keeps its playout delay', async (t) => {
   const f = track(t);
-  f.frame(1000);
+  const base = 3_700_000;
+  f.frame(base);
   f.advance(67);
-  f.frame(1067);
+  f.frame(base + 67);
   f.advance(1000);
-  // The camera clock jumps back by an hour, the arrival keeps its pace.
-  f.frame(1067 - 3_600_000);
+  // The camera clock jumps back by an hour while the arrival keeps its pace.
+  // Without the restart the old anchor would put this frame an hour in the
+  // past and it would leave at once, unpaced.
+  const arrival = f.now();
+  f.frame(base + 134 - 3_600_000);
+  assert.equal(f.releases.length, 2);
   f.advance(LIVE_PLAYOUT_DELAY_MS);
   assert.equal(f.releases.length, 3);
-  assert.ok(f.releases[2].at - 1067 <= LIVE_PLAYOUT_DELAY_MS);
+  assert.equal(f.releases[2].at - arrival, LIVE_PLAYOUT_DELAY_MS);
 });
 
 test('the anchor follows a delivery that becomes slower after the window', async (t) => {
@@ -118,7 +123,14 @@ test('the anchor follows a delivery that becomes slower after the window', async
   // Ten seconds at a 50 ms delivery lag, then a lag of 900 ms that persists.
   for (; ts < 10_000; ts += 67) { f.advanceTo(ts + 50); f.frame(10_000 + ts); }
   const before = f.releases.length;
-  for (; ts < 30_000; ts += 67) { f.advanceTo(ts + 900); f.frame(10_000 + ts); }
+  // Every 30th frame is a key frame 500 ms late and the frames behind it wait
+  // for it. Only an anchor that moved to the new lag absorbs that again.
+  let held = 0;
+  for (let i = 0; ts < 30_000; ts += 67, i++) {
+    held = i % 30 === 15 ? 500 : Math.max(0, held - 67);
+    f.advanceTo(ts + 900 + held);
+    f.frame(10_000 + ts);
+  }
   f.advance(LIVE_PLAYOUT_DELAY_MS + 10);
   const late = f.releases.slice(before);
   const tail = late.slice(-100);
