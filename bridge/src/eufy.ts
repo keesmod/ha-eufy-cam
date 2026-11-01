@@ -4,7 +4,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { JpegFramer } from './jpeg.js';
 import { StartNotIssued, StreamHub, STATION_LIMIT_CLOSE_CODE, type Peer } from './streams.js';
-import { PresetError, SnapshotError, StationError, presetIndex } from './errors.js';
+import { PresetError, SnapshotError, StationError, guardMode, presetIndex } from './errors.js';
 import { StreamDiagnostics } from './diagnostics.js';
 import { MediaRelay } from './media.js';
 import { LiveVideoDiagnostics, type LiveVideoObservation } from './live-video-diagnostics.js';
@@ -466,30 +466,39 @@ export class Eufy extends EventEmitter {
       throw error;
     }
   }
-  /** A preset move (#229), a HomeBase command. */
+  /**
+   * A preset move (#229). A running HomeBase recovery, bounded by
+   * recoverStation, refuses it before any client call, and so does a due
+   * recovery. A camera that is only stopping, also after a failed recovery,
+   * does not.
+   */
   async movePreset(serial: string, preset: unknown): Promise<void> {
     const index = presetIndex(preset);
     const presets = this.presets;
     if (!presets) throw new PresetError('not_connected');
-    await this.stationCommand(() => new PresetError('station_busy'), () => presets.move(serial, index));
-  }
-  /** A guard mode change, a HomeBase command. */
-  async setMode(serial: string, mode: unknown): Promise<void> {
-    const stations = this.stations;
-    if (!stations) throw new StationError('station_unavailable');
-    await this.stationCommand(() => new StationError('station_busy', 409), () => stations.setMode(serial, mode));
+    if (this.hub.recoveringStation || this.hub.recoveryDue) throw new PresetError('station_busy');
+    await this.stationCommand(() => presets.move(serial, index));
   }
   /**
-   * Runs one HomeBase command beside the hub's one-shot recovery. A running
-   * recovery, bounded by recoverStation, refuses it before any client call,
-   * and so does a due recovery that waits only for commands in flight, so
-   * commands cannot postpone it without bound. A camera that is only stopping,
-   * also after a failed recovery, does not. The hub starts no recovery while a
-   * command is in flight, so neither can make the other fail. The check and the
-   * count have no await between them.
+   * A guard mode change. A due recovery refuses it before any client call.
+   * While a recovery runs, the client's lock refuses a change on the HomeBase
+   * it recovers with station_busy, and a change on another HomeBase goes ahead.
    */
-  private async stationCommand(busy: () => Error, run: () => Promise<void>): Promise<void> {
-    if (this.hub.recoveringStation || this.hub.recoveryDue) throw busy();
+  async setMode(serial: string, value: unknown): Promise<void> {
+    const mode = guardMode(value);
+    const stations = this.stations;
+    if (!stations) throw new StationError('station_unavailable');
+    if (this.hub.recoveryDue) throw new StationError('station_busy', 409);
+    await this.stationCommand(() => stations.setMode(serial, mode));
+  }
+  /**
+   * Counts one HomeBase command handed to the backend until it settles. The
+   * hub starts no recovery while one is in flight, so neither can make the
+   * other fail, and a due recovery refuses new commands, so they cannot
+   * postpone it without bound. Callers check the hub and call this without an
+   * await in between.
+   */
+  private async stationCommand(run: () => Promise<void>): Promise<void> {
     this.commandsInFlight++;
     try {
       await run();

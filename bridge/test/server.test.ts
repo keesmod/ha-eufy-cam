@@ -528,18 +528,24 @@ test('a guard mode change goes through the bridge gate against a HomeBase recove
     const changed = await post('{"mode":1}');
     assert.equal(changed.status, 200); assert.deepEqual(await changed.json(), { accepted: true });
     assert.deepEqual(calls, [['BASE1', 1]]);
-    // A HomeBase recovery refuses the change before the backend.
-    Object.defineProperty(fake.hub, 'recoveringStation', { value: true, configurable: true });
-    const recovering = await post('{"mode":0}');
-    assert.equal(recovering.status, 409); assert.deepEqual(await recovering.json(), { error: 'station_busy' });
-    delete (fake.hub as { recoveringStation?: boolean }).recoveringStation;
+    // A due HomeBase recovery refuses the change before the backend, after the mode check.
     Object.defineProperty(fake.hub, 'recoveryDue', { value: true, configurable: true });
     const due = await post('{"mode":0}');
     assert.equal(due.status, 409); assert.deepEqual(await due.json(), { error: 'station_busy' });
+    for (const value of ['{}', '{"mode":6}', '{"mode":"1"}', '{"mode":null}']) {
+      const response = await post(value);
+      assert.equal(response.status, 400, value); assert.deepEqual(await response.json(), { error: 'invalid_mode' }, value);
+    }
     delete (fake.hub as { recoveryDue?: boolean }).recoveryDue;
     assert.equal(calls.length, 1);
+    // A running recovery leaves the change to the client, whose lock refuses it on the recovered HomeBase.
+    Object.defineProperty(fake.hub, 'recoveringStation', { value: true, configurable: true });
+    const recovering = await post('{"mode":0}');
+    assert.equal(recovering.status, 200);
+    delete (fake.hub as { recoveringStation?: boolean }).recoveringStation;
+    assert.deepEqual(calls, [['BASE1', 1], ['BASE1', 0]]);
     // Backend refusals keep their fixed codes.
-    for (const [code, status] of [['invalid_mode', 400], ['station_unavailable', 503], ['station_busy', 409], ['station_rejected', 503], ['station_unconfirmed', 503]] as const) {
+    for (const [code, status] of [['station_unavailable', 503], ['station_busy', 409], ['station_rejected', 503], ['station_unconfirmed', 503]] as const) {
       next = async () => { throw new StationError(code, status); };
       const response = await post('{"mode":0}');
       assert.equal(response.status, status, code); assert.deepEqual(await response.json(), { error: code });

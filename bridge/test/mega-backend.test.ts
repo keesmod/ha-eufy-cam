@@ -2673,13 +2673,18 @@ test('a preset move after a failed HomeBase recovery reaches the client once (#2
   assert.deepEqual(moved(f), [['CAM', 0]]);
   assert.deepEqual(f.backend.presets.metrics, { commands: 1, accepted: 1, rejected: 0, unconfirmed: 0, refused: 0 });
 });
-/** Records each guard mode change the client receives. The first one waits for `answer` when `hang` is set. */
+/**
+ * Records each guard mode change the client receives. The first one waits for
+ * `answer` when `hang` is set. While `locked` is set the client refuses with
+ * station_busy, as its own HomeBase lock does during ensureLiveStopped.
+ */
 function guardModes(f: ReturnType<typeof presetFixture>, hang = false) {
   const modes: number[] = [];
-  const control = { answer: () => {} };
+  const control = { answer: () => {}, locked: false };
   const set = f.client.setGuardMode;
   f.client.setGuardMode = async (id: string, mode: number) => {
     modes.push(mode);
+    if (control.locked) throw new EufyError('station_busy');
     // Only the first change hangs, so a change that wrongly passes the gate fails the test at once.
     if (hang && modes.length === 1) await new Promise<void>((resolve) => { control.answer = resolve; });
     return set(id, mode);
@@ -2700,6 +2705,9 @@ test('a HomeBase recovery waits for a guard mode change in flight and starts on 
   assert.equal(bridge.hub.recoveryDue, true);
   await assert.rejects(bridge.setMode('BASE', 0), { code: 'station_busy', status: 409 });
   await assert.rejects(bridge.movePreset('CAM', 1), { code: 'station_busy', status: 409 });
+  // A request that is invalid anyway keeps its own code.
+  await assert.rejects(bridge.setMode('BASE', 6), { code: 'invalid_mode', status: 400 });
+  await assert.rejects(bridge.setMode('BASE', '1'), { code: 'invalid_mode', status: 400 });
   assert.deepEqual(modes, [1], 'The refused change never reaches the client');
   assert.deepEqual(f.moves, []);
   control.answer();
@@ -2712,24 +2720,32 @@ test('a HomeBase recovery waits for a guard mode change in flight and starts on 
   await bridge.setMode('BASE', 0);
   assert.deepEqual(modes, [1, 0]);
 });
-test('a guard mode change during a running HomeBase recovery is refused before the client', async (t) => {
+test('a guard mode change during a running HomeBase recovery is left to the client lock of that HomeBase', async (t) => {
   let recover!: () => void;
   const { f, bridge, recoveries, ticks } = await stoppingBridge(t, () => new Promise((resolve) => {
     recover = () => resolve({ confirmed: true, reason: 'device' });
   }));
-  const { modes } = guardModes(f);
+  const { modes, control } = guardModes(f);
   await ticks(3);
   assert.deepEqual(recoveries, ['CAM']);
   assert.equal(bridge.hub.recoveringStation, true);
-  await assert.rejects(bridge.setMode('BASE', 1), { code: 'station_busy', status: 409 });
-  assert.deepEqual(modes, [], 'No refused change reaches the client');
-  assert.deepEqual(f.backend.stations.metrics, { commands: 0, accepted: 0, failed: 0 });
+  assert.equal(bridge.hub.recoveryDue, false);
+  // The bridge does not track the recovered HomeBase, so another HomeBase's change goes ahead.
+  await bridge.setMode('BASE', 1);
+  assert.deepEqual(modes, [1]);
+  // On the recovered HomeBase the client refuses it, also with 409.
+  control.locked = true;
+  await assert.rejects(bridge.setMode('BASE', 0), { code: 'station_busy', status: 409 });
+  assert.deepEqual(modes, [1, 0]);
+  assert.deepEqual(f.backend.stations.metrics, { commands: 2, accepted: 1, failed: 1 });
+  assert.equal(bridge.hub.recoveringStation, true, 'Neither change ended the recovery');
+  control.locked = false;
   recover();
   await settle();
   assert.equal(bridge.hub.recoveringStation, false);
   assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 1, recovery_completed: 1, recovery_failed: 0 });
   await bridge.setMode('BASE', 1);
-  assert.deepEqual(modes, [1]);
+  assert.deepEqual(modes, [1, 0, 1]);
   assert.equal(f.backend.stations.inventory()[0]?.guard_mode, 1);
 });
 test('a guard mode change while a camera is stopping and no recovery runs reaches the client once', async (t) => {

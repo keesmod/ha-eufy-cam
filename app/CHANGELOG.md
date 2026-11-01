@@ -7,7 +7,7 @@
 - Live video no longer freezes briefly at each camera key frame ([#231](https://github.com/keesmod/ha-eufy-cam/issues/231)), not yet confirmed on hardware.
 - Added preset moves for the SoloCam S340 `T8170` on a HomeBase 3 ([#229](https://github.com/keesmod/ha-eufy-cam/issues/229)), not yet confirmed on hardware.
 - Added the eufyCam 2C Pro `T8142-Z` on a HomeBase 3 ([#236](https://github.com/keesmod/ha-eufy-cam/issues/236)), not yet confirmed on hardware.
-- Changing the guard mode no longer interrupts the bridge's own HomeBase connection attempt or its recovery after an unconfirmed live view stop ([#239](https://github.com/keesmod/ha-eufy-cam/pull/239)).
+- Changing the guard mode no longer interrupts the bridge's own HomeBase connection attempt or its recovery after an unconfirmed live view stop ([#239](https://github.com/keesmod/ha-eufy-cam/pull/239)), not yet confirmed on hardware.
 
 Upgrade: works with every supported integration, and live view starts about 0.7 s later. Set `live_smoothing: false` to keep the previous behavior. Rollback: bridge 0.8.40.
 
