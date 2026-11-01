@@ -4,7 +4,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { JpegFramer } from './jpeg.js';
 import { StartNotIssued, StreamHub, STATION_LIMIT_CLOSE_CODE, type Peer } from './streams.js';
-import { PresetError, SnapshotError, presetIndex } from './errors.js';
+import { PresetError, SnapshotError, StationError, guardMode, presetIndex } from './errors.js';
 import { StreamDiagnostics } from './diagnostics.js';
 import { MediaRelay } from './media.js';
 import { LiveVideoDiagnostics, type LiveVideoObservation } from './live-video-diagnostics.js';
@@ -100,8 +100,11 @@ export class Eufy extends EventEmitter {
   liveMaxSecondsMains = 120;
   /** A refresh keeps a frame this long after its first, while a waking camera may still adjust exposure. */
   snapshotRefreshSettleMs = 1000;
-  /** Preset moves handed to the backend and not yet settled. A HomeBase recovery waits for them (#229). */
-  private movesInFlight = 0;
+  /**
+   * HomeBase commands handed to the backend and not yet settled: preset moves
+   * (#229) and guard mode changes. A HomeBase recovery waits for them.
+   */
+  private commandsInFlight = 0;
   readonly hub = new StreamHub({
     diagnostic: (serial, event) => this.diagnostics.mark(serial, event),
     admit: (serial) => {
@@ -110,7 +113,7 @@ export class Eufy extends EventEmitter {
     },
     bound: (serial) => this.backend?.liveBoundMs?.(serial) ?? 120_000,
     recover: (serial) => this.recoverStation(serial),
-    idle: () => this.movesInFlight === 0,
+    idle: () => this.commandsInFlight === 0,
     start: async (serial) => {
       if (this.recordings.busy) throw new StartNotIssued(new Error('Recording operation in progress'));
       if (!this.backend?.connected) throw new StartNotIssued(new Error('Disconnected'));
@@ -466,22 +469,41 @@ export class Eufy extends EventEmitter {
   /**
    * A preset move (#229). A running HomeBase recovery, bounded by
    * recoverStation, refuses it before any client call, and so does a due
-   * recovery that waits only for moves in flight, so moves cannot postpone it
-   * without bound. A camera that is only stopping, also after a failed
-   * recovery, does not. The hub starts no recovery while a move is in flight,
-   * so neither can make the other fail. The check and the count have no await
-   * between them.
+   * recovery. A camera that is only stopping, also after a failed recovery,
+   * does not.
    */
   async movePreset(serial: string, preset: unknown): Promise<void> {
     const index = presetIndex(preset);
     const presets = this.presets;
     if (!presets) throw new PresetError('not_connected');
     if (this.hub.recoveringStation || this.hub.recoveryDue) throw new PresetError('station_busy');
-    this.movesInFlight++;
+    await this.stationCommand(() => presets.move(serial, index));
+  }
+  /**
+   * A guard mode change. A due recovery refuses it before any client call.
+   * While a recovery runs, the client's lock refuses a change on the HomeBase
+   * it recovers with station_busy, and a change on another HomeBase goes ahead.
+   */
+  async setMode(serial: string, value: unknown): Promise<void> {
+    const mode = guardMode(value);
+    const stations = this.stations;
+    if (!stations) throw new StationError('station_unavailable');
+    if (this.hub.recoveryDue) throw new StationError('station_busy', 409);
+    await this.stationCommand(() => stations.setMode(serial, mode));
+  }
+  /**
+   * Counts one HomeBase command handed to the backend until it settles. The
+   * hub starts no recovery while one is in flight, so neither can make the
+   * other fail, and a due recovery refuses new commands, so they cannot
+   * postpone it without bound. Callers check the hub and call this without an
+   * await in between.
+   */
+  private async stationCommand(run: () => Promise<void>): Promise<void> {
+    this.commandsInFlight++;
     try {
-      await presets.move(serial, index);
+      await run();
     } finally {
-      this.movesInFlight--;
+      this.commandsInFlight--;
     }
   }
   private captureSnapshot(serial: string, signal?: AbortSignal): Promise<Picture> {

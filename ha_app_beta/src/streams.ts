@@ -29,7 +29,7 @@ export interface Control {
   bound?(serial: string): number;
   start(serial: string): Promise<void>;
   recover?(serial: string): Promise<string[]>;
-  /** True when no preset move is in flight. A recovery waits for it, so it never races a move (#229). */
+  /** True when no HomeBase command, such as a preset move (#229) or a guard mode change, is in flight. A recovery starts only then. */
   idle?(): boolean;
   stop(serial: string): Promise<void>;
   disposeMedia(serial: string): void;
@@ -180,7 +180,7 @@ export class StreamHub {
         if (camera.retries < 3 && time >= camera.nextStop) this.requestStop(serial, camera);
         // Stop can be a no-op for a start that never delivered video. Reset the
         // shared transport once, only after all owners, pending starts and
-        // preset moves leave.
+        // HomeBase commands, such as preset moves and guard mode changes, leave.
         if (this.recoveryReady(camera, time) && (this.control.idle?.() ?? true) && this.control.recover) {
           camera.recoveryAttempted = true; this.recovering = true; this.recoveryMetrics.recovery_attempts++;
           void this.control.recover(serial).then(serials => {
@@ -205,7 +205,7 @@ export class StreamHub {
   /** Read-only, so a caller can refuse a stopping camera before it becomes a viewer. */
   phase(serial: string): CameraSession["phase"] | undefined { return this.cameras.get(serial)?.phase; }
   get recoveringStation(): boolean { return this.recovering; }
-  /** A recovery could start now and waits only for a preset move in flight (#229). */
+  /** A recovery could start now and waits only for HomeBase commands in flight. */
   get recoveryDue(): boolean { const time = this.now(); return [...this.cameras.values()].some(c => this.recoveryReady(c, time)); }
   private recoveryReady(camera: CameraSession, time: number): boolean {
     return camera.phase === "stopping" && camera.retries >= 3 && time >= camera.nextStop && !camera.recoveryAttempted && !this.recovering && this.active === 0 && ![...this.cameras.values()].some(c => c.startPending) && this.control.recover !== undefined;
