@@ -7,7 +7,7 @@ Control routes require `Authorization: Bearer <bridge token>`. The media-only ro
 | `GET /v1/state` | Protocol version, stable bridge ID, account state, cached camera inventory, configured live limit per HomeBase | None |
 | `POST /v1/login` | Account credentials or verification/captcha response | Login/discovery only |
 | `GET /v1/snapshot/{serial}` | Cached JPEG/PNG; 404 if absent | None |
-| `POST /v1/stations/{serial}/mode` | Changes the HomeBase guard mode, body `{"mode": N}`, returns `{"accepted": true}` once the HomeBase confirmed it. A due HomeBase recovery refuses it, see [preset moves](#preset-moves-0841) | None |
+| `POST /v1/stations/{serial}/mode` | Changes the HomeBase guard mode, body `{"mode": N}` with `N` from the HomeBase's `modes` in `/v1/state`, returns `{"accepted": true}` once the HomeBase confirmed it. A due HomeBase recovery refuses it, see [preset moves](#preset-moves-0841) | None |
 | `POST /v1/cameras/{serial}/preset` | Moves the camera to a saved preset, body `{"preset": 0..3}`, returns `{"accepted": true}` once the HomeBase accepted it, see [preset moves](#preset-moves-0841) | Moves the camera. Never starts live view |
 | `POST /v1/snapshot/{serial}/refresh` | Stores a fresh live frame as the snapshot and returns `{snapshot_received_at}`, see [snapshot refresh](#snapshot-refresh-0839) | Wakes the camera as an internal live viewer with the same admission, limits and confirmed stop. Joins a running session without starting or stopping it |
 | `WS /v1/events` | Initial state followed by push updates | None |

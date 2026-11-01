@@ -2763,9 +2763,9 @@ test('a guard mode change during a running HomeBase recovery is left to the clie
   await settle();
   assert.equal(bridge.hub.recoveringStation, false);
   assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 1, recovery_completed: 1, recovery_failed: 0 });
-  await bridge.setMode('BASE', 1);
-  assert.deepEqual(modes, [['BASE2', 1], ['BASE', 0], ['BASE', 1]]);
-  assert.equal(f.backend.stations.inventory().find((station) => station.serial === 'BASE')?.guard_mode, 1);
+  await bridge.setMode('BASE', 2);
+  assert.deepEqual(modes, [['BASE2', 1], ['BASE', 0], ['BASE', 2]]);
+  assert.equal(f.backend.stations.inventory().find((station) => station.serial === 'BASE')?.guard_mode, 2);
 });
 test('a guard mode change while a camera is stopping and no recovery runs reaches the client once', async (t) => {
   const { f, bridge, recoveries, ticks } = await stoppingBridge(t, confirmed);
@@ -2773,6 +2773,9 @@ test('a guard mode change while a camera is stopping and no recovery runs reache
   assert.equal(bridge.hub.recoveryDue, false, 'The stop attempts are not done yet');
   await bridge.setMode('BASE', 1);
   assert.deepEqual(modes, [['BASE', 1]]);
+  for (const bad of [6, '1', null, undefined, 1.5])
+    await assert.rejects(bridge.setMode('BASE', bad), { code: 'invalid_mode', status: 400 }, String(bad));
+  assert.deepEqual(modes, [['BASE', 1]], 'An invalid mode never reaches the client');
   // A settled change leaves the HomeBase to the recovery.
   await ticks(3);
   assert.deepEqual(recoveries, ['CAM']);
