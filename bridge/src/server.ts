@@ -48,8 +48,7 @@ export function createBridge(eufy: Eufy, token: string, bridgeId: string) {
       const station = /^\/v1\/stations\/([A-Za-z0-9_-]{1,64})\/mode$/.exec(url.pathname);
       if (request.method === "POST" && station) {
         const input = await body(request);
-        if (!eufy.stations) throw new StationError("station_unavailable");
-        await eufy.stations.setMode(station[1]!, input.mode);
+        await eufy.setMode(station[1]!, input.mode);
         json(response, 200, { accepted: true }); return;
       }
       const preset = /^\/v1\/cameras\/([A-Za-z0-9_-]{1,64})\/preset$/.exec(url.pathname);

@@ -801,7 +801,7 @@ for (const empty of [false,true])
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
       assert.equal(summary.experimental_standalone,false);
-      assert.equal(summary.software.library,'0.30.3-beta.3');
+      assert.equal(summary.software.library,'0.30.3-beta.4');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
@@ -2545,7 +2545,11 @@ const settle = async () => {
  * stopping. After three stop attempts three seconds apart a tick may start the
  * one-shot HomeBase recovery, which calls `recover` (#229).
  */
-async function stoppingBridge(t: TestContext, recover: () => Promise<{ confirmed: boolean; reason: 'device' }>) {
+async function stoppingBridge(
+  t: TestContext,
+  recover: () => Promise<{ confirmed: boolean; reason: 'device' }>,
+  setup?: (f: ReturnType<typeof presetFixture>) => void,
+) {
   const { Eufy } = await import('../src/eufy.js');
   const f = presetFixture(presetsAvailable);
   let issued!: () => void;
@@ -2565,6 +2569,7 @@ async function stoppingBridge(t: TestContext, recover: () => Promise<{ confirmed
   };
   let clock = performance.now();
   t.mock.method(performance, 'now', () => clock);
+  setup?.(f);
   const bridge = new Eufy(f.storage, 'mega', false, () => f.backend);
   t.after(() => bridge.close());
   await bridge.login(presetLogin);
@@ -2672,4 +2677,108 @@ test('a preset move after a failed HomeBase recovery reaches the client once (#2
   await bridge.movePreset('CAM', 0);
   assert.deepEqual(moved(f), [['CAM', 0]]);
   assert.deepEqual(f.backend.presets.metrics, { commands: 1, accepted: 1, rejected: 0, unconfirmed: 0, refused: 0 });
+});
+/**
+ * Records each guard mode change the client receives as [HomeBase, mode]. The
+ * first one waits for `answer` when `hang` is set. A HomeBase in `locked` is
+ * refused with station_busy, as the client's own lock does during
+ * ensureLiveStopped.
+ */
+function guardModes(f: ReturnType<typeof presetFixture>, hang = false, locked = new Set<string>()) {
+  const modes: [string, number][] = [];
+  const control = { answer: () => {} };
+  const set = f.client.setGuardMode;
+  f.client.setGuardMode = async (id: string, mode: number) => {
+    modes.push([id, mode]);
+    if (locked.has(id)) throw new EufyError('station_busy');
+    // Only the first change hangs, so a change that wrongly passes the gate fails the test at once.
+    if (hang && modes.length === 1) await new Promise<void>((resolve) => { control.answer = resolve; });
+    return set(id, mode);
+  };
+  return { modes, control };
+}
+test('a HomeBase recovery waits for a guard mode change in flight and starts on a later tick', async (t) => {
+  const { f, bridge, recoveries, ticks } = await stoppingBridge(t, confirmed);
+  const { modes, control } = guardModes(f, true);
+  const change = bridge.setMode('BASE', 1);
+  await settle();
+  assert.deepEqual(modes, [['BASE', 1]]);
+  // Well past the third stop attempt the change still holds the HomeBase.
+  await ticks(6);
+  assert.deepEqual(recoveries, [], 'No recovery races a guard mode change in flight');
+  assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 0, recovery_completed: 0, recovery_failed: 0 });
+  // The due recovery refuses new HomeBase commands, so they cannot postpone it without bound.
+  assert.equal(bridge.hub.recoveryDue, true);
+  await assert.rejects(bridge.setMode('BASE', 0), { code: 'station_busy', status: 409 });
+  await assert.rejects(bridge.movePreset('CAM', 1), { code: 'station_busy', status: 409 });
+  // A request that is invalid anyway keeps its own code.
+  await assert.rejects(bridge.setMode('BASE', 6), { code: 'invalid_mode', status: 400 });
+  await assert.rejects(bridge.setMode('BASE', '1'), { code: 'invalid_mode', status: 400 });
+  assert.deepEqual(modes, [['BASE', 1]], 'The refused change never reaches the client');
+  assert.deepEqual(f.moves, []);
+  control.answer();
+  await change;
+  assert.deepEqual(recoveries, []);
+  await ticks(1);
+  assert.deepEqual(recoveries, ['CAM']);
+  assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 1, recovery_completed: 1, recovery_failed: 0 });
+  assert.equal(bridge.hub.phase('CAM'), undefined);
+  await bridge.setMode('BASE', 0);
+  assert.deepEqual(modes, [['BASE', 1], ['BASE', 0]]);
+});
+test('a guard mode change during a running HomeBase recovery is left to the client lock of that HomeBase', async (t) => {
+  // As the client's ensureLiveStopped does, the recovery holds the lock of its HomeBase until it settles.
+  const locked = new Set<string>();
+  let recover!: () => void;
+  const { f, bridge, recoveries, ticks } = await stoppingBridge(t, () => {
+    locked.add('BASE');
+    return new Promise((resolve) => {
+      recover = () => {
+        locked.delete('BASE');
+        resolve({ confirmed: true, reason: 'device' });
+      };
+    });
+  }, (f) => {
+    const discover = f.client.discoverDevices;
+    f.client.discoverDevices = async () => {
+      const result = await discover();
+      const base = result.devices.find((device) => device.id === 'BASE')!;
+      return { ...result, devices: [...result.devices, { ...base, id: 'BASE2', stationId: 'BASE2', name: 'HomeBase 2' }] };
+    };
+  });
+  const { modes } = guardModes(f, false, locked);
+  assert.deepEqual(f.backend.stations.inventory().map((station) => station.serial), ['BASE', 'BASE2']);
+  await ticks(3);
+  assert.deepEqual(recoveries, ['CAM']);
+  assert.equal(bridge.hub.recoveringStation, true);
+  assert.equal(bridge.hub.recoveryDue, false);
+  // The bridge does not refuse during a running recovery. Another HomeBase's change goes ahead.
+  await bridge.setMode('BASE2', 1);
+  // On the recovered HomeBase the client's lock refuses it, also with 409.
+  await assert.rejects(bridge.setMode('BASE', 0), { code: 'station_busy', status: 409 });
+  assert.deepEqual(modes, [['BASE2', 1], ['BASE', 0]]);
+  assert.deepEqual(f.backend.stations.metrics, { commands: 2, accepted: 1, failed: 1 });
+  assert.equal(bridge.hub.recoveringStation, true, 'Neither change ended the recovery');
+  recover();
+  await settle();
+  assert.equal(bridge.hub.recoveringStation, false);
+  assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 1, recovery_completed: 1, recovery_failed: 0 });
+  await bridge.setMode('BASE', 2);
+  assert.deepEqual(modes, [['BASE2', 1], ['BASE', 0], ['BASE', 2]]);
+  assert.equal(f.backend.stations.inventory().find((station) => station.serial === 'BASE')?.guard_mode, 2);
+});
+test('a guard mode change while a camera is stopping and no recovery runs reaches the client once', async (t) => {
+  const { f, bridge, recoveries, ticks } = await stoppingBridge(t, confirmed);
+  const { modes } = guardModes(f);
+  assert.equal(bridge.hub.recoveryDue, false, 'The stop attempts are not done yet');
+  await bridge.setMode('BASE', 1);
+  assert.deepEqual(modes, [['BASE', 1]]);
+  for (const bad of [6, '1', null, undefined, 1.5])
+    await assert.rejects(bridge.setMode('BASE', bad), { code: 'invalid_mode', status: 400 }, String(bad));
+  assert.deepEqual(modes, [['BASE', 1]], 'An invalid mode never reaches the client');
+  // A settled change leaves the HomeBase to the recovery.
+  await ticks(3);
+  assert.deepEqual(recoveries, ['CAM']);
+  assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 1, recovery_completed: 1, recovery_failed: 0 });
+  assert.deepEqual(modes, [['BASE', 1]]);
 });

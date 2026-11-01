@@ -28,7 +28,7 @@ import {
 import { RecordingTranscoder } from './recording-media.js';
 import { LivePacing } from './camera-clock.js';
 import { MegaRecordings } from './mega-recordings.js';
-import { PresetError, RecordingError, StationError, presetIndex } from './errors.js';
+import { PresetError, RecordingError, StationError, guardMode, guardModes, presetIndex } from './errors.js';
 import type { LiveAdmission } from './streams.js';
 import type {
   Backend,
@@ -44,7 +44,6 @@ import type {
   StationInfo,
 } from './backend.js';
 
-const modes = [0, 1, 2, 3, 4, 5, 47, 63];
 /**
  * Parse EUFY_LIVE_MAX_STREAMS_PER_STATION, an integer from 1 to 4. Unset keeps
  * one live camera per HomeBase, the behaviour verified before client 0.13.0.
@@ -155,13 +154,12 @@ class MegaStations implements BackendStations {
           alarm: state?.alarm ?? false,
           alarm_delay: state?.alarmDelay ?? 0,
           arm_delay: state?.armDelay ?? 0,
-          modes: [...modes],
+          modes: [...guardModes],
         };
       });
   }
-  async setMode(serial: string, mode: unknown): Promise<void> {
-    if (typeof mode !== 'number' || !modes.includes(mode))
-      throw new StationError('invalid_mode', 400);
+  async setMode(serial: string, value: unknown): Promise<void> {
+    const mode = guardMode(value);
     const client = this.client();
     if (!client?.connected || !this.devices().some((d) => d.kind === 'station' && d.id === serial))
       throw new StationError('station_unavailable');

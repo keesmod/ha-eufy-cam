@@ -507,6 +507,58 @@ test('snapshot refresh is an authenticated POST for a known camera that maps ref
   } finally { server.emit('shutdown'); server.closeAllConnections(); server.close(); await once(server, 'close'); }
 });
 
+test('a guard mode change goes through the bridge gate against a HomeBase recovery', async () => {
+  const { StationError } = await import('../src/errors.js');
+  const { Eufy: Bridge } = await import('../src/eufy.js');
+  const calls: unknown[][] = [];
+  let next: () => Promise<void> = async () => {};
+  const fake: EventEmitter & { stations?: unknown; hub: StreamHub } = Object.assign(new EventEmitter(), {
+    auth: { state: 'connected' }, inventory: () => [], pictures: new Map(),
+    hub: new StreamHub({ start: async () => { assert.fail('A guard mode change never starts live view'); }, stop: async () => {}, disposeMedia: () => {} }),
+    stations: { inventory: () => [], setMode: (...args: unknown[]) => { calls.push(args); return next(); } } as unknown,
+    setMode: Bridge.prototype.setMode,
+    stationCommand: Bridge.prototype['stationCommand'],
+  });
+  const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const url = `http://127.0.0.1:${address.port}/v1/stations/BASE1/mode`;
+  const post = (body: string) => fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body });
+  try {
+    const changed = await post('{"mode":1}');
+    assert.equal(changed.status, 200); assert.deepEqual(await changed.json(), { accepted: true });
+    assert.deepEqual(calls, [['BASE1', 1]]);
+    // A due HomeBase recovery refuses the change before the backend, after the mode check.
+    Object.defineProperty(fake.hub, 'recoveryDue', { value: true, configurable: true });
+    const due = await post('{"mode":0}');
+    assert.equal(due.status, 409); assert.deepEqual(await due.json(), { error: 'station_busy' });
+    for (const value of ['{}', '{"mode":6}', '{"mode":"1"}', '{"mode":null}']) {
+      const response = await post(value);
+      assert.equal(response.status, 400, value); assert.deepEqual(await response.json(), { error: 'invalid_mode' }, value);
+    }
+    delete (fake.hub as { recoveryDue?: boolean }).recoveryDue;
+    assert.equal(calls.length, 1);
+    // A running recovery leaves the change to the client, whose lock refuses it on the recovered HomeBase.
+    Object.defineProperty(fake.hub, 'recoveringStation', { value: true, configurable: true });
+    const recovering = await post('{"mode":0}');
+    assert.equal(recovering.status, 200);
+    delete (fake.hub as { recoveringStation?: boolean }).recoveringStation;
+    assert.deepEqual(calls, [['BASE1', 1], ['BASE1', 0]]);
+    // Backend refusals keep their fixed codes.
+    for (const [code, status] of [['station_unavailable', 503], ['station_busy', 409], ['station_rejected', 503], ['station_unconfirmed', 503]] as const) {
+      next = async () => { throw new StationError(code, status); };
+      const response = await post('{"mode":0}');
+      assert.equal(response.status, status, code); assert.deepEqual(await response.json(), { error: code });
+    }
+    // Without a backend the route refuses before any change.
+    fake.stations = undefined;
+    calls.length = 0;
+    const disconnected = await post('{"mode":0}');
+    assert.equal(disconnected.status, 503); assert.deepEqual(await disconnected.json(), { error: 'station_unavailable' });
+    assert.deepEqual(calls, []);
+  } finally { server.emit('shutdown'); server.closeAllConnections(); server.close(); await once(server, 'close'); }
+});
+
 test('preset move is an authenticated POST for a known camera that accepts only 0..3 and maps refusals to fixed codes (#229)', async () => {
   const { PresetError } = await import('../src/errors.js');
   const { Eufy: Bridge } = await import('../src/eufy.js');
@@ -519,6 +571,7 @@ test('preset move is an authenticated POST for a known camera that accepts only 
     presets: { metrics, move: (...args: unknown[]) => { calls.push(args); return next(); } } as unknown,
     // The route moves through the bridge's own guard against the hub.
     movePreset: Bridge.prototype.movePreset,
+    stationCommand: Bridge.prototype['stationCommand'],
   });
   const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
   server.listen(0, '127.0.0.1'); await once(server, 'listening');

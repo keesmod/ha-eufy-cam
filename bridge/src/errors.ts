@@ -59,6 +59,13 @@ export class PresetError extends Error {
     super(code);
   }
 }
+/** The guard modes a HomeBase accepts, in the order the inventory offers them. */
+export const guardModes: readonly number[] = [0, 1, 2, 3, 4, 5, 47, 63];
+/** The guard mode of a request. Anything else is invalid_mode. */
+export function guardMode(value: unknown): number {
+  if (typeof value !== 'number' || !guardModes.includes(value)) throw new StationError('invalid_mode', 400);
+  return value;
+}
 /** The wire index 0..3 of a preset request. Anything else, also `'1'` or `'PRESET_1'`, is invalid_preset. */
 export function presetIndex(value: unknown): number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 3)
