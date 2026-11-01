@@ -29,7 +29,7 @@ export interface Control {
   bound?(serial: string): number;
   start(serial: string): Promise<void>;
   recover?(serial: string): Promise<string[]>;
-  /** True when no preset move is in flight. A recovery waits for it, so it never races a move (#229). */
+  /** True when no HomeBase command, such as a preset move (#229) or a guard mode change, is in flight. A recovery waits for it, so it never races one. */
   idle?(): boolean;
   stop(serial: string): Promise<void>;
   disposeMedia(serial: string): void;

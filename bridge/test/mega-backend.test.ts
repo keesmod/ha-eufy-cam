@@ -2673,3 +2673,76 @@ test('a preset move after a failed HomeBase recovery reaches the client once (#2
   assert.deepEqual(moved(f), [['CAM', 0]]);
   assert.deepEqual(f.backend.presets.metrics, { commands: 1, accepted: 1, rejected: 0, unconfirmed: 0, refused: 0 });
 });
+/** Records each guard mode change the client receives. The first one waits for `answer` when `hang` is set. */
+function guardModes(f: ReturnType<typeof presetFixture>, hang = false) {
+  const modes: number[] = [];
+  const control = { answer: () => {} };
+  const set = f.client.setGuardMode;
+  f.client.setGuardMode = async (id: string, mode: number) => {
+    modes.push(mode);
+    // Only the first change hangs, so a change that wrongly passes the gate fails the test at once.
+    if (hang && modes.length === 1) await new Promise<void>((resolve) => { control.answer = resolve; });
+    return set(id, mode);
+  };
+  return { modes, control };
+}
+test('a HomeBase recovery waits for a guard mode change in flight and starts on a later tick', async (t) => {
+  const { f, bridge, recoveries, ticks } = await stoppingBridge(t, confirmed);
+  const { modes, control } = guardModes(f, true);
+  const change = bridge.setMode('BASE', 1);
+  await settle();
+  assert.deepEqual(modes, [1]);
+  // Well past the third stop attempt the change still holds the HomeBase.
+  await ticks(6);
+  assert.deepEqual(recoveries, [], 'No recovery races a guard mode change in flight');
+  assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 0, recovery_completed: 0, recovery_failed: 0 });
+  // The due recovery refuses new HomeBase commands, so they cannot postpone it without bound.
+  assert.equal(bridge.hub.recoveryDue, true);
+  await assert.rejects(bridge.setMode('BASE', 0), { code: 'station_busy', status: 409 });
+  await assert.rejects(bridge.movePreset('CAM', 1), { code: 'station_busy', status: 409 });
+  assert.deepEqual(modes, [1], 'The refused change never reaches the client');
+  assert.deepEqual(f.moves, []);
+  control.answer();
+  await change;
+  assert.deepEqual(recoveries, []);
+  await ticks(1);
+  assert.deepEqual(recoveries, ['CAM']);
+  assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 1, recovery_completed: 1, recovery_failed: 0 });
+  assert.equal(bridge.hub.phase('CAM'), undefined);
+  await bridge.setMode('BASE', 0);
+  assert.deepEqual(modes, [1, 0]);
+});
+test('a guard mode change during a running HomeBase recovery is refused before the client', async (t) => {
+  let recover!: () => void;
+  const { f, bridge, recoveries, ticks } = await stoppingBridge(t, () => new Promise((resolve) => {
+    recover = () => resolve({ confirmed: true, reason: 'device' });
+  }));
+  const { modes } = guardModes(f);
+  await ticks(3);
+  assert.deepEqual(recoveries, ['CAM']);
+  assert.equal(bridge.hub.recoveringStation, true);
+  await assert.rejects(bridge.setMode('BASE', 1), { code: 'station_busy', status: 409 });
+  assert.deepEqual(modes, [], 'No refused change reaches the client');
+  assert.deepEqual(f.backend.stations.metrics, { commands: 0, accepted: 0, failed: 0 });
+  recover();
+  await settle();
+  assert.equal(bridge.hub.recoveringStation, false);
+  assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 1, recovery_completed: 1, recovery_failed: 0 });
+  await bridge.setMode('BASE', 1);
+  assert.deepEqual(modes, [1]);
+  assert.equal(f.backend.stations.inventory()[0]?.guard_mode, 1);
+});
+test('a guard mode change while a camera is stopping and no recovery runs reaches the client once', async (t) => {
+  const { f, bridge, recoveries, ticks } = await stoppingBridge(t, confirmed);
+  const { modes } = guardModes(f);
+  assert.equal(bridge.hub.recoveryDue, false, 'The stop attempts are not done yet');
+  await bridge.setMode('BASE', 1);
+  assert.deepEqual(modes, [1]);
+  // An invalid mode is still the backend's 400.
+  await assert.rejects(bridge.setMode('BASE', 6), { code: 'invalid_mode', status: 400 });
+  // A settled change leaves the HomeBase to the recovery.
+  await ticks(3);
+  assert.deepEqual(recoveries, ['CAM']);
+  assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 1, recovery_completed: 1, recovery_failed: 0 });
+  assert.deepEqual(modes, [1]);
+});

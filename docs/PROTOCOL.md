@@ -185,13 +185,15 @@ views use their own sessions and a move can run during live view.
 
 The bridge also refuses a move with `station_busy`, before any client call,
 while it recovers a HomeBase after a live stop that the camera did not confirm.
-That recovery takes at most about 28 seconds. A recovery waits for a move in
-flight and starts after the move ends, so neither can make the other fail. While
-a due recovery waits for such a move, new moves are refused too, so moves cannot
-postpone it without bound. The bridge does not track which HomeBase it recovers,
-so both refusals apply to every camera. Once the client gave up on a stop, a
-camera that the bridge still keeps stopping does not block a move, also not after
-a failed recovery.
+That recovery takes at most about 28 seconds. A recovery waits for a move or a
+guard mode change in flight and starts after it ends, so neither can make the
+other fail. While a due recovery waits, new moves and guard mode changes are
+refused too, so they cannot postpone it without bound. A guard mode change,
+`POST /v1/stations/{serial}/mode`, gets the same 409 `station_busy` from bridge
+0.8.41. The bridge does not track which HomeBase it recovers, so both refusals
+apply to every camera and HomeBase. Once the client gave up on a stop, a camera
+that the bridge still keeps stopping does not block a move, also not after a
+failed recovery.
 
 The client waits at most 40 seconds for the HomeBase after the send. The bridge
 bounds the whole move, the connection included, at 50 seconds. A client that
