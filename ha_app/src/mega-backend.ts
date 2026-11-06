@@ -26,11 +26,13 @@ import {
   type StandalonePushReport,
 } from './discovery-diagnostics.js';
 import { RecordingTranscoder } from './recording-media.js';
+import { LivePacing } from './camera-clock.js';
 import { MegaRecordings } from './mega-recordings.js';
-import { RecordingError, StationError } from './errors.js';
+import { PresetError, RecordingError, StationError, guardMode, guardModes, presetIndex } from './errors.js';
 import type { LiveAdmission } from './streams.js';
 import type {
   Backend,
+  BackendPresets,
   BackendStations,
   Credentials,
   LoginOptions,
@@ -42,7 +44,6 @@ import type {
   StationInfo,
 } from './backend.js';
 
-const modes = [0, 1, 2, 3, 4, 5, 47, 63];
 /**
  * Parse EUFY_LIVE_MAX_STREAMS_PER_STATION, an integer from 1 to 4. Unset keeps
  * one live camera per HomeBase, the behaviour verified before client 0.13.0.
@@ -153,13 +154,12 @@ class MegaStations implements BackendStations {
           alarm: state?.alarm ?? false,
           alarm_delay: state?.alarmDelay ?? 0,
           arm_delay: state?.armDelay ?? 0,
-          modes: [...modes],
+          modes: [...guardModes],
         };
       });
   }
-  async setMode(serial: string, mode: unknown): Promise<void> {
-    if (typeof mode !== 'number' || !modes.includes(mode))
-      throw new StationError('invalid_mode', 400);
+  async setMode(serial: string, value: unknown): Promise<void> {
+    const mode = guardMode(value);
     const client = this.client();
     if (!client?.connected || !this.devices().some((d) => d.kind === 'station' && d.id === serial))
       throw new StationError('station_unavailable');
@@ -182,6 +182,69 @@ class MegaStations implements BackendStations {
   }
   close(): void {
     this.states.clear();
+  }
+}
+/**
+ * The fixed bridge code for a failed preset move (#229). Only preset_rejected
+ * and preset_unconfirmed can follow a send. Every other library code is raised
+ * before it, so nothing moved.
+ */
+function presetCode(error: unknown): PresetError['code'] {
+  // An error the library did not classify leaves open whether the move was sent.
+  if (!(error instanceof EufyError)) return 'preset_unconfirmed';
+  switch (error.code) {
+    case 'preset_move_unconfirmed':
+      return 'preset_unconfirmed';
+    case 'preset_move_rejected':
+      return 'preset_rejected';
+    case 'station_busy':
+    case 'connection_busy':
+      return 'station_busy';
+    case 'operation_outside_hardware_scope':
+    case 'camera_media_unverified':
+    case 'unknown_camera':
+      return 'capability_unavailable';
+    case 'invalid_preset':
+      return 'invalid_preset';
+    default:
+      return 'preset_not_sent';
+  }
+}
+/**
+ * Preset moves (#229). The library owns admission, the busy rule, the single
+ * send and its 40-second result bound. The bridge refuses a camera without an
+ * available presets capability before the client and never retries or queues a
+ * move. A result is HomeBase acceptance, not move completion.
+ */
+class MegaPresets implements BackendPresets {
+  /** Requests that reached the client, then their outcome. Numbers only. */
+  readonly metrics = { commands: 0, accepted: 0, rejected: 0, unconfirmed: 0, refused: 0 };
+  constructor(
+    private client: () => EufyMegaClient | undefined,
+    /** True only for a known camera whose last presets capability is available. */
+    private admitted: (serial: string) => boolean,
+    private changed: () => void,
+  ) {}
+  async move(serial: string, preset: unknown): Promise<void> {
+    const index = presetIndex(preset);
+    const client = this.client();
+    if (!client?.connected) throw new PresetError('not_connected');
+    if (!this.admitted(serial)) throw new PresetError('capability_unavailable');
+    this.metrics.commands++;
+    try {
+      // Room for a connect before the client's own 40-second bound. An abort
+      // after the send still ends unconfirmed in the client.
+      await client.moveToPreset(serial, index, AbortSignal.timeout(50000));
+      this.metrics.accepted++;
+    } catch (error) {
+      const code = presetCode(error);
+      if (code === 'preset_rejected') this.metrics.rejected++;
+      else if (code === 'preset_unconfirmed') this.metrics.unconfirmed++;
+      else this.metrics.refused++;
+      throw new PresetError(code);
+    } finally {
+      this.changed();
+    }
   }
 }
 
@@ -207,6 +270,7 @@ export class MegaBackend extends EventEmitter implements Backend {
   readonly pictures = new Map<string, Picture>();
   readonly recordings: MegaRecordings;
   readonly stations: MegaStations;
+  readonly presets: MegaPresets;
   constructor(
     private storage: Storage,
     private readonly liveBusy: () => boolean | 'live_busy' | 'live_stopping',
@@ -221,6 +285,8 @@ export class MegaBackend extends EventEmitter implements Backend {
     readonly experimentalStandalone = false,
     /** Probe the recordings of each experimental standalone camera in the login discovery (#178). */
     readonly standaloneRecordingProbe = false,
+    /** Release live frames on the camera's clock (#231). */
+    readonly liveSmoothing = true,
   ) {
     super();
     if (!Number.isInteger(liveStreamsPerStation) || liveStreamsPerStation < 1 || liveStreamsPerStation > 4)
@@ -245,6 +311,11 @@ export class MegaBackend extends EventEmitter implements Backend {
       () => this.client,
       () => [...this.devices.values()],
       this.stationStates,
+      () => this.emit('change'),
+    );
+    this.presets = new MegaPresets(
+      () => this.client,
+      (serial) => this.hasCamera(serial) && this.capabilities.get(serial)?.presets?.available === true,
       () => this.emit('change'),
     );
   }
@@ -673,7 +744,13 @@ export class MegaBackend extends EventEmitter implements Backend {
     this.streams.set(serial, owned);
     owned.starting = (async () => {
       try {
-        const handle = await this.client!.startLive(serial, { signal: abort.signal, maxDurationMs: bound, onProgress });
+        const pacing = this.liveSmoothing ? new LivePacing() : undefined;
+        const handle = await this.client!.startLive(serial, {
+          signal: abort.signal,
+          maxDurationMs: bound,
+          onProgress,
+          onFrameTiming: pacing?.timing,
+        });
         owned.handle = handle;
         void handle.ended.then((result) => {
           owned.audio.finish('ended', result.confirmed);
@@ -681,6 +758,7 @@ export class MegaBackend extends EventEmitter implements Backend {
           this.emit('live-stop', { serial, confirmed: result.confirmed });
         });
         const metadata = handle.metadata;
+        const paced = pacing?.attach(handle.video, handle.audio);
         const media: LiveMedia = {
           serial,
           videoCodec:
@@ -691,8 +769,9 @@ export class MegaBackend extends EventEmitter implements Backend {
                 : null,
           audioSupported: ['aac', 'aac-lc', 'aac-eld'].includes(metadata.audioCodec),
           fps: metadata.fps,
-          video: handle.video,
-          audio: handle.audio,
+          video: paced?.video ?? handle.video,
+          audio: paced?.audio ?? handle.audio,
+          ...(paced ? { source: { video: handle.video, audio: handle.audio } } : {}),
         };
         owned.audio.attach(handle.audio, metadata.audioCodec, media.audioSupported, () => handle.metadata.audioCodec);
         this.emit('live-start', media);
