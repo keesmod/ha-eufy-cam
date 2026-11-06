@@ -24,10 +24,10 @@ STATE = {
 }
 
 
-@pytest.fixture(autouse=True)
-def custom_integrations(enable_custom_integrations):
-    """Enable only our custom integration in the test harness."""
-    yield
+@pytest.fixture
+def hass_config_dir(hass_tmp_config_dir):
+    """Give each test its own writable configuration directory."""
+    return hass_tmp_config_dir
 
 
 @pytest.fixture

@@ -18,74 +18,11 @@ import sys
 import urllib.request
 
 PYPI = "https://pypi.org/pypi/homeassistant/json"
-EXCEPTIONS = {
-    # homeassistant 2026.10.0 to 2026.10.4 require Pillow==12.3.0. Fixed in 13.0.0.
-    ("pillow", "12.3.0"): frozenset(
-        {
-            "GHSA-22hg-r758-rrw9",
-            "GHSA-24rc-8hj2-v98c",
-            "GHSA-254f-3936-288h",
-            "GHSA-27h8-gf7j-v5hc",
-            "GHSA-332p-7hrc-92wf",
-            "GHSA-3j72-p6qg-6xp7",
-            "GHSA-4558-3h8r-v8xp",
-            "GHSA-462x-pgg6-55fp",
-            "GHSA-4rm8-3hmm-39fg",
-            "GHSA-4rr5-89j8-mwwm",
-            "GHSA-58r4-6rv3-gfh8",
-            "GHSA-5x8w-8jj5-q52h",
-            "GHSA-5xm2-6676-qcp9",
-            "GHSA-654x-cwwv-5j9c",
-            "GHSA-65qm-jvmh-6pqg",
-            "GHSA-74r2-7ff9-mjj2",
-            "GHSA-78g4-xqwv-q3g8",
-            "GHSA-7mwm-ghpf-9vrm",
-            "GHSA-8g5g-8vmr-9782",
-            "GHSA-9v9v-9qvf-h2hj",
-            "GHSA-c6hw-5grf-ff96",
-            "GHSA-cp9v-662q-vvx9",
-            "GHSA-f2g6-542v-9j58",
-            "GHSA-fc9g-5qg7-mf45",
-            "GHSA-g4qv-2jxx-769h",
-            "GHSA-g7cr-3p24-7wf7",
-            "GHSA-g842-9rc4-69pw",
-            "GHSA-gg2r-wvfm-q9rx",
-            "GHSA-j4m9-6w36-pw47",
-            "GHSA-jg86-v3jv-hrpm",
-            "GHSA-mrfp-p49p-3hf2",
-            "GHSA-p4wg-p73j-c528",
-            "GHSA-p8hx-v2p6-rp84",
-            "GHSA-pchr-8j38-3x4p",
-            "GHSA-q45j-58j2-45rg",
-            "GHSA-rfgq-q3w2-pmv2",
-            "GHSA-v9pv-5gc8-w2m6",
-            "GHSA-vx6w-vv9f-6gvg",
-            "GHSA-w889-685w-c8fh",
-            "GHSA-xgh8-jp6q-p5x8",
-            "GHSA-xvh5-g6gv-559v",
-            # The same advisories as PYSEC records, listed from 2026-10-27. Each names
-            # one GHSA above as its alias.
-            "PYSEC-2026-4326",
-            "PYSEC-2026-4327",
-            "PYSEC-2026-4328",
-            "PYSEC-2026-4329",
-            "PYSEC-2026-4330",
-            "PYSEC-2026-4331",
-            "PYSEC-2026-4332",
-            "PYSEC-2026-4333",
-            "PYSEC-2026-4334",
-            "PYSEC-2026-4335",
-            "PYSEC-2026-4336",
-            "PYSEC-2026-4337",
-            "PYSEC-2026-4338",
-            "PYSEC-2026-4339",
-            "PYSEC-2026-4340",
-            "PYSEC-2026-4341",
-            "PYSEC-2026-4342",
-            "PYSEC-2026-4343",
-        }
-    ),
-}
+# Each exception maps ("name", "version") to a frozenset of advisory IDs, for example
+# ("pillow", "12.3.0"): frozenset({"GHSA-..."}). None is needed now. The Pillow 12.3.0
+# exception ended on 2026-11-06, when the test pin moved to homeassistant 2026.11.0,
+# which requires Pillow==13.0.0.
+EXCEPTIONS = {}
 
 
 def normalize(name):
@@ -153,6 +90,9 @@ def main():
     messages = problems(report, info["version"], exact_pins(info["requires_dist"]))
     if messages:
         raise SystemExit("\n".join(messages))
+    if not report["vulnerabilities"]:
+        print(f"No advisories in uv.lock. The newest homeassistant release is {info['version']}.")
+        return
     print(
         f"{len(report['vulnerabilities'])} advisories accepted while homeassistant "
         f"{info['version']} pins them: "
