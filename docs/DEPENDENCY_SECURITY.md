@@ -86,9 +86,10 @@ Assistant release.
 
 Home Assistant pins many packages exactly, for example PyJWT, cryptography and
 orjson. A fix for such a package arrives with the Home Assistant release that
-moves the pin. Then update the `homeassistant` test pin in `pyproject.toml` and
-relock. pytest-homeassistant follows, because each release pins one exact
-Home Assistant version. Packages that Home Assistant does not
+moves the pin. Then raise the `homeassistant` and `pytest-homeassistant` test
+pins in `pyproject.toml` together and relock. Both pin the same exact version,
+because each pytest-homeassistant release requires one exact Home Assistant
+release. Packages that Home Assistant does not
 pin exactly can move on their own with `uv lock --upgrade-package <name>`. Do
 not add uv overrides or constraints to force a version that Home Assistant does
 not ship.
@@ -102,8 +103,8 @@ all fail the check. Adverse package statuses such as archived or deprecated
 appear as warnings, because `uv audit` itself does not fail on them. When the
 newest Home Assistant release moves the pin, the Python audit fails in the
 daily run and in every PR, push and release run, so the required `ci` check
-blocks all merges. Then raise the `homeassistant` test pin, relock and remove
-the exception in one PR. That needs the pytest-homeassistant release for the
+blocks all merges. Then raise both test pins, relock and remove the exception
+in one PR. That needs the pytest-homeassistant release for the
 new Home Assistant version, and merges wait until it exists.
 Add an exception only in a reviewed PR, for a version that Home Assistant pins
 exactly, with each advisory ID. The exception for Pillow 12.3.0 was accepted

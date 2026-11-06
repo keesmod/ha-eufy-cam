@@ -25,6 +25,12 @@ STATE = {
 
 
 @pytest.fixture
+def hass_config_dir(hass_tmp_config_dir):
+    """Give each test its own writable configuration directory."""
+    return hass_tmp_config_dir
+
+
+@pytest.fixture
 def bridge():
     """Default push bridge client, patched at its network boundary."""
     with (
