@@ -3,7 +3,7 @@
 ## 0.8.41 - Unreleased
 
 - Live video is capped at the pixel count of 1920×1080, so the `T8213` doorbell streams 1200×1726 ([#186](https://github.com/keesmod/ha-eufy-cam/issues/186)), not yet confirmed on hardware.
-- Updated the bridge dependency `qs` to 6.16.1 ([#226](https://github.com/keesmod/ha-eufy-cam/pull/226)).
+- Updated the bridge dependencies `qs` to 6.16.1, `date-and-time` to 4.7.0 and `strtok3` to 10.6.2 ([#226](https://github.com/keesmod/ha-eufy-cam/pull/226), [#243](https://github.com/keesmod/ha-eufy-cam/pull/243)).
 - Live video no longer freezes briefly at each camera key frame ([#231](https://github.com/keesmod/ha-eufy-cam/issues/231)), not yet confirmed on hardware.
 - Added preset moves for the SoloCam S340 `T8170` on a HomeBase 3 ([#229](https://github.com/keesmod/ha-eufy-cam/issues/229)), not yet confirmed on hardware.
 - Added the eufyCam 2C Pro `T8142-Z` on a HomeBase 3 ([#236](https://github.com/keesmod/ha-eufy-cam/issues/236)), not yet confirmed on hardware.
