@@ -1,6 +1,7 @@
 import { RecordingTranscoder, recordingAcceleration, logRecordingDiagnostic } from './recording-media.js';
 import { MegaBackend, liveStreamsPerStation, liveMaxSecondsMains, experimentalStandalone, standaloneRecordingProbe, recordingProbeNotice } from './mega-backend.js';
 import { liveAcceleration, liveRateControl } from './live-transcoder.js';
+import { liveSmoothing } from './camera-clock.js';
 import { randomUUID } from "node:crypto";
 import {backendName} from "./backend.js";
 import { Eufy } from "./eufy.js";
@@ -14,6 +15,7 @@ const acceleration = liveAcceleration(process.env.EUFY_LIVE_ACCELERATION);
 const rateControl = liveRateControl(process.env.EUFY_LIVE_MAX_BITRATE);
 const stationLimit = liveStreamsPerStation(process.env.EUFY_LIVE_MAX_STREAMS_PER_STATION);
 const mainsSeconds = liveMaxSecondsMains(process.env.EUFY_LIVE_MAX_SECONDS_MAINS);
+const smoothing = liveSmoothing(process.env.EUFY_LIVE_SMOOTHING);
 const standalone = experimentalStandalone(process.env.EUFY_EXPERIMENTAL_STANDALONE);
 const recordingProbe = standaloneRecordingProbe(process.env.EUFY_STANDALONE_RECORDING_PROBE);
 const recordingMode = recordingAcceleration(process.env.EUFY_RECORDING_ACCELERATION);
@@ -25,12 +27,13 @@ const storage = new Storage(process.env.EUFY_DATA_DIR ?? "/data");
 let id = await storage.read("bridge-id");
 if (!id) { id = randomUUID(); await storage.write("bridge-id", id); }
 const eufy = new Eufy(storage,selectedBackend, process.env.EUFY_DIAGNOSTICS === "true",
-  (storage, busy) => new MegaBackend(storage, busy, undefined, recordingMedia, stationLimit, mainsSeconds, standalone, recordingProbe));
+  (storage, busy) => new MegaBackend(storage, busy, undefined, recordingMedia, stationLimit, mainsSeconds, standalone, recordingProbe, smoothing));
 eufy.media.acceleration = acceleration;
 eufy.media.rateControl = rateControl;
 eufy.liveStreamsPerStation = stationLimit;
 eufy.liveMaxSecondsMains = mainsSeconds;
 if (mainsSeconds > 120) console.info(`Eufy live bound: up to ${mainsSeconds} seconds for cameras without a battery value, 120 seconds for battery cameras (verified for 1800 seconds on one mains powered camera)`);
+if (!smoothing) console.info("Eufy live smoothing off: live video follows the arrival time, with a short freeze at each camera key frame");
 if (stationLimit > 1) console.info(`Eufy live limit: up to ${stationLimit} concurrent live cameras per HomeBase (3 verified, 4 reported)`);
 if (standalone) console.info("Eufy experimental standalone cameras enabled: a standalone T84A1, T8410, T8410C or T8424 opens its own local session. Live view and snapshot are reported working, not independently reproduced. T84A1 motion and person events are experimental, see docs/USAGE.md");
 const probeNotice = recordingProbeNotice(recordingProbe, standalone);
