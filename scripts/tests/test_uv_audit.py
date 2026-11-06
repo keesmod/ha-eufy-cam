@@ -16,6 +16,11 @@ import check_uv_audit as audit
 # with uv 0.13.4 by CI on 2026-10-30. It reports each of 18 advisories twice, as
 # a GHSA record and as a PYSEC record whose aliases name that GHSA.
 FIXTURE = Path(__file__).with_name("uv-audit-2026-10-30.json")
+# The Pillow 12.3.0 exception that held while the fixture was recorded. The
+# recorded-report tests run main() with it, because the script lists none now.
+RECORDED_EXCEPTIONS = {
+    ("pillow", "12.3.0"): frozenset(v["id"] for v in json.loads(FIXTURE.read_text())["vulnerabilities"])
+}
 EXCEPTIONS = {("pillow", "12.3.0"): frozenset({"GHSA-a", "GHSA-b"})}
 PINS = audit.exact_pins(["Pillow==12.3.0", "certifi>=2021.5.30"])
 HOME_ASSISTANT = ["Pillow==12.3.0", "uv==0.13.5", "certifi>=2021.5.30"]
@@ -33,9 +38,9 @@ class UvAuditTests(unittest.TestCase):
     def check(self, data, pins=PINS):
         return audit.problems(data, "2026.10.3", pins, EXCEPTIONS)
 
-    def run_main(self, data, requires_dist=HOME_ASSISTANT):
-        """Run main() on data as report file text, with PyPI answering requires_dist."""
-        pypi = json.dumps({"info": {"version": "2026.10.3", "requires_dist": requires_dist}}).encode()
+    def run_main(self, data, requires_dist=HOME_ASSISTANT, exceptions=RECORDED_EXCEPTIONS, release="2026.10.3"):
+        """Run main() on data as report file text, with PyPI answering release and requires_dist."""
+        pypi = json.dumps({"info": {"version": release, "requires_dist": requires_dist}}).encode()
         output = io.StringIO()
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "uv-audit.json"
@@ -43,6 +48,7 @@ class UvAuditTests(unittest.TestCase):
             with (
                 patch.object(sys, "argv", ["check_uv_audit.py", str(path)]),
                 patch.object(audit.urllib.request, "urlopen", return_value=io.BytesIO(pypi)) as urlopen,
+                patch.dict(audit.EXCEPTIONS, exceptions, clear=True),
                 contextlib.redirect_stdout(output),
             ):
                 audit.main()
@@ -112,6 +118,18 @@ class UvAuditTests(unittest.TestCase):
             output,
             "59 advisories accepted while homeassistant 2026.10.3 pins them: pillow 12.3.0\n",
         )
+
+    def test_recorded_report_fails_without_the_pillow_exception(self):
+        with self.assertRaises(SystemExit) as raised:
+            self.run_main(FIXTURE.read_text(), exceptions={})
+        lines = raised.exception.code.splitlines()
+        self.assertEqual(len(lines), 59)
+        self.assertTrue(all(line.startswith("pillow 12.3.0: ") for line in lines))
+
+    def test_clean_report_passes_without_exceptions(self):
+        self.assertEqual(audit.EXCEPTIONS, {})
+        output = self.run_main(json.dumps(report()), ["Pillow==13.0.0"], exceptions={}, release="2026.11.0")
+        self.assertEqual(output, "No advisories in uv.lock. The newest homeassistant release is 2026.11.0.\n")
 
     def test_recorded_report_fails_once_home_assistant_moves_a_pin(self):
         with self.assertRaises(SystemExit) as raised:
