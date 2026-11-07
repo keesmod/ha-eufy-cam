@@ -479,8 +479,11 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   recordings stay unsupported.
 - **SoloCam S340 `T8170`, type 48**, behind a HomeBase 3 gets four preset
   buttons from integration 0.8.50 with bridge 0.8.41 and client 0.30.3
-  ([issue #229](https://github.com/keesmod/ha-eufy-cam/issues/229)). This is
-  software only and not yet confirmed on hardware. Whether a HomeBase 3 answers
-  the move, whether button 1 is the app's preset 1 and whether a move starts
-  motion events or recordings are not known. No other pan and tilt camera gets
-  preset buttons. See [preset positions](USAGE.md#preset-positions).
+  ([issue #229](https://github.com/keesmod/ha-eufy-cam/issues/229)). They are
+  experimental. On 2026-11-07 a user reported all four buttons moving a
+  `T8170` on firmware 3.3.5.4 under a HomeBase 3 on firmware 3.8.8.0, without
+  errors or motion events in Home Assistant. The camera turned back to its
+  default view by itself within 20 seconds. Whether button 1 is the app's
+  preset 1 and whether a move starts a recording in the Eufy app are not known.
+  No other pan and tilt camera gets preset buttons. See
+  [preset positions](USAGE.md#preset-positions).

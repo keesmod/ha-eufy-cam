@@ -168,13 +168,14 @@ that is not a JSON object or is larger than 8192 bytes gets 400
 
 Only a camera whose `presets` capability is available can move, see
 [camera capabilities](CAMERA_CAPABILITIES.md). With client 0.30.3 that is only
-the SoloCam S340 `T8170` on a HomeBase 3. This is software that is not yet
-confirmed on hardware. The bridge hands a move to the client once. It never
-retries or queues a move. Success is HTTP 200 with `{"accepted": true}`. It
-means that the HomeBase accepted the move. It does not mean that the camera
-finished moving or reached the position. There is no position or completion
-signal, and preset names cannot be read. Whether a move causes motion events or
-recordings is untested. The bridge forwards every event unchanged.
+the SoloCam S340 `T8170` on a HomeBase 3. A user reported moves working on
+that camera, see [preset positions](USAGE.md#preset-positions). The bridge
+hands a move to the client once. It never retries or queues a move. Success is
+HTTP 200 with `{"accepted": true}`. It means that the HomeBase accepted the
+move. It does not mean that the camera finished moving or reached the position.
+There is no position or completion signal, and preset names cannot be read. In
+the report the moves caused no motion events. Recordings were not checked. The
+bridge forwards every event unchanged.
 
 The client refuses a move with `station_busy` while a command, a recording
 operation, or a live start or stream on the primary session holds the HomeBase.

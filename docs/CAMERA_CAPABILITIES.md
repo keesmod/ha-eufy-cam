@@ -35,7 +35,8 @@ Bridge 0.8.41 with client 0.30.3 adds an optional `presets` capability with the
 same `available`, `status` and `reason` fields
 ([#229](https://github.com/keesmod/ha-eufy-cam/issues/229)). The client reports
 it available only for the SoloCam S340 `T8170` on a HomeBase 3. This is
-experimental software, not yet confirmed on hardware. Every other camera reports
+experimental. A user reported moves working on that camera, see
+[preset positions](USAGE.md#preset-positions). Every other camera reports
 it unsupported, with reason `operation_outside_hardware_scope` or an earlier
 failure. An older client omits the field. A missing field means unavailable, so
 HA must not treat it as permitted. Integration 0.8.50 shows the preset buttons

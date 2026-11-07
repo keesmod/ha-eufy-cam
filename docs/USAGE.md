@@ -115,18 +115,20 @@ A normal HA camera card/more-info dialog shows snapshots only. Use the companion
 
 #### Preset positions
 
-From integration 0.8.50 with bridge 0.8.41 a SoloCam S340 (`T8170`) on a HomeBase 3 gets four buttons, **Move to preset 1** to **Move to preset 4** ([issue #229](https://github.com/keesmod/ha-eufy-cam/issues/229)). This is experimental and not yet confirmed on hardware. A press sends one move to a position saved in the Eufy app. Button 1 is meant for the app's preset 1, but that order is not confirmed on hardware either. Save the positions in the Eufy app first. The integration cannot read their names, and it cannot save, rename or delete them. Pan and tilt steps, 360 rotation and other pan and tilt cameras are not provided. The buttons appear only with bridge 0.8.41 or newer and only for cameras whose preset capability is available, see [camera capabilities](CAMERA_CAPABILITIES.md).
+From integration 0.8.50 with bridge 0.8.41 a SoloCam S340 (`T8170`) on a HomeBase 3 gets four buttons, **Move to preset 1** to **Move to preset 4** ([issue #229](https://github.com/keesmod/ha-eufy-cam/issues/229)). This is experimental. A press sends one move to a position saved in the Eufy app. Button 1 is meant for the app's preset 1, but that order is not yet confirmed on hardware. Save the positions in the Eufy app first. The integration cannot read their names, and it cannot save, rename or delete them. Pan and tilt steps, 360 rotation and other pan and tilt cameras are not provided. The buttons appear only with bridge 0.8.41 or newer and only for cameras whose preset capability is available, see [camera capabilities](CAMERA_CAPABILITIES.md).
+
+On 2026-11-07 a user [reported the buttons working](https://github.com/keesmod/ha-eufy-cam/issues/229#issuecomment-6703738436) with integration 0.8.50 and bridge 0.8.41, on a `T8170` with firmware 3.3.5.4 under a HomeBase 3 `T8030` with firmware 3.8.8.0. Each of the four buttons moved the camera to a different saved position. A press took about 2 seconds, the first press after a restart 5 seconds, and none of about 15 presses failed. The moves created no motion events in Home Assistant. Whether they create recordings in the Eufy app was not checked.
 
 Know these limits before you use the buttons in an automation:
 
 - The press ends when the HomeBase accepts the move, not when the camera stops. There is no position or completion signal, so no preset shows as the current one.
+- The camera does not stay at the preset. In the report it turned back to its default view by itself within 20 seconds of a move. A **Refresh snapshot** 4 seconds after the move still showed the preset, without motion blur.
 - A move is refused, not queued, while the HomeBase is busy with live view, a recording or another command. Home Assistant then shows an error that says why. With the default `live_max_streams_per_station` of 1 every live view and every **Refresh snapshot** on that HomeBase blocks a move until its live session has stopped, or until the client gives up on an unconfirmed stop after about 8 seconds, and so does an inline card with `live_autostart`. With a value of 2 or more each live camera streams on its own session and leaves the HomeBase free for a move, see [live cameras per HomeBase](#live-cameras-per-homebase). A move is also refused while the bridge recovers a HomeBase after a live stop that a camera did not confirm, for at most about 28 seconds, and while such a recovery waits for a move that is still running.
 - When the HomeBase does not confirm a move, the camera may still have moved. The bridge never repeats a move by itself.
-- Whether a move starts motion events or recordings has not been tested.
 - Every move wakes a battery camera, like every refresh.
 - The buttons move only to the four presets. Save the view you want to return to as one of them as well.
 
-This automation follows the flow from issue #229. Every 30 minutes during the day it moves the camera to a sky preset, refreshes the snapshot, keeps a copy for a dashboard and moves the camera back. Replace the entity IDs with your own.
+This automation follows the flow from issue #229. Every 30 minutes during the day it moves the camera to a sky preset, waits 4 seconds, refreshes the snapshot and keeps a copy for a dashboard. A move back at the end is a safeguard in case the camera does not turn back by itself. Replace the entity IDs with your own.
 
 ```yaml
 alias: Sky picture for the weather panel
@@ -150,6 +152,8 @@ actions:
       - action: button.press
         target:
           entity_id: button.garden_move_to_preset_2
+      - delay:
+          seconds: 4
       - action: button.press
         target:
           entity_id: button.garden_refresh_snapshot
@@ -160,12 +164,6 @@ actions:
           filename: /media/garden_sky.jpg
     continue_on_error: true
   - delay:
-      seconds: 10
-  - action: button.press
-    continue_on_error: true
-    target:
-      entity_id: button.garden_move_to_preset_1
-  - delay:
       seconds: 30
   - action: button.press
     continue_on_error: true
@@ -174,9 +172,9 @@ actions:
 mode: single
 ```
 
-When the move to the sky or the refresh fails, Home Assistant skips the rest of the group, so it keeps no copy of an old or wrong view. `continue_on_error: true` on the group lets the automation go on after any failure in it. Home Assistant skips a press on an unavailable button without an error, so the group starts with a condition that ends only the group when the sky button or the refresh button is unavailable. The condition checks them once, when the group starts. The refresh can start while the camera is still moving, because the answer to a move does not mean that the camera has stopped. If the picture shows a moving view, add a short `delay` in the group before the refresh.
+When the move to the sky or the refresh fails, Home Assistant skips the rest of the group, so it keeps no copy of an old or wrong view. `continue_on_error: true` on the group lets the automation go on after any failure in it. Home Assistant skips a press on an unavailable button without an error, so the group starts with a condition that ends only the group when the sky button or the refresh button is unavailable. The condition checks them once, when the group starts. The 4-second delay lets the camera finish moving, because the answer to a move does not mean that the camera has stopped. Keep it short. The camera turns back by itself, so a refresh 20 seconds after the move already showed the default view in the report.
 
-The move back also runs after a failed or skipped group. It can still be refused while live view runs on that HomeBase with the default limit of 1, or while the bridge recovers a HomeBase. It is skipped without an error while the button is unavailable. The camera then stays at the sky preset until a later move back succeeds. The first press waits 10 seconds for the live session of the refresh to stop. A second press follows 30 seconds later in case a slow stop or a recovery refused the first. It repeats the same absolute position, which is harmless, but wakes a battery camera once more. As a safeguard, add a second automation that presses **Move to preset 1** at sunset.
+The move back runs 30 seconds later, also after a failed or skipped group. By then the live session of the refresh has normally stopped. The press can still be refused while live view runs on that HomeBase with the default limit of 1, or while the bridge recovers a HomeBase. It is skipped without an error while the button is unavailable. It repeats the same absolute position, which is harmless, but wakes a battery camera once more. Remove the last delay and press if your camera always turns back by itself. As a further safeguard, add a second automation that presses **Move to preset 1** at sunset.
 
 The camera entity shows the sky picture only until a newer image arrives, so the automation keeps a copy in the media folder, `/media` on Home Assistant OS, which `camera.snapshot` may write to by default. After the first run, add the **Local file** integration for `/media/garden_sky.jpg` and show its camera on the dashboard. Home Assistant serves it through its authenticated camera proxy. Do not use `/config/www`, which Home Assistant serves at `/local` without login and with a 31-day browser cache.
 
