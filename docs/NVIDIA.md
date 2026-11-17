@@ -204,17 +204,29 @@ fallback events. Each line has an anonymous attempt number and elapsed time:
 | `recording_hardware_timeout` | The hardware attempt reached its deadline |
 | `recording_software_fallback` | One software replacement was selected |
 | `recording_failed` | Preparation failed without a hardware retry, including a storage limit or storage error |
-| `recording_input_adjusted` | The downloaded files did not match what the client reported, see below. Always a warning, from bridge 0.8.43 |
+| `recording_input_adjusted` | The bridge changed the video demuxer or left out audio that is not ADTS, see below. Always a warning, from bridge 0.8.43 |
 
-From bridge 0.8.43 the bridge checks the downloaded files before FFmpeg starts
-([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)). The parameter sets
-in the video decide whether FFmpeg reads it as H.264 or HEVC, because the client
-names the codec from the first unit of the stream only. Audio without ADTS
-frames, such as AAC-ELD, is left out, so the recording plays without sound
-instead of failing. `recording_input_adjusted` and `recording_failed` carry an
-`input` object with fixed values: `reported_video` and `detected_video`
-(`h264`, `hevc`, `unknown` or `none`), `reported_audio` (the client's label)
-and `audio` (`adts`, `not_adts` or `absent`).
+From bridge 0.8.43 the bridge reads the first 64 KiB of each downloaded file
+before FFmpeg starts ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)).
+The client names the video codec from the first unit of the stream only. When
+the first 64 KiB hold H.264 or HEVC parameter sets of one kind, those decide
+whether FFmpeg reads the video as H.264 or HEVC. Otherwise the client's label
+stays. Audio without ADTS frames, such as AAC-ELD, is left out, so the recording
+plays without sound instead of failing.
+
+`recording_input_adjusted` and `recording_failed` carry an `input` object with
+fixed values:
+
+| Field | Values |
+| --- | --- |
+| `reported_video` | The client's label: `h264`, `hevc` or `unknown` |
+| `detected_video` | `h264` or `hevc`, `none` without parameter sets, `ambiguous` with both kinds, `unread` when the file could not be read |
+| `reported_audio` | The client's label: `aac`, `aac-lc`, `aac-eld`, `none` or `unknown` |
+| `audio` | `adts`, `not_adts` (left out), `absent` (no audio received) or `unread` |
+
+This evidence is in the bridge log only. The HA diagnostics download does not
+show it, so a recording whose audio was left out looks like any other
+recording there.
 
 Failure details identify process/input errors, empty output, output limits,
 unconfirmed cleanup or timeout. A timeout names `hardware_progress` or

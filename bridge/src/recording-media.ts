@@ -22,9 +22,10 @@ export interface RecordingMetadata {
 /** What the downloaded files contain, next to what the client reported (#252). */
 export interface RecordingInput {
   reported_video: 'h264' | 'hevc' | 'unknown';
-  detected_video: 'h264' | 'hevc' | 'none';
+  /** none: no parameter set in the first 64 KiB. ambiguous: both kinds. */
+  detected_video: 'h264' | 'hevc' | 'none' | 'ambiguous' | 'unread';
   reported_audio: RecordingAudioCodec;
-  audio: 'adts' | 'not_adts' | 'absent';
+  audio: 'adts' | 'not_adts' | 'absent' | 'unread';
 }
 export type RecordingFormat = 'auto' | 'native' | 'h264';
 export interface RecordingMedia {
@@ -112,8 +113,8 @@ export function logRecordingDiagnostic(event: RecordingDiagnostic, verbose: bool
 
 const INSPECT_BYTES = 65536;
 const h264Profiles = new Set([44, 66, 77, 83, 86, 88, 100, 110, 118, 122, 128, 134, 135, 138, 139, 244]);
-/** The codec named by the parameter sets of an Annex B stream, undefined when absent or ambiguous. */
-export function annexBCodec(data: Uint8Array): 'h264' | 'hevc' | undefined {
+/** The codec named by the parameter sets of an Annex B stream. */
+export function annexBCodec(data: Uint8Array): 'h264' | 'hevc' | 'none' | 'ambiguous' {
   let h264 = false, hevc = false;
   for (let i = 0; i + 4 < data.length; i++) {
     if (data[i] !== 0 || data[i + 1] !== 0 || data[i + 2] !== 1) continue;
@@ -126,9 +127,13 @@ export function annexBCodec(data: Uint8Array): 'h264' | 'hevc' | undefined {
     // H.264 SPS with a reference priority and a known profile_idc.
     else if ((a & 0x1f) === 7 && (a & 0x60) !== 0 && h264Profiles.has(b)) h264 = true;
   }
-  return h264 === hevc ? undefined : hevc ? 'hevc' : 'h264';
+  return h264 && hevc ? 'ambiguous' : hevc ? 'hevc' : h264 ? 'h264' : 'none';
 }
-/** FFmpeg's ADTS demuxer needs ADTS frames: two consecutive headers, or one frame that ends the data. */
+/**
+ * ADTS framing: two consecutive headers, or one frame that ends the data.
+ * This is stricter than FFmpeg's forced ADTS demuxer, which resyncs past junk
+ * between frames, so raw AAC-ELD with a chance sync word is not mistaken for ADTS.
+ */
 export function adtsAudio(data: Uint8Array): boolean {
   for (let i = 0; i + 7 <= data.length; i++) {
     const header = adtsHeader(data.subarray(i));
@@ -148,18 +153,18 @@ function head(path: string): Buffer {
 }
 /**
  * The client names the video codec from the first NAL unit only, and passes
- * AAC-ELD or unknown audio on without ADTS framing (#252). The parameter sets
- * in the file decide the video demuxer, and audio without ADTS frames is left
- * out instead of failing the whole recording. An unreadable file is left to
- * FFmpeg, as before.
+ * AAC-ELD or unknown audio on without ADTS framing (#252). Parameter sets of
+ * one kind in the first 64 KiB decide the video demuxer, otherwise the client's
+ * label stays. Audio without ADTS frames is left out instead of failing the
+ * whole recording. An unreadable file is left to FFmpeg, as before.
  */
 export function inspectRecordingInput(metadata: RecordingMetadata, files: RecordingFiles): RecordingInput {
   const input: RecordingInput = {
-    reported_video: metadata.videoCodec ?? 'unknown', detected_video: 'none',
-    reported_audio: metadata.audioCodec ?? 'unknown', audio: files.audio ? 'adts' : 'absent',
+    reported_video: metadata.videoCodec ?? 'unknown', detected_video: 'unread',
+    reported_audio: metadata.audioCodec ?? 'unknown', audio: files.audio ? 'unread' : 'absent',
   };
-  try { input.detected_video = annexBCodec(head(files.video)) ?? 'none'; } catch { /* FFmpeg reports it. */ }
-  if (files.audio) try { if (!adtsAudio(head(files.audio))) input.audio = 'not_adts'; } catch { /* FFmpeg reports it. */ }
+  try { input.detected_video = annexBCodec(head(files.video)); } catch { /* FFmpeg reports it. */ }
+  if (files.audio) try { input.audio = adtsAudio(head(files.audio)) ? 'adts' : 'not_adts'; } catch { /* FFmpeg reports it. */ }
   return input;
 }
 
@@ -201,7 +206,7 @@ export class RecordingTranscoder {
     signal.throwIfAborted();
     const input = inspectRecordingInput(reported, reportedFiles);
     const format = requested === 'auto' ? (this.acceleration === 'nvidia' || !hevcSupported ? 'h264' : 'native') : requested;
-    const source = input.detected_video === 'none' ? reported.videoCodec : input.detected_video;
+    const source = input.detected_video === 'h264' || input.detected_video === 'hevc' ? input.detected_video : reported.videoCodec;
     if (source !== 'h264' && source !== 'hevc') throw new Error('Unsupported recording codec');
     const metadata: RecordingMetadata = { ...reported, videoCodec: source };
     const files: RecordingFiles = input.audio === 'not_adts' ? { ...reportedFiles, audio: undefined } : reportedFiles;
