@@ -335,7 +335,10 @@ Home Assistant shows it as a camera without media or events. An empty or self
 parent gives `relationship_reason=invalid_device_relationship` instead. Other
 types, suffixes and models with type 97 stay `unsupported_device`. The client's
 [model matrix][252-matrix] records the reported tuple and the public evidence.
-Not tested on hardware with this integration.
+After the release of integration 0.8.51 with bridge 0.8.42 the reporter saw
+the doorbell recognized, with snapshots, live view, the recording list and
+events, as [COMPATIBILITY.md](COMPATIBILITY.md) describes. Reported, not
+independently reproduced.
 
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
 [152-records]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780
