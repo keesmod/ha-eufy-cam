@@ -397,6 +397,11 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   live view and recordings use the HomeBase 3 owner and firmware checks, not
   the model-only route of `T8142`. The reporter has not yet tested a bridge
   with this change.
+- **Video Doorbell S4 `T8215`, type 97**, recognized behind a HomeBase 3 from
+  bridge 0.8.42 with client 0.30.4, after
+  [issue #252](https://github.com/keesmod/ha-eufy-cam/issues/252). Snapshot,
+  live view and recordings use the HomeBase 3 owner and firmware checks. Live
+  view, events and battery through a HomeBase 3 are not yet tested on hardware.
 - **eufyCam 2C `T8113-Z`, type 8**, recognized from bridge 0.8.29. Before that
   release an owner reported snapshots, live view and HomeBase recordings behind
   a HomeBase 3 with a local test profile. Reported, not independently
