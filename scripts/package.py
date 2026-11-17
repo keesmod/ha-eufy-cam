@@ -24,7 +24,9 @@ def members(root=ROOT):
     shared = {"README.md", "LICENSE"}
     shared.update(p for p in tracked if p.startswith("docs/") and p.endswith(".md"))
     integration = shared | {p for p in tracked if p.startswith("custom_components/")}
-    bridge_files = shared | {p for p in tracked if p.startswith("bridge/src/")}
+    bridge_files = shared | {
+        p for p in tracked if p.startswith(("bridge/src/", "bridge/native/"))
+    }
     bridge_files.update(
         "bridge/" + n
         for n in (
@@ -38,6 +40,7 @@ def members(root=ROOT):
     source_roots = (
         "custom_components/",
         "bridge/src/",
+        "bridge/native/",
         "bridge/test/",
         "docs/",
         "scripts/",

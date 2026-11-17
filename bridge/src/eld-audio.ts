@@ -22,7 +22,7 @@ const DECODE_MS = 15_000;
 
 export type EldOutcome = 'decoded' | 'no_frames' | 'frames_gap' | 'frames_overflow' | 'frames_size'
   | 'frames_mismatch' | 'io' | 'decoder_unavailable' | 'decoder_failed' | 'decoder_output' | 'decode_errors'
-  | 'timeout' | 'cancelled';
+  | 'cadence_mismatch' | 'timeout' | 'cancelled';
 export interface EldResult {
   outcome: EldOutcome;
   /** Interleaved signed 16-bit little-endian PCM, only when decoded. */
@@ -52,18 +52,20 @@ export class AudioFrameLog {
     }
   };
   get bytes(): number { return this.next; }
-  /** Median step between unit timestamps in milliseconds, one decimal, or null. */
+  /**
+   * Mean step between the first and last unit timestamps in milliseconds, one
+   * decimal, or null. Coarse or repeated stamps still average out over a clip.
+   */
   frameMs(): number | null {
-    const steps: number[] = [];
-    for (let i = 1; i < this.timestamps.length; i++) {
-      const step = this.timestamps[i]! - this.timestamps[i - 1]!;
-      if (Number.isFinite(step) && step > 0 && step < 1000) steps.push(step);
-    }
-    if (!steps.length) return null;
-    steps.sort((a, b) => a - b);
-    return Math.round(steps[Math.floor(steps.length / 2)]! * 10) / 10;
+    const count = this.timestamps.length;
+    if (count < 2) return null;
+    const step = (this.timestamps[count - 1]! - this.timestamps[0]!) / (count - 1);
+    return Number.isFinite(step) && step > 0 && step < 1000 ? Math.round(step * 10) / 10 : null;
   }
 }
+// Fewer units, or a mean outside this range, say too little about the camera's clock.
+const CADENCE_UNITS = 10;
+const CADENCE_MS = [5, 200] as const;
 
 export type EldDecoder = (input: { audio: string; frames: AudioFrameLog; directory: string }, signal: AbortSignal) => Promise<EldResult>;
 type Launch = (command: string, args: string[]) => ChildProcess;
@@ -92,6 +94,7 @@ export function eldDecoder(launch: Launch = launchHelper, timeoutMs = DECODE_MS)
       await writeFile(framed, out, { mode: 0o600 });
     } catch { return { outcome: 'io' }; }
     const units = frames.lengths.length;
+    if (signal.aborted) return { outcome: 'cancelled', units };
     const run = await new Promise<{ outcome?: EldOutcome; code?: number | null; stdout: string }>(resolve => {
       let child: ChildProcess, stdout = '', done = false;
       const finish = (value: { outcome?: EldOutcome; code?: number | null }) => {
@@ -105,6 +108,7 @@ export function eldDecoder(launch: Launch = launchHelper, timeoutMs = DECODE_MS)
       const cancel = () => stop('cancelled');
       const timer = setTimeout(() => stop('timeout'), timeoutMs);
       signal.addEventListener('abort', cancel, { once: true });
+      if (signal.aborted) { cancel(); return; }
       child.stdout?.on('data', (chunk: Buffer) => { if (stdout.length < 512) stdout += chunk.toString('latin1').slice(0, 512 - stdout.length); });
       child.once('error', (error: NodeJS.ErrnoException) => finish({ outcome: error.code === 'ENOENT' ? 'decoder_unavailable' : 'decoder_failed' }));
       child.once('close', code => finish({ code }));
@@ -114,11 +118,16 @@ export function eldDecoder(launch: Launch = launchHelper, timeoutMs = DECODE_MS)
     if (run.code !== 0) return { outcome: 'decoder_failed', units, exit_code };
     const report = /^rate=(\d{1,6}) channels=(\d) frame=(\d{1,5}) units=(\d{1,9}) errors=(\d{1,9})\n?$/.exec(run.stdout);
     if (!report) return { outcome: 'decoder_output', units, exit_code };
-    const [rate, channels, , decodedUnits, errors] = report.slice(1).map(Number) as [number, number, number, number, number];
-    if (decodedUnits !== units || rate < 8000 || rate > 48000 || channels < 1 || channels > 2)
+    const [rate, channels, frame, decodedUnits, errors] = report.slice(1).map(Number) as [number, number, number, number, number];
+    if (decodedUnits !== units || rate < 8000 || rate > 48000 || channels < 1 || channels > 2 || frame < 1)
       return { outcome: 'decoder_output', units, exit_code };
-    // A wrong config or a corrupt stream fails most units. Keep it muted.
+    // A corrupt stream fails most units. Keep it muted.
     if (errors * 10 > units) return { outcome: 'decode_errors', units, errors };
+    // Another sample rate decodes without errors at the wrong speed, so the
+    // camera's own clock must agree with the config's frame duration.
+    const cadence = frames.frameMs(), expected = frame / rate * 1000;
+    if (units >= CADENCE_UNITS && cadence !== null && cadence >= CADENCE_MS[0] && cadence <= CADENCE_MS[1]
+      && Math.abs(cadence - expected) > expected / 4) return { outcome: 'cadence_mismatch', units, errors };
     return { outcome: 'decoded', pcm: { path: pcm, rate, channels }, units, errors };
   };
 }

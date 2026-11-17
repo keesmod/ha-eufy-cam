@@ -911,6 +911,17 @@ class ProjectTests(unittest.TestCase):
 
     # Archives
 
+    def test_archives_carry_the_native_helper_source(self):
+        # bridge/Dockerfile compiles native/eld-decode.c (#264).
+        self.write("bridge/native/eld-decode.c", "int main(void) { return 0; }\n")
+        self.commit()
+        archives = packaging.members(self.root)
+        bridge = next(n for n in archives if n.startswith("eufy-viewer-bridge-"))
+        self.assertIn("bridge/native/eld-decode.c", archives[bridge])
+        self.assertIn(
+            "bridge/native/eld-decode.c", archives["ha-eufy-cam-source-0.8.46.zip"]
+        )
+
     def test_archive_cannot_include_untracked_local_files(self):
         self.regenerate("ha_app_beta")
         self.git("add", "ha_app_beta")

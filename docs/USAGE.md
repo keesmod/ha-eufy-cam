@@ -484,7 +484,7 @@ reproduced. The readings are in the
 |---|---|
 | Integration | Home Assistant ≥ 2026.9.0, built-in `camera`, `http`, `lovelace`, `web_rtc`, `websocket_api`, `go2rtc-client` 0.4.0 or newer (installed automatically), HA-managed `go2rtc` for WebRTC |
 | Card | Bundled JavaScript, Home Assistant frontend and a modern browser, no separate frontend runtime package |
-| Bridge | Node.js 24, FFmpeg and tini, all included in the app/container |
+| Bridge | Node.js 24, FFmpeg, tini, and Fraunhofer FDK AAC (Debian non-free `libfdk-aac2`) with the bridge's `eufy-eld-decode` helper for AAC-ELD recording audio, all included in the app/container. The FDK AAC licence grants no patent licence. |
 | Bridge libraries | `@keesmod/eufy-mega-client` from its checksum-pinned GitHub release and `ws`. The release notes name the bundled client version. Mega retains MIT and Apache-2.0 attribution. Dependencies are pinned by `bridge/package-lock.json`. |
 | External services | Eufy account with camera access, Eufy cloud/push connectivity and local connectivity to camera/HomeBase |
 

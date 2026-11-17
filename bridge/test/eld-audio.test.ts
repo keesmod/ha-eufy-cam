@@ -14,10 +14,10 @@ class Helper extends EventEmitter {
   kill(signal: string) { this.killed.push(signal); queueMicrotask(() => this.emit('close', null)); return true; }
 }
 const units = [Buffer.alloc(71, 0x5a), Buffer.alloc(142, 0x33), Buffer.alloc(90, 0x11)];
-function frames(list = units) {
+function frames(list = units, step = 30) {
   const log = new AudioFrameLog();
   let offset = 0;
-  list.forEach((unit, i) => { log.add({ offset, bytes: unit.length, timestampMs: 1000 + 30 * i }); offset += unit.length; });
+  list.forEach((unit, i) => { log.add({ offset, bytes: unit.length, timestampMs: 1000 + step * i }); offset += unit.length; });
   return log;
 }
 function workspace(audio = Buffer.concat(units)) {
@@ -38,16 +38,19 @@ function helper(stdout: string, code: number | null = 0) {
   return { calls, children, launch };
 }
 
-test('the frame log keeps contiguous unit lengths and their median step (#264)', () => {
+test('the frame log keeps contiguous unit lengths and their mean step (#264)', () => {
   const log = frames();
   assert.deepEqual(log.lengths, [71, 142, 90]);
   assert.equal(log.bytes, 303); assert.equal(log.broken, undefined); assert.equal(log.frameMs(), 30);
-  // Jitter, a repeated stamp and one gap do not move the median of 30.
-  const jitter = new AudioFrameLog();
+  // Coarse 40 ms stamps on 30 ms units still average 30.
+  const coarse = new AudioFrameLog();
   let offset = 0;
-  for (const stamp of [0, 30, 59, 59, 90, 2000, 2030]) { jitter.add({ offset, bytes: 10, timestampMs: stamp }); offset += 10; }
-  assert.equal(jitter.frameMs(), 30);
+  for (const stamp of [0, 0, 40, 80, 120, 120, 160, 200, 240]) { coarse.add({ offset, bytes: 10, timestampMs: stamp }); offset += 10; }
+  assert.equal(coarse.frameMs(), 30);
   assert.equal(new AudioFrameLog().frameMs(), null);
+  const still = new AudioFrameLog();
+  still.add({ offset: 0, bytes: 10, timestampMs: 5 }); still.add({ offset: 10, bytes: 10, timestampMs: 5 });
+  assert.equal(still.frameMs(), null, 'equal stamps say nothing');
   const gap = new AudioFrameLog();
   gap.add({ offset: 0, bytes: 10, timestampMs: 0 }); gap.add({ offset: 11, bytes: 10, timestampMs: 30 }); gap.add({ offset: 10, bytes: 10, timestampMs: 30 });
   assert.equal(gap.broken, 'frames_gap'); assert.deepEqual(gap.lengths, [10], 'nothing is recorded after a break');
@@ -140,4 +143,39 @@ test('a missing, hanging or cancelled decoder is stopped and reported (#264)', a
     assert.deepEqual(await pending, { outcome: 'cancelled', units: 3 });
     assert.deepEqual(hung[1]!.killed, ['SIGKILL']);
   } finally { w.done(); }
+});
+
+test('a cancel during the file work or the launch never leaves the decoder running (#264)', async () => {
+  const w = workspace();
+  try {
+    const fake = helper('rate=16000 channels=1 frame=480 units=3 errors=0\n');
+    const early = new AbortController();
+    const pending = eldDecoder(fake.launch)({ audio: w.audio, frames: frames(), directory: w.directory }, early.signal);
+    early.abort();
+    assert.deepEqual(await pending, { outcome: 'cancelled', units: 3 });
+    assert.equal(fake.calls.length, 0, 'aborted while the units were written: no launch');
+    const during = new AbortController(), started: Helper[] = [];
+    const launch = () => { const child = new Helper(); started.push(child); during.abort(); return child as unknown as ChildProcess; };
+    assert.deepEqual(await eldDecoder(launch, 5000)({ audio: w.audio, frames: frames(), directory: w.directory }, during.signal), { outcome: 'cancelled', units: 3 });
+    assert.deepEqual(started[0]!.killed, ['SIGKILL']);
+  } finally { w.done(); }
+});
+
+test('units whose timestamps disagree with the config are left out, not played at the wrong speed (#264)', async () => {
+  const twelve = Array.from({ length: 12 }, (_, i) => Buffer.alloc(60 + i, i + 1));
+  const cases: [Buffer[], number, string][] = [
+    [twelve, 60, 'cadence_mismatch'], // 8 kHz audio read as 16 kHz
+    [twelve, 20, 'cadence_mismatch'], // 24 kHz audio read as 16 kHz
+    [twelve, 36, 'decoded'], // within a quarter, such as lost units
+    [twelve, 0, 'decoded'], // no usable clock
+    [twelve.slice(0, 9), 60, 'decoded'], // too few units to judge
+  ];
+  for (const [list, step, outcome] of cases) {
+    const w = workspace(Buffer.concat(list)), fake = helper(`rate=16000 channels=1 frame=480 units=${list.length} errors=0\n`);
+    try {
+      const result = await eldDecoder(fake.launch)({ audio: w.audio, frames: frames(list, step), directory: w.directory }, new AbortController().signal);
+      assert.equal(result.outcome, outcome, `${list.length} units ${step} ms apart`);
+      assert.equal(result.pcm !== undefined, outcome === 'decoded');
+    } finally { w.done(); }
+  }
 });
