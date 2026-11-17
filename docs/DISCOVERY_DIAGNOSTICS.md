@@ -320,6 +320,23 @@ camera without media or events. Other suffixes, including `T8142R`, and other
 types stay `unsupported_device`. The client's [model matrix][236-matrix] records the
 reported tuple. Not tested on hardware with this integration.
 
+On 2026-11-10 the reporter of [issue #252][252] ran integration 0.8.50 and
+bridge 0.8.41 with client 0.30.3 on Home Assistant 2026.11.1. The bridge logged
+`Eufy backend: unsupported_device device_model=T8215 device_type=97`, and the
+discovery report shows the rejected row with `code=unsupported_device` and
+`parent_status=present`. The report form names it Video Doorbell S4, on camera
+firmware 2.0.1.4 under a T8030 on firmware 3.8.8.0. Type 97 was not known to
+the client at all. Client 0.30.4, included in bridge 0.8.42, adds type 97 and
+admits exactly `T8215` with type 97 as a HomeBase 3 doorbell under the H3 media
+policy, which checks the actual HomeBase 3 owner and its firmware. Under
+another parent, such as a HomeBase 2, its `device` row shows
+`relationship=unsupported` with `relationship_reason=unsupported_station`, and
+Home Assistant shows it as a camera without media or events. An empty or self
+parent gives `relationship_reason=invalid_device_relationship` instead. Other
+types, suffixes and models with type 97 stay `unsupported_device`. The client's
+[model matrix][252-matrix] records the reported tuple and the public evidence.
+Not tested on hardware with this integration.
+
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
 [152-records]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780
 [168]: https://github.com/keesmod/ha-eufy-cam/issues/168
@@ -340,6 +357,8 @@ reported tuple. Not tested on hardware with this integration.
 [198-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#public-t8210-and-t8210c-type-7-evidence-0301
 [236]: https://github.com/keesmod/ha-eufy-cam/issues/236
 [236-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-t8142-z-0303
+[252]: https://github.com/keesmod/ha-eufy-cam/issues/252
+[252-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-t8215-video-doorbell-s4-0304
 
 `ref`, `owner_ref` and `device_ref` are anonymous references within a report.
 `inventory_row` is a separate zero-based source position. Use the `report` number

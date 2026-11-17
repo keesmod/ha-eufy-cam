@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.51 - Unreleased
+
+- Added the Video Doorbell S4 `T8215` on a HomeBase 3 ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)), not yet confirmed on hardware.
+
+Upgrade: update the bridge to 0.8.42 first, then the integration. Rollback: 0.8.50 with bridge 0.8.41.
+
 ## 0.8.50 - 2026-11-06
 
 - Added the eufyCam 2C Pro `T8142-Z` on a HomeBase 3 ([#236](https://github.com/keesmod/ha-eufy-cam/issues/236)), not yet confirmed on hardware.
