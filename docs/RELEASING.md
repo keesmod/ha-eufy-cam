@@ -185,9 +185,12 @@ commit stay green.
 ## Batch release run
 
 Stable releases happen on request, in one run together with eufy-mega-client.
-Issue runs end with a candidate or a beta, not with a stable release. One
-approval covers the whole run: the client stable release, the camera release PR
-whose merge updates the stable app, and both GitHub releases.
+Issue runs end with a candidate or a beta, not with a stable release, except an
+issue run that adds a new device: a camera model, model variant or device type
+that the client did not admit before. Since 2026-11-17 that run continues with
+a batch release run instead of a beta cut, under the maintainer's standing
+approval. One approval covers the whole run: the client stable release, the
+camera release PR whose merge updates the stable app, and both GitHub releases.
 
 1. Start the merge freeze in both repositories, at the run approval. A hotfix
    has already started it.
