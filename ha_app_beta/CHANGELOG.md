@@ -1,7 +1,13 @@
 # Changelog
 
-## 0.8.41
-2026-11-06
+## 0.8.42-beta.1
+Unreleased
+
+- Added the Video Doorbell S4 `T8215` on a HomeBase 3 ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)), not yet confirmed on hardware.
+
+Upgrade: works with every supported integration. Rollback: bridge 0.8.41.
+
+## 0.8.41 - 2026-11-06
 
 - Added the eufyCam 2C Pro `T8142-Z` on a HomeBase 3 ([#236](https://github.com/keesmod/ha-eufy-cam/issues/236)), not yet confirmed on hardware.
 - Added preset moves for the SoloCam S340 `T8170` on a HomeBase 3 ([#229](https://github.com/keesmod/ha-eufy-cam/issues/229)), not yet confirmed on hardware.
