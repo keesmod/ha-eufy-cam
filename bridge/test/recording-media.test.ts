@@ -26,6 +26,9 @@ const audioFrames = Buffer.concat([adts(), adts(), adts()]);
 const nal = (...units: number[][]) => Buffer.concat(units.map(unit => Buffer.from([0, 0, 0, 1, ...unit])));
 const h264Stream = nal([0x67, 0x64, 0x00, 0x1f, 0xac], [0x68, 0xee, 0x3c, 0x80], [0x65, 0x88, 0x84]);
 // An access unit delimiter first: the client's first-NAL check reads it as H.264 (#252).
+// Baseline H.264 with an SEI and three-byte start codes: the client labels it H.265.
+const baseline = Buffer.concat([[0x67, 0x42, 0x00, 0x1e], [0x68, 0xce, 0x3c, 0x80], [0x06, 0x05, 0x10], [0x65, 0x88, 0x84]]
+  .map(unit => Buffer.from([0, 0, 1, ...unit])));
 const hevcStream = nal([0x46, 0x01, 0x10], [0x40, 0x01, 0x0c, 0x01], [0x42, 0x01, 0x01, 0x01], [0x44, 0x01, 0xc1, 0x72], [0x26, 0x01, 0xaf, 0x08]);
 const paths = { video: 'video', audio: 'audio', output: 'output' };
 function buffered(core: RecordingTranscoder) {
@@ -403,8 +406,11 @@ test('Annex B parameter sets decide the video codec, ADTS frames decide the audi
   assert.equal(annexBCodec(Buffer.concat([h264Stream, hevcStream])), 'ambiguous');
   // Forbidden bit, an H.264 P slice, HEVC layer 1, HEVC temporal ID 0,
   // an SPS without reference priority and an SPS with an unknown profile.
-  for (const unit of [[0xc0, 0x01], [0x41, 0x05, 0x00], [0x40, 0x09, 0x01], [0x40, 0x00, 0x01], [0x07, 0x64], [0x67, 0x01]])
+  // HEVC types 31 and 35 and an H.264 SEI, all outside the parameter-set range.
+  for (const unit of [[0xc0, 0x01], [0x41, 0x05, 0x00], [0x40, 0x09, 0x01], [0x40, 0x00, 0x01], [0x07, 0x64], [0x67, 0x01],
+    [0x3e, 0x01], [0x46, 0x01], [0x06, 0x05]])
     assert.equal(annexBCodec(nal(unit)), 'none', unit.join(','));
+  assert.equal(annexBCodec(baseline), 'h264');
   assert.equal(adtsAudio(audioFrames), true);
   assert.equal(adtsAudio(adts()), true);
   assert.equal(adtsAudio(Buffer.concat([Buffer.from([1, 2, 3]), audioFrames])), true);
@@ -450,18 +456,19 @@ test('a failed recording reports its input and matching input is not adjusted', 
 });
 
 // Writes the files and passes an observation, which the buffered helper does not.
-async function observed(f: ReturnType<typeof fixture>, reported: any, video: Buffer, audio: Buffer, format: any, hevc: boolean) {
+// A null buffer names a file that is never written.
+async function observed(f: ReturnType<typeof fixture>, reported: any, video: Buffer | null, audio: Buffer | null, format: any, hevc: boolean) {
   const dir = mkdtempSync(join(tmpdir(), 'eufy-test-recording-'));
-  const files = { video: join(dir, 'video'), audio: audio.length ? join(dir, 'audio') : undefined, output: join(dir, 'output') };
-  writeFileSync(files.video, video); if (files.audio) writeFileSync(files.audio, audio);
+  const files = { video: join(dir, 'video'), audio: audio === null || audio.length ? join(dir, 'audio') : undefined, output: join(dir, 'output') };
+  if (video) writeFileSync(files.video, video); if (audio?.length) writeFileSync(files.audio!, audio);
   const limits: Record<string, number> = {};
-  try {
-    const result = f.core.muxResult(reported, files, f.abort.signal, format, hevc,
-      { attempt: 1, mark: () => {}, limits });
-    await launched(f.children, 1);
-    return { args: f.commands[0]!, limits, finish: async () => { complete(f.children.at(-1)!); return (await result).media; } };
-  } finally { setTimeout(() => rmSync(dir, { recursive: true, force: true }), 100); }
+  const settled = f.core.muxResult(reported, files, f.abort.signal, format, hevc, { attempt: 1, mark: () => {}, limits })
+    .finally(() => rmSync(dir, { recursive: true, force: true }));
+  settled.catch(() => {});
+  await launched(f.children, 1);
+  return { args: f.commands[0]!, limits, settled, finish: async () => { complete(f.children.at(-1)!); return (await settled).media; } };
 }
+const failed = (f: ReturnType<typeof fixture>) => f.events.find(e => e.event === 'recording_failed');
 test('a mislabelled HEVC recording is transcoded to H.264 when the browser needs it (#252)', async () => {
   const software = fixture({ remuxMs: 500 }, 'software');
   const run = await observed(software, { videoCodec: 'h264', fps: 15 }, hevcStream, audioFrames, 'h264', false);
@@ -488,4 +495,32 @@ test('a recording without a client codec label converts from its parameter sets,
   assert.deepEqual(quiet.events.find(e => e.event === 'recording_failed').input,
     { reported_video: 'h264', detected_video: 'h264', reported_audio: 'none', audio: 'absent' });
   assert.ok(!quiet.events.some(e => e.event === 'recording_input_adjusted'));
+});
+test('an H.264 recording the client labels HEVC is remuxed as H.264 (#252)', async () => {
+  const f = fixture({ remuxMs: 500 }, 'nvidia');
+  const run = await observed(f, { videoCodec: 'hevc', fps: 15, audioCodec: 'aac' }, baseline, audioFrames, 'h264', false);
+  assert.equal(run.args[run.args.indexOf('-i') - 1], 'h264'); assert.equal(run.args[run.args.indexOf('-c:v') + 1], 'copy');
+  for (const arg of ['hvc1', 'libx264', 'h264_nvenc', 'cuda']) assert.ok(!run.args.includes(arg), arg);
+  assert.equal(run.limits.conversion_ms, 500);
+  assert.deepEqual(await run.finish(), { source: 'h264', output: 'h264', processing: 'remux', fallback: false });
+  assert.deepEqual(f.events.find(e => e.event === 'recording_input_adjusted').input,
+    { reported_video: 'hevc', detected_video: 'h264', reported_audio: 'aac', audio: 'adts' });
+});
+test('unreadable files are reported as unread and left to FFmpeg', async () => {
+  const f = fixture({}, 'software');
+  const run = await observed(f, { videoCodec: 'h264', fps: 15, audioCodec: 'aac' }, null, null, 'native', false);
+  assert.equal(run.args.filter(arg => arg === '-i').length, 2);
+  f.children[0]!.emit('close', 1); await assert.rejects(run.settled);
+  assert.ok(!f.events.some(e => e.event === 'recording_input_adjusted'));
+  assert.deepEqual(failed(f).input, { reported_video: 'h264', detected_video: 'unread', reported_audio: 'aac', audio: 'unread' });
+});
+test('video with both kinds of parameter sets keeps the client label', async () => {
+  for (const label of ['h264', 'hevc'] as const) {
+    const f = fixture({}, 'software');
+    const run = await observed(f, { videoCodec: label, fps: 15, audioCodec: 'aac' }, Buffer.concat([h264Stream, hevcStream]), audioFrames, 'native', false);
+    assert.equal(run.args[run.args.indexOf('-i') - 1], label);
+    f.children[0]!.emit('close', 1); await assert.rejects(run.settled);
+    assert.equal(failed(f).input.detected_video, 'ambiguous');
+    assert.ok(!f.events.some(e => e.event === 'recording_input_adjusted'));
+  }
 });

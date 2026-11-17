@@ -204,7 +204,7 @@ fallback events. Each line has an anonymous attempt number and elapsed time:
 | `recording_hardware_timeout` | The hardware attempt reached its deadline |
 | `recording_software_fallback` | One software replacement was selected |
 | `recording_failed` | Preparation failed without a hardware retry, including a storage limit or storage error |
-| `recording_input_adjusted` | The bridge changed the video demuxer or left out audio that is not ADTS, see below. Always a warning, from bridge 0.8.43 |
+| `recording_input_adjusted` | The bridge chose the video demuxer from the parameter sets instead of the client's label, or left out audio that is not ADTS, see below. Always a warning, from bridge 0.8.43 |
 
 From bridge 0.8.43 the bridge reads the first 64 KiB of each downloaded file
 before FFmpeg starts ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)).
@@ -219,7 +219,7 @@ fixed values:
 
 | Field | Values |
 | --- | --- |
-| `reported_video` | The client's label: `h264`, `hevc` or `unknown` |
+| `reported_video` | The client's label as the bridge names it: `h264`, `hevc` (the client's `h265`) or `unknown` |
 | `detected_video` | `h264` or `hevc`, `none` without parameter sets, `ambiguous` with both kinds, `unread` when the file could not be read |
 | `reported_audio` | The client's label: `aac`, `aac-lc`, `aac-eld`, `none` or `unknown` |
 | `audio` | `adts`, `not_adts` (left out), `absent` (no audio received) or `unread` |
