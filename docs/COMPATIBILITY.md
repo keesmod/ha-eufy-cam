@@ -403,9 +403,9 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   live view and recordings use the HomeBase 3 owner and firmware checks. The
   owner reported the doorbell, snapshots, live view, the recording list with
   thumbnails, events and the battery level working behind a HomeBase 3 on
-  integration 0.8.51. On the beta integration 0.8.52-beta.1 with bridge
-  0.8.43-beta.1 the owner reported one ring event per press and recordings
-  that play without sound. The doorbell sends raw AAC-ELD audio, which the
+  integration 0.8.51. With the beta bridge 0.8.43-beta.1, as its log line
+  shows, the owner reported one ring event per press and recordings that play
+  without sound. The integration version was not stated. The doorbell sends raw AAC-ELD audio, which the
   bridge cannot decode yet, so it leaves the audio out
   ([issue #264](https://github.com/keesmod/ha-eufy-cam/issues/264)). Reported,
   not independently reproduced.
