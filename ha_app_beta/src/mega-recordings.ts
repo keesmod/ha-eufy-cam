@@ -335,7 +335,7 @@ export class MegaRecordings implements BackendRecordings {
           try { observation.data.source_bytes = (await stat(video)).size + audioBytes; } catch { /* Optional size observation cannot fail playback. */ }
           observation.stage('conversion');
           const output = await this.media.muxResult(
-            { videoCodec: codec, fps: metadata.fps },
+            { videoCodec: codec, fps: metadata.fps, audioCodec: metadata.audioCodec },
             { video, audio: audioBytes ? audio : undefined, output: join(directory, 'output.mp4') },
             abort,
             format,
