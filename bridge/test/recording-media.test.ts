@@ -25,10 +25,10 @@ const adts = (payload = 9) => {
 const audioFrames = Buffer.concat([adts(), adts(), adts()]);
 const nal = (...units: number[][]) => Buffer.concat(units.map(unit => Buffer.from([0, 0, 0, 1, ...unit])));
 const h264Stream = nal([0x67, 0x64, 0x00, 0x1f, 0xac], [0x68, 0xee, 0x3c, 0x80], [0x65, 0x88, 0x84]);
-// An access unit delimiter first: the client's first-NAL check reads it as H.264 (#252).
 // Baseline H.264 with an SEI and three-byte start codes: the client labels it H.265.
 const baseline = Buffer.concat([[0x67, 0x42, 0x00, 0x1e], [0x68, 0xce, 0x3c, 0x80], [0x06, 0x05, 0x10], [0x65, 0x88, 0x84]]
   .map(unit => Buffer.from([0, 0, 1, ...unit])));
+// An access unit delimiter first: the client's first-NAL check reads it as H.264 (#252).
 const hevcStream = nal([0x46, 0x01, 0x10], [0x40, 0x01, 0x0c, 0x01], [0x42, 0x01, 0x01, 0x01], [0x44, 0x01, 0xc1, 0x72], [0x26, 0x01, 0xaf, 0x08]);
 const paths = { video: 'video', audio: 'audio', output: 'output' };
 function buffered(core: RecordingTranscoder) {
