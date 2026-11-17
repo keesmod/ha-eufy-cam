@@ -2,6 +2,7 @@
 
 ## 0.8.43 - Unreleased
 
+- A doorbell press or detection no longer arrives twice when a late second copy follows ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)), not yet confirmed on hardware.
 - Recordings whose video codec the client reported wrongly now play ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)), not yet confirmed on hardware.
 - Recordings whose audio is not ADTS AAC, such as AAC-ELD, now play without sound instead of failing ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)), not yet confirmed on hardware.
 - Updated the bridge dependencies `ws` to 8.22.2, `qs` to 6.17.1, `date-and-time` to 4.7.1, `http2-wrapper` to 2.2.4 and `@borewit/text-codec` to 0.2.3 ([#258](https://github.com/keesmod/ha-eufy-cam/pull/258)).
