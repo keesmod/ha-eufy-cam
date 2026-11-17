@@ -8,6 +8,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { RecordingTranscoder, recordingAcceleration, recordingArgs, annexBCodec, adtsAudio, logRecordingDiagnostic } from '../src/recording-media.js';
+import { AudioFrameLog, type EldDecoder } from '../src/eld-audio.js';
 
 class Process extends EventEmitter {
   stdin = new PassThrough(); stdout = new PassThrough(); stderr = new PassThrough(); audio = new PassThrough(); progress = new PassThrough();
@@ -42,14 +43,14 @@ function buffered(core: RecordingTranscoder) {
   };
   return { muxResult, mux: (...args: Parameters<typeof muxResult>) => muxResult(...args).then(r => r.body) };
 }
-function fixture(overrides = {}, mode: 'nvidia' | 'software' = 'nvidia', detail = false) {
+function fixture(overrides = {}, mode: 'nvidia' | 'software' = 'nvidia', detail = false, decode?: EldDecoder) {
   const children: Process[] = [], commands: string[][] = [], events: any[] = [];
   const media = new RecordingTranscoder(mode, event => events.push(event), args => {
     commands.push(args); const child = new Process();
     writeFileSync(args.at(-1)!, Buffer.alloc(0));
     child.stdout.on('data', chunk => appendFileSync(args.at(-1)!, chunk));
     children.push(child); return child as unknown as ChildProcess;
-  }, { conversionMs: 1000, remuxMs: 1000, hardwareMs: 500, cleanupMs: 30, bytes: 1024, ...overrides }, detail);
+  }, { conversionMs: 1000, remuxMs: 1000, hardwareMs: 500, cleanupMs: 30, bytes: 1024, ...overrides }, detail, decode);
   const abort = new AbortController();
   const run = () => buffered(media).mux(metadata, Buffer.from('original-video'), audioFrames, abort.signal);
   return { core: media, media: buffered(media), children, commands, events, abort, run };
@@ -158,13 +159,18 @@ test('real software and missing-GPU HEVC conversion preserve decodable H264/AAC 
 
 test('bridge fallback converts one completed transfer while retaining recording ownership', async () => {
   const { MegaRecordings } = await import('../src/mega-recordings.js');
-  const f = fixture(); let downloads = 0, cancellations = 0;
+  const units: number[][] = [];
+  const f = fixture({}, 'nvidia', false, async ({ frames }) => { units.push([...frames.lengths]); return { outcome: 'decoder_unavailable', units: frames.lengths.length }; });
+  let downloads = 0, cancellations = 0;
   const client = {
     connected: true,
     listRecordings: async () => ({ complete: true, returned: 1, recordings: [{ id: 'fixture', deviceId: 'CAM', stationId: 'BASE', start: '2026-09-13T10:00:00Z', end: '2026-09-13T10:00:01Z', bytes: 100, thumbnail: false }] }),
-    downloadRecording: async () => {
+    downloadRecording: async (_id: string, options: { onFrameTiming?: (timing: object) => void }) => {
       downloads++;
       const video = new PassThrough(), audio = new PassThrough();
+      // 'original-audio' as two AAC-ELD units 30 ms apart.
+      options.onFrameTiming?.({ kind: 'audio', offset: 0, bytes: 9, timestampMs: 1000 });
+      options.onFrameTiming?.({ kind: 'audio', offset: 9, bytes: 5, timestampMs: 1030 });
       return { video, audio, metadata: { videoCodec: 'h265', fps: 15, audioCodec: 'aac-eld' },
         completed: new Promise(resolve => setImmediate(() => { video.end('original-video'); audio.end('original-audio'); resolve({ complete: true }); })),
         cancel: async () => { cancellations++; } };
@@ -179,9 +185,11 @@ test('bridge fallback converts one completed transfer while retaining recording 
   complete(f.children[1]!); await result;
   assert.equal(downloads, 1); assert.equal(cancellations, 1); assert.equal(recordings.busy, false);
   assert.equal(recordings.metrics.transcoded, 1); assert.equal(recordings.metrics.completed, 1);
-  // The client's audio label reaches the input report.
+  // The client's audio label and the download's unit boundaries reach the conversion (#264).
+  assert.deepEqual(units, [[9, 5]]);
   assert.deepEqual(f.events.find(e => e.event === 'recording_input_adjusted').input,
-    { reported_video: 'hevc', detected_video: 'none', reported_audio: 'aac-eld', audio: 'not_adts' });
+    { reported_video: 'hevc', detected_video: 'none', reported_audio: 'aac-eld', audio: 'not_adts',
+      audio_decode: 'decoder_unavailable', audio_units: 2, audio_frame_ms: 30 });
 });
 
 
@@ -437,10 +445,95 @@ test('audio without ADTS frames is left out instead of failing the recording (#2
   assert.equal(args.filter(arg => arg === '-i').length, 1); assert.ok(!args.includes('aac')); assert.ok(!args.includes('1:a:0'));
   complete(f.children[0]!); await result;
   const adjusted = f.events.find(e => e.event === 'recording_input_adjusted');
-  assert.deepEqual(adjusted.input, { reported_video: 'h264', detected_video: 'h264', reported_audio: 'aac-eld', audio: 'not_adts' });
+  // Without unit boundaries AAC-ELD cannot be decoded (#264).
+  assert.deepEqual(adjusted.input, { reported_video: 'h264', detected_video: 'h264', reported_audio: 'aac-eld', audio: 'not_adts', audio_decode: 'no_frames' });
   const lines: string[] = [];
   logRecordingDiagnostic(adjusted, false, line => lines.push(line), () => assert.fail('adjusted input is a warning'));
   assert.equal(JSON.parse(lines[0]!).input.audio, 'not_adts');
+});
+// Raw AAC-ELD units with the download's unit boundaries, 30 ms apart (#264).
+const eldUnits = [Buffer.alloc(71, 0x5a), Buffer.alloc(142, 0x33), Buffer.alloc(90, 0x11)];
+function eldFrames(units = eldUnits) {
+  const frames = new AudioFrameLog();
+  let offset = 0;
+  units.forEach((unit, i) => { frames.add({ offset, bytes: unit.length, timestampMs: 1000 + 30 * i }); offset += unit.length; });
+  return frames;
+}
+async function eld(f: ReturnType<typeof fixture>, audioCodec: string, audio: Buffer, frames?: AudioFrameLog) {
+  const dir = mkdtempSync(join(tmpdir(), 'eufy-test-recording-'));
+  const files = { video: join(dir, 'video'), audio: join(dir, 'audio'), output: join(dir, 'output'), ...(frames ? { audioFrames: frames } : {}) };
+  writeFileSync(files.video, h264Stream); writeFileSync(files.audio, audio);
+  const settled = f.core.muxResult({ videoCodec: 'h264', fps: 15, audioCodec: audioCodec as any }, files, f.abort.signal, 'native', false)
+    .finally(() => rmSync(dir, { recursive: true, force: true }));
+  settled.catch(() => {});
+  return { dir, files, settled };
+}
+test('decoded AAC-ELD units are encoded to AAC-LC instead of being left out (#264)', async () => {
+  const calls: any[] = [];
+  const f = fixture({}, 'software', false, async (input, signal) => {
+    calls.push({ ...input, aborted: signal.aborted });
+    return { outcome: 'decoded', pcm: { path: join(input.directory, 'audio.pcm'), rate: 16000, channels: 1 }, units: 3, errors: 0 };
+  });
+  const run = await eld(f, 'aac-eld', Buffer.concat(eldUnits), eldFrames());
+  await launched(f.children, 1);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].audio, run.files.audio); assert.equal(calls[0].directory, run.dir); assert.equal(calls[0].aborted, false);
+  assert.deepEqual(calls[0].frames.lengths, [71, 142, 90]);
+  const args = f.commands[0]!;
+  assert.equal(args.filter(arg => arg === '-i').length, 2);
+  const audioInput = args.lastIndexOf('-i');
+  assert.deepEqual(args.slice(audioInput - 6, audioInput + 2), ['-f', 's16le', '-ar', '16000', '-ac', '1', '-i', join(run.dir, 'audio.pcm')]);
+  assert.ok(!args.includes(run.files.audio), 'the raw units never reach FFmpeg');
+  assert.deepEqual(args.slice(args.indexOf('1:a:0') - 1, args.indexOf('1:a:0') + 5), ['-map', '1:a:0', '-c:a', 'aac', '-b:a', '64k']);
+  assert.ok(!args.includes('aac_adtstoasc'));
+  complete(f.children[0]!); await run.settled;
+  const adjusted = f.events.find(e => e.event === 'recording_input_adjusted');
+  assert.deepEqual(adjusted.input, { reported_video: 'h264', detected_video: 'h264', reported_audio: 'aac-eld', audio: 'not_adts',
+    audio_decode: 'decoded', audio_units: 3, audio_errors: 0, audio_frame_ms: 30, audio_rate: 16000 });
+});
+test('AAC-ELD that does not decode leaves the recording without sound, as before (#264)', async () => {
+  for (const result of [
+    { outcome: 'decode_errors', units: 3, errors: 2 },
+    { outcome: 'decoder_failed', units: 3, exit_code: 3 },
+    { outcome: 'frames_mismatch' },
+  ] as const) {
+    const f = fixture({}, 'software', false, async () => result);
+    const run = await eld(f, 'aac-eld', Buffer.concat(eldUnits), eldFrames());
+    await launched(f.children, 1);
+    const args = f.commands[0]!;
+    assert.equal(args.filter(arg => arg === '-i').length, 1, result.outcome); assert.ok(!args.includes('1:a:0'));
+    complete(f.children[0]!); await run.settled;
+    const input = f.events.find(e => e.event === 'recording_input_adjusted').input;
+    assert.equal(input.audio_decode, result.outcome);
+    assert.equal(input.audio_errors, 'errors' in result ? result.errors : undefined);
+    assert.equal(input.decoder_exit, 'exit_code' in result ? result.exit_code : undefined);
+    assert.equal(input.audio_rate, undefined);
+  }
+});
+test('only AAC-ELD without ADTS goes to the decoder (#264)', async () => {
+  let calls = 0;
+  const decode: EldDecoder = async () => { calls++; return { outcome: 'decoder_unavailable' }; };
+  for (const [codec, audio] of [['unknown', Buffer.concat(eldUnits)], ['aac', audioFrames], ['aac-eld', audioFrames]] as const) {
+    const f = fixture({}, 'software', false, decode);
+    const run = await eld(f, codec, audio, eldFrames());
+    await launched(f.children, 1);
+    complete(f.children[0]!); await run.settled;
+    const input = f.events.find(e => e.event === 'recording_input_adjusted')?.input;
+    assert.equal(input?.audio_decode, undefined, codec);
+  }
+  assert.equal(calls, 0, 'ADTS AAC, even when labelled AAC-ELD, and unknown audio keep their path');
+});
+test('cancelling while AAC-ELD decodes starts no conversion (#264)', async () => {
+  let release!: () => void;
+  const f = fixture({}, 'software', false, (_input, signal) => new Promise(resolve => {
+    release = () => resolve({ outcome: 'cancelled' });
+    signal.addEventListener('abort', () => release(), { once: true });
+  }));
+  const run = await eld(f, 'aac-eld', Buffer.concat(eldUnits), eldFrames());
+  await tick();
+  f.abort.abort();
+  await assert.rejects(run.settled);
+  assert.equal(f.children.length, 0);
 });
 test('a failed recording reports its input and matching input is not adjusted', async () => {
   const f = fixture({}, 'software');

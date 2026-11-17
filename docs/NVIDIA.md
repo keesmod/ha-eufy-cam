@@ -204,7 +204,7 @@ fallback events. Each line has an anonymous attempt number and elapsed time:
 | `recording_hardware_timeout` | The hardware attempt reached its deadline |
 | `recording_software_fallback` | One software replacement was selected |
 | `recording_failed` | Preparation failed without a hardware retry, including a storage limit or storage error |
-| `recording_input_adjusted` | The bridge chose the video demuxer from the parameter sets instead of the client's label, or left out audio that is not ADTS, see below. Always a warning, from bridge 0.8.43 |
+| `recording_input_adjusted` | The bridge chose the video demuxer from the parameter sets instead of the client's label, or decoded or left out audio that is not ADTS, see below. Always a warning, from bridge 0.8.43 |
 
 From bridge 0.8.43 the bridge reads the first 64 KiB of each downloaded file
 before FFmpeg starts ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)).
@@ -214,6 +214,19 @@ whether FFmpeg reads the video as H.264 or HEVC. Otherwise the client's label
 stays. Audio without ADTS frames, such as AAC-ELD, is left out, so the recording
 plays without sound instead of failing.
 
+From bridge 0.8.43 the bridge also decodes AAC-ELD audio
+([#264](https://github.com/keesmod/ha-eufy-cam/issues/264)). A Video Doorbell
+S4 sends audio type 7 as raw AAC-ELD units, one per frame, without ADTS headers
+or a decoder config. The client's download frame timing gives each unit's
+length. The helper `/usr/local/bin/eufy-eld-decode` decodes the units with
+Fraunhofer FDK AAC, Debian's non-free `libfdk-aac2`, under the config
+`f8f03000`: ER AAC-ELD, 16 kHz, mono, 480 samples per frame.
+[mega-yfue/eufy-sdk#317](https://github.com/mega-yfue/eufy-sdk/issues/317)
+reports that config for audio type 7 of a `T8410C`. FFmpeg then encodes the
+sound to AAC-LC. When more than one unit in ten fails, or anything else goes
+wrong, the recording plays without sound as before. Debian's FFmpeg cannot do
+this itself, because it has no 16 kHz AAC-ELD tables.
+
 `recording_input_adjusted` and `recording_failed` carry an `input` object with
 fixed values:
 
@@ -222,7 +235,12 @@ fixed values:
 | `reported_video` | The client's label as the bridge names it: `h264`, `hevc` (the client's `h265`) or `unknown` |
 | `detected_video` | `h264` or `hevc`, `none` without parameter sets, `ambiguous` with both kinds, `unread` when the file could not be read |
 | `reported_audio` | The client's label: `aac`, `aac-lc`, `aac-eld`, `none` or `unknown` |
-| `audio` | `adts`, `not_adts` (left out), `absent` (no audio received) or `unread` |
+| `audio` | `adts`, `not_adts` (not ADTS, decoded or left out), `absent` (no audio received) or `unread` |
+| `audio_decode` | Only for `aac-eld` audio that is `not_adts`: `decoded`, or why it was left out: `no_frames`, `frames_gap`, `frames_size`, `frames_overflow`, `frames_mismatch`, `io`, `decoder_unavailable`, `decoder_failed`, `decoder_output`, `decode_errors`, `timeout` or `cancelled` |
+| `audio_units`, `audio_errors` | The units sent to the decoder and those that did not decode |
+| `audio_frame_ms` | The median step between unit timestamps, 30 for 480 samples at 16 kHz, or `null` |
+| `audio_rate` | The decoded sample rate, only when `decoded` |
+| `decoder_exit` | The decoder's exit code when it failed, `null` when it was killed |
 
 This evidence is in the bridge log only. The HA diagnostics download does not
 show it, so a recording whose audio was left out looks like any other

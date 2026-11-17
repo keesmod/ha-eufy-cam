@@ -67,6 +67,8 @@ def render(root, channel, version):
     files = {name: (root / "bridge" / name).read_bytes() for name in BRIDGE_FILES}
     for name in tracked(root, "bridge/src"):
         files["src/" + name] = (root / "bridge/src" / name).read_bytes()
+    for name in tracked(root, "bridge/native"):
+        files["native/" + name] = (root / "bridge/native" / name).read_bytes()
     for name in tracked(root, "app"):
         if name in files or name == "config.json":
             raise ValueError("app/" + name + " collides with a generated app file")

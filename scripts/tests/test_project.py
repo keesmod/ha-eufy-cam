@@ -498,6 +498,9 @@ class ProjectTests(unittest.TestCase):
             "bridge/Dockerfile": lambda: self.write(
                 "bridge/Dockerfile", self.read("bridge/Dockerfile") + "\n"
             ),
+            "bridge/native": lambda: self.write(
+                "bridge/native/eld-decode.c", "int main(void) { return 0; }\n"
+            ),
             "scripts.build": lambda: self.edit_json(
                 "bridge/package.json",
                 lambda data: data["scripts"].update(build="tsc -p ."),
@@ -847,6 +850,16 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(
             json.loads(beta["config.json"])["description"], app.BETA_DESCRIPTION
         )
+
+    def test_generator_copies_the_native_helper_source(self):
+        # The app containers compile the AAC-ELD helper from native/ (#264).
+        self.write("bridge/native/eld-decode.c", "int main(void) { return 0; }\n")
+        self.commit()
+        for channel in ("stable", "beta"):
+            files = app.render(self.root, channel, "0.8.37")
+            self.assertEqual(
+                files["native/eld-decode.c"], b"int main(void) { return 0; }\n"
+            )
 
     def test_store_changelog_substitutes_one_heading(self):
         self.add_notes("app/CHANGELOG.md", "0.8.38")
