@@ -328,8 +328,12 @@ discovery report shows the rejected row with `code=unsupported_device` and
 firmware 2.0.1.4 under a T8030 on firmware 3.8.8.0. Type 97 was not known to
 the client at all. Client 0.30.4, included in bridge 0.8.42, adds type 97 and
 admits exactly `T8215` with type 97 as a HomeBase 3 doorbell under the H3 media
-policy, which checks the actual HomeBase 3 owner and its firmware. Other types,
-suffixes and models with type 97 stay `unsupported_device`. The client's
+policy, which checks the actual HomeBase 3 owner and its firmware. Under
+another parent, such as a HomeBase 2, its `device` row shows
+`relationship=unsupported` with `relationship_reason=unsupported_station`, and
+Home Assistant shows it as a camera without media or events. An empty or self
+parent gives `relationship_reason=invalid_device_relationship` instead. Other
+types, suffixes and models with type 97 stay `unsupported_device`. The client's
 [model matrix][252-matrix] records the reported tuple and the public evidence.
 Not tested on hardware with this integration.
 
