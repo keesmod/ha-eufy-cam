@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { RecordingTranscoder, recordingAcceleration, recordingArgs } from '../src/recording-media.js';
+import { RecordingTranscoder, recordingAcceleration, recordingArgs, annexBCodec, adtsAudio, logRecordingDiagnostic } from '../src/recording-media.js';
 
 class Process extends EventEmitter {
   stdin = new PassThrough(); stdout = new PassThrough(); stderr = new PassThrough(); audio = new PassThrough(); progress = new PassThrough();
@@ -17,6 +17,16 @@ class Process extends EventEmitter {
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 10));
 const metadata = { videoCodec: 'hevc' as const, fps: 15 };
+// One ADTS AAC-LC frame, 48 kHz stereo, with a silent payload.
+const adts = (payload = 9) => {
+  const n = 7 + payload;
+  return Buffer.concat([Buffer.from([0xff, 0xf1, 0x4c, 0x80 | (n >> 11), (n >> 3) & 0xff, ((n & 7) << 5) | 0x1f, 0xfc]), Buffer.alloc(payload)]);
+};
+const audioFrames = Buffer.concat([adts(), adts(), adts()]);
+const nal = (...units: number[][]) => Buffer.concat(units.map(unit => Buffer.from([0, 0, 0, 1, ...unit])));
+const h264Stream = nal([0x67, 0x64, 0x00, 0x1f, 0xac], [0x68, 0xee, 0x3c, 0x80], [0x65, 0x88, 0x84]);
+// An access unit delimiter first: the client's first-NAL check reads it as H.264 (#252).
+const hevcStream = nal([0x46, 0x01, 0x10], [0x40, 0x01, 0x0c, 0x01], [0x42, 0x01, 0x01, 0x01], [0x44, 0x01, 0xc1, 0x72], [0x26, 0x01, 0xaf, 0x08]);
 const paths = { video: 'video', audio: 'audio', output: 'output' };
 function buffered(core: RecordingTranscoder) {
   const muxResult = (metadata: any, video: Buffer, audio: Buffer, signal: AbortSignal, format: any = 'h264', hevc = false) => {
@@ -38,7 +48,7 @@ function fixture(overrides = {}, mode: 'nvidia' | 'software' = 'nvidia', detail 
     children.push(child); return child as unknown as ChildProcess;
   }, { conversionMs: 1000, remuxMs: 1000, hardwareMs: 500, cleanupMs: 30, bytes: 1024, ...overrides }, detail);
   const abort = new AbortController();
-  const run = () => buffered(media).mux(metadata, Buffer.from('original-video'), Buffer.from('original-audio'), abort.signal);
+  const run = () => buffered(media).mux(metadata, Buffer.from('original-video'), audioFrames, abort.signal);
   return { core: media, media: buffered(media), children, commands, events, abort, run };
 }
 function complete(child: Process, value = 'complete-mp4') { child.stdout.write(value); child.emit('close', 0); }
@@ -80,7 +90,7 @@ test('failure discards partial hardware output and reuses both tracks once after
   assert.equal(f.children.length, 1); await launched(f.children, 2); assert.equal(f.children[0]!.killed, true);
   assert.equal(f.children.length, 2); assert.ok(f.commands[1]!.includes('libx264'));
   assert.equal(readFileSync(f.commands[1]![f.commands[1]!.indexOf('-i') + 1]!, 'utf8'), 'original-video');
-  assert.equal(readFileSync(f.commands[1]![f.commands[1]!.lastIndexOf('-i') + 1]!, 'utf8'), 'original-audio');
+  assert.deepEqual(readFileSync(f.commands[1]![f.commands[1]!.lastIndexOf('-i') + 1]!), audioFrames);
   complete(f.children[1]!); assert.equal((await result).toString(), 'complete-mp4');
   assert.ok(!JSON.stringify(f.events).includes('private'));
   const next = f.run(); assert.ok(f.commands[2]!.includes('h264_nvenc')); complete(f.children[2]!); await next;
@@ -379,4 +389,53 @@ test('support excerpts scrub terminal escapes, bearer values and Windows paths',
   const detail = f.events.find(e => e.failure).failure.ffmpeg_detail;
   for (const secret of ['confidential', '\u001b', 'private', 'fe80::', 'T8425123456789012']) assert.ok(!detail.includes(secret), secret);
   assert.ok(detail.includes('Unexpected response 731'));
+});
+
+test('Annex B parameter sets decide the video codec, ADTS frames decide the audio (#252)', () => {
+  assert.equal(annexBCodec(h264Stream), 'h264');
+  assert.equal(annexBCodec(hevcStream), 'hevc');
+  assert.equal(annexBCodec(Buffer.from('original-video')), undefined);
+  assert.equal(annexBCodec(Buffer.concat([h264Stream, hevcStream])), undefined);
+  assert.equal(adtsAudio(audioFrames), true);
+  assert.equal(adtsAudio(adts()), true);
+  assert.equal(adtsAudio(Buffer.concat([Buffer.from([1, 2, 3]), audioFrames])), true);
+  assert.equal(adtsAudio(Buffer.from('original-audio')), false);
+  assert.equal(adtsAudio(Buffer.concat([adts(), Buffer.from('raw-eld-frame')])), false);
+  assert.equal(adtsAudio(Buffer.alloc(0)), false);
+});
+test('a mislabelled HEVC recording is demuxed as HEVC and the adjustment is logged (#252)', async () => {
+  const f = fixture({}, 'software');
+  const result = f.media.muxResult({ videoCodec: 'h264', fps: 15, audioCodec: 'aac' }, hevcStream, audioFrames, f.abort.signal, 'native');
+  await launched(f.children, 1);
+  const args = f.commands[0]!;
+  assert.equal(args[args.indexOf('-i') - 1], 'hevc'); assert.ok(args.includes('hvc1')); assert.ok(args.includes('aac_adtstoasc'));
+  complete(f.children[0]!);
+  assert.equal((await result).media.source, 'hevc');
+  const adjusted = f.events.find(e => e.event === 'recording_input_adjusted');
+  assert.deepEqual(adjusted.input, { reported_video: 'h264', detected_video: 'hevc', reported_audio: 'aac', audio: 'adts' });
+});
+test('audio without ADTS frames is left out instead of failing the recording (#252)', async () => {
+  const f = fixture({}, 'software');
+  const result = f.media.muxResult({ videoCodec: 'h264', fps: 15, audioCodec: 'aac-eld' }, h264Stream, Buffer.from('raw-eld-audio'), f.abort.signal, 'native');
+  await launched(f.children, 1);
+  const args = f.commands[0]!;
+  assert.equal(args.filter(arg => arg === '-i').length, 1); assert.ok(!args.includes('aac')); assert.ok(!args.includes('1:a:0'));
+  complete(f.children[0]!); await result;
+  const adjusted = f.events.find(e => e.event === 'recording_input_adjusted');
+  assert.deepEqual(adjusted.input, { reported_video: 'h264', detected_video: 'h264', reported_audio: 'aac-eld', audio: 'not_adts' });
+  const lines: string[] = [];
+  logRecordingDiagnostic(adjusted, false, line => lines.push(line), () => assert.fail('adjusted input is a warning'));
+  assert.equal(JSON.parse(lines[0]!).input.audio, 'not_adts');
+});
+test('a failed recording reports its input and matching input is not adjusted', async () => {
+  const f = fixture({}, 'software');
+  const result = f.media.muxResult({ videoCodec: 'h264', fps: 15, audioCodec: 'aac' }, h264Stream, audioFrames, f.abort.signal, 'native');
+  const rejected = assert.rejects(result);
+  await launched(f.children, 1);
+  f.children[0]!.stderr.write('video: Invalid data found when processing input\n'); f.children[0]!.emit('close', 1);
+  await rejected;
+  assert.ok(!f.events.some(e => e.event === 'recording_input_adjusted'));
+  const failed = f.events.find(e => e.event === 'recording_failed');
+  assert.deepEqual(failed.failure.ffmpeg, ['invalid_input']);
+  assert.deepEqual(failed.input, { reported_video: 'h264', detected_video: 'h264', reported_audio: 'aac', audio: 'adts' });
 });

@@ -2,6 +2,8 @@ import { RecordingError } from './errors.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import { stat } from 'node:fs/promises';
+import { closeSync, openSync, readSync } from 'node:fs';
+import { adtsHeader } from './audio-header-diagnostics.js';
 
 export interface RecordingProgress { output_bytes?: number; encoded_frames?: number; process_closed?: boolean }
 export interface RecordingObservationSink {
@@ -10,9 +12,19 @@ export interface RecordingObservationSink {
   limits: Record<string, number>;
   progress?: (value: RecordingProgress) => void;
 }
+export type RecordingAudioCodec = 'aac' | 'aac-lc' | 'aac-eld' | 'none' | 'unknown';
 export interface RecordingMetadata {
   videoCodec: 'h264' | 'hevc' | null;
   fps: number;
+  /** The client's audio label. Only the input report uses it. */
+  audioCodec?: RecordingAudioCodec;
+}
+/** What the downloaded files contain, next to what the client reported (#252). */
+export interface RecordingInput {
+  reported_video: 'h264' | 'hevc' | 'unknown';
+  detected_video: 'h264' | 'hevc' | 'none';
+  reported_audio: RecordingAudioCodec;
+  audio: 'adts' | 'not_adts' | 'absent';
 }
 export type RecordingFormat = 'auto' | 'native' | 'h264';
 export interface RecordingMedia {
@@ -32,10 +44,12 @@ export function recordingAcceleration(value?: string): RecordingAcceleration {
 // Disk budget, independent of the client's compressed source download limit.
 export const RECORDING_BYTES = 256 * 1024 * 1024;
 type Event = 'recording_active_nvidia' | 'recording_active_software' | 'recording_remuxed'
-  | 'recording_hardware_failed' | 'recording_hardware_timeout' | 'recording_failed' | 'recording_software_fallback';
+  | 'recording_hardware_failed' | 'recording_hardware_timeout' | 'recording_failed' | 'recording_software_fallback'
+  | 'recording_input_adjusted';
 export interface RecordingDiagnostic {
   diagnostic: 'recording'; attempt: number; elapsed_ms: number; event: Event;
   failure?: ConversionFailure;
+  input?: RecordingInput;
 }
 type FailureReason = 'spawn' | 'process' | 'output_io' | 'timeout'
   | 'cancelled' | 'output_limit' | 'cleanup_unconfirmed' | 'empty_output';
@@ -88,11 +102,65 @@ class ConversionError extends RecordingError {
   get timedOut(): boolean { return this.details.reason === 'timeout'; }
 }
 
-/** Failures remain visible without enabling verbose live/media diagnostics. */
+/** Failures and adjusted input remain visible without enabling verbose live/media diagnostics. */
 export function logRecordingDiagnostic(event: RecordingDiagnostic, verbose: boolean,
   warning: (line: string) => void = console.warn, info: (line: string) => void = console.info): void {
-  if (event.event === 'recording_hardware_failed' || event.event === 'recording_hardware_timeout' || event.event === 'recording_failed') warning(JSON.stringify(event));
+  if (event.event === 'recording_hardware_failed' || event.event === 'recording_hardware_timeout' || event.event === 'recording_failed'
+    || event.event === 'recording_input_adjusted') warning(JSON.stringify(event));
   else if (verbose) info(JSON.stringify(event));
+}
+
+const INSPECT_BYTES = 65536;
+const h264Profiles = new Set([44, 66, 77, 83, 86, 88, 100, 110, 118, 122, 128, 134, 135, 138, 139, 244]);
+/** The codec named by the parameter sets of an Annex B stream, undefined when absent or ambiguous. */
+export function annexBCodec(data: Uint8Array): 'h264' | 'hevc' | undefined {
+  let h264 = false, hevc = false;
+  for (let i = 0; i + 4 < data.length; i++) {
+    if (data[i] !== 0 || data[i + 1] !== 0 || data[i + 2] !== 1) continue;
+    const a = data[i + 3]!, b = data[i + 4]!;
+    i += 2;
+    if (a & 0x80) continue;
+    const type = (a >> 1) & 0x3f;
+    // HEVC VPS, SPS or PPS of layer 0 with a temporal ID plus one of at least 1.
+    if (type >= 32 && type <= 34 && (a & 1) === 0 && b >> 3 === 0 && (b & 7) !== 0) hevc = true;
+    // H.264 SPS with a reference priority and a known profile_idc.
+    else if ((a & 0x1f) === 7 && (a & 0x60) !== 0 && h264Profiles.has(b)) h264 = true;
+  }
+  return h264 === hevc ? undefined : hevc ? 'hevc' : 'h264';
+}
+/** FFmpeg's ADTS demuxer needs ADTS frames: two consecutive headers, or one frame that ends the data. */
+export function adtsAudio(data: Uint8Array): boolean {
+  for (let i = 0; i + 7 <= data.length; i++) {
+    const header = adtsHeader(data.subarray(i));
+    if (!header) continue;
+    const next = i + header.frame_bytes;
+    if (next === data.length || (next + 7 <= data.length && adtsHeader(data.subarray(next)))) return true;
+  }
+  return false;
+}
+// At most 64 KiB from the bridge's own workspace, read before FFmpeg starts.
+function head(path: string): Buffer {
+  const file = openSync(path, 'r');
+  try {
+    const buffer = Buffer.alloc(INSPECT_BYTES);
+    return buffer.subarray(0, readSync(file, buffer, 0, INSPECT_BYTES, 0));
+  } finally { closeSync(file); }
+}
+/**
+ * The client names the video codec from the first NAL unit only, and passes
+ * AAC-ELD or unknown audio on without ADTS framing (#252). The parameter sets
+ * in the file decide the video demuxer, and audio without ADTS frames is left
+ * out instead of failing the whole recording. An unreadable file is left to
+ * FFmpeg, as before.
+ */
+export function inspectRecordingInput(metadata: RecordingMetadata, files: RecordingFiles): RecordingInput {
+  const input: RecordingInput = {
+    reported_video: metadata.videoCodec ?? 'unknown', detected_video: 'none',
+    reported_audio: metadata.audioCodec ?? 'unknown', audio: files.audio ? 'adts' : 'absent',
+  };
+  try { input.detected_video = annexBCodec(head(files.video)) ?? 'none'; } catch { /* FFmpeg reports it. */ }
+  if (files.audio) try { if (!adtsAudio(head(files.audio))) input.audio = 'not_adts'; } catch { /* FFmpeg reports it. */ }
+  return input;
 }
 
 export function recordingArgs(metadata: RecordingMetadata, hasAudio: boolean, format: 'h264' | 'native', mode: RecordingAcceleration, files: RecordingFiles, bytes = RECORDING_BYTES): string[] {
@@ -129,23 +197,28 @@ export class RecordingTranscoder {
     private readonly limits = { conversionMs: 45_000, remuxMs: 20_000, hardwareMs: 10_000, cleanupMs: 1000, bytes: RECORDING_BYTES },
     private readonly includeErrorText = false,
   ) {}
-  async muxResult(metadata: RecordingMetadata, files: RecordingFiles, signal: AbortSignal, requested: RecordingFormat = 'h264', hevcSupported = false, observation?: RecordingObservationSink): Promise<RecordingResult> {
+  async muxResult(reported: RecordingMetadata, reportedFiles: RecordingFiles, signal: AbortSignal, requested: RecordingFormat = 'h264', hevcSupported = false, observation?: RecordingObservationSink): Promise<RecordingResult> {
     signal.throwIfAborted();
+    const input = inspectRecordingInput(reported, reportedFiles);
     const format = requested === 'auto' ? (this.acceleration === 'nvidia' || !hevcSupported ? 'h264' : 'native') : requested;
-    const source = metadata.videoCodec;
+    const source = input.detected_video === 'none' ? reported.videoCodec : input.detected_video;
     if (source !== 'h264' && source !== 'hevc') throw new Error('Unsupported recording codec');
+    const metadata: RecordingMetadata = { ...reported, videoCodec: source };
+    const files: RecordingFiles = input.audio === 'not_adts' ? { ...reportedFiles, audio: undefined } : reportedFiles;
     let fallback = false;
     const result = (size: number, processing: RecordingMedia['processing']): RecordingResult => ({ path: files.output, size, media: { source, output: transcode ? 'h264' : source, processing, fallback } });
     if (this.unavailable) throw new Error('Recording converter requires restart');
-    const transcode = metadata.videoCodec === 'hevc' && format === 'h264';
+    const transcode = source === 'hevc' && format === 'h264';
     const started = performance.now(), attempt = observation?.attempt ?? ++this.sequence;
     if (observation) Object.assign(observation.limits, { output_bytes: this.limits.bytes, conversion_ms: transcode ? this.limits.conversionMs : this.limits.remuxMs, hardware_progress_ms: this.limits.hardwareMs, cleanup_ms: this.limits.cleanupMs });
     const deadline = started + (transcode ? this.limits.conversionMs : this.limits.remuxMs);
     const mark = (event: Event, failure?: ConversionFailure, log = true) => {
-      const row: RecordingDiagnostic = { diagnostic: 'recording', attempt, elapsed_ms: Math.round(performance.now() - started), event, ...(failure ? { failure } : {}) };
+      const row: RecordingDiagnostic = { diagnostic: 'recording', attempt, elapsed_ms: Math.round(performance.now() - started), event, ...(failure ? { failure } : {}),
+        ...(event === 'recording_failed' || event === 'recording_input_adjusted' ? { input } : {}) };
       try { observation?.mark(row); } catch { /* Observation cannot affect conversion. */ }
       try { if (log) this.diagnostic(row); } catch { /* Logging cannot affect playback. */ }
     };
+    if (source !== reported.videoCodec || input.audio === 'not_adts') mark('recording_input_adjusted');
     const run = (mode: RecordingAcceleration) => {
       const remaining = deadline - performance.now();
       if (remaining <= 0) throw new ConversionError(false, { reason: 'timeout', ffmpeg: [] });
