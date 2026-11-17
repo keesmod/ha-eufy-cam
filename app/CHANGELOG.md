@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.43 - Unreleased
+
+- Updated the bridge dependencies `ws` to 8.22.2, `qs` to 6.17.1, `date-and-time` to 4.7.1, `http2-wrapper` to 2.2.4 and `@borewit/text-codec` to 0.2.3 ([#258](https://github.com/keesmod/ha-eufy-cam/pull/258)).
+
+Upgrade: works with every supported integration. Rollback: bridge 0.8.42.
+
 ## 0.8.42 - 2026-11-17
 
 - Added the Video Doorbell S4 `T8215` on a HomeBase 3 ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)), not yet confirmed on hardware.
