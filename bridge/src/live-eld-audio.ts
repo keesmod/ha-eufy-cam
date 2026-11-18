@@ -75,8 +75,8 @@ export class LiveAudioUnits {
    */
   frameMs(): number | null {
     if (this.stamps < 2) return null;
-    const step = (this.lastStamp - this.firstStamp) / (this.stamps - 1);
-    return Number.isFinite(step) && step > 0 && step < 1000 ? Math.round(step * 10) / 10 : null;
+    const step = Math.round((this.lastStamp - this.firstStamp) / (this.stamps - 1) * 10) / 10;
+    return Number.isFinite(step) && step > 0 && step < 1000 ? step : null;
   }
   /** The complete units in the bytes so far, in order. */
   split(chunk: Buffer): Buffer[] {

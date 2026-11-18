@@ -306,8 +306,8 @@ test('PCM that is already in the pipe counts before an old unit ends the audio (
   const decoder = () => s.children[0]!;
   s.push(Buffer.alloc(40, 1));
   await tick();
-  // The event loop was blocked. The PCM waits as I/O, queued before the next
-  // unit, and is read before the verdict.
+  // The event loop was blocked. An immediate queued before the next unit
+  // stands in for the read of PCM already in the pipe, before the verdict.
   s.advance(2500);
   setImmediate(() => decoder().stdout.write(Buffer.alloc(2 * 960)));
   s.push(Buffer.alloc(40, 2));
@@ -345,6 +345,11 @@ test('the camera clock gives the mean step per unit, or nothing (#269)', () => {
   const unstamped = new LiveAudioUnits();
   unstamped.timing({ kind: 'audio', offset: 0, bytes: 1 }); unstamped.timing({ kind: 'audio', offset: 1, bytes: 1, timestampMs: -1 });
   assert.equal(unstamped.frameMs(), null);
+  // The bounds apply to the step as logged.
+  const near = new LiveAudioUnits();
+  near.timing({ kind: 'audio', offset: 0, bytes: 1, timestampMs: 0 }); near.timing({ kind: 'audio', offset: 1, bytes: 1, timestampMs: 999_999 });
+  for (let i = 2; i < 1001; i++) near.timing({ kind: 'audio', offset: i, bytes: 1, timestampMs: 999_999 });
+  assert.equal(near.frameMs(), null, '999.999 ms logs as 1000');
 });
 
 test('a stop is confirmed only when both processes closed, within the cleanup limit (#269)', async () => {
