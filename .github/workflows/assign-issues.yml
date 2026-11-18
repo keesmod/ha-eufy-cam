@@ -1,0 +1,26 @@
+name: Assign new issues
+# GitHub sends no notification for a new issue in a repository the owner does
+# not watch. Assigning the owner sends one, and the owner then also hears
+# about later comments on the issue.
+on:
+  issues:
+    types: [opened]
+permissions: {}
+jobs:
+  assign:
+    name: Assign the repository owner
+    if: ${{ github.event.issue.assignee == null }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Assign the owner and confirm the assignment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          gh api --method POST "repos/$REPOSITORY/issues/$ISSUE/assignees" \
+            -f "assignees[]=$OWNER" --jq '.assignees[].login' | grep -Fqx "$OWNER"
