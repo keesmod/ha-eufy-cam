@@ -70,8 +70,9 @@ export class LiveAudioUnits {
   };
   /**
    * Mean step of the camera's clock between the first and the last timed unit
-   * in milliseconds, one decimal, or null outside 0 to 1000 ms. Units lost on
-   * the way lengthen it, and a camera clock that jumps can move it either way.
+   * in milliseconds, one decimal, or null unless that is above 0 and below
+   * 1000 ms. Units lost on the way lengthen it, and a camera clock that jumps
+   * can move it either way.
    */
   frameMs(): number | null {
     if (this.stamps < 2) return null;

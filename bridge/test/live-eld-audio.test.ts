@@ -350,6 +350,10 @@ test('the camera clock gives the mean step per unit, or nothing (#269)', () => {
   near.timing({ kind: 'audio', offset: 0, bytes: 1, timestampMs: 0 }); near.timing({ kind: 'audio', offset: 1, bytes: 1, timestampMs: 999_999 });
   for (let i = 2; i < 1001; i++) near.timing({ kind: 'audio', offset: i, bytes: 1, timestampMs: 999_999 });
   assert.equal(near.frameMs(), null, '999.999 ms logs as 1000');
+  const small = new LiveAudioUnits();
+  small.timing({ kind: 'audio', offset: 0, bytes: 1, timestampMs: 0 });
+  for (let i = 1; i < 22; i++) small.timing({ kind: 'audio', offset: i, bytes: 1, timestampMs: 1 });
+  assert.equal(small.frameMs(), null, '1/21 ms logs as 0');
 });
 
 test('a stop is confirmed only when both processes closed, within the cleanup limit (#269)', async () => {
