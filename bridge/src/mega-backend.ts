@@ -27,6 +27,7 @@ import {
 } from './discovery-diagnostics.js';
 import { RecordingTranscoder } from './recording-media.js';
 import { LivePacing } from './camera-clock.js';
+import { LiveAudioUnits, LiveEldAudio, type LiveEldOptions } from './live-eld-audio.js';
 import { MegaRecordings } from './mega-recordings.js';
 import { PresetError, RecordingError, StationError, guardMode, guardModes, presetIndex } from './errors.js';
 import type { LiveAdmission } from './streams.js';
@@ -256,8 +257,10 @@ export class MegaBackend extends EventEmitter implements Backend {
   private stationStates = new Map<string, StationState>();
   private streams = new Map<
     string,
-    { abort: AbortController; handle?: LiveStream; starting: Promise<void>; audio: LiveAudioObservation }
+    { abort: AbortController; handle?: LiveStream; starting: Promise<void>; audio: LiveAudioObservation; eld?: LiveEldAudio }
   >();
+  /** Process launch and log line of the AAC-ELD live audio stage (#269). Tests replace them. */
+  liveEld: LiveEldOptions = {};
   private closed = false;
   private ready = false;
   private readonly liveAudio = new LiveAudioDiagnostics();
@@ -736,6 +739,7 @@ export class MegaBackend extends EventEmitter implements Backend {
       handle?: LiveStream;
       starting: Promise<void>;
       audio: LiveAudioObservation;
+      eld?: LiveEldAudio;
     } = {
       abort,
       starting: Promise.resolve(),
@@ -745,20 +749,31 @@ export class MegaBackend extends EventEmitter implements Backend {
     owned.starting = (async () => {
       try {
         const pacing = this.liveSmoothing ? new LivePacing() : undefined;
+        // The AAC-ELD stage needs the audio unit boundaries, with or without pacing (#269).
+        const units = new LiveAudioUnits();
         const handle = await this.client!.startLive(serial, {
           signal: abort.signal,
           maxDurationMs: bound,
           onProgress,
-          onFrameTiming: pacing?.timing,
+          onFrameTiming: (timing) => {
+            pacing?.timing(timing);
+            units.timing(timing);
+          },
         });
         owned.handle = handle;
         void handle.ended.then((result) => {
+          void owned.eld?.stop();
           owned.audio.finish('ended', result.confirmed);
           if (this.streams.get(serial) === owned) this.streams.delete(serial);
           this.emit('live-stop', { serial, confirmed: result.confirmed });
         });
         const metadata = handle.metadata;
         const paced = pacing?.attach(handle.video, handle.audio);
+        const audio = paced?.audio ?? handle.audio;
+        // ADTS audio keeps its path. AAC-ELD goes through the decoding stage,
+        // and so does audio whose codec only its first frame will name.
+        if (metadata.audioCodec === 'aac' || metadata.audioCodec === 'aac-lc') units.close();
+        else owned.eld = new LiveEldAudio(audio, units, () => handle.metadata.audioCodec, this.liveEld);
         const media: LiveMedia = {
           serial,
           videoCodec:
@@ -770,8 +785,8 @@ export class MegaBackend extends EventEmitter implements Backend {
           audioSupported: ['aac', 'aac-lc', 'aac-eld'].includes(metadata.audioCodec),
           fps: metadata.fps,
           video: paced?.video ?? handle.video,
-          audio: paced?.audio ?? handle.audio,
-          ...(paced ? { source: { video: handle.video, audio: handle.audio } } : {}),
+          audio: owned.eld?.output ?? audio,
+          ...(paced || owned.eld ? { source: { video: handle.video, audio: handle.audio } } : {}),
         };
         owned.audio.attach(handle.audio, metadata.audioCodec, media.audioSupported, () => handle.metadata.audioCodec);
         this.emit('live-start', media);
@@ -823,7 +838,10 @@ export class MegaBackend extends EventEmitter implements Backend {
     this.closed = true;
     clearInterval(this.timer);
     this.recordings.close();
+    const stages = [...this.streams.values()].flatMap((owned) => (owned.eld ? [owned.eld] : []));
     await Promise.allSettled([...this.streams.keys()].map((serial) => this.stopLive(serial)));
+    // Each decoding stage confirms that its processes are gone, within its cleanup limit.
+    await Promise.allSettled(stages.map((stage) => stage.stop()));
     try {
       await this.client?.shutdown();
     } finally {
