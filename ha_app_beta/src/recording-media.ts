@@ -3,7 +3,9 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import { stat } from 'node:fs/promises';
 import { closeSync, openSync, readSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { adtsHeader } from './audio-header-diagnostics.js';
+import { eldDecoder, type AudioFrameLog, type EldDecoder, type EldOutcome } from './eld-audio.js';
 
 export interface RecordingProgress { output_bytes?: number; encoded_frames?: number; process_closed?: boolean }
 export interface RecordingObservationSink {
@@ -26,6 +28,14 @@ export interface RecordingInput {
   detected_video: 'h264' | 'hevc' | 'none' | 'ambiguous' | 'unread';
   reported_audio: RecordingAudioCodec;
   audio: 'adts' | 'not_adts' | 'absent' | 'unread';
+  /** For AAC-ELD without ADTS: whether its units decoded (#264), and fixed counts. */
+  audio_decode?: EldOutcome;
+  audio_units?: number;
+  audio_errors?: number;
+  /** Mean step between the first and last unit timestamps, 30 for 480 samples at 16 kHz. */
+  audio_frame_ms?: number | null;
+  audio_rate?: number;
+  decoder_exit?: number | null;
 }
 export type RecordingFormat = 'auto' | 'native' | 'h264';
 export interface RecordingMedia {
@@ -35,7 +45,15 @@ export interface RecordingMedia {
   fallback: boolean;
 }
 export interface RecordingResult { path: string; size: number; media: RecordingMedia }
-export interface RecordingFiles { video: string; audio?: string; output: string }
+export interface RecordingFiles {
+  video: string;
+  audio?: string;
+  output: string;
+  /** Unit boundaries of the audio file, from the client's download frame timing (#264). */
+  audioFrames?: AudioFrameLog;
+  /** Decoded AAC-ELD audio, which FFmpeg encodes to AAC-LC. Replaces `audio`. */
+  pcm?: { path: string; rate: number; channels: number };
+}
 export type RecordingAcceleration = 'software' | 'nvidia';
 export function recordingAcceleration(value?: string): RecordingAcceleration {
   if (value === undefined || value === 'software') return 'software';
@@ -176,7 +194,8 @@ export function recordingArgs(metadata: RecordingMetadata, hasAudio: boolean, fo
   const args = ['-nostdin', '-hide_banner', '-loglevel', 'error', '-threads', '2'];
   if (hardware) args.push('-progress', 'pipe:4', '-stats_period', '0.5', '-nostats', '-hwaccel', 'cuda');
   args.push('-r', String(metadata.fps || 15), '-f', codec, '-i', files.video);
-  if (hasAudio) args.push('-f', 'aac', '-i', files.audio!);
+  if (hasAudio && files.pcm) args.push('-f', 's16le', '-ar', String(files.pcm.rate), '-ac', String(files.pcm.channels), '-i', files.pcm.path);
+  else if (hasAudio) args.push('-f', 'aac', '-i', files.audio!);
   args.push('-map', '0:v:0', '-c:v', transcode ? hardware ? 'h264_nvenc' : 'libx264' : 'copy');
   if (codec === 'hevc' && !transcode) args.push('-tag:v', 'hvc1');
   if (transcode) {
@@ -184,7 +203,7 @@ export function recordingArgs(metadata: RecordingMetadata, hasAudio: boolean, fo
     else args.push('-preset', 'veryfast');
     args.push('-pix_fmt', 'yuv420p', '-threads', '2');
   }
-  if (hasAudio) args.push('-map', '1:a:0', '-c:a', 'copy', '-bsf:a', 'aac_adtstoasc');
+  if (hasAudio) args.push('-map', '1:a:0', ...(files.pcm ? ['-c:a', 'aac', '-b:a', '64k'] : ['-c:a', 'copy', '-bsf:a', 'aac_adtstoasc']));
   // Seekable output avoids buffering a whole MP4 fragment inside FFmpeg.
   // faststart keeps duration, audio discovery and native Apple seeking intact.
   args.push('-y', '-fs', String(bytes), '-movflags', '+faststart', '-f', 'mp4', files.output);
@@ -201,6 +220,7 @@ export class RecordingTranscoder {
     private readonly launch: (args: string[]) => ChildProcess = args => spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe', 'ignore', 'pipe'] }),
     private readonly limits = { conversionMs: 45_000, remuxMs: 20_000, hardwareMs: 10_000, cleanupMs: 1000, bytes: RECORDING_BYTES },
     private readonly includeErrorText = false,
+    private readonly decodeAudio: EldDecoder = eldDecoder(undefined, undefined, limits.cleanupMs),
   ) {}
   async muxResult(reported: RecordingMetadata, reportedFiles: RecordingFiles, signal: AbortSignal, requested: RecordingFormat = 'h264', hevcSupported = false, observation?: RecordingObservationSink): Promise<RecordingResult> {
     signal.throwIfAborted();
@@ -209,25 +229,50 @@ export class RecordingTranscoder {
     const source = input.detected_video === 'h264' || input.detected_video === 'hevc' ? input.detected_video : reported.videoCodec;
     if (source !== 'h264' && source !== 'hevc') throw new Error('Unsupported recording codec');
     const metadata: RecordingMetadata = { ...reported, videoCodec: source };
-    const files: RecordingFiles = input.audio === 'not_adts' ? { ...reportedFiles, audio: undefined } : reportedFiles;
-    let fallback = false;
-    const result = (size: number, processing: RecordingMedia['processing']): RecordingResult => ({ path: files.output, size, media: { source, output: transcode ? 'h264' : source, processing, fallback } });
+    let files: RecordingFiles = input.audio === 'not_adts' ? { ...reportedFiles, audio: undefined } : reportedFiles;
+    // A converter that needs a restart starts no process, the decoder included.
     if (this.unavailable) throw new Error('Recording converter requires restart');
     const transcode = source === 'hevc' && format === 'h264';
     const started = performance.now(), attempt = observation?.attempt ?? ++this.sequence;
     if (observation) Object.assign(observation.limits, { output_bytes: this.limits.bytes, conversion_ms: transcode ? this.limits.conversionMs : this.limits.remuxMs, hardware_progress_ms: this.limits.hardwareMs, cleanup_ms: this.limits.cleanupMs });
-    const deadline = started + (transcode ? this.limits.conversionMs : this.limits.remuxMs);
     const mark = (event: Event, failure?: ConversionFailure, log = true) => {
       const row: RecordingDiagnostic = { diagnostic: 'recording', attempt, elapsed_ms: Math.round(performance.now() - started), event, ...(failure ? { failure } : {}),
         ...(event === 'recording_failed' || event === 'recording_input_adjusted' ? { input } : {}) };
       try { observation?.mark(row); } catch { /* Observation cannot affect conversion. */ }
       try { if (log) this.diagnostic(row); } catch { /* Logging cannot affect playback. */ }
     };
+    if (input.audio === 'not_adts' && input.reported_audio === 'aac-eld') {
+      const frames = reportedFiles.audioFrames;
+      const decoded = frames && reportedFiles.audio
+        ? await this.decodeAudio({ audio: reportedFiles.audio, frames, directory: dirname(reportedFiles.output) }, signal)
+        : { outcome: 'no_frames' as const };
+      input.audio_decode = decoded.outcome;
+      if (decoded.units !== undefined) input.audio_units = decoded.units;
+      if (decoded.errors !== undefined) input.audio_errors = decoded.errors;
+      if (frames) input.audio_frame_ms = frames.frameMs();
+      if (decoded.pcm) input.audio_rate = decoded.pcm.rate;
+      if (decoded.exit_code !== undefined) input.decoder_exit = decoded.exit_code;
+      if (decoded.outcome === 'cleanup_unconfirmed') {
+        // As for FFmpeg: a helper whose exit is not confirmed blocks every later process.
+        this.unavailable = true;
+        try { observation?.progress?.({ process_closed: false }); } catch { /* Observation cannot affect conversion. */ }
+        const failure: ConversionFailure = { reason: 'cleanup_unconfirmed', ffmpeg: [] };
+        mark('recording_failed', failure, !signal.aborted);
+        signal.throwIfAborted();
+        throw new ConversionError(false, failure);
+      }
+      signal.throwIfAborted();
+      if (decoded.pcm) files = { ...files, pcm: decoded.pcm };
+    }
+    let fallback = false;
+    const result = (size: number, processing: RecordingMedia['processing']): RecordingResult => ({ path: files.output, size, media: { source, output: transcode ? 'h264' : source, processing, fallback } });
+    // The conversion budget starts after any audio decoding.
+    const deadline = performance.now() + (transcode ? this.limits.conversionMs : this.limits.remuxMs);
     if (source !== reported.videoCodec || input.audio === 'not_adts') mark('recording_input_adjusted');
     const run = (mode: RecordingAcceleration) => {
       const remaining = deadline - performance.now();
       if (remaining <= 0) throw new ConversionError(false, { reason: 'timeout', ffmpeg: [] });
-      return this.convert(recordingArgs(metadata, !!files.audio, format, mode, files, this.limits.bytes), files.output, signal,
+      return this.convert(recordingArgs(metadata, !!(files.audio || files.pcm), format, mode, files, this.limits.bytes), files.output, signal,
         remaining, mode === 'nvidia' && transcode ? this.limits.hardwareMs : undefined, observation?.progress);
     };
     if (transcode && this.acceleration === 'nvidia') {
