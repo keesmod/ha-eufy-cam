@@ -16,6 +16,7 @@ import {
 } from '@keesmod/eufy-mega-client';
 import { RecordingError } from './errors.js';
 import { RecordingTranscoder, type RecordingFormat, type RecordingResult } from './recording-media.js';
+import { AudioFrameLog } from './eld-audio.js';
 import type { BackendRecordings, Recording } from './backend.js';
 import {
   connectionAttempt,
@@ -311,8 +312,10 @@ export class MegaRecordings implements BackendRecordings {
         let transfer: RecordingDownload | undefined;
         const directory = await recordingWorkspace();
         const video = join(directory, 'video'), audio = join(directory, 'audio');
+        // Raw AAC-ELD has no framing of its own, so keep each unit's length (#264).
+        const frames = new AudioFrameLog();
         try {
-          transfer = await client.downloadRecording(record.id, options(record.stationId));
+          transfer = await client.downloadRecording(record.id, { ...options(record.stationId), onFrameTiming: frames.add });
           const downloads = [
             pipeline(transfer.video, createWriteStream(video, { mode: 0o600 }), { signal: abort }),
             pipeline(transfer.audio, createWriteStream(audio, { mode: 0o600 }), { signal: abort }),
@@ -335,8 +338,8 @@ export class MegaRecordings implements BackendRecordings {
           try { observation.data.source_bytes = (await stat(video)).size + audioBytes; } catch { /* Optional size observation cannot fail playback. */ }
           observation.stage('conversion');
           const output = await this.media.muxResult(
-            { videoCodec: codec, fps: metadata.fps },
-            { video, audio: audioBytes ? audio : undefined, output: join(directory, 'output.mp4') },
+            { videoCodec: codec, fps: metadata.fps, audioCodec: metadata.audioCodec },
+            { video, audio: audioBytes ? audio : undefined, output: join(directory, 'output.mp4'), audioFrames: frames },
             abort,
             format,
             hevcSupported,

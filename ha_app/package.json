@@ -1,6 +1,6 @@
 {
   "name": "eufy-viewer-bridge",
-  "version": "0.8.42",
+  "version": "0.8.43",
   "private": true,
   "type": "module",
   "engines": {
@@ -12,8 +12,8 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
-    "@keesmod/eufy-mega-client": "https://github.com/keesmod/eufy-mega-client/releases/download/v0.30.4/keesmod-eufy-mega-client-0.30.4.tgz",
-    "ws": "8.22.0"
+    "@keesmod/eufy-mega-client": "https://github.com/keesmod/eufy-mega-client/releases/download/v0.30.5/keesmod-eufy-mega-client-0.30.5.tgz",
+    "ws": "8.22.2"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

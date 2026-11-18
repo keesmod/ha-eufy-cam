@@ -1,7 +1,17 @@
 # Changelog
 
-## 0.8.42
-2026-11-17
+## 0.8.43
+2026-11-18
+
+- A doorbell press or detection no longer arrives twice when a late second copy follows ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)), reported working for a press on a `T8215`.
+- Recordings whose video codec the client reported wrongly now play ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)), not yet confirmed on hardware.
+- Recordings whose audio the bridge cannot read now play without sound instead of failing ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)), reported working on a `T8215`.
+- Recordings of the Video Doorbell S4 `T8215` now play with sound ([#264](https://github.com/keesmod/ha-eufy-cam/issues/264)), reported working on a `T8215`.
+- Updated the client to 0.30.5 and the bridge dependencies `ws` to 8.22.2, `qs` to 6.17.1, `date-and-time` to 4.7.1, `http2-wrapper` to 2.2.4 and `@borewit/text-codec` to 0.2.3 ([#258](https://github.com/keesmod/ha-eufy-cam/pull/258)).
+
+Upgrade: works with every supported integration. The image now installs Debian's non-free `libfdk-aac2` to decode AAC-ELD audio. Rollback: bridge 0.8.42.
+
+## 0.8.42 - 2026-11-17
 
 - Added the Video Doorbell S4 `T8215` on a HomeBase 3 ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)), not yet confirmed on hardware.
 
