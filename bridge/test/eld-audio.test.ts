@@ -162,13 +162,16 @@ test('a cancel during the file work or the launch never leaves the decoder runni
 });
 
 test('units whose timestamps disagree with the config are left out, not played at the wrong speed (#264)', async () => {
-  const twelve = Array.from({ length: 12 }, (_, i) => Buffer.alloc(60 + i, i + 1));
+  const many = Array.from({ length: 120 }, (_, i) => Buffer.alloc(60 + (i % 40), i + 1));
   const cases: [Buffer[], number, string][] = [
-    [twelve, 60, 'cadence_mismatch'], // 8 kHz audio read as 16 kHz
-    [twelve, 20, 'cadence_mismatch'], // 24 kHz audio read as 16 kHz
-    [twelve, 36, 'decoded'], // within a quarter, such as lost units
-    [twelve, 0, 'decoded'], // no usable clock
-    [twelve.slice(0, 9), 60, 'decoded'], // too few units to judge
+    [many, 60, 'cadence_mismatch'], // 8 kHz audio read as 16 kHz
+    [many, 20, 'cadence_mismatch'], // 24 kHz audio read as 16 kHz
+    [many, 32, 'cadence_mismatch'], // 512-sample frames read as 480, 6.7 percent off
+    [many, 23, 'cadence_mismatch'], // 22.05 kHz with 512 samples
+    [many, 31, 'decoded'], // within 5 percent
+    [many, 30, 'decoded'],
+    [many, 0, 'decoded'], // no usable clock
+    [many.slice(0, 99), 60, 'decoded'], // too few units to judge
   ];
   for (const [list, step, outcome] of cases) {
     const w = workspace(Buffer.concat(list)), fake = helper(`rate=16000 channels=1 frame=480 units=${list.length} errors=0\n`);

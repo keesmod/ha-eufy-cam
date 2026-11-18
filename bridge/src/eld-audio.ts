@@ -63,9 +63,13 @@ export class AudioFrameLog {
     return Number.isFinite(step) && step > 0 && step < 1000 ? Math.round(step * 10) / 10 : null;
   }
 }
-// Fewer units, or a mean outside this range, say too little about the camera's clock.
-const CADENCE_UNITS = 10;
+// Below 100 units, or with a mean outside this range, the camera's clock says too
+// little: stamps quantized to 40 ms move a 100-unit mean by under 1.5 percent.
+const CADENCE_UNITS = 100;
 const CADENCE_MS = [5, 200] as const;
+// 512 samples where the config says 480 run 6.7 percent slow per unit, and the
+// helper decodes them without errors, so the tolerance stays below that.
+const CADENCE_TOLERANCE = 0.05;
 
 export type EldDecoder = (input: { audio: string; frames: AudioFrameLog; directory: string }, signal: AbortSignal) => Promise<EldResult>;
 type Launch = (command: string, args: string[]) => ChildProcess;
@@ -127,7 +131,7 @@ export function eldDecoder(launch: Launch = launchHelper, timeoutMs = DECODE_MS)
     // camera's own clock must agree with the config's frame duration.
     const cadence = frames.frameMs(), expected = frame / rate * 1000;
     if (units >= CADENCE_UNITS && cadence !== null && cadence >= CADENCE_MS[0] && cadence <= CADENCE_MS[1]
-      && Math.abs(cadence - expected) > expected / 4) return { outcome: 'cadence_mismatch', units, errors };
+      && Math.abs(cadence - expected) > expected * CADENCE_TOLERANCE) return { outcome: 'cadence_mismatch', units, errors };
     return { outcome: 'decoded', pcm: { path: pcm, rate, channels }, units, errors };
   };
 }

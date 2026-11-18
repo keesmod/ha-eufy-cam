@@ -523,6 +523,16 @@ test('only AAC-ELD without ADTS goes to the decoder (#264)', async () => {
   }
   assert.equal(calls, 0, 'ADTS AAC, even when labelled AAC-ELD, and unknown audio keep their path');
 });
+test('a converter that needs a restart starts no AAC-ELD decoder either (#264)', async () => {
+  let calls = 0;
+  const f = fixture({}, 'nvidia', false, async () => { calls++; return { outcome: 'decoder_unavailable' }; });
+  const first = f.run(); const rejected = assert.rejects(first);
+  f.children[0]!.kill = () => false; f.children[0]!.emit('error', new Error('stuck'));
+  await rejected;
+  const run = await eld(f, 'aac-eld', Buffer.concat(eldUnits), eldFrames());
+  await assert.rejects(run.settled, /requires restart/);
+  assert.equal(calls, 0); assert.equal(f.children.length, 1);
+});
 test('cancelling while AAC-ELD decodes starts no conversion (#264)', async () => {
   let release!: () => void;
   const f = fixture({}, 'software', false, (_input, signal) => new Promise(resolve => {

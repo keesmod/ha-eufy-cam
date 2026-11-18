@@ -211,8 +211,8 @@ before FFmpeg starts ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252))
 The client names the video codec from the first unit of the stream only. When
 the first 64 KiB hold H.264 or HEVC parameter sets of one kind, those decide
 whether FFmpeg reads the video as H.264 or HEVC. Otherwise the client's label
-stays. Audio without ADTS frames, such as AAC-ELD, is left out, so the recording
-plays without sound instead of failing.
+stays. Audio without ADTS frames is left out, so the recording plays without
+sound instead of failing, unless it is AAC-ELD that decodes as described below.
 
 From bridge 0.8.43 the bridge also decodes AAC-ELD audio
 ([#264](https://github.com/keesmod/ha-eufy-cam/issues/264)). A Video Doorbell
@@ -223,11 +223,12 @@ Fraunhofer FDK AAC, Debian's non-free `libfdk-aac2`, under the config
 `f8f03000`: ER AAC-ELD, 16 kHz, mono, 480 samples per frame.
 [mega-yfue/eufy-sdk#317](https://github.com/mega-yfue/eufy-sdk/issues/317)
 reports that config for audio type 7 of a `T8410C`. FFmpeg then encodes the
-sound to AAC-LC. The camera's timestamps must agree with the config's 30 ms
-per unit within a quarter, because audio at another sample rate decodes
-without errors at the wrong speed. When that check or the decoder fails, when
-more than one unit in ten fails, or when anything else goes wrong, the
-recording plays without sound as before. Debian's FFmpeg cannot do
+sound to AAC-LC. Audio at another sample rate or frame length decodes
+without errors at the wrong speed. So when a clip has at least 100 units with
+usable timestamps, their mean step must agree with the config's 30 ms within
+5 percent. When that check or the decoder fails, when more than one unit in ten
+fails, or when anything else goes wrong, the recording plays without sound as
+before. Debian's FFmpeg cannot do
 this itself, because it has no 16 kHz AAC-ELD tables.
 
 `recording_input_adjusted` and `recording_failed` carry an `input` object with
@@ -243,7 +244,7 @@ fixed values:
 | `audio_units`, `audio_errors` | The units sent to the decoder and those that did not decode |
 | `audio_frame_ms` | The mean step between the first and last unit timestamps, 30 for 480 samples at 16 kHz, or `null` |
 | `audio_rate` | The decoded sample rate, only when `decoded` |
-| `decoder_exit` | With `decoder_failed` or `decoder_output`, the decoder's exit code, `null` when it ended by a signal. Missing when the bridge stopped it after its time limit |
+| `decoder_exit` | When the decoder ran and exited with `decoder_failed` or `decoder_output`, its exit code, `null` when it ended by a signal. Missing when it could not start or the bridge stopped it after its time limit |
 
 This evidence is in the bridge log only. The HA diagnostics download does not
 show it, so a recording whose audio was left out looks like any other

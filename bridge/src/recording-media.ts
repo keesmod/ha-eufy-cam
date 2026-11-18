@@ -32,7 +32,7 @@ export interface RecordingInput {
   audio_decode?: EldOutcome;
   audio_units?: number;
   audio_errors?: number;
-  /** Median step between unit timestamps, 30 for 480 samples at 16 kHz. */
+  /** Mean step between the first and last unit timestamps, 30 for 480 samples at 16 kHz. */
   audio_frame_ms?: number | null;
   audio_rate?: number;
   decoder_exit?: number | null;
@@ -230,6 +230,8 @@ export class RecordingTranscoder {
     if (source !== 'h264' && source !== 'hevc') throw new Error('Unsupported recording codec');
     const metadata: RecordingMetadata = { ...reported, videoCodec: source };
     let files: RecordingFiles = input.audio === 'not_adts' ? { ...reportedFiles, audio: undefined } : reportedFiles;
+    // A converter that needs a restart starts no process, the decoder included.
+    if (this.unavailable) throw new Error('Recording converter requires restart');
     if (input.audio === 'not_adts' && input.reported_audio === 'aac-eld') {
       const frames = reportedFiles.audioFrames;
       const decoded = frames && reportedFiles.audio
@@ -246,7 +248,6 @@ export class RecordingTranscoder {
     }
     let fallback = false;
     const result = (size: number, processing: RecordingMedia['processing']): RecordingResult => ({ path: files.output, size, media: { source, output: transcode ? 'h264' : source, processing, fallback } });
-    if (this.unavailable) throw new Error('Recording converter requires restart');
     const transcode = source === 'hevc' && format === 'h264';
     const started = performance.now(), attempt = observation?.attempt ?? ++this.sequence;
     if (observation) Object.assign(observation.limits, { output_bytes: this.limits.bytes, conversion_ms: transcode ? this.limits.conversionMs : this.limits.remuxMs, hardware_progress_ms: this.limits.hardwareMs, cleanup_ms: this.limits.cleanupMs });
