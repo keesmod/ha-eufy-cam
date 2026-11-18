@@ -20,9 +20,11 @@ const MAX_UNIT_BYTES = 8192;
 const MAX_PENDING_UNITS = 1024;
 /**
  * How long a unit written to the helper may wait for its PCM. The helper
- * answers each unit within a millisecond, so only a stalled helper or encoder
- * reaches this, and then the audio ends instead of falling further behind. A
- * burst after a P2P stall arrives in one go, so the bound is time, not count.
+ * answers each unit within a millisecond, so a slow or stalled helper reaches
+ * this, and then the audio ends instead of falling further behind. A stalled
+ * FFmpeg reaches it once the pipes in between are full, about four seconds of
+ * PCM later. A burst after a P2P stall arrives in one go, so the bound is
+ * time, not count.
  */
 const MAX_LAG_MS = 2000;
 // Units waiting for their PCM at most, about two minutes of audio, as a memory bound.
@@ -176,6 +178,7 @@ export class LiveEldAudio {
   /** Write times of the units whose PCM has not come back, oldest first. */
   private waiting: number[] = [];
   private answered = 0;
+  private lagCheck?: NodeJS.Immediate;
   private outputBytes = 0;
   private firstOutputMs?: number;
   private status = '';
@@ -289,10 +292,8 @@ export class LiveEldAudio {
   /** Writes one unit behind its 16-bit big-endian length, or ends the audio when the helper fell behind. */
   private write(unit: Buffer): boolean {
     const now = this.now();
-    if (this.waiting.length >= MAX_WAITING_UNITS || (this.waiting.length && now - this.waiting[0]! > MAX_LAG_MS)) {
-      this.fail('backlog');
-      return false;
-    }
+    if (this.waiting.length >= MAX_WAITING_UNITS) { this.fail('backlog'); return false; }
+    if (this.waiting.length && now - this.waiting[0]! > MAX_LAG_MS) this.checkLag();
     const stdin = this.decoder?.stdin;
     // A helper that is gone reports through 'close'.
     if (!stdin?.writable) return true;
@@ -303,6 +304,19 @@ export class LiveEldAudio {
     this.written++;
     this.waiting.push(now);
     return true;
+  }
+
+  /**
+   * Decides on an old unit after the event loop's next I/O phase, which reads
+   * PCM that is already in the pipe. A blocked event loop alone, which delays
+   * that read, then does not end the audio.
+   */
+  private checkLag(): void {
+    if (this.lagCheck) return;
+    this.lagCheck = setImmediate(() => {
+      this.lagCheck = undefined;
+      if (this.state === 'decoding' && this.waiting.length && this.now() - this.waiting[0]! > MAX_LAG_MS) this.fail('backlog');
+    });
   }
 
   /** A failure ends the output, so the late audio reader stops and video goes on without sound. */
@@ -318,6 +332,8 @@ export class LiveEldAudio {
     if (typeof code === 'number' && Number.isInteger(code) && code >= 0 && code <= 255) this.exitCode = code;
     this.units.close();
     this.waiting = [];
+    if (this.lagCheck) clearImmediate(this.lagCheck);
+    this.lagCheck = undefined;
     const stopped = this.now();
     const children = [...this.closing.keys()];
     if (this.decoder?.stdout && this.encoder?.stdin) this.decoder.stdout.unpipe(this.encoder.stdin);

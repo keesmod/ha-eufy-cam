@@ -264,8 +264,55 @@ test('a burst after a stall may wait, a helper that does not answer for two seco
   s.push(Buffer.alloc(40, 3));
   await tick(); await tick();
   assert.equal(s.reports[0]?.outcome, 'backlog');
-  assert.equal(s.reports[0]?.units, 202);
+  assert.equal(s.reports[0]?.units, 203, 'the verdict follows the next I/O phase');
   assert.equal(s.eld.output.readableEnded, true);
+});
+
+test('PCM in uneven chunks answers only whole units (#269)', async () => {
+  for (const [bytes, outcome] of [[199 * 960 + 500, 'backlog'], [200 * 960, undefined]] as const) {
+    const s = stage();
+    for (let i = 0; i < 200; i++) s.push(Buffer.alloc(40, i));
+    await tick();
+    s.children[0]!.stdout.write(Buffer.alloc(1000));
+    s.children[0]!.stdout.write(Buffer.alloc(bytes - 1000));
+    await tick();
+    s.advance(2001);
+    s.push(Buffer.alloc(40, 1));
+    await tick(); await tick();
+    assert.equal(s.reports[0]?.outcome, outcome, `${bytes} bytes`);
+    await s.eld.stop();
+  }
+});
+
+test('a helper slower than the camera ends the audio once it is two seconds behind (#269)', async () => {
+  const s = stage();
+  let time = 0, answered = 0;
+  for (let i = 0; i < 400 && !s.reports.length; i++) {
+    s.push(Buffer.alloc(40, i & 0xff));
+    await tick();
+    // One unit every 40 ms against one every 30 ms from the camera.
+    const due = Math.floor(time / 40);
+    if (due > answered) { s.children[0]!.stdout.write(Buffer.alloc((due - answered) * 960)); answered = due; }
+    await tick();
+    s.advance(30); time += 30;
+  }
+  assert.equal(s.reports[0]?.outcome, 'backlog');
+  // The oldest waiting unit was written at 30 ms per unit and answered at 40, so it is 2 s old near 8 s.
+  assert.ok(s.reports[0]!.units > 260 && s.reports[0]!.units < 280, String(s.reports[0]!.units));
+});
+
+test('PCM that is already in the pipe counts before an old unit ends the audio (#269)', async () => {
+  const s = stage();
+  s.push(Buffer.alloc(40, 1));
+  await tick();
+  // The event loop was blocked: the PCM arrives only after the next unit.
+  s.advance(2500);
+  s.push(Buffer.alloc(40, 2));
+  s.children[0]!.stdout.write(Buffer.alloc(2 * 960));
+  await tick(); await tick();
+  assert.equal(s.reports.length, 0);
+  assert.equal(s.eld.output.readableEnded, false);
+  await s.eld.stop();
 });
 
 test('at most 4096 units wait for their PCM (#269)', async () => {
