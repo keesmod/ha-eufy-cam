@@ -202,6 +202,14 @@ test('a stopped decoder counts only once its exit is confirmed (#264)', async ()
     const deaf = () => { const child = new Helper(); child.kill = (sig: string) => { child.killed.push(sig); return true; }; stuck.push(child); return child as unknown as ChildProcess; };
     assert.deepEqual(await eldDecoder(deaf, 10, 30)({ audio: w.audio, frames: frames(), directory: w.directory }, signal), { outcome: 'cleanup_unconfirmed', units: 3 });
     assert.deepEqual(stuck[0]!.killed, ['SIGKILL']);
+    // A kill that fails emits 'error' and returns false, as Node does for EPERM.
+    // That confirms nothing: only 'close' or the cleanup limit decides.
+    const refused = () => {
+      const child = new Helper();
+      child.kill = (sig: string) => { child.killed.push(sig); child.emit('error', Object.assign(new Error('kill'), { code: 'EPERM' })); return false; };
+      return child as unknown as ChildProcess;
+    };
+    assert.deepEqual(await eldDecoder(refused, 10, 30)({ audio: w.audio, frames: frames(), directory: w.directory }, signal), { outcome: 'cleanup_unconfirmed', units: 3 });
   } finally { w.done(); }
 });
 

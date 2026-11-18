@@ -122,8 +122,10 @@ export function eldDecoder(launch: Launch = launchHelper, timeoutMs = DECODE_MS,
       signal.addEventListener('abort', cancel, { once: true });
       if (signal.aborted) cancel();
       child.stdout?.on('data', (chunk: Buffer) => { if (stdout.length < 512) stdout += chunk.toString('latin1').slice(0, 512 - stdout.length); });
-      child.once('error', (error: NodeJS.ErrnoException) => finish(stopping ? { outcome: stopping }
-        : { outcome: error.code === 'ENOENT' ? 'decoder_unavailable' : 'decoder_failed' }));
+      // During a stop an 'error', such as a failed kill, confirms nothing.
+      child.on('error', (error: NodeJS.ErrnoException) => {
+        if (!stopping) finish({ outcome: error.code === 'ENOENT' ? 'decoder_unavailable' : 'decoder_failed' });
+      });
       child.once('close', code => finish(stopping ? { outcome: stopping } : { code }));
     });
     if (run.outcome) return { outcome: run.outcome, units };
