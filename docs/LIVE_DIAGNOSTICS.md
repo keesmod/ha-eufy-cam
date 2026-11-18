@@ -554,7 +554,7 @@ otherwise. It has numbers and fixed values only:
 | `outcome` | `ended` when the stream ended or the viewer left. Otherwise why the audio ended early: `decoder_unavailable`, `decoder_failed`, `decode_errors`, `encoder_unavailable`, `encoder_failed`, `frames_size`, `frames_overflow` or `backlog` |
 | `units` | Units written to the decoder |
 | `errors` | Units the decoder could not decode, from its report every 100 units or its exit with code 7. Missing before its first report, so in sessions under about three seconds |
-| `frame_ms` | The mean step of the camera clock per unit, 30 for the config's 480 samples at 16 kHz. Lost units lengthen it, a camera clock that jumps can move it either way, and it is missing for a step of a second or more |
+| `frame_ms` | The mean step of the camera clock per unit, 30 for the config's 480 samples at 16 kHz. Lost units lengthen it, a camera clock that jumps can move it either way, and it is missing unless the step is above 0 and below 1,000 ms |
 | `exit_code` | The exit code of the process that ended the decoding, `7` for too many decode errors |
 | `output_bytes`, `first_output_ms` | ADTS bytes handed to the late audio reader, and when the first arrived after the first unit |
 | `duration_ms`, `skipped_bytes` | How long the stage decoded, and audio bytes without frame timing that it dropped |

@@ -70,8 +70,8 @@ export class LiveAudioUnits {
   };
   /**
    * Mean step of the camera's clock between the first and the last timed unit
-   * in milliseconds, one decimal, or null. Units lost on the way lengthen it,
-   * so it shows the config's 30 ms only as an upper bound.
+   * in milliseconds, one decimal, or null outside 0 to 1000 ms. Units lost on
+   * the way lengthen it, and a camera clock that jumps can move it either way.
    */
   frameMs(): number | null {
     if (this.stamps < 2) return null;
@@ -307,9 +307,10 @@ export class LiveEldAudio {
   }
 
   /**
-   * Decides on an old unit after the event loop's next I/O phase, which reads
-   * PCM that is already in the pipe. A blocked event loop alone, which delays
-   * that read, then does not end the audio.
+   * Decides on an old unit in the event loop's check phase, after an I/O phase
+   * has read PCM that was already in the pipe. A blocked event loop alone then
+   * does not end the audio. Without pacing the unit is written from an I/O
+   * callback, and only PCM that was ready when that batch began counts.
    */
   private checkLag(): void {
     if (this.lagCheck) return;

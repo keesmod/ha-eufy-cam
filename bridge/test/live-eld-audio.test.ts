@@ -303,16 +303,24 @@ test('a helper slower than the camera ends the audio once it is two seconds behi
 
 test('PCM that is already in the pipe counts before an old unit ends the audio (#269)', async () => {
   const s = stage();
+  const decoder = () => s.children[0]!;
   s.push(Buffer.alloc(40, 1));
   await tick();
-  // The event loop was blocked: the PCM arrives only after the next unit.
+  // The event loop was blocked. The PCM waits as I/O, queued before the next
+  // unit, and is read before the verdict.
   s.advance(2500);
+  setImmediate(() => decoder().stdout.write(Buffer.alloc(2 * 960)));
   s.push(Buffer.alloc(40, 2));
-  s.children[0]!.stdout.write(Buffer.alloc(2 * 960));
   await tick(); await tick();
   assert.equal(s.reports.length, 0);
   assert.equal(s.eld.output.readableEnded, false);
-  await s.eld.stop();
+  // The check stays armed: a helper that stalls later still ends the audio.
+  s.push(Buffer.alloc(40, 3));
+  await tick();
+  s.advance(2001);
+  s.push(Buffer.alloc(40, 4));
+  await tick(); await tick();
+  assert.equal(s.reports[0]?.outcome, 'backlog');
 });
 
 test('at most 4096 units wait for their PCM (#269)', async () => {
