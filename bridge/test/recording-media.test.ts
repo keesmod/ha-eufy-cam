@@ -536,8 +536,16 @@ test('a converter that needs a restart starts no AAC-ELD decoder either (#264)',
 test('a decoder whose exit is not confirmed fails the recording and blocks later processes (#264)', async () => {
   let calls = 0;
   const f = fixture({}, 'software', false, async () => { calls++; return { outcome: 'cleanup_unconfirmed', units: 3 }; });
-  const run = await eld(f, 'aac-eld', Buffer.concat(eldUnits), eldFrames());
-  await assert.rejects(run.settled);
+  const dir = mkdtempSync(join(tmpdir(), 'eufy-test-recording-'));
+  const files = { video: join(dir, 'video'), audio: join(dir, 'audio'), output: join(dir, 'output'), audioFrames: eldFrames() };
+  writeFileSync(files.video, h264Stream); writeFileSync(files.audio, Buffer.concat(eldUnits));
+  const progress: object[] = [];
+  try {
+    await assert.rejects(f.core.muxResult({ videoCodec: 'h264', fps: 15, audioCodec: 'aac-eld' }, files, f.abort.signal, 'native', false,
+      { attempt: 1, mark: () => {}, limits: {}, progress: value => progress.push(value) }));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+  // The same unconfirmed-process flag that HA diagnostics read for FFmpeg.
+  assert.deepEqual(progress, [{ process_closed: false }]);
   assert.equal(f.children.length, 0, 'no FFmpeg after an unconfirmed helper');
   const failed = f.events.find(e => e.event === 'recording_failed');
   assert.equal(failed.failure.reason, 'cleanup_unconfirmed'); assert.equal(failed.input.audio_decode, 'cleanup_unconfirmed');

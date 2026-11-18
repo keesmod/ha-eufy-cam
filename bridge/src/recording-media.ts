@@ -255,6 +255,7 @@ export class RecordingTranscoder {
       if (decoded.outcome === 'cleanup_unconfirmed') {
         // As for FFmpeg: a helper whose exit is not confirmed blocks every later process.
         this.unavailable = true;
+        try { observation?.progress?.({ process_closed: false }); } catch { /* Observation cannot affect conversion. */ }
         const failure: ConversionFailure = { reason: 'cleanup_unconfirmed', ffmpeg: [] };
         mark('recording_failed', failure, !signal.aborted);
         signal.throwIfAborted();
