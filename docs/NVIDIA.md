@@ -156,8 +156,10 @@ and both default to software. HAOS retains software defaults.
 
 NVIDIA is used only when an HEVC recording must be converted to H.264 for the
 player. H.264 recordings and native HEVC playback copy the existing video and AAC
-into MP4 without decoding or encoding. Zero GPU activity is expected for these
-remuxes, which preserve the original picture and avoid unnecessary conversion.
+into MP4 without decoding or encoding. AAC-ELD audio is the exception: from
+bridge 0.8.43 the CPU decodes it and encodes AAC-LC, see below. Zero GPU activity
+is expected for these remuxes, which preserve the original picture and avoid
+unnecessary conversion.
 The browser still owns decoding and displaying the resulting recording.
 
 With integration/card 0.8.12 and bridge 0.8.11, both recording players offer
@@ -169,7 +171,8 @@ the completed processing route, including software fallback. See the
 Conversion requests CUDA decoding and `h264_nvenc` encoding at the original
 resolution and frame rate. NVENC uses preset p4, the high-quality tune, VBR with
 CQ 23 and no B frames. These settings do not imply identical quality to software.
-Pixel-format conversion can transfer frames through system memory. AAC is copied.
+Pixel-format conversion can transfer frames through system memory. AAC is copied,
+and AAC-ELD is encoded as AAC-LC on the CPU.
 
 The complete recording is downloaded once. From bridge 0.8.12, hardware gets
 10 seconds to begin advancing encoded frames and is stopped after 10 seconds
@@ -199,7 +202,7 @@ fallback events. Each line has an anonymous attempt number and elapsed time:
 | --- | --- |
 | `recording_active_nvidia` | NVIDIA completed the MP4 conversion |
 | `recording_active_software` | Software completed the MP4 conversion |
-| `recording_remuxed` | Compatible video and audio were copied without transcoding |
+| `recording_remuxed` | Compatible video was copied without transcoding. ADTS AAC was copied too, and decoded AAC-ELD was encoded as AAC-LC |
 | `recording_hardware_failed` | The hardware attempt failed |
 | `recording_hardware_timeout` | The hardware attempt reached its deadline |
 | `recording_software_fallback` | One software replacement was selected |
