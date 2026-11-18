@@ -408,8 +408,8 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   `recording_input_adjusted` log line shows, the owner reported one ring event
   per press and recordings that play without sound. The integration version
   was not stated. The bridge logged the audio as type 7 (`aac-eld`) without
-  ADTS framing and left it out. From bridge 0.8.43-beta.2 the bridge decodes
-  that audio with FDK AAC
+  ADTS framing and left it out. From bridge 0.8.43 the bridge decodes that
+  audio with FDK AAC
   ([issue #264](https://github.com/keesmod/ha-eufy-cam/issues/264)), not yet
   confirmed on hardware. Reported, not independently reproduced.
 - **eufyCam 2C `T8113-Z`, type 8**, recognized from bridge 0.8.29. Before that
