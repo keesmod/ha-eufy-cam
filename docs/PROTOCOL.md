@@ -44,6 +44,11 @@ with no replay cache. Readers join at complete frame boundaries. Unknown data or
 an ended source closes only the audio feed. Video and audio share the eight-reader
 limit per camera and the audio response has a 256,000-byte backpressure limit.
 
+From bridge 0.8.44 live AAC-ELD audio reaches the same route as ADTS AAC-LC
+([#269](https://github.com/keesmod/ha-eufy-cam/issues/269)). The bridge decodes
+it as a stream with FDK AAC and encodes it with FFmpeg, see
+[AAC-ELD live audio](LIVE_DIAGNOSTICS.md#aac-eld-live-audio-bridge-0844).
+
 HA validates the route against this viewer's original grant, then prepares a
 separate managed go2rtc AAC-to-Opus stream. The browser attaches its audio-only
 peer's track to the existing video element, retaining mute and volume settings.

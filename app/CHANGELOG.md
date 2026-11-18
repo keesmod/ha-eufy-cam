@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.44 - Unreleased
+
+- Live view of the Video Doorbell S4 `T8215` now has sound ([#269](https://github.com/keesmod/ha-eufy-cam/issues/269)), not yet confirmed on hardware.
+
+Upgrade: works with every supported integration. Rollback: bridge 0.8.43.
+
 ## 0.8.43 - 2026-11-18
 
 - A doorbell press or detection no longer arrives twice when a late second copy follows ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)), reported working for a press on a `T8215`.

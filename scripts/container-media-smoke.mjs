@@ -10,6 +10,7 @@ import { LiveTranscoder } from '/app/dist/live-transcoder.js';
 import { LateAudio } from '/app/dist/late-audio.js';
 import { StreamDiagnostics } from '/app/dist/diagnostics.js';
 import { AudioFrameLog } from '/app/dist/eld-audio.js';
+import { LiveAudioUnits, LiveEldAudio } from '/app/dist/live-eld-audio.js';
 const ELD_TONE = [
   'AI6UbtVGIyBIZhKrObri2tS7qXrTqhp5zGIQARkNZJJPofunoH0fW/unWn0fWfummPoyUARHF2ft/anoHb/KzA0Qc2BxHy7BKn5cZKby5yU3ctPPX9FeBFHc',
   'q5RKJRKKO6MlFHdHdHpjKMlE0TW0niJ6ieonsejHox6MejHoxox6MWsV4rxoxXw24bfMfz+AAEt/btjEBY59ftjz1198krT1pHJ5pBGStYgg/MXnU2/qYwys',
@@ -160,6 +161,52 @@ for (const codec of ['h264', 'hevc']) {
   const hz = crossings / 2 / (samples.length / 16000);
   assert.ok(Math.abs(hz - 440) < 10 && peak > 4000, `decoded ${hz.toFixed(1)} Hz, peak ${peak}`);
   console.log(`recording aac-eld: 34 units decoded through FDK AAC, AAC-LC tone at ${hz.toFixed(1)} Hz beside H.264`);
+}
+// Live AAC-ELD, as the Video Doorbell S4 sends it (#269): the same units, three
+// times and one every 30 ms like the camera, go through the image's helper in
+// stream mode and FFmpeg, and reach the late audio reader as ADTS AAC-LC while
+// the stream still runs.
+{
+  const framed = Buffer.from(ELD_TONE, 'base64'), tone = [];
+  for (let i = 0; i < framed.length;) { const n = framed.readUInt16BE(i); tone.push(framed.subarray(i + 2, i + 2 + n)); i += 2 + n; }
+  const units = [...tone, ...tone, ...tone];
+  const source = new PassThrough(), timing = new LiveAudioUnits(), reports = [], frames = [];
+  const eld = new LiveEldAudio(source, timing, () => 'aac-eld', { log: report => reports.push(report) });
+  let readyAt;
+  const reader = new LateAudio(eld.output, () => { readyAt = performance.now(); }, frame => frames.push(Buffer.from(frame)));
+  const started = performance.now();
+  let offset = 0, sentAt;
+  try {
+    for (let i = 0; i < units.length; i++) {
+      await new Promise(resolve => setTimeout(resolve, Math.max(0, started + 30 * i - performance.now())));
+      timing.timing({ kind: 'audio', offset, bytes: units[i].length, timestampMs: 30 * i, keyFrame: false });
+      offset += units[i].length;
+      source.write(units[i]);
+    }
+    sentAt = performance.now();
+    await new Promise(resolve => setTimeout(resolve, 500));
+    source.end();
+    assert.equal(await eld.stop(), true, 'Both processes confirmed their stop');
+  } finally { reader.stop(); source.destroy(); await eld.stop(); }
+  assert.ok(readyAt !== undefined && readyAt < sentAt, 'The first ADTS frame arrived while units still flowed');
+  // The helper reported 100 units without errors before its stop.
+  const [report] = reports;
+  assert.deepEqual({ outcome: report.outcome, units: report.units, errors: report.errors, skipped: report.skipped_bytes, confirmed: report.stop_confirmed },
+    { outcome: 'ended', units: 102, errors: 0, skipped: 0, confirmed: true });
+  const audio = Buffer.concat(frames);
+  const probe = spawnSync('ffprobe', ['-v', 'error', '-f', 'aac', '-show_entries', 'stream=codec_name,profile,sample_rate,channels', '-of', 'json', 'pipe:0'], { input: audio, timeout: 5000 });
+  assert.equal(probe.status, 0);
+  const [stream] = JSON.parse(probe.stdout).streams;
+  assert.deepEqual([stream.codec_name, stream.profile, Number(stream.sample_rate), stream.channels], ['aac', 'LC', 16000, 1]);
+  const pcm = spawnSync('ffmpeg', ['-v', 'error', '-f', 'aac', '-i', 'pipe:0', '-f', 's16le', '-ac', '1', '-ar', '16000', 'pipe:1'], { input: audio, timeout: 5000, maxBuffer: 4 * 1024 * 1024 });
+  assert.equal(pcm.status, 0); assert.equal(pcm.stderr.length, 0, pcm.stderr.toString());
+  const samples = new Int16Array(pcm.stdout.buffer, pcm.stdout.byteOffset, pcm.stdout.length >> 1).slice(4800);
+  let crossings = 0, peak = 0;
+  for (let i = 1; i < samples.length; i++) { if ((samples[i - 1] < 0) !== (samples[i] < 0)) crossings++; peak = Math.max(peak, Math.abs(samples[i])); }
+  const hz = crossings / 2 / (samples.length / 16000);
+  assert.ok(samples.length >= 16000 * 2, `decoded ${samples.length} samples after the first 0.3 s`);
+  assert.ok(Math.abs(hz - 440) < 10 && peak > 4000, `decoded ${hz.toFixed(1)} Hz, peak ${peak}`);
+  console.log(`live aac-eld: 102 units streamed through FDK AAC and FFmpeg, first ADTS after ${report.first_output_ms} ms, AAC-LC tone at ${hz.toFixed(1)} Hz`);
 }
 // A mid-stream change of the frame size makes FFmpeg rebuild its filter graph.
 // Paced in real time, the live encoder keeps its clock and every frame with the

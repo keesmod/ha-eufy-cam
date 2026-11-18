@@ -416,9 +416,10 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   [reported](https://github.com/keesmod/ha-eufy-cam/issues/252#issuecomment-6972373625)
   recordings with sound. The log line showed 601 units decoded without errors,
   30 ms per unit at 16 kHz. The integration version and whether the sound stays
-  in sync with the picture were not stated. Live view still has no sound
-  ([issue #269](https://github.com/keesmod/ha-eufy-cam/issues/269)). Reported,
-  not independently reproduced.
+  in sync with the picture were not stated. On that bridge live view had no
+  sound. From bridge 0.8.44 the bridge decodes the live AAC-ELD audio the same
+  way ([issue #269](https://github.com/keesmod/ha-eufy-cam/issues/269)), not
+  yet confirmed on hardware. Reported, not independently reproduced.
 - **eufyCam 2C `T8113-Z`, type 8**, recognized from bridge 0.8.29. Before that
   release an owner reported snapshots, live view and HomeBase recordings behind
   a HomeBase 3 with a local test profile. Reported, not independently

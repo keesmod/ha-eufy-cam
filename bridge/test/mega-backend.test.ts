@@ -3,7 +3,8 @@ import { test, type TestContext } from 'node:test';
 process.env.EUFY_DATA_DIR = tmpdir();
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { Readable } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
+import type { ChildProcess } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import {
@@ -26,6 +27,7 @@ import {
 } from '../src/mega-backend.js';
 import { Storage } from '../src/storage.js';
 import { backendName, type LiveMedia } from '../src/backend.js';
+import type { LiveEldReport } from '../src/live-eld-audio.js';
 import { MegaRecordings } from '../src/mega-recordings.js';
 const devices: Device[] = [
   {
@@ -290,9 +292,10 @@ test('live media is paced on the camera clock by default and observed at the lib
       const media: LiveMedia[] = [];
       f.backend.on('live-start', (event: LiveMedia) => media.push(event));
       await f.backend.startLive('CAM');
+      // The timing reaches the AAC-ELD stage too, so the callback stays without smoothing (#269).
+      assert.equal(typeof f.timings[0], 'function');
       if (smoothing === false) {
-        assert.equal(f.timings[0], undefined, 'no timing callback without smoothing');
-        assert.equal(media[0]?.source, undefined);
+        assert.equal(media[0]?.source, undefined, 'ADTS audio keeps the library stream');
       } else {
         assert.equal(typeof f.timings[0], 'function');
         assert.ok(media[0]?.source, 'diagnostics get the library streams');
@@ -300,6 +303,64 @@ test('live media is paced on the camera clock by default and observed at the lib
         assert.notEqual(media[0]?.audio, media[0]?.source?.audio);
       }
       await f.backend.stopLive('CAM');
+    } finally {
+      await f.backend.close();
+    }
+  }
+});
+test('AAC-ELD live audio, or audio without a codec yet, goes through the decoding stage and ADTS does not (#269)', async () => {
+  for (const [codec, smoothing] of [['aac-eld', undefined], ['aac-eld', false], ['none', false], ['aac', false], ['aac-lc', false]] as const) {
+    const f = fixture(undefined, undefined, undefined, undefined, smoothing);
+    const library = { video: new PassThrough(), audio: new PassThrough() };
+    const start = f.client.startLive;
+    f.client.startLive = async (id, options) => {
+      const handle = await start(id, options);
+      return { ...handle, ...library, metadata: { ...handle.metadata, audioCodec: codec } };
+    };
+    const launched: { command: string; killed: string[] }[] = [];
+    const reports: LiveEldReport[] = [];
+    f.backend.liveEld = {
+      launch: (command) => {
+        const child = Object.assign(new EventEmitter(), {
+          stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), pid: 1,
+          exitCode: null as number | null, signalCode: null as string | null, killed: [] as string[],
+          kill(signal: string) {
+            child.killed.push(signal);
+            // The process takes a moment to go, so only an awaited stop sees it gone.
+            setTimeout(() => { child.signalCode = signal; child.emit('close', null, signal); }, 20);
+            return true;
+          },
+        });
+        launched.push({ command, killed: child.killed });
+        return child as unknown as ChildProcess;
+      },
+      log: (report) => reports.push(report),
+    };
+    try {
+      await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+      const media: LiveMedia[] = [];
+      f.backend.on('live-start', (event: LiveMedia) => media.push(event));
+      await f.backend.startLive('CAM');
+      const label = `${codec} ${smoothing}`;
+      const adts = codec === 'aac' || codec === 'aac-lc';
+      if (adts && smoothing === false) assert.equal(media[0]?.audio, library.audio, `${label}: the library stream itself`);
+      else assert.notEqual(media[0]?.audio, library.audio, label);
+      assert.equal(media[0]?.source?.audio, adts && smoothing === false ? undefined : library.audio, `${label}: diagnostics see the library stream`);
+      if (smoothing === false) assert.equal(media[0]?.video, library.video, `${label}: the stage leaves video alone`);
+      (f.timings[0] as (timing: unknown) => void)({ kind: 'audio', offset: 0, bytes: 3, timestampMs: 0, keyFrame: false });
+      library.audio.write(Buffer.from([1, 2, 3]));
+      await new Promise((resolve) => setTimeout(resolve, smoothing === false ? 5 : 800));
+      assert.deepEqual(launched.map((child) => child.command), codec === 'aac-eld' ? ['/usr/local/bin/eufy-eld-decode', 'ffmpeg'] : [], label);
+      if (smoothing === false) {
+        // The end of the live stream stops the stage by itself.
+        await f.backend.stopLive('CAM');
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      } else {
+        // close() returns once the stage confirmed that its processes are gone.
+        await f.backend.close();
+      }
+      assert.deepEqual(launched.map((child) => child.killed), launched.map(() => ['SIGKILL']), `${label}: the processes stop`);
+      assert.deepEqual(reports.map((report) => [report.outcome, report.units, report.stop_confirmed]), codec === 'aac-eld' ? [['ended', 1, true]] : [], label);
     } finally {
       await f.backend.close();
     }

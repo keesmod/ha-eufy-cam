@@ -512,3 +512,48 @@ station's answer to START
 ([eufy-mega-client issue #187](https://github.com/keesmod/eufy-mega-client/issues/187)),
 so those rows could not say which of these it was. The numbers are in the
 [2026-09-19 test record](CONCURRENT_LIVE_2026-09-19.md).
+
+## AAC-ELD live audio, bridge 0.8.44
+
+A Video Doorbell S4 `T8215` sends live audio type 7 (`aac-eld`) as raw AAC-ELD
+units, one per P2P audio message, without ADTS headers
+([#269](https://github.com/keesmod/ha-eufy-cam/issues/269)). Its recordings
+carry the same audio, which bridge 0.8.43 decodes, see
+[recording conversion](NVIDIA.md). Until bridge 0.8.44 the late audio reader
+stopped at the first header that was not ADTS, so live view had no sound.
+
+From bridge 0.8.44 a decoding stage takes the place of the live audio stream.
+When the first audio bytes arrive and the client names their codec `aac-eld`,
+the stage splits the audio into units at the client's frame timing, also after
+pacing on the camera clock. The helper `/usr/local/bin/eufy-eld-decode` decodes
+them in its stream mode under the recording config `f8f03000`, 16 kHz mono
+with 480 samples per unit, and writes each unit's PCM at once. FFmpeg encodes
+that PCM to ADTS AAC-LC at 64 kbit/s, which reaches the `/audio` route and
+go2rtc like the audio of other cameras. ADTS audio keeps its previous path
+without the stage.
+
+The stage never pauses the camera's audio stream and video never waits for it.
+When the decoder or FFmpeg cannot start or ends, more than one unit in ten
+fails to decode from the 50th unit on, a unit is impossible, or more than 64
+units (about two seconds) wait for their PCM, the stage stops both processes
+and ends only the audio. Live video then plays on without sound, as before.
+Unlike recordings, live audio has no check of the camera clock against the
+config's 30 ms per unit, because units lost on the way would disturb it.
+
+Each live session whose audio went through the decoder writes one line to the
+bridge log when it ends, as information after a normal end and as a warning
+otherwise. It has numbers and fixed values only:
+
+| Field | Meaning |
+| --- | --- |
+| `outcome` | `ended` when the stream ended or the viewer left. Otherwise why the audio ended early: `decoder_unavailable`, `decoder_failed`, `decode_errors`, `encoder_unavailable`, `encoder_failed`, `frames_size`, `frames_overflow` or `backlog` |
+| `units` | Units written to the decoder |
+| `errors` | Units the decoder could not decode, from its report every 100 units or at its exit. Missing before its first report |
+| `exit_code` | The exit code of the process that ended the decoding, `7` for too many decode errors |
+| `output_bytes`, `first_output_ms` | ADTS bytes handed to the late audio reader, and when the first arrived after the first unit |
+| `duration_ms`, `skipped_bytes` | How long the stage decoded, and audio bytes without frame timing that it dropped |
+| `stop_confirmed` | Both processes exited within a second of their stop |
+
+This line is in the bridge log only, like the recording lines. The HA
+diagnostics download shows the live audio row of the attempt, whose `header`
+is `other` for this audio, but not the decoding.
