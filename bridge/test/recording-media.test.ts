@@ -533,6 +533,18 @@ test('a converter that needs a restart starts no AAC-ELD decoder either (#264)',
   await assert.rejects(run.settled, /requires restart/);
   assert.equal(calls, 0); assert.equal(f.children.length, 1);
 });
+test('a decoder whose exit is not confirmed fails the recording and blocks later processes (#264)', async () => {
+  let calls = 0;
+  const f = fixture({}, 'software', false, async () => { calls++; return { outcome: 'cleanup_unconfirmed', units: 3 }; });
+  const run = await eld(f, 'aac-eld', Buffer.concat(eldUnits), eldFrames());
+  await assert.rejects(run.settled);
+  assert.equal(f.children.length, 0, 'no FFmpeg after an unconfirmed helper');
+  const failed = f.events.find(e => e.event === 'recording_failed');
+  assert.equal(failed.failure.reason, 'cleanup_unconfirmed'); assert.equal(failed.input.audio_decode, 'cleanup_unconfirmed');
+  const next = await eld(f, 'aac-eld', Buffer.concat(eldUnits), eldFrames());
+  await assert.rejects(next.settled, /requires restart/);
+  assert.equal(calls, 1); assert.equal(f.children.length, 0);
+});
 test('cancelling while AAC-ELD decodes starts no conversion (#264)', async () => {
   let release!: () => void;
   const f = fixture({}, 'software', false, (_input, signal) => new Promise(resolve => {

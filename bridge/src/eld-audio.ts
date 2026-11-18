@@ -22,7 +22,7 @@ const DECODE_MS = 15_000;
 
 export type EldOutcome = 'decoded' | 'no_frames' | 'frames_gap' | 'frames_overflow' | 'frames_size'
   | 'frames_mismatch' | 'io' | 'decoder_unavailable' | 'decoder_failed' | 'decoder_output' | 'decode_errors'
-  | 'cadence_mismatch' | 'timeout' | 'cancelled';
+  | 'cadence_mismatch' | 'timeout' | 'cancelled' | 'cleanup_unconfirmed';
 export interface EldResult {
   outcome: EldOutcome;
   /** Interleaved signed 16-bit little-endian PCM, only when decoded. */
@@ -79,7 +79,7 @@ const launchHelper: Launch = (command, args) => spawn(command, args, { stdio: ['
  * Writes the units with a 16-bit big-endian length each, runs the helper and
  * checks its report. Any failure leaves the recording without sound, as before.
  */
-export function eldDecoder(launch: Launch = launchHelper, timeoutMs = DECODE_MS): EldDecoder {
+export function eldDecoder(launch: Launch = launchHelper, timeoutMs = DECODE_MS, cleanupMs = 1000): EldDecoder {
   return async ({ audio, frames, directory }, signal) => {
     if (signal.aborted) return { outcome: 'cancelled' };
     if (frames.broken) return { outcome: frames.broken };
@@ -100,22 +100,31 @@ export function eldDecoder(launch: Launch = launchHelper, timeoutMs = DECODE_MS)
     const units = frames.lengths.length;
     if (signal.aborted) return { outcome: 'cancelled', units };
     const run = await new Promise<{ outcome?: EldOutcome; code?: number | null; stdout: string }>(resolve => {
-      let child: ChildProcess, stdout = '', done = false;
+      let child: ChildProcess, stdout = '', done = false, stopping: EldOutcome | undefined;
+      let cleanup: NodeJS.Timeout | undefined;
       const finish = (value: { outcome?: EldOutcome; code?: number | null }) => {
         if (done) return;
-        done = true; clearTimeout(timer); signal.removeEventListener('abort', cancel);
+        done = true; clearTimeout(timer); clearTimeout(cleanup); signal.removeEventListener('abort', cancel);
         resolve({ ...value, stdout });
       };
       try { child = launch(process.env.EUFY_ELD_DECODER || DECODER, [ELD_CONFIG, framed, pcm]); }
       catch { resolve({ outcome: 'decoder_unavailable', stdout }); return; }
-      const stop = (outcome: EldOutcome) => { child.kill('SIGKILL'); finish({ outcome }); };
+      // As for FFmpeg, a stop counts once 'close' confirms the helper is gone.
+      // Without that confirmation the converter must not start another process.
+      const stop = (outcome: EldOutcome) => {
+        if (done || stopping) return;
+        stopping = outcome; clearTimeout(timer);
+        try { child.kill('SIGKILL'); } catch { /* 'close' or the cleanup limit decides. */ }
+        cleanup = setTimeout(() => finish({ outcome: 'cleanup_unconfirmed' }), cleanupMs);
+      };
       const cancel = () => stop('cancelled');
       const timer = setTimeout(() => stop('timeout'), timeoutMs);
       signal.addEventListener('abort', cancel, { once: true });
-      if (signal.aborted) { cancel(); return; }
+      if (signal.aborted) cancel();
       child.stdout?.on('data', (chunk: Buffer) => { if (stdout.length < 512) stdout += chunk.toString('latin1').slice(0, 512 - stdout.length); });
-      child.once('error', (error: NodeJS.ErrnoException) => finish({ outcome: error.code === 'ENOENT' ? 'decoder_unavailable' : 'decoder_failed' }));
-      child.once('close', code => finish({ code }));
+      child.once('error', (error: NodeJS.ErrnoException) => finish(stopping ? { outcome: stopping }
+        : { outcome: error.code === 'ENOENT' ? 'decoder_unavailable' : 'decoder_failed' }));
+      child.once('close', code => finish(stopping ? { outcome: stopping } : { code }));
     });
     if (run.outcome) return { outcome: run.outcome, units };
     const exit_code = typeof run.code === 'number' && Number.isInteger(run.code) && run.code >= 0 && run.code <= 255 ? run.code : null;

@@ -182,3 +182,26 @@ test('units whose timestamps disagree with the config are left out, not played a
     } finally { w.done(); }
   }
 });
+
+test('a stopped decoder counts only once its exit is confirmed (#264)', async () => {
+  const signal = new AbortController().signal;
+  const w = workspace();
+  try {
+    // The exit arrives 40 ms after the kill: the timeout waits for it.
+    let closed = false;
+    const slow = () => {
+      const child = new Helper();
+      child.kill = (sig: string) => { child.killed.push(sig); setTimeout(() => { closed = true; child.emit('close', null); }, 40); return true; };
+      return child as unknown as ChildProcess;
+    };
+    const result = await eldDecoder(slow, 10, 1000)({ audio: w.audio, frames: frames(), directory: w.directory }, signal);
+    assert.deepEqual(result, { outcome: 'timeout', units: 3 });
+    assert.equal(closed, true, 'resolved only after close');
+    // A helper that never exits is reported, so the converter can stop launching.
+    const stuck: Helper[] = [];
+    const deaf = () => { const child = new Helper(); child.kill = (sig: string) => { child.killed.push(sig); return true; }; stuck.push(child); return child as unknown as ChildProcess; };
+    assert.deepEqual(await eldDecoder(deaf, 10, 30)({ audio: w.audio, frames: frames(), directory: w.directory }, signal), { outcome: 'cleanup_unconfirmed', units: 3 });
+    assert.deepEqual(stuck[0]!.killed, ['SIGKILL']);
+  } finally { w.done(); }
+});
+

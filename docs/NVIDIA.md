@@ -231,7 +231,9 @@ without errors at the wrong speed. So when a clip has at least 100 units with
 usable timestamps, their mean step must agree with the config's 30 ms within
 5 percent. When that check or the decoder fails, when more than one unit in ten
 fails, or when anything else goes wrong, the recording plays without sound as
-before. Debian's FFmpeg cannot do
+before. The one exception is a decoder that does not exit within a second of
+being stopped: as for FFmpeg, the recording fails and the converter needs a
+bridge restart. Debian's FFmpeg cannot do
 this itself, because it has no 16 kHz AAC-ELD tables.
 
 `recording_input_adjusted` and `recording_failed` carry an `input` object with
@@ -243,7 +245,7 @@ fixed values:
 | `detected_video` | `h264` or `hevc`, `none` without parameter sets, `ambiguous` with both kinds, `unread` when the file could not be read |
 | `reported_audio` | The client's label: `aac`, `aac-lc`, `aac-eld`, `none` or `unknown` |
 | `audio` | `adts`, `not_adts` (not ADTS, decoded or left out), `absent` (no audio received) or `unread` |
-| `audio_decode` | Only for `aac-eld` audio that is `not_adts`: `decoded`, or why it was left out: `no_frames`, `frames_gap`, `frames_size`, `frames_overflow`, `frames_mismatch`, `io`, `decoder_unavailable`, `decoder_failed`, `decoder_output`, `decode_errors`, `cadence_mismatch` or `timeout` |
+| `audio_decode` | Only for `aac-eld` audio that is `not_adts`: `decoded`, or why it was left out: `no_frames`, `frames_gap`, `frames_size`, `frames_overflow`, `frames_mismatch`, `io`, `decoder_unavailable`, `decoder_failed`, `decoder_output`, `decode_errors`, `cadence_mismatch` or `timeout`. On a `recording_failed` line, `cleanup_unconfirmed`: the stopped decoder did not exit |
 | `audio_units`, `audio_errors` | The units sent to the decoder and those that did not decode |
 | `audio_frame_ms` | The mean step between the first and last unit timestamps, 30 for 480 samples at 16 kHz, or `null` |
 | `audio_rate` | The decoded sample rate, only when `decoded` |
