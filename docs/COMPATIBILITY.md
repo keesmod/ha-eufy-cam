@@ -410,8 +410,14 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   was not stated. The bridge logged the audio as type 7 (`aac-eld`) without
   ADTS framing and left it out. From bridge 0.8.43 the bridge decodes that
   audio with FDK AAC
-  ([issue #264](https://github.com/keesmod/ha-eufy-cam/issues/264)), not yet
-  confirmed on hardware. Reported, not independently reproduced.
+  ([issue #264](https://github.com/keesmod/ha-eufy-cam/issues/264)). With the
+  beta bridge 0.8.43-beta.2 the owner
+  [reported](https://github.com/keesmod/ha-eufy-cam/issues/252#issuecomment-6972373625)
+  recordings with sound. The log line showed 601 units decoded without errors,
+  30 ms per unit at 16 kHz. Whether the sound stays in sync with the picture
+  was not stated. Live view still has no sound
+  ([issue #269](https://github.com/keesmod/ha-eufy-cam/issues/269)). Reported,
+  not independently reproduced.
 - **eufyCam 2C `T8113-Z`, type 8**, recognized from bridge 0.8.29. Before that
   release an owner reported snapshots, live view and HomeBase recordings behind
   a HomeBase 3 with a local test profile. Reported, not independently
