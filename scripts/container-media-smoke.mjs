@@ -191,8 +191,8 @@ for (const codec of ['h264', 'hevc']) {
   assert.ok(readyAt !== undefined && readyAt < sentAt, 'The first ADTS frame arrived while units still flowed');
   // The helper reported 100 units without errors before its stop.
   const [report] = reports;
-  assert.deepEqual({ outcome: report.outcome, units: report.units, errors: report.errors, skipped: report.skipped_bytes, confirmed: report.stop_confirmed },
-    { outcome: 'ended', units: 102, errors: 0, skipped: 0, confirmed: true });
+  assert.deepEqual({ outcome: report.outcome, units: report.units, errors: report.errors, frame: report.frame_ms, skipped: report.skipped_bytes, confirmed: report.stop_confirmed },
+    { outcome: 'ended', units: 102, errors: 0, frame: 30, skipped: 0, confirmed: true });
   const audio = Buffer.concat(frames);
   const probe = spawnSync('ffprobe', ['-v', 'error', '-f', 'aac', '-show_entries', 'stream=codec_name,profile,sample_rate,channels', '-of', 'json', 'pipe:0'], { input: audio, timeout: 5000 });
   assert.equal(probe.status, 0);

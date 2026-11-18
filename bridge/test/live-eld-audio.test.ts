@@ -59,8 +59,12 @@ function stage(codec: unknown = 'aac-eld', options: { closeOnKill?: boolean; thr
   });
   const out: Buffer[] = [];
   eld.output.on('data', (chunk: Buffer) => out.push(chunk));
-  let offset = 0;
-  const push = (unit: Buffer) => { units.timing({ kind: 'audio', offset, bytes: unit.length }); offset += unit.length; source.write(unit); };
+  let offset = 0, stamp = 0;
+  const push = (unit: Buffer) => {
+    units.timing({ kind: 'audio', offset, bytes: unit.length, timestampMs: stamp });
+    offset += unit.length; stamp += 30;
+    source.write(unit);
+  };
   return { source, units, eld, reports, out, push, ...processes, advance: (ms: number) => { time += ms; } };
 }
 const framed = (units: Buffer[]) => Buffer.concat(units.flatMap(unit => { const n = Buffer.alloc(2); n.writeUInt16BE(unit.length); return [n, unit]; }));
@@ -156,8 +160,8 @@ test('AAC-ELD units reach the helper framed, and its PCM reaches FFmpeg and the 
   const [decoder, encoder] = s.children as [Child, Child];
   // Two units arrive in one chunk, and the PCM comes back between them.
   decoder.stdout.write(Buffer.alloc(960, 1));
-  s.units.timing({ kind: 'audio', offset: 71, bytes: 142 });
-  s.units.timing({ kind: 'audio', offset: 213, bytes: 90 });
+  s.units.timing({ kind: 'audio', offset: 71, bytes: 142, timestampMs: 40 });
+  s.units.timing({ kind: 'audio', offset: 213, bytes: 90, timestampMs: 60 });
   s.source.write(Buffer.concat([units[1]!, units[2]!]));
   await tick();
   assert.deepEqual(Buffer.concat(decoder.written), framed(units));
@@ -177,7 +181,7 @@ test('AAC-ELD units reach the helper framed, and its PCM reaches FFmpeg and the 
   assert.equal(s.reports.length, 1);
   assert.equal(await s.eld.stop(), true);
   assert.deepEqual(s.reports, [{
-    diagnostic: 'live_audio', event: 'eld_decode', outcome: 'ended', units: 3, errors: 1, output_bytes: 17,
+    diagnostic: 'live_audio', event: 'eld_decode', outcome: 'ended', units: 3, errors: 1, frame_ms: 30, output_bytes: 17,
     first_output_ms: 180, duration_ms: 1180, skipped_bytes: 0, stop_confirmed: true,
   }]);
   assert.equal(await s.eld.stop(), true, 'a second stop changes nothing');
@@ -238,21 +242,54 @@ test('every decoding failure ends only the audio output and stops both processes
   }
 });
 
-test('a helper that falls two seconds behind ends the audio instead of adding delay (#269)', async () => {
+test('a burst after a stall may wait, a helper that does not answer for two seconds ends the audio (#269)', async () => {
   const s = stage();
-  for (let i = 0; i < 64; i++) s.push(Buffer.alloc(40, i));
+  // A P2P stall releases many units in one go, before any PCM can come back.
+  for (let i = 0; i < 200; i++) s.push(Buffer.alloc(40, i));
   await tick();
-  assert.equal(s.reports.length, 0, '64 units may wait');
-  // One unit's PCM came back, so 63 wait and one more fits.
-  s.children[0]!.stdout.write(Buffer.alloc(ELD_PCM.frame * 2));
-  s.push(Buffer.alloc(40, 99));
+  assert.equal(s.reports.length, 0, 'a burst is no backlog');
+  assert.equal(s.children[0]!.written.length > 0, true);
+  // All PCM came back, so later units start a new wait.
+  s.children[0]!.stdout.write(Buffer.alloc(200 * ELD_PCM.frame * 2));
   await tick();
-  assert.equal(s.reports.length, 0);
-  s.push(Buffer.alloc(40, 100));
+  s.advance(5000);
+  s.push(Buffer.alloc(40, 1));
+  await tick();
+  assert.equal(s.reports.length, 0, 'an answered helper is not behind');
+  s.advance(2000);
+  s.push(Buffer.alloc(40, 2));
+  await tick();
+  assert.equal(s.reports.length, 0, 'two seconds may pass');
+  s.advance(1);
+  s.push(Buffer.alloc(40, 3));
   await tick(); await tick();
   assert.equal(s.reports[0]?.outcome, 'backlog');
-  assert.equal(s.reports[0]?.units, 65);
+  assert.equal(s.reports[0]?.units, 202);
   assert.equal(s.eld.output.readableEnded, true);
+});
+
+test('at most 4096 units wait for their PCM (#269)', async () => {
+  const s = stage();
+  for (let i = 0; i < 4097; i++) s.push(Buffer.alloc(4, i & 0xff));
+  await tick(); await tick();
+  assert.equal(s.reports[0]?.outcome, 'backlog');
+  assert.equal(s.reports[0]?.units, 4096);
+});
+
+test('the camera clock gives the mean step per unit, or nothing (#269)', () => {
+  const units = new LiveAudioUnits();
+  assert.equal(units.frameMs(), null);
+  let offset = 0;
+  for (const stamp of [1000, 1040, 1040, 1080, 1120, 1160, 1160, 1210]) { units.timing({ kind: 'audio', offset, bytes: 10, timestampMs: stamp }); offset += 10; }
+  assert.equal(units.frameMs(), 30);
+  units.close();
+  assert.equal(units.frameMs(), 30, 'kept after close for the log line');
+  const still = new LiveAudioUnits();
+  still.timing({ kind: 'audio', offset: 0, bytes: 1, timestampMs: 5 }); still.timing({ kind: 'audio', offset: 1, bytes: 1, timestampMs: 5 });
+  assert.equal(still.frameMs(), null, 'equal stamps say nothing');
+  const unstamped = new LiveAudioUnits();
+  unstamped.timing({ kind: 'audio', offset: 0, bytes: 1 }); unstamped.timing({ kind: 'audio', offset: 1, bytes: 1, timestampMs: -1 });
+  assert.equal(unstamped.frameMs(), null);
 });
 
 test('a stop is confirmed only when both processes closed, within the cleanup limit (#269)', async () => {

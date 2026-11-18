@@ -19,12 +19,14 @@ const MAX_UNIT_BYTES = 8192;
 // Timed units whose bytes have not passed yet. Pacing holds about 700 ms, some 25 units.
 const MAX_PENDING_UNITS = 1024;
 /**
- * Units written to the helper whose PCM has not come back, about two seconds
- * of audio. The helper answers each unit within a millisecond, so only a
- * stalled helper or encoder reaches this, and then the audio ends instead of
- * falling further behind.
+ * How long a unit written to the helper may wait for its PCM. The helper
+ * answers each unit within a millisecond, so only a stalled helper or encoder
+ * reaches this, and then the audio ends instead of falling further behind. A
+ * burst after a P2P stall arrives in one go, so the bound is time, not count.
  */
-const MAX_LAG_UNITS = 64;
+const MAX_LAG_MS = 2000;
+// Units waiting for their PCM at most, about two minutes of audio, as a memory bound.
+const MAX_WAITING_UNITS = 4096;
 const CLEANUP_MS = 1000;
 
 const whole = (value: unknown): value is number =>
@@ -43,17 +45,37 @@ export class LiveAudioUnits {
   private pending: Buffer = Buffer.alloc(0);
   private position = 0;
   private closed = false;
+  private stamps = 0;
+  private firstStamp = 0;
+  private lastStamp = 0;
   /** The audio part of `onFrameTiming`. It runs in the P2P receive path, so it only records numbers. */
-  readonly timing = (timing: { kind?: unknown; offset?: unknown; bytes?: unknown }): void => {
+  readonly timing = (timing: { kind?: unknown; offset?: unknown; bytes?: unknown; timestampMs?: unknown }): void => {
     if (this.closed || this.broken || timing?.kind !== 'audio') return;
-    const { offset, bytes } = timing;
+    const { offset, bytes, timestampMs } = timing;
     if (!whole(offset) || !whole(bytes)) return;
     const last = this.timings.at(-1);
     if (last && offset < last.offset + last.bytes) return;
     if (bytes < 1 || bytes > MAX_UNIT_BYTES) this.broken = 'frames_size';
     else if (this.timings.length >= MAX_PENDING_UNITS) this.broken = 'frames_overflow';
-    else this.timings.push({ offset, bytes });
+    else {
+      this.timings.push({ offset, bytes });
+      if (whole(timestampMs)) {
+        if (!this.stamps) this.firstStamp = timestampMs;
+        this.lastStamp = timestampMs;
+        this.stamps++;
+      }
+    }
   };
+  /**
+   * Mean step of the camera's clock between the first and the last timed unit
+   * in milliseconds, one decimal, or null. Units lost on the way lengthen it,
+   * so it shows the config's 30 ms only as an upper bound.
+   */
+  frameMs(): number | null {
+    if (this.stamps < 2) return null;
+    const step = (this.lastStamp - this.firstStamp) / (this.stamps - 1);
+    return Number.isFinite(step) && step > 0 && step < 1000 ? Math.round(step * 10) / 10 : null;
+  }
   /** The complete units in the bytes so far, in order. */
   split(chunk: Buffer): Buffer[] {
     const units: Buffer[] = [];
@@ -94,8 +116,10 @@ export interface LiveEldReport {
   outcome: LiveEldOutcome;
   /** Units written to the helper. */
   units: number;
-  /** Units the helper could not decode, from its last report. */
+  /** Units the helper could not decode, from its report every 100 units or its exit with code 7. */
   errors?: number;
+  /** Mean step of the camera clock per unit, see LiveAudioUnits.frameMs. */
+  frame_ms?: number;
   /** The exit code of the process that ended the decoding. */
   exit_code?: number;
   /** ADTS bytes handed to the late audio reader. */
@@ -149,6 +173,9 @@ export class LiveEldAudio {
   private started = 0;
   private written = 0;
   private pcmBytes = 0;
+  /** Write times of the units whose PCM has not come back, oldest first. */
+  private waiting: number[] = [];
+  private answered = 0;
   private outputBytes = 0;
   private firstOutputMs?: number;
   private status = '';
@@ -216,7 +243,12 @@ export class LiveEldAudio {
       const reports = [...this.status.matchAll(/units=(\d{1,9}) errors=(\d{1,9})\n/g)];
       if (reports.length) this.errors = Number(reports.at(-1)![2]);
     });
-    decoder.stdout?.on('data', (chunk: Buffer) => { this.pcmBytes += chunk.length; });
+    decoder.stdout?.on('data', (chunk: Buffer) => {
+      this.pcmBytes += chunk.length;
+      const answered = Math.min(this.written, Math.floor(this.pcmBytes / UNIT_PCM_BYTES));
+      this.waiting.splice(0, answered - this.answered);
+      this.answered = answered;
+    });
     if (decoder.stdout && encoder.stdin) decoder.stdout.pipe(encoder.stdin);
     encoder.stdout?.on('data', (chunk: Buffer) => {
       if (this.state !== 'decoding') return;
@@ -256,7 +288,11 @@ export class LiveEldAudio {
 
   /** Writes one unit behind its 16-bit big-endian length, or ends the audio when the helper fell behind. */
   private write(unit: Buffer): boolean {
-    if (this.written - Math.floor(this.pcmBytes / UNIT_PCM_BYTES) >= MAX_LAG_UNITS) { this.fail('backlog'); return false; }
+    const now = this.now();
+    if (this.waiting.length >= MAX_WAITING_UNITS || (this.waiting.length && now - this.waiting[0]! > MAX_LAG_MS)) {
+      this.fail('backlog');
+      return false;
+    }
     const stdin = this.decoder?.stdin;
     // A helper that is gone reports through 'close'.
     if (!stdin?.writable) return true;
@@ -265,6 +301,7 @@ export class LiveEldAudio {
     unit.copy(framed, 2);
     stdin.write(framed);
     this.written++;
+    this.waiting.push(now);
     return true;
   }
 
@@ -280,6 +317,7 @@ export class LiveEldAudio {
     this.outcome = outcome;
     if (typeof code === 'number' && Number.isInteger(code) && code >= 0 && code <= 255) this.exitCode = code;
     this.units.close();
+    this.waiting = [];
     const stopped = this.now();
     const children = [...this.closing.keys()];
     if (this.decoder?.stdout && this.encoder?.stdin) this.decoder.stdout.unpipe(this.encoder.stdin);
@@ -299,9 +337,11 @@ export class LiveEldAudio {
   }
 
   private report(confirmed: boolean, stopped: number): LiveEldReport {
+    const frameMs = this.units.frameMs();
     return {
       diagnostic: 'live_audio', event: 'eld_decode', outcome: this.outcome, units: this.written,
       ...(this.errors === undefined ? {} : { errors: this.errors }),
+      ...(frameMs === null ? {} : { frame_ms: frameMs }),
       ...(this.exitCode === undefined ? {} : { exit_code: this.exitCode }),
       output_bytes: this.outputBytes,
       ...(this.firstOutputMs === undefined ? {} : { first_output_ms: this.firstOutputMs }),

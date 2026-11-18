@@ -529,16 +529,19 @@ pacing on the camera clock. The helper `/usr/local/bin/eufy-eld-decode` decodes
 them in its stream mode under the recording config `f8f03000`, 16 kHz mono
 with 480 samples per unit, and writes each unit's PCM at once. FFmpeg encodes
 that PCM to ADTS AAC-LC at 64 kbit/s, which reaches the `/audio` route and
-go2rtc like the audio of other cameras. ADTS audio keeps its previous path
-without the stage.
+go2rtc like the audio of other cameras. ADTS audio that the client names at
+the start keeps its previous path. When the codec is only known with the first
+audio frame, the stage passes audio other than AAC-ELD on unchanged.
 
 The stage never pauses the camera's audio stream and video never waits for it.
 When the decoder or FFmpeg cannot start or ends, more than one unit in ten
-fails to decode from the 50th unit on, a unit is impossible, or more than 64
-units (about two seconds) wait for their PCM, the stage stops both processes
-and ends only the audio. Live video then plays on without sound, as before.
-Unlike recordings, live audio has no check of the camera clock against the
-config's 30 ms per unit, because units lost on the way would disturb it.
+fails to decode from the 50th unit on, a unit is impossible, or a unit waits
+more than two seconds for its PCM, the stage stops both processes and ends
+only the audio. Live video then plays on without sound, as before. A burst of
+units after a P2P stall does not count as waiting, because the helper answers
+it at once. Unlike recordings, live audio has no check of the camera clock
+against the config's 30 ms per unit, because units lost on the way would
+disturb it. The log line shows the measured step as `frame_ms` instead.
 
 Each live session whose audio went through the decoder writes one line to the
 bridge log when it ends, as information after a normal end and as a warning
@@ -548,7 +551,8 @@ otherwise. It has numbers and fixed values only:
 | --- | --- |
 | `outcome` | `ended` when the stream ended or the viewer left. Otherwise why the audio ended early: `decoder_unavailable`, `decoder_failed`, `decode_errors`, `encoder_unavailable`, `encoder_failed`, `frames_size`, `frames_overflow` or `backlog` |
 | `units` | Units written to the decoder |
-| `errors` | Units the decoder could not decode, from its report every 100 units or at its exit. Missing before its first report |
+| `errors` | Units the decoder could not decode, from its report every 100 units or its exit with code 7. Missing before its first report, so in sessions under about three seconds |
+| `frame_ms` | The mean step of the camera clock per unit, 30 for the config's 480 samples at 16 kHz. Lost units lengthen it, so it is an upper bound |
 | `exit_code` | The exit code of the process that ended the decoding, `7` for too many decode errors |
 | `output_bytes`, `first_output_ms` | ADTS bytes handed to the late audio reader, and when the first arrived after the first unit |
 | `duration_ms`, `skipped_bytes` | How long the stage decoded, and audio bytes without frame timing that it dropped |
