@@ -156,8 +156,10 @@ and both default to software. HAOS retains software defaults.
 
 NVIDIA is used only when an HEVC recording must be converted to H.264 for the
 player. H.264 recordings and native HEVC playback copy the existing video and AAC
-into MP4 without decoding or encoding. Zero GPU activity is expected for these
-remuxes, which preserve the original picture and avoid unnecessary conversion.
+into MP4 without decoding or encoding. AAC-ELD audio is the exception: from
+bridge 0.8.43 the CPU decodes it and encodes AAC-LC, see below. Zero GPU activity
+is expected for these remuxes, which preserve the original picture and avoid
+unnecessary conversion.
 The browser still owns decoding and displaying the resulting recording.
 
 With integration/card 0.8.12 and bridge 0.8.11, both recording players offer
@@ -169,7 +171,8 @@ the completed processing route, including software fallback. See the
 Conversion requests CUDA decoding and `h264_nvenc` encoding at the original
 resolution and frame rate. NVENC uses preset p4, the high-quality tune, VBR with
 CQ 23 and no B frames. These settings do not imply identical quality to software.
-Pixel-format conversion can transfer frames through system memory. AAC is copied.
+Pixel-format conversion can transfer frames through system memory. AAC is copied,
+and AAC-ELD is encoded as AAC-LC on the CPU.
 
 The complete recording is downloaded once. From bridge 0.8.12, hardware gets
 10 seconds to begin advancing encoded frames and is stopped after 10 seconds
@@ -199,20 +202,39 @@ fallback events. Each line has an anonymous attempt number and elapsed time:
 | --- | --- |
 | `recording_active_nvidia` | NVIDIA completed the MP4 conversion |
 | `recording_active_software` | Software completed the MP4 conversion |
-| `recording_remuxed` | Compatible video and audio were copied without transcoding |
+| `recording_remuxed` | Compatible video was copied without transcoding. ADTS AAC was copied too, and decoded AAC-ELD was encoded as AAC-LC |
 | `recording_hardware_failed` | The hardware attempt failed |
 | `recording_hardware_timeout` | The hardware attempt reached its deadline |
 | `recording_software_fallback` | One software replacement was selected |
 | `recording_failed` | Preparation failed without a hardware retry, including a storage limit or storage error |
-| `recording_input_adjusted` | The bridge chose the video demuxer from the parameter sets instead of the client's label, or left out audio that is not ADTS, see below. Always a warning, from bridge 0.8.43 |
+| `recording_input_adjusted` | The bridge chose the video demuxer from the parameter sets instead of the client's label, or decoded or left out audio that is not ADTS, see below. Always a warning, from bridge 0.8.43 |
 
 From bridge 0.8.43 the bridge reads the first 64 KiB of each downloaded file
 before FFmpeg starts ([#252](https://github.com/keesmod/ha-eufy-cam/issues/252)).
 The client names the video codec from the first unit of the stream only. When
 the first 64 KiB hold H.264 or HEVC parameter sets of one kind, those decide
 whether FFmpeg reads the video as H.264 or HEVC. Otherwise the client's label
-stays. Audio without ADTS frames, such as AAC-ELD, is left out, so the recording
-plays without sound instead of failing.
+stays. Audio without ADTS frames is left out, so the recording plays without
+sound instead of failing, unless it is AAC-ELD that decodes as described below.
+
+From bridge 0.8.43 the bridge also decodes AAC-ELD audio
+([#264](https://github.com/keesmod/ha-eufy-cam/issues/264)). A Video Doorbell
+S4 sends audio type 7 as raw AAC-ELD units, one per frame, without ADTS headers
+or a decoder config. The client's download frame timing gives each unit's
+length. The helper `/usr/local/bin/eufy-eld-decode` decodes the units with
+Fraunhofer FDK AAC, Debian's non-free `libfdk-aac2`, under the config
+`f8f03000`: ER AAC-ELD, 16 kHz, mono, 480 samples per frame.
+[mega-yfue/eufy-sdk#317](https://github.com/mega-yfue/eufy-sdk/issues/317)
+reports that config for audio type 7 of a `T8410C`. FFmpeg then encodes the
+sound to AAC-LC. Audio at another sample rate or frame length decodes
+without errors at the wrong speed. So when a clip has at least 100 units with
+usable timestamps, their mean step must agree with the config's 30 ms within
+5 percent. When that check or the decoder fails, when more than one unit in ten
+fails, or when anything else goes wrong, the recording plays without sound as
+before. The one exception is a decoder that does not exit within a second of
+being stopped: as for FFmpeg, the recording fails and the converter needs a
+bridge restart. Debian's FFmpeg cannot do
+this itself, because it has no 16 kHz AAC-ELD tables.
 
 `recording_input_adjusted` and `recording_failed` carry an `input` object with
 fixed values:
@@ -222,7 +244,12 @@ fixed values:
 | `reported_video` | The client's label as the bridge names it: `h264`, `hevc` (the client's `h265`) or `unknown` |
 | `detected_video` | `h264` or `hevc`, `none` without parameter sets, `ambiguous` with both kinds, `unread` when the file could not be read |
 | `reported_audio` | The client's label: `aac`, `aac-lc`, `aac-eld`, `none` or `unknown` |
-| `audio` | `adts`, `not_adts` (left out), `absent` (no audio received) or `unread` |
+| `audio` | `adts`, `not_adts` (not ADTS, decoded or left out), `absent` (no audio received) or `unread` |
+| `audio_decode` | Only for `aac-eld` audio that is `not_adts`: `decoded`, or why it was left out: `no_frames`, `frames_gap`, `frames_size`, `frames_overflow`, `frames_mismatch`, `io`, `decoder_unavailable`, `decoder_failed`, `decoder_output`, `decode_errors`, `cadence_mismatch` or `timeout`. On a `recording_failed` line, `cleanup_unconfirmed`: the stopped decoder did not exit |
+| `audio_units`, `audio_errors` | The units sent to the decoder and those that did not decode |
+| `audio_frame_ms` | The mean step between the first and last unit timestamps, 30 for 480 samples at 16 kHz, or `null` |
+| `audio_rate` | The decoded sample rate, only when `decoded` |
+| `decoder_exit` | When the decoder ran and exited with `decoder_failed` or `decoder_output`, its exit code, `null` when it ended by a signal. Missing when it could not start or the bridge stopped it after its time limit |
 
 This evidence is in the bridge log only. The HA diagnostics download does not
 show it, so a recording whose audio was left out looks like any other

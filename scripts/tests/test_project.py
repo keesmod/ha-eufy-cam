@@ -498,6 +498,9 @@ class ProjectTests(unittest.TestCase):
             "bridge/Dockerfile": lambda: self.write(
                 "bridge/Dockerfile", self.read("bridge/Dockerfile") + "\n"
             ),
+            "bridge/native": lambda: self.write(
+                "bridge/native/eld-decode.c", "int main(void) { return 0; }\n"
+            ),
             "scripts.build": lambda: self.edit_json(
                 "bridge/package.json",
                 lambda data: data["scripts"].update(build="tsc -p ."),
@@ -848,6 +851,16 @@ class ProjectTests(unittest.TestCase):
             json.loads(beta["config.json"])["description"], app.BETA_DESCRIPTION
         )
 
+    def test_generator_copies_the_native_helper_source(self):
+        # The app containers compile the AAC-ELD helper from native/ (#264).
+        self.write("bridge/native/eld-decode.c", "int main(void) { return 0; }\n")
+        self.commit()
+        for channel in ("stable", "beta"):
+            files = app.render(self.root, channel, "0.8.37")
+            self.assertEqual(
+                files["native/eld-decode.c"], b"int main(void) { return 0; }\n"
+            )
+
     def test_store_changelog_substitutes_one_heading(self):
         self.add_notes("app/CHANGELOG.md", "0.8.38")
         source = self.read("app/CHANGELOG.md")
@@ -897,6 +910,17 @@ class ProjectTests(unittest.TestCase):
         verify.assert_called_once_with("0.29.2")
 
     # Archives
+
+    def test_archives_carry_the_native_helper_source(self):
+        # bridge/Dockerfile compiles native/eld-decode.c (#264).
+        self.write("bridge/native/eld-decode.c", "int main(void) { return 0; }\n")
+        self.commit()
+        archives = packaging.members(self.root)
+        bridge = next(n for n in archives if n.startswith("eufy-viewer-bridge-"))
+        self.assertIn("bridge/native/eld-decode.c", archives[bridge])
+        self.assertIn(
+            "bridge/native/eld-decode.c", archives["ha-eufy-cam-source-0.8.46.zip"]
+        )
 
     def test_archive_cannot_include_untracked_local_files(self):
         self.regenerate("ha_app_beta")

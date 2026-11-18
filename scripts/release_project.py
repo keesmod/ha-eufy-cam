@@ -306,7 +306,7 @@ def changed_paths(root, rev):
 def bridge_runtime_changed(paths, old, new):
     """Whether the shipped bridge or app container differs between the trees."""
     if any(
-        p.startswith("bridge/src/")
+        p.startswith(("bridge/src/", "bridge/native/"))
         or p in ("bridge/Dockerfile", "bridge/tsconfig.json")
         for p in paths
     ):

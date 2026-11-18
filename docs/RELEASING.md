@@ -51,7 +51,7 @@ sections. Headings have two forms. `## X.Y.Z - Unreleased` marks an open batch.
 `## X.Y.Z - YYYY-MM-DD` marks a batch dated by its release PR. CI rejects any
 other heading that a PR adds. Older headings are never inspected or rewritten.
 
-Bridge runtime changes are files under `bridge/src/`, `bridge/Dockerfile`,
+Bridge runtime changes are files under `bridge/src/` and `bridge/native/`, `bridge/Dockerfile`,
 `bridge/tsconfig.json`, every `bridge/package.json` key except `version`,
 `description` and `devDependencies`, the production entries of
 `bridge/package-lock.json`, and every file in `app/` except `README.md` and

@@ -11,7 +11,7 @@ If you use Home Assistant OS, you can run the bridge on the same machine through
 - Enough CPU to convert live video. Raspberry Pi performance has not been verified. See [hardware compatibility](COMPATIBILITY.md).
 - A dedicated Eufy account with shared access to your devices. You will enter its credentials later in the Home Assistant integration.
 
-The container includes Node.js 24 and FFmpeg. Each bridge manages one Eufy account. Do not use this bridge with another system that starts or stops camera streams.
+The container includes Node.js 24, FFmpeg, tini and Fraunhofer FDK AAC (Debian non-free `libfdk-aac2`), which decodes the AAC-ELD audio of some recordings. The build installs it from Debian, and its licence grants no patent licence. Each bridge manages one Eufy account. Do not use this bridge with another system that starts or stops camera streams.
 
 The independent Mega backend is tested with T8030 HomeBase 3, T8160 cameras and
 the T8213 doorbell on the same LAN. It requires host networking. See
