@@ -14,13 +14,20 @@ from .const import DOMAIN
 from .coordinator import EufyConfigEntry, EufyCoordinator
 from .station import station_device_fields
 
+# A device name for an accessory whose inventory row has no name (#275).
+FALLBACK_NAMES = {
+    "entry_sensor": "Entry Sensor",
+    "keypad": "Keypad",
+    "chime": "Doorbell Chime",
+}
+
 
 def accessory_device_fields(info: AccessoryInfo) -> dict[str, Any]:
     """Device fields without the HomeBase link. Empty versions stay unset."""
     return {
         "identifiers": {(DOMAIN, info.serial)},
         "manufacturer": "Eufy",
-        "name": info.name,
+        "name": info.name or FALLBACK_NAMES.get(info.category, "Eufy accessory"),
         "model": info.model,
         "hw_version": info.hardware or None,
         "sw_version": info.software or None,
