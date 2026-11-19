@@ -9,10 +9,12 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 
-from .api import BridgeAuthError, BridgeClient, BridgeError
+from .accessory import sync_accessory_devices
+from .api import AccessoryInfo, BridgeAuthError, BridgeClient, BridgeError
 from .const import CARD_URL, CONF_TOKEN, CONF_URL, DOMAIN
 from .coordinator import EufyConfigEntry, EufyCoordinator
 from .migration import prepare_migration
@@ -77,6 +79,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: EufyConfigEntry) -> bool
         raise ConfigEntryAuthFailed("Eufy login needs attention")
     coordinator = entry.runtime_data = EufyCoordinator(hass, entry, api)
     coordinator.async_set_updated_data(state)
+    # Chimes have no entities, so their devices are registered here. Sensors and
+    # keypads are registered the same way before their entities are added.
+    devices: dict[str, AccessoryInfo] = {}
+    sync_accessory_devices(hass, entry, devices)
+    entry.async_on_unload(
+        coordinator.async_add_listener(
+            lambda: sync_accessory_devices(hass, entry, devices)
+        )
+    )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     async def shutdown(_: Event) -> None:
@@ -91,6 +102,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: EufyConfigEntry) -> bool
     )
     coordinator.start()
     return True
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: EufyConfigEntry, device: dr.DeviceEntry
+) -> bool:
+    """Allow removing a device only after it left the bridge inventory."""
+    coordinator = getattr(entry, "runtime_data", None)
+    if coordinator is None:
+        return False
+    data = coordinator.data
+    return not any(
+        domain == DOMAIN
+        and (
+            serial in data.cameras
+            or serial in data.stations
+            or serial in data.accessories
+        )
+        for domain, serial in device.identifiers
+    )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: EufyConfigEntry) -> bool:

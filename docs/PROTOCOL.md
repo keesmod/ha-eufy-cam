@@ -4,10 +4,10 @@ Control routes require `Authorization: Bearer <bridge token>`. The media-only ro
 
 | Endpoint | Meaning | Camera side effect |
 |---|---|---|
-| `GET /v1/state` | Protocol version, stable bridge ID, account state, cached camera inventory, configured live limit per HomeBase | None |
+| `GET /v1/state` | Protocol version, stable bridge ID, account state, cached camera inventory, HomeBase accessories, configured live limit per HomeBase | None |
 | `POST /v1/login` | Account credentials or verification/captcha response | Login/discovery only |
 | `GET /v1/snapshot/{serial}` | Cached JPEG/PNG; 404 if absent | None |
-| `POST /v1/stations/{serial}/mode` | Changes the HomeBase guard mode, body `{"mode": N}` with `N` from 0 to 5, 47 or 63, the HomeBase's `modes` in `/v1/state`, returns `{"accepted": true}` once the HomeBase confirmed it. A due HomeBase recovery refuses it, see [preset moves](#preset-moves-0841) | None |
+| `POST /v1/stations/{serial}/mode` | Changes the HomeBase guard mode, body `{"mode": N}` with `N` from 0 to 5, 47 or 63, the HomeBase's `modes` in `/v1/state`, or a mode in its `extra_modes`, see [HomeBase accessories](#homebase-accessories-and-guard-mode-off-0844). Returns `{"accepted": true}` once the HomeBase confirmed it. A due HomeBase recovery refuses it, see [preset moves](#preset-moves-0841) | None |
 | `POST /v1/cameras/{serial}/preset` | Moves the camera to a saved preset, body `{"preset": 0..3}`, returns `{"accepted": true}` once the HomeBase accepted it, see [preset moves](#preset-moves-0841) | Moves the camera. Never starts live view |
 | `POST /v1/snapshot/{serial}/refresh` | Stores a fresh live frame as the snapshot and returns `{snapshot_received_at}`, see [snapshot refresh](#snapshot-refresh-0839) | Wakes the camera as an internal live viewer with the same admission, limits and confirmed stop. Joins a running session without starting or stopping it |
 | `WS /v1/events` | Initial state followed by push updates | None |
@@ -228,6 +228,77 @@ retried. After a 502 or 504 the camera may have moved. Failures use allowlisted 
 `preset_metrics` in `/v1/state` counts the `commands` that reached the client
 and their outcomes `accepted`, `rejected`, `unconfirmed` and `refused`. A
 refusal by the bridge itself is not counted.
+
+## HomeBase accessories and guard mode Off, 0.8.44
+
+From bridge 0.8.44 with client 0.31.0, `/v1/state` reports the accessories of
+a HomeBase 3 and the recognized doorbell chime
+([issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275)). They are
+not cameras and not stations. Nothing in this section is confirmed on hardware
+yet. `protocol` stays 1. Both additions are new top-level or row keys, which
+older integrations ignore.
+
+A new top-level list `accessories` holds at most 100 rows:
+
+```json
+{
+  "serial": "SYNTHSENS001",
+  "name": "Front door",
+  "model": "T8900",
+  "hardware": "0.0.1",
+  "software": "",
+  "category": "entry_sensor",
+  "station": "SYNTHHB30001",
+  "readings": {
+    "open": {"value": true, "source": "p2p", "observed_at": "2026-11-19T10:00:00.000Z", "live": true},
+    "battery_low": {"value": false, "source": "cloud", "observed_at": "2026-11-19T09:00:00.000Z", "live": false}
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `serial` | `[A-Za-z0-9_-]{1,64}`, never the serial of a camera or station in the same frame |
+| `name`, `model`, `hardware`, `software` | Strings of at most 256 characters. An unknown version is an empty string |
+| `category` | `entry_sensor` (Entry Sensor `T8900`), `keypad` (Keypad `T8960`) or `chime` (Doorbell Chime `T8026`) |
+| `station` | The serial of the HomeBase in `stations` for `entry_sensor` and `keypad`. `null` for `chime` |
+| `readings` | `open` and `battery_low` for an entry sensor, `battery_low` and `charging` for a keypad, none for a chime. A missing or `null` reading is unknown |
+
+Each reading is `{value, source, observed_at, live}`. `value` is a boolean.
+`source` is `p2p` for a value the HomeBase reported on its local session,
+`push` for a value from a Eufy push and `cloud` for a value from the account
+inventory at discovery. A cloud value is a cached start value, never an
+observation. `observed_at` is an ISO 8601 time with zone. `live` is true when
+the value was observed during the current HomeBase session. After a HomeBase
+session closes, the bridge keeps the last observed value and reports
+`live: false` until the next observation. A chime has no readings, because no
+protocol for it is known. The bridge never connects to a chime.
+
+The bridge sends a state frame on `/v1/events` when a reading changes. It does
+not poll the HomeBase or the Eufy cloud for accessories.
+
+Integration 0.8.53 checks each accessory row on its own. A malformed row, a
+duplicate serial, a serial of a camera or station, a sensor or keypad without
+a HomeBase in `stations`, or a chime with a HomeBase drops that row only. A
+malformed reading drops that reading only. More than 100 rows, or a value that
+is not a list, count as no accessories. Camera and station rows stay
+all-or-nothing as before.
+
+Each station row gains `extra_modes`, a list of settable guard modes outside
+the legacy `modes` list. Today it is `[6]`, Off, on a HomeBase with a paired
+keypad, and `[]` otherwise. Off is the mode a keypad sets. `modes` never
+contains 6, because integration 0.8.52 refuses a whole frame whose `modes`
+holds an unknown value. `guard_mode` and `current_mode` may be 6 on any
+HomeBase 3, also without a keypad in the inventory. The integration ignores
+unknown values in `extra_modes`. `POST /v1/stations/{serial}/mode` accepts
+`{"mode": 6}` only for a HomeBase whose `extra_modes` holds 6, and refuses it
+otherwise with 400 `invalid_mode`, before anything is sent.
+
+| Bridge | Integration | Result |
+|---|---|---|
+| 0.8.44 | 0.8.53 | Accessory devices and entities, Off shown and settable with a keypad |
+| 0.8.44 | 0.8.52 | No accessories and no Off option. Off as the current mode shows disarmed on the alarm panel and unknown in Guard Mode. Everything else unchanged |
+| 0.8.43 | 0.8.53 | No accessories and no Off option. Everything else unchanged |
 
 ## Existing recordings
 

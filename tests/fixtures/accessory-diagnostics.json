@@ -1,0 +1,72 @@
+{
+  "summary": {
+    "diagnostic": "discovery",
+    "schema": 2,
+    "report": 1,
+    "timestamp": "2026-11-19T10:00:00.000Z",
+    "event": "summary",
+    "cameras": 3,
+    "stations": 1,
+    "accessories": 7,
+    "issues": 0,
+    "rows": 13
+  },
+  "rows": [
+    {
+      "diagnostic": "discovery",
+      "schema": 2,
+      "report": 1,
+      "timestamp": "2026-11-19T10:00:00.000Z",
+      "event": "accessory",
+      "ref": 5,
+      "inventory_row": 4,
+      "category": "entry_sensor",
+      "model": "T8900",
+      "device_type": 2,
+      "firmware": "unavailable",
+      "hardware": "0.0.1",
+      "has_station": true,
+      "owner_ref": 4
+    },
+    {
+      "diagnostic": "discovery",
+      "schema": 2,
+      "report": 1,
+      "timestamp": "2026-11-19T10:00:00.000Z",
+      "event": "accessory",
+      "ref": 8,
+      "inventory_row": 7,
+      "category": "keypad",
+      "model": "T8960",
+      "device_type": 11,
+      "firmware": "0.0.1.7",
+      "hardware": "0.0.1",
+      "has_station": true,
+      "owner_ref": 4
+    },
+    {
+      "diagnostic": "discovery",
+      "schema": 2,
+      "report": 1,
+      "timestamp": "2026-11-19T10:00:00.000Z",
+      "event": "accessory",
+      "ref": 9,
+      "inventory_row": 8,
+      "category": "chime",
+      "model": "T8026",
+      "device_type": 600,
+      "firmware": "1.0.2.7",
+      "hardware": "1.0.0.0",
+      "has_station": false
+    }
+  ],
+  "accessory_observations": {
+    "hub_notify": 3,
+    "sensor_status": 1,
+    "push_door_sensor": 2,
+    "camera_info": 0,
+    "cloud_seeded": 5,
+    "conflicts": 0,
+    "unknown_channel": 1
+  }
+}

@@ -437,6 +437,21 @@ are in `tests/fixtures/recording-query.json`. Integration 0.8.47 or older drops
 the record, and bridge 0.8.38 or older sends none. The assessment adds no
 finding for it yet. The schema stays `2` because the record is additive.
 
+Since bridge 0.8.44 with client 0.31.0 discovery adds an `accessory` record for
+each admitted HomeBase accessory and recognized chime (#275). It carries `ref`,
+`inventory_row`, `owner_ref`, `category` (`entry_sensor`, `keypad` or `chime`),
+`model`, `device_type`, `firmware`, `hardware` and the strict boolean
+`has_station`, never a serial, name, door state or observation time. The
+summary adds an `accessories` count from 0 to 100, and `rows` allows up to 297.
+The report adds `accessory_observations`, the client's counts by route:
+`hub_notify`, `sensor_status`, `push_door_sensor`, `camera_info`,
+`cloud_seeded`, `conflicts` and `unknown_channel`, each from 0 to 2^31 - 1, or
+`null` without a client or from an older bridge. Integration 0.8.53 also lists
+each accessory in its own download with its category, model, firmware, whether
+it has a HomeBase and the source of each reading, plus `accessories_dropped`.
+The shared cases are in `tests/fixtures/accessory-diagnostics.json`.
+Integration 0.8.52 or older drops the record and the counts.
+
 ### Bounds and compatibility
 
 - Retain at most 99 device rows and 99 issue rows plus summary/end, and at most

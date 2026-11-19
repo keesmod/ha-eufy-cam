@@ -26,9 +26,11 @@ _ENUMS = {
     "event": set(
         (
             "summary device issue end cloud connection station_connection fault "
-            "recording_query"
+            "recording_query accessory"
         ).split()
     ),
+    # A HomeBase accessory or a recognized chime, bridge 0.8.44 (#275).
+    "category": {"entry_sensor", "keypad", "chime"},
     "diagnostic": {"discovery"},
     "kind": {"camera", "station", "unavailable"},
     "availability": {"online", "offline", "disabled"},
@@ -74,11 +76,12 @@ _NUMBERS = {
     "http_status": (100, 599),
     "result_code": (-999999, 999999),
     "elapsed_ms": (0, 120000),
-    "rows": (0, 198),
+    # Device, issue and accessory rows plus rejections, bridge 0.8.44 (#275).
+    "rows": (0, 297),
     **dict.fromkeys(
         (
             "cameras stations issues expected_cameras expected_stations "
-            "missing_expected_cameras missing_expected_stations"
+            "missing_expected_cameras missing_expected_stations accessories"
         ).split(),
         (0, 100),
     ),
@@ -140,7 +143,7 @@ _BOOLEANS = set(
         "inventory_address_on_subnet inventory_address_shared "
         "session_open query_answered standalone_recording_probe "
         "key_request_acknowledged key_result_wait_expired key_ended "
-        "key_result_encrypted key_without_answer"
+        "key_result_encrypted key_without_answer has_station"
     ).split()
 )
 _VERSIONS = set("firmware hardware parent_firmware node".split())
@@ -542,6 +545,26 @@ def _push_rows(raw: Any) -> list[dict[str, Any]]:
     return rows
 
 
+# What the bridge's client observed for HomeBase accessories, by route, bridge
+# 0.8.44 with client 0.31.0 (#275). Counts only, never a serial or a door state.
+_ACCESSORY_OBSERVATIONS = (
+    "hub_notify",
+    "sensor_status",
+    "push_door_sensor",
+    "camera_info",
+    "cloud_seeded",
+    "conflicts",
+    "unknown_channel",
+)
+
+
+def accessory_observations_report(raw: Any) -> dict[str, int] | None:
+    """Keep the accessory observation counts, bounded integers only."""
+    if not isinstance(raw, dict):
+        return None
+    return _bounded(raw, dict.fromkeys(_ACCESSORY_OBSERVATIONS, _PUSH_COUNT))
+
+
 def standalone_pushes_report(raw: Any) -> dict[str, Any] | None:
     """Keep the bridge's standalone push counts, bounded integers only."""
     if not isinstance(raw, dict):
@@ -634,6 +657,10 @@ def support_report(
         ]
     # Null for a bridge before 0.8.39-beta.5 or without a client.
     result["standalone_pushes"] = standalone_pushes_report(raw.get("standalone_pushes"))
+    # Null for a bridge before 0.8.44 or without a client.
+    result["accessory_observations"] = accessory_observations_report(
+        raw.get("accessory_observations")
+    )
     return result
 
 
@@ -757,6 +784,25 @@ async def async_get_config_entry_diagnostics(
         ]
         if coordinator
         else [],
+        # The category, model and value sources only. Never a serial, a name, a
+        # door state or an observation time.
+        "accessories": [
+            {
+                "category": info.category,
+                "model": _fields({"model": info.model})["model"],
+                "software": _version(info.software),
+                "has_station": info.station is not None,
+                "sources": {
+                    key: reading.source for key, reading in info.readings.items()
+                },
+            }
+            for info in list(coordinator.data.accessories.values())[:99]
+        ]
+        if coordinator
+        else [],
+        "accessories_dropped": coordinator.data.accessories_dropped
+        if coordinator
+        else 0,
     }
     try:
         async with asyncio.timeout(10):
