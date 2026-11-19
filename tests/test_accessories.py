@@ -25,6 +25,7 @@ from custom_components.eufy_viewer import (
 from custom_components.eufy_viewer.api import BridgeError, BridgeState
 from custom_components.eufy_viewer.const import DOMAIN
 from custom_components.eufy_viewer.diagnostics import (
+    _field_key,
     async_get_config_entry_diagnostics,
     support_report,
 )
@@ -810,3 +811,16 @@ async def test_download_lists_accessories_without_identifiers(hass):
         for value in ("SYNTH", "Synthetic", "observed_at"):
             assert value not in text
         assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+FIELD_KEYS = json.loads((FIXTURES / "accessory-field-keys.json").read_text())
+
+
+@pytest.mark.parametrize("key", FIELD_KEYS["accepted"])
+def test_shared_accessory_field_keys_are_accepted(key):
+    assert _field_key(key)
+
+
+@pytest.mark.parametrize("key", FIELD_KEYS["rejected"])
+def test_shared_accessory_field_keys_are_rejected(key):
+    assert not _field_key(key)

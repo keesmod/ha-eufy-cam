@@ -868,7 +868,7 @@ name or reading.
 | `has_station` | True for an entry sensor or keypad, false for a chime |
 | `owner_ref` | The `ref` of the HomeBase `device` row. A chime has none |
 | `string_fields` | From bridge 0.8.46 with client 0.31.2: the top-level keys of the inventory row that hold text, never their values. Only schema-like keys appear. A nested object that holds text shows as `parent.*`, never with its own keys. `null` with an older client |
-| `text_params` | From bridge 0.8.46: the parameter types whose value is text, never the value. `null` with an older client |
+| `text_params` | From bridge 0.8.46: the parameter types whose value is non-empty text that is not a plain number, never the value. `null` with an older client |
 | `name_source` | From bridge 0.8.46: `alias` or `device_name` for the field that gave the name, `null` when neither did and with an older client |
 
 The three name fields help find where the Eufy inventory keeps the name a sensor

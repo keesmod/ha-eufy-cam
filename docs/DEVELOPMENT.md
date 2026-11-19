@@ -447,8 +447,10 @@ keys in schema form (`segment` or `segment.*`, the segment lowercase snake_case
 of at most 32 characters, without four digits in a row and not 12 or more hex
 characters), `text_params`, at most 32 integers from 0 to 100000, and
 `name_source`, `alias`, `device_name` or `null`. They name top-level inventory
-keys and parameter types that hold text, never their values, and a nested object
-only as `parent.*`. `name_source` is also `null` with an older client. The
+keys that hold text and parameter types whose value is non-empty text that is
+not a plain number, never their values, and a nested object only as `parent.*`.
+All three fields are `null` with a bundled client older than 0.31.2, and bridge
+0.8.45 or older leaves them out. The
 bridge drops a key outside the schema form, and the integration drops a list
 with any other entry whole. Integration 0.8.54 or older leaves the three fields
 out of the download. The

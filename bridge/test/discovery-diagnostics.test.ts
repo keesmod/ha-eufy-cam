@@ -134,6 +134,12 @@ test('accessory field names pass only as a schema key or parent.*, never as seri
   for (const key of ['T8030P23ABCDEF12','permission.3f9a2b7c4d5e6f70','rooms.Frontdoor','room.title','lowercase_names.frontdoor','id_1234','*','a.b.c','room.*.x']) assert.equal(accessoryFieldKey(key),false,key);
   assert.doesNotMatch(f.lines.join('\n'),/T8030P23|3f9a2b7c|frontdoor|title|PRIVATE/i);
 });
+test('the accessory field key rule follows the shared accepted and rejected cases (#275)', () => {
+  const cases=JSON.parse(readFileSync(new URL('../../tests/fixtures/accessory-field-keys.json',import.meta.url),'utf8')) as {accepted:string[];rejected:string[]};
+  assert.ok(cases.accepted.length>0 && cases.rejected.length>0);
+  for (const key of cases.accepted) assert.equal(accessoryFieldKey(key),true,JSON.stringify(key));
+  for (const key of cases.rejected) assert.equal(accessoryFieldKey(key),false,JSON.stringify(key));
+});
 test('failure reports retain discovery and missing-baseline counts before setup rejection', () => {
   const f=collect();
   const baseline={version:1,bridge_id:'PRIVATE_BRIDGE',backend:'mega',cameras:['PRIVATE_CAMERA','PRIVATE_MISSING'],stations:['PRIVATE_BASE']} as const;

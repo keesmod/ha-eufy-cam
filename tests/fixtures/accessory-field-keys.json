@@ -1,0 +1,43 @@
+{
+  "_comment": "Shared accessory field key cases for the bridge accessoryFieldKey and the integration _field_key (#275). Synthetic keys only.",
+  "accepted": [
+    "device_name",
+    "device_alias_name",
+    "room.*",
+    "relate_devices.*",
+    "a",
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "abc123",
+    "abc_x"
+  ],
+  "rejected": [
+    "T8030P23ABCDEF12.*",
+    "Frontdoor.*",
+    "id_1234.*",
+    "abcdefabcdef.*",
+    ".*",
+    "*.*",
+    "room.",
+    ".title",
+    "room.*.x",
+    "room.title",
+    "device_name\n",
+    "Device_Name",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.*",
+    "",
+    "*",
+    "room..x",
+    "T8030P23ABCDEF12",
+    "abcdefabcdef",
+    "id_1234",
+    "device-name",
+    "device name",
+    "_device",
+    "device_",
+    "device__name",
+    "1device",
+    "room.*x",
+    "room.**"
+  ]
+}
