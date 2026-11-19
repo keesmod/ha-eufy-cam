@@ -1,7 +1,15 @@
 # Changelog
 
-## 0.8.44
+## 0.8.45
 2026-11-19
+
+- Reports the eufy names of HomeBase accessories ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)), not yet confirmed on hardware.
+- Reads entry sensor states when it connects to the HomeBase ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)), not yet confirmed on hardware.
+- Updated the client to 0.31.1 ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)).
+
+Upgrade: works with every supported integration. Rollback: bridge 0.8.44.
+
+## 0.8.44 - 2026-11-19
 
 - Live view of the Video Doorbell S4 `T8215` now has sound ([#269](https://github.com/keesmod/ha-eufy-cam/issues/269)), not yet confirmed on hardware.
 - Reports the Entry Sensor `T8900` and the Keypad `T8960` on a HomeBase 3 and the Doorbell Chime `T8026` ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)), not yet confirmed on hardware.
