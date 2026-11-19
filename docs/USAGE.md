@@ -200,8 +200,8 @@ From integration 0.8.53 with bridge 0.8.44 the accessories of a HomeBase 3
 ([issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275)). They are
 read-only. The opening sensor is reported working on one HomeBase 3. There
 Guard Mode offers Off and the keypad charging sensor shows a value. The battery
-sensors and setting Off are not yet confirmed on hardware. They are never cameras, so they get no camera, card,
-event or snapshot.
+sensors and setting Off are not yet confirmed on hardware. They are never
+cameras, so they get no camera, card, event or snapshot.
 
 | Device | Model | Entities |
 |---|---|---|
@@ -223,8 +223,8 @@ none, a door can show unknown after a bridge restart until it next opens or
 closes. The opening sensor has the attributes `source` (`p2p` or
 `push`), `observed_at` and `live`. After the HomeBase connection closes and
 comes back, the sensor keeps its last observed value with `live: false` until
-the HomeBase reports a value or the door next changes. The battery and charging sensors may show the cached account
-value, with `source: cloud`. Eufy pushes for a sensor arrive only while
+the HomeBase reports a value or the door next changes. The battery and charging
+sensors may show the cached account value, with `source: cloud`. Eufy pushes for a sensor arrive only while
 notifications for that sensor are on in the Eufy app. Which route a HomeBase 3
 uses for sensor changes is not yet confirmed.
 
