@@ -6,6 +6,7 @@ import {
   DiscoveryDiagnostics, connectionAttempt, diagnosticCode, diagnosticModel, diagnosticReleaseVersion, diagnosticSoftware, diagnosticVersion,
   standalonePushReport,
   accessoryObservationReport,
+  accessoryFieldKey,
   type RecordingQueryReport,
 } from '../src/discovery-diagnostics.js';
 
@@ -117,6 +118,21 @@ test('accessory rows carry bounded field names, text parameter types and the nam
   assert.deepEqual([keypad.string_fields,keypad.text_params,keypad.name_source],[null,null,null]);
   assert.deepEqual([chime.string_fields,chime.text_params,chime.name_source],[null,null,null]);
   assert.doesNotMatch(f.lines.join('\n'),/PRIVATE/);
+});
+test('accessory field names pass only in schema form, never as serials, ids or names (#275)', () => {
+  const f=collect();
+  const stringFields=[
+    'device_name','room.title','relate_devices.*','lowercase_names.frontdoor',
+    'T8030P23ABCDEF12','relate_devices.T8030P23ABCDEF12','permission.3f9a2b7c4d5e6f70','rooms.Frontdoor',
+    't8030p23abcdef12','id_1234','abcdefabcdef','a.b.c','room.*.x','Device_name','x'.repeat(33),'.title','room.',
+  ];
+  const accessories=[{id:'PRIVATE_DOOR',index:4,stationId:'PRIVATE_BASE',category:'entry_sensor',model:'T8900',deviceType:2,name:'PRIVATE_NAME',firmware:null,hardware:'0.0.1',stringFields,textParams:[],nameSource:null}];
+  f.reporter.inventory({...result(),accessories} as unknown as DiscoveryResult,'accepted',undefined,true,new Map(),new Map());
+  const [door]=f.rows().filter(r=>r.event==='accessory');
+  assert.deepEqual(door.string_fields,['device_name','lowercase_names.frontdoor','relate_devices.*','room.title']);
+  for (const key of ['device_name','p2p_did','room.title','room.*','frontdoor']) assert.equal(accessoryFieldKey(key),true,key);
+  for (const key of ['T8030P23ABCDEF12','permission.3f9a2b7c4d5e6f70','rooms.Frontdoor','id_1234','*','a.b.c','room.*.x']) assert.equal(accessoryFieldKey(key),false,key);
+  assert.doesNotMatch(f.lines.join('\n'),/T8030P23|3f9a2b7c|Frontdoor|PRIVATE/);
 });
 test('failure reports retain discovery and missing-baseline counts before setup rejection', () => {
   const f=collect();
