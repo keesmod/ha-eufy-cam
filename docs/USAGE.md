@@ -198,8 +198,10 @@ Sessions have a **two-minute absolute limit** for battery cameras and by default
 From integration 0.8.53 with bridge 0.8.44 the accessories of a HomeBase 3
 (`T8030`) and the doorbell chime appear in Home Assistant
 ([issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275)). They are
-read-only and not yet confirmed on hardware. They are never cameras, so they
-get no camera, card, event or snapshot.
+read-only. The opening sensor, the keypad charging sensor and the Off option are
+reported working on one HomeBase 3. The battery sensors and setting Off are not
+yet confirmed on hardware. They are never cameras, so they get no camera, card,
+event or snapshot.
 
 | Device | Model | Entities |
 |---|---|---|
@@ -215,8 +217,10 @@ show.
 
 The door state shows only a value that the HomeBase or a Eufy push reported.
 The value the Eufy account lists at startup is a cached value and is never shown
-as the door state, so after a bridge restart a door can show unknown until it
-next opens or closes. The opening sensor has the attributes `source` (`p2p` or
+as the door state. From bridge 0.8.45 the bridge reads the door states the
+HomeBase reports when it connects. Until then, or when the HomeBase reports
+none, a door can show unknown after a bridge restart until it next opens or
+closes. The opening sensor has the attributes `source` (`p2p` or
 `push`), `observed_at` and `live`. After the HomeBase connection closes and
 comes back, the sensor keeps its last observed value with `live: false` until
 the next change. The battery and charging sensors may show the cached account

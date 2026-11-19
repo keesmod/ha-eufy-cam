@@ -4,7 +4,8 @@
 
 - HomeBase accessories show their eufy name, or a name such as Entry Sensor when the inventory has none ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)), not yet confirmed on hardware.
 - Entry sensors show their state right after the bridge connects to the HomeBase instead of after the first change ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)), not yet confirmed on hardware.
-- Entry Sensor `T8900` state changes are reported working on a HomeBase 3 ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)).
+- Entry Sensor `T8900` open and closed are reported working on a HomeBase 3 ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)).
+- The Keypad `T8960` battery shows unknown on a HomeBase 3 ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)), reported, not yet fixed.
 - Updated the client to 0.31.1 ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)).
 
 Upgrade: update the bridge to 0.8.45, then the integration. Rollback: 0.8.53 with bridge 0.8.44.
