@@ -523,6 +523,31 @@ async def test_a_removed_device_returns_with_its_entities(hass):
         assert await hass.config_entries.async_unload(entry.entry_id)
 
 
+async def test_accessories_link_again_when_their_removed_homebase_returns(hass):
+    with patch("custom_components.eufy_viewer.coordinator.EufyCoordinator.start"):
+        entry = await _setup(hass, FRAME)
+        devices = dr.async_get(hass)
+
+        def device(serial):
+            return devices.async_get_device_by_identifier(
+                (DOMAIN, serial), entry.entry_id
+            )
+
+        # The HomeBase leaves with its sensors and keypad, and only it is removed.
+        await _update(hass, entry, frame(stations=[], accessories=[row(CHIME)]))
+        hb3 = device(HB3)
+        assert await async_remove_config_entry_device(hass, entry, hb3)
+        devices.async_remove_device(hb3.id)
+        await hass.async_block_till_done()
+        assert device(SENSOR).via_device_id is None
+        # When it returns, every accessory hangs under it again.
+        await _update(hass, entry, FRAME)
+        hb3 = device(HB3)
+        for serial in (SENSOR, BACK, KEYPAD):
+            assert device(serial).via_device_id == hb3.id
+        assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_guard_mode_off_is_shown_and_settable_only_with_a_keypad(hass):
     with (
         patch("custom_components.eufy_viewer.coordinator.EufyCoordinator.start"),

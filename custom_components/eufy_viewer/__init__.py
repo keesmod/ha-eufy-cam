@@ -85,7 +85,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: EufyConfigEntry) -> bool
 
     @callback
     def forget(serial: str) -> None:
-        devices.pop(serial, None)
+        # HA clears the via link of every device under a removed HomeBase, so
+        # its accessories are registered again when it returns.
+        for key, info in list(devices.items()):
+            if key == serial or info.station == serial:
+                del devices[key]
 
     entry.async_on_unload(coordinator.on_forget(forget))
     sync_accessory_devices(hass, entry, devices)

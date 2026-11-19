@@ -583,7 +583,11 @@ export class MegaBackend extends EventEmitter implements Backend {
           try {
             states.set(accessory.id, await client.getAccessoryState(accessory.id));
           } catch {
-            // A row the client cannot read is reported without readings.
+            // Admitted rows fail here only at transport level, for example
+            // devices_busy, so keep the readings the bridge already had. A row
+            // without earlier readings is reported without them.
+            const previous = this.accessoryStates.get(accessory.id);
+            if (previous && !states.has(accessory.id)) states.set(accessory.id, previous);
           }
         }
       } finally {
