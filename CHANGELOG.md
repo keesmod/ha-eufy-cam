@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.54 - Unreleased
+
+- HomeBase accessories without a name in the Eufy inventory get a name such as Entry Sensor instead of an unnamed device ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)).
+
+Upgrade: no changes needed. Rollback: 0.8.53.
+
 ## 0.8.53 - 2026-11-19
 
 - Live view of the Video Doorbell S4 `T8215` now has sound ([#269](https://github.com/keesmod/ha-eufy-cam/issues/269)), not yet confirmed on hardware.

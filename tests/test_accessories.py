@@ -548,6 +548,33 @@ async def test_accessories_link_again_when_their_removed_homebase_returns(hass):
         assert await hass.config_entries.async_unload(entry.entry_id)
 
 
+async def test_accessories_without_a_name_get_a_category_name(hass):
+    data = frame()
+    for item in data["accessories"]:
+        item["name"] = ""
+    with patch("custom_components.eufy_viewer.coordinator.EufyCoordinator.start"):
+        entry = await _setup(hass, data)
+        devices = dr.async_get(hass)
+
+        def name(serial):
+            return devices.async_get_device_by_identifier(
+                (DOMAIN, serial), entry.entry_id
+            ).name
+
+        assert [name(s) for s in (SENSOR, BACK, KEYPAD, CHIME)] == [
+            "Entry Sensor",
+            "Entry Sensor",
+            "Keypad",
+            "Doorbell Chime",
+        ]
+        door = hass.states.get("binary_sensor.entry_sensor")
+        assert door is not None and door.state == "on"
+        # A name that arrives later replaces the fallback.
+        await _update(hass, entry, FRAME)
+        assert name(SENSOR) == row(SENSOR)["name"]
+        assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_guard_mode_off_is_shown_and_settable_only_with_a_keypad(hass):
     with (
         patch("custom_components.eufy_viewer.coordinator.EufyCoordinator.start"),
