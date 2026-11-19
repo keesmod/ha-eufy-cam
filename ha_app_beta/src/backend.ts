@@ -51,7 +51,33 @@ export interface StationInfo {
   alarm: boolean;
   alarm_delay: number;
   arm_delay: number;
+  /** The legacy settable modes. Never 6, because integrations before 0.8.53 reject the frame then. */
   modes: number[];
+  /** Further settable modes, today only 6 (Off) on a HomeBase with an admitted keypad (#275). */
+  extra_modes: number[];
+}
+/** One value of a HomeBase accessory as the client last saw it (#275). */
+export interface AccessoryReadingInfo {
+  value: boolean;
+  source: 'p2p' | 'push' | 'cloud';
+  observed_at: string;
+  /** Observed by P2P or push since the HomeBase session last closed. */
+  live: boolean;
+}
+/**
+ * A HomeBase accessory or a recognized chime (#275). It is no camera and no
+ * station, has no media and accepts no command.
+ */
+export interface AccessoryInfo {
+  serial: string;
+  name: string;
+  model: string;
+  hardware: string;
+  software: string;
+  category: 'entry_sensor' | 'keypad' | 'chime';
+  /** The HomeBase of an entry sensor or keypad, null for a chime. */
+  station: string | null;
+  readings: Partial<Record<'open' | 'battery_low' | 'charging', AccessoryReadingInfo | null>>;
 }
 export interface Picture {
   data: Buffer;
@@ -137,6 +163,8 @@ export interface Backend extends EventEmitter {
   readonly pictures: Map<string, Picture>;
   login(credentials?: Credentials, options?: LoginOptions): Promise<AuthState>;
   inventory(): CameraInfo[];
+  /** HomeBase accessories and recognized chimes, without I/O (#275). */
+  accessories?(): AccessoryInfo[];
   hasCamera(serial: string): boolean;
   canStartLive(serial: string): LiveAdmission;
   /**

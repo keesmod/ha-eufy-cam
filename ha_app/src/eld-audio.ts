@@ -15,6 +15,8 @@ import { join } from 'node:path';
  */
 export const ELD_CONFIG = 'f8f03000';
 const DECODER = '/usr/local/bin/eufy-eld-decode';
+/** The image's helper, or EUFY_ELD_DECODER for development. Live audio uses its stream mode (#269). */
+export const eldDecoderCommand = (): string => process.env.EUFY_ELD_DECODER || DECODER;
 // A download is bounded to 32 MiB and 40 s, about 1,400 units at 30 ms.
 const MAX_UNITS = 16384;
 const MAX_UNIT_BYTES = 8192;
@@ -107,7 +109,7 @@ export function eldDecoder(launch: Launch = launchHelper, timeoutMs = DECODE_MS,
         done = true; clearTimeout(timer); clearTimeout(cleanup); signal.removeEventListener('abort', cancel);
         resolve({ ...value, stdout });
       };
-      try { child = launch(process.env.EUFY_ELD_DECODER || DECODER, [ELD_CONFIG, framed, pcm]); }
+      try { child = launch(eldDecoderCommand(), [ELD_CONFIG, framed, pcm]); }
       catch { resolve({ outcome: 'decoder_unavailable', stdout }); return; }
       // As for FFmpeg, a stop counts once 'close' confirms the helper is gone.
       // Without that confirmation the converter must not start another process.

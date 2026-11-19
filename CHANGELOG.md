@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.53 - Unreleased
+## 0.8.53 - 2026-11-19
 
 - Live view of the Video Doorbell S4 `T8215` now has sound ([#269](https://github.com/keesmod/ha-eufy-cam/issues/269)), not yet confirmed on hardware.
 - Added the Entry Sensor `T8900` on a HomeBase 3 as a read-only opening and battery sensor ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)), not yet confirmed on hardware.
@@ -8,7 +8,7 @@
 - The Doorbell Chime `T8026` shows as a device without functions ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)), recognized only.
 - Guard Mode shows Off and offers it on a HomeBase with a keypad ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)), not yet confirmed on hardware.
 - Devices that left the Eufy inventory can be deleted from their device page ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)).
-- Updated the client to 0.31.0-beta.1 ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)).
+- Updated the client to 0.31.0 ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)).
 
 Upgrade: update the bridge to 0.8.44 first, then the integration. Rollback: switch a HomeBase out of Off first, then 0.8.52 with bridge 0.8.43.
 

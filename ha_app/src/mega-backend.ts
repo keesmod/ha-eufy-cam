@@ -9,6 +9,10 @@ import {
   type DiscoveryIssue,
   type DiscoveryResult,
   type StationState,
+  type Accessory,
+  type AccessoryCategory,
+  type AccessoryReading,
+  type AccessoryState,
   type LiveStream,
   type LiveStartProgress,
   type AuthState as MegaAuth,
@@ -22,15 +26,20 @@ import {
   experimentalOwner,
   diagnosticModel,
   standalonePushReport,
+  accessoryObservationReport,
+  type AccessoryObservationReport,
   type RecordingQueryReport,
   type StandalonePushReport,
 } from './discovery-diagnostics.js';
 import { RecordingTranscoder } from './recording-media.js';
 import { LivePacing } from './camera-clock.js';
+import { LiveAudioUnits, LiveEldAudio, type LiveEldOptions } from './live-eld-audio.js';
 import { MegaRecordings } from './mega-recordings.js';
-import { PresetError, RecordingError, StationError, guardMode, guardModes, presetIndex } from './errors.js';
+import { PresetError, RecordingError, StationError, extraGuardModes, guardMode, guardModes, presetIndex } from './errors.js';
 import type { LiveAdmission } from './streams.js';
 import type {
+  AccessoryInfo,
+  AccessoryReadingInfo,
   Backend,
   BackendPresets,
   BackendStations,
@@ -129,6 +138,55 @@ const authState = (state: MegaAuth): AuthState => {
       return { state: 'error' };
   }
 };
+/**
+ * The extra modes the client reports settable for this HomeBase, only those the
+ * bridge knows (#275). None without a state or before client 0.31.0.
+ */
+function extraModes(state: StationState | undefined): number[] {
+  const available: unknown = state?.availableModes;
+  if (!Array.isArray(available)) return [];
+  return extraGuardModes.filter((mode) => available.includes(mode));
+}
+/** The state frame carries at most this many accessories, like cameras and stations. */
+const ACCESSORY_LIMIT = 100;
+/** A client reading as the state frame carries it, null for anything malformed (#275). */
+function readingInfo(reading: AccessoryReading<boolean> | null | undefined): AccessoryReadingInfo | null {
+  if (!reading || typeof reading !== 'object') return null;
+  const { value, source, observedAt, live } = reading;
+  if (typeof value !== 'boolean' || !['p2p', 'push', 'cloud'].includes(source)) return null;
+  if (typeof observedAt !== 'string' || observedAt.length > 64 || typeof live !== 'boolean') return null;
+  return { value, source, observed_at: observedAt, live };
+}
+/** The readings each category has. Others are left out (#275). */
+const categoryReadings = {
+  entry_sensor: ['open', 'battery_low'],
+  keypad: ['battery_low', 'charging'],
+  chime: [],
+} as const satisfies Record<AccessoryCategory, readonly ('open' | 'battery_low' | 'charging')[]>;
+/** The state frame row of one accessory, from discovery and the client's last readings (#275). */
+export function accessoryInfo(accessory: Accessory, state: AccessoryState | undefined): AccessoryInfo {
+  const readings = state?.readings;
+  const values = {
+    open: readingInfo(readings?.open),
+    battery_low: readingInfo(readings?.batteryLow),
+    charging: readingInfo(readings?.charging),
+  };
+  return {
+    serial: accessory.id,
+    name: accessory.name,
+    model: accessory.model,
+    hardware: accessory.hardware ?? '',
+    software: accessory.firmware ?? '',
+    category: accessory.category,
+    station: accessory.category === 'chime' ? null : accessory.stationId,
+    // A category this bridge does not know gets no readings, and the integration drops its row.
+    readings: Object.fromEntries(
+      (Object.hasOwn(categoryReadings, accessory.category) ? categoryReadings[accessory.category] : []).map(
+        (key) => [key, values[key]],
+      ),
+    ),
+  };
+}
 class MegaStations implements BackendStations {
   readonly metrics = { commands: 0, accepted: 0, failed: 0 };
   constructor(
@@ -155,6 +213,7 @@ class MegaStations implements BackendStations {
           alarm_delay: state?.alarmDelay ?? 0,
           arm_delay: state?.armDelay ?? 0,
           modes: [...guardModes],
+          extra_modes: extraModes(state),
         };
       });
   }
@@ -163,6 +222,10 @@ class MegaStations implements BackendStations {
     const client = this.client();
     if (!client?.connected || !this.devices().some((d) => d.kind === 'station' && d.id === serial))
       throw new StationError('station_unavailable');
+    // Off only where the client reports it settable, a HomeBase with an admitted
+    // keypad (#275). Refused before the client, so nothing is sent or counted.
+    if (!guardModes.includes(mode) && !extraModes(this.states.get(serial)).includes(mode))
+      throw new StationError('invalid_mode', 400);
     this.metrics.commands++;
     try {
       const result = await client.setGuardMode(serial, mode, AbortSignal.timeout(30000));
@@ -175,6 +238,9 @@ class MegaStations implements BackendStations {
         throw new StationError('station_busy', 409);
       if (error instanceof EufyError && error.code === 'guard_mode_rejected')
         throw new StationError('station_rejected');
+      // The client refuses a mode this HomeBase does not accept before any send (#275).
+      if (error instanceof EufyError && error.code === 'invalid_guard_mode')
+        throw new StationError('invalid_mode', 400);
       throw new StationError('station_unconfirmed');
     } finally {
       this.changed();
@@ -254,10 +320,18 @@ export class MegaBackend extends EventEmitter implements Backend {
   private devices = new Map<string, Device>();
   private capabilities = new Map<string, CameraCapabilities>();
   private stationStates = new Map<string, StationState>();
+  /** Admitted HomeBase accessories and recognized chimes of the latest discovery (#275). */
+  private accessoryRows = new Map<string, Accessory>();
+  /** The client's last readings per accessory, from discovery and its accessory events. */
+  private accessoryStates = new Map<string, AccessoryState>();
+  /** Rows and readings of a discovery in progress. Events during it land here too. */
+  private pendingAccessories: { rows: Map<string, Accessory>; states: Map<string, AccessoryState> } | null = null;
   private streams = new Map<
     string,
-    { abort: AbortController; handle?: LiveStream; starting: Promise<void>; audio: LiveAudioObservation }
+    { abort: AbortController; handle?: LiveStream; starting: Promise<void>; audio: LiveAudioObservation; eld?: LiveEldAudio }
   >();
+  /** Process launch and log line of the AAC-ELD live audio stage (#269). Tests replace them. */
+  liveEld: LiveEldOptions = {};
   private closed = false;
   private ready = false;
   private readonly liveAudio = new LiveAudioDiagnostics();
@@ -319,7 +393,20 @@ export class MegaBackend extends EventEmitter implements Backend {
       () => this.emit('change'),
     );
   }
-  supportReport() { return { ...this.discoveryDiagnostics.report(), live_audio: this.liveAudio.report(this.liveMaxSecondsMains * 1000 + 900_000), recording: this.recordings.diagnostics.report(), standalone_pushes: this.standalonePushes() }; }
+  supportReport() { return { ...this.discoveryDiagnostics.report(), live_audio: this.liveAudio.report(this.liveMaxSecondsMains * 1000 + 900_000), recording: this.recordings.diagnostics.report(), standalone_pushes: this.standalonePushes(), accessory_observations: this.accessoryObservations() }; }
+  /**
+   * The client's accessory observation counts (#275), revalidated at this
+   * library boundary. Null without a client or before client 0.31.0. A getter
+   * that throws gives null and never fails the download.
+   */
+  private accessoryObservations(): AccessoryObservationReport | null {
+    if (!this.client) return null;
+    try {
+      return accessoryObservationReport(this.client.accessoryObservation);
+    } catch {
+      return null;
+    }
+  }
   /**
    * The client's standalone push counts (#185), revalidated at this library
    * boundary. Null without a client. A getter that throws gives null and never
@@ -482,6 +569,32 @@ export class MegaBackend extends EventEmitter implements Backend {
           this.emit('camera-removed', device.id);
         }
       this.devices = next;
+      // Accessories have no owner of their own and no media. Their readings come
+      // from the HomeBase sessions below and the push stream (#275).
+      // Rows and readings are built aside and replace the previous ones at once,
+      // so a frame sent while they load keeps the previous readings.
+      const rows = new Map(
+        (result.accessories ?? []).slice(0, ACCESSORY_LIMIT).map((accessory) => [accessory.id, accessory]),
+      );
+      const states = new Map<string, AccessoryState>();
+      this.pendingAccessories = { rows, states };
+      try {
+        for (const accessory of rows.values()) {
+          try {
+            states.set(accessory.id, await client.getAccessoryState(accessory.id));
+          } catch {
+            // Admitted rows fail here only at transport level, for example
+            // devices_busy, so keep the readings the bridge already had. A row
+            // without earlier readings is reported without them.
+            const previous = this.accessoryStates.get(accessory.id);
+            if (previous && !states.has(accessory.id)) states.set(accessory.id, previous);
+          }
+        }
+      } finally {
+        this.pendingAccessories = null;
+      }
+      this.accessoryRows = rows;
+      this.accessoryStates = states;
       this.capabilities.clear();
       for (const device of devices.filter((d) => d.kind === 'camera')) {
         const capability = await client.getCameraCapabilities(device.id);
@@ -654,9 +767,19 @@ export class MegaBackend extends EventEmitter implements Backend {
     });
     client.on('station', (state) => {
       // An experimental standalone camera reports its own session here. It is no
-      // HomeBase, so it gets no alarm state and no idle reconnect.
-      if (this.devices.get(state.id)?.kind !== 'camera') this.stationStates.set(state.id, state);
+      // HomeBase, so it gets no alarm state and no idle reconnect. Neither does
+      // anything else that is not a HomeBase of the inventory (#275).
+      if (this.devices.get(state.id)?.kind === 'station') this.stationStates.set(state.id, state);
       this.discoveryDiagnostics.station(state.id, 'observation', state.connected ? 'connected' : 'disconnected');
+      this.emit('change');
+    });
+    // A changed reading of an accessory of the latest discovery. The client emits
+    // it only on a change, and each one sends a state frame (#275).
+    client.on('accessory', (state) => {
+      const pending = this.pendingAccessories;
+      if (pending?.rows.has(state.id)) pending.states.set(state.id, state);
+      if (!this.accessoryRows.has(state.id)) return;
+      this.accessoryStates.set(state.id, state);
       this.emit('change');
     });
     client.on('snapshot', (snapshot) => {
@@ -736,6 +859,7 @@ export class MegaBackend extends EventEmitter implements Backend {
       handle?: LiveStream;
       starting: Promise<void>;
       audio: LiveAudioObservation;
+      eld?: LiveEldAudio;
     } = {
       abort,
       starting: Promise.resolve(),
@@ -745,20 +869,31 @@ export class MegaBackend extends EventEmitter implements Backend {
     owned.starting = (async () => {
       try {
         const pacing = this.liveSmoothing ? new LivePacing() : undefined;
+        // The AAC-ELD stage needs the audio unit boundaries, with or without pacing (#269).
+        const units = new LiveAudioUnits();
         const handle = await this.client!.startLive(serial, {
           signal: abort.signal,
           maxDurationMs: bound,
           onProgress,
-          onFrameTiming: pacing?.timing,
+          onFrameTiming: (timing) => {
+            pacing?.timing(timing);
+            units.timing(timing);
+          },
         });
         owned.handle = handle;
         void handle.ended.then((result) => {
+          void owned.eld?.stop();
           owned.audio.finish('ended', result.confirmed);
           if (this.streams.get(serial) === owned) this.streams.delete(serial);
           this.emit('live-stop', { serial, confirmed: result.confirmed });
         });
         const metadata = handle.metadata;
         const paced = pacing?.attach(handle.video, handle.audio);
+        const audio = paced?.audio ?? handle.audio;
+        // ADTS audio keeps its path. AAC-ELD goes through the decoding stage,
+        // and so does audio whose codec only its first frame will name.
+        if (metadata.audioCodec === 'aac' || metadata.audioCodec === 'aac-lc') units.close();
+        else owned.eld = new LiveEldAudio(audio, units, () => handle.metadata.audioCodec, this.liveEld);
         const media: LiveMedia = {
           serial,
           videoCodec:
@@ -770,8 +905,8 @@ export class MegaBackend extends EventEmitter implements Backend {
           audioSupported: ['aac', 'aac-lc', 'aac-eld'].includes(metadata.audioCodec),
           fps: metadata.fps,
           video: paced?.video ?? handle.video,
-          audio: paced?.audio ?? handle.audio,
-          ...(paced ? { source: { video: handle.video, audio: handle.audio } } : {}),
+          audio: owned.eld?.output ?? audio,
+          ...(paced || owned.eld ? { source: { video: handle.video, audio: handle.audio } } : {}),
         };
         owned.audio.attach(handle.audio, metadata.audioCodec, media.audioSupported, () => handle.metadata.audioCodec);
         this.emit('live-start', media);
@@ -819,17 +954,27 @@ export class MegaBackend extends EventEmitter implements Backend {
   hasCamera(serial: string): boolean {
     return this.devices.get(serial)?.kind === 'camera';
   }
+  accessories(): AccessoryInfo[] {
+    return [...this.accessoryRows.values()].map((accessory) =>
+      accessoryInfo(accessory, this.accessoryStates.get(accessory.id)),
+    );
+  }
   async close(): Promise<void> {
     this.closed = true;
     clearInterval(this.timer);
     this.recordings.close();
+    const stages = [...this.streams.values()].flatMap((owned) => (owned.eld ? [owned.eld] : []));
     await Promise.allSettled([...this.streams.keys()].map((serial) => this.stopLive(serial)));
+    // Each decoding stage confirms that its processes are gone, within its cleanup limit.
+    await Promise.allSettled(stages.map((stage) => stage.stop()));
     try {
       await this.client?.shutdown();
     } finally {
       this.liveAudio.close();
       this.stations.close();
       this.devices.clear();
+      this.accessoryRows.clear();
+      this.accessoryStates.clear();
       this.pictures.clear();
       await this.storage.flush();
       this.removeAllListeners();

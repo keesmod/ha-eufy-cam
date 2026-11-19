@@ -1,11 +1,14 @@
 # Changelog
 
-## 0.8.44-beta.1
-Unreleased
+## 0.8.44
+2026-11-19
 
 - Live view of the Video Doorbell S4 `T8215` now has sound ([#269](https://github.com/keesmod/ha-eufy-cam/issues/269)), not yet confirmed on hardware.
+- Reports the Entry Sensor `T8900` and the Keypad `T8960` on a HomeBase 3 and the Doorbell Chime `T8026` ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)), not yet confirmed on hardware.
+- Reports guard mode Off and sets it on a HomeBase with a keypad ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)), not yet confirmed on hardware.
+- Updated the client to 0.31.0 ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)).
 
-Upgrade: works with every supported integration. Rollback: bridge 0.8.43.
+Upgrade: works with every supported integration. Integrations before 0.8.53 show no accessories or Off. Rollback: switch a HomeBase out of Off first, then bridge 0.8.43.
 
 ## 0.8.43 - 2026-11-18
 
