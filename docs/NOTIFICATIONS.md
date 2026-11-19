@@ -115,3 +115,21 @@ A saved v6 session can be rejected by Eufy even before its recorded expiry. The
 initial live test needed a fresh session before push registration worked. This
 feature reports connectivity; it does not claim to fix upstream authentication
 recovery for every account.
+
+## HomeBase accessories
+
+From bridge 0.8.44 with client 0.31.0, an Entry Sensor `T8900` on a HomeBase 3
+updates its opening sensor from the HomeBase's local session and from the Eufy
+door sensor push ([issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275)).
+It is not an event entity and creates no notification of its own. Use the
+opening sensor's state changes in an automation instead.
+
+Eufy sends the door sensor push only while the Eufy app's notifications for that
+sensor are on. If the HomeBase does not report the contact over its local
+session, turning those notifications off leaves the sensor unknown or at its
+last value. The phone's own notification settings can still silence the Eufy
+app. Whether a HomeBase 3 on your firmware reports the contact locally shows in
+the [accessory counts](DISCOVERY_DIAGNOSTICS.md#homebase-accessories). Neither
+route is confirmed on hardware yet. The keypad and the doorbell chime send no
+events to Home Assistant.
+

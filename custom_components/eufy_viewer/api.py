@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 import aiohttp
@@ -18,6 +20,8 @@ from .recording_file import (
     RecordingFile,
     RecordingStorageError,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class BridgeError(Exception):
@@ -227,6 +231,180 @@ class StationInfo:
     alarm_delay: int | float
     arm_delay: int | float
     modes: list[int]
+    # Settable modes outside the legacy list, from bridge 0.8.44. Today only Off
+    # (6) on a HomeBase with a paired keypad. Older bridges omit the key.
+    extra_modes: list[int] = field(default_factory=list)
+
+    @property
+    def settable_modes(self) -> list[int]:
+        """The legacy modes followed by any extra settable mode."""
+        return [*self.modes, *self.extra_modes]
+
+
+SERIAL = re.compile(r"[A-Za-z0-9_-]{1,64}")
+ACCESSORY_CATEGORIES = {
+    "entry_sensor": ("open", "battery_low"),
+    "keypad": ("battery_low", "charging"),
+    "chime": (),
+}
+READING_SOURCES = {"p2p", "push", "cloud"}
+# Guard modes a bridge may report as extra settable modes. Off (6) is the mode a
+# keypad sets. Unknown values are ignored, never a reason to refuse the frame.
+EXTRA_MODES = {6}
+ACCESSORY_LIMIT = 100
+
+
+@dataclass(frozen=True, slots=True)
+class Reading:
+    """One accessory value with where and when the bridge observed it."""
+
+    value: bool
+    source: str
+    observed_at: str
+    live: bool
+
+    @property
+    def observed(self) -> bool:
+        """A device or push observation, never a cached cloud value."""
+        return self.source in ("p2p", "push")
+
+
+@dataclass(frozen=True, slots=True)
+class AccessoryInfo:
+    """A HomeBase accessory or a recognized chime, never a camera or station."""
+
+    serial: str
+    name: str
+    model: str
+    hardware: str
+    software: str
+    category: str
+    station: str | None
+    readings: dict[str, Reading] = field(default_factory=dict)
+
+
+def _extra_modes(item: dict[str, Any]) -> list[int]:
+    """Known extra modes only. Anything else is ignored, never fatal."""
+    extra = item.get("extra_modes", [])
+    modes: list[int] = []
+    for mode in extra if isinstance(extra, list) else []:
+        if (
+            type(mode) is int
+            and mode in EXTRA_MODES
+            and mode not in item["modes"]
+            and mode not in modes
+        ):
+            modes.append(mode)
+    return modes
+
+
+def _reading(raw: Any) -> Reading | None:
+    """Keep one well-formed reading, drop anything else."""
+    if not isinstance(raw, dict):
+        return None
+    value, source = raw.get("value"), raw.get("source")
+    observed_at, live = raw.get("observed_at"), raw.get("live")
+    if (
+        type(value) is not bool
+        or not isinstance(source, str)
+        or source not in READING_SOURCES
+        or type(live) is not bool
+        or not isinstance(observed_at, str)
+        or len(observed_at) > 40
+    ):
+        return None
+    try:
+        if datetime.fromisoformat(observed_at).tzinfo is None:
+            return None
+    except ValueError:
+        return None
+    return Reading(value, source, observed_at, live)
+
+
+def _accessory(item: Any, stations: dict[str, StationInfo]) -> AccessoryInfo | None:
+    """Validate one accessory row. A bad row never affects other rows."""
+    if not isinstance(item, dict):
+        return None
+    serial, category, station = (
+        item.get("serial"),
+        item.get("category"),
+        item.get("station"),
+    )
+    if (
+        not isinstance(serial, str)
+        or not SERIAL.fullmatch(serial)
+        or not isinstance(category, str)
+        or category not in ACCESSORY_CATEGORIES
+    ):
+        return None
+    if any(
+        not isinstance(item.get(key), str) or len(item[key]) > 256
+        for key in ("name", "model", "hardware", "software")
+    ):
+        return None
+    # Sensors and keypads belong to a HomeBase in this frame. A chime has none.
+    if category == "chime":
+        if station is not None:
+            return None
+    elif not isinstance(station, str) or station not in stations:
+        return None
+    raw = item.get("readings", {})
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        return None
+    readings = {
+        key: reading
+        for key in ACCESSORY_CATEGORIES[category]
+        if (reading := _reading(raw.get(key))) is not None
+    }
+    return AccessoryInfo(
+        serial,
+        item["name"],
+        item["model"],
+        item["hardware"],
+        item["software"],
+        category,
+        station,
+        readings,
+    )
+
+
+def parse_accessories(
+    data: dict[str, Any],
+    cameras: dict[str, CameraInfo],
+    stations: dict[str, StationInfo],
+) -> tuple[dict[str, AccessoryInfo], int]:
+    """Return the valid accessories and how many rows were dropped.
+
+    Never raises. Bridges before 0.8.44 send no accessories. A malformed row, a
+    duplicate serial or a serial of a camera or station is dropped alone.
+    """
+    items = data.get("accessories", [])
+    if not isinstance(items, list):
+        return {}, 0
+    if len(items) > ACCESSORY_LIMIT:
+        _LOGGER.debug("Dropped all %d accessory rows: over the limit", len(items))
+        return {}, len(items)
+    rows = [_accessory(item, stations) for item in items]
+    counts: dict[str, int] = {}
+    for row in rows:
+        if row is not None:
+            counts[row.serial] = counts.get(row.serial, 0) + 1
+    accessories: dict[str, AccessoryInfo] = {}
+    for index, row in enumerate(rows):
+        # The reason and row index only. Serials and names stay out of the log.
+        if row is None:
+            reason = "invalid row"
+        elif counts[row.serial] > 1:
+            reason = "duplicate serial"
+        elif row.serial in cameras or row.serial in stations:
+            reason = "serial of a camera or station"
+        else:
+            accessories[row.serial] = row
+            continue
+        _LOGGER.debug("Dropped accessory row %d: %s", index, reason)
+    return accessories, len(items) - len(accessories)
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,6 +424,8 @@ class BridgeState:
     live_max_seconds_mains: int = LIVE_BOUND_DEFAULT_SECONDS
     snapshot_refresh: bool = False
     preset_move: bool = False
+    accessories: dict[str, AccessoryInfo] = field(default_factory=dict)
+    accessories_dropped: int = 0
 
     def live_bound_seconds(self, serial: str) -> int:
         """Mirror the bridge's cap for one camera.
@@ -378,8 +558,14 @@ class BridgeState:
                 ):
                     raise ValueError
                 stations[serial] = StationInfo(
-                    **{key: item[key] for key in StationInfo.__dataclass_fields__}
+                    **{
+                        key: item[key]
+                        for key in StationInfo.__dataclass_fields__
+                        if key != "extra_modes"
+                    },
+                    extra_modes=_extra_modes(item),
                 )
+            accessories, dropped = parse_accessories(data, cameras, stations)
             metrics = data.get("notification_metrics", {})
             if not isinstance(metrics, dict):
                 raise ValueError
@@ -422,6 +608,8 @@ class BridgeState:
                 type(data.get("snapshot_refresh")) is int
                 and data["snapshot_refresh"] == 1,
                 type(data.get("preset_move")) is int and data["preset_move"] == 1,
+                accessories,
+                dropped,
             )
         except (KeyError, TypeError, ValueError) as err:
             raise BridgeError("Invalid bridge protocol") from err

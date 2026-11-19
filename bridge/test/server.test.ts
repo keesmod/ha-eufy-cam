@@ -16,7 +16,7 @@ test('migration transfer requires authentication and reports only fixed refusal 
   const accepted: unknown[] = [];
   const fake = Object.assign(new EventEmitter(), {
     auth: {state:'error'}, backendName:'mega', migrationError:'inventory_required',
-    inventory: () => [], pictures: new Map(),
+    inventory: () => [], accessories: () => [], pictures: new Map(),
     hub: new StreamHub({start:async()=>{},stop:async()=>{},disposeMedia:()=>{}}),
     acceptMigration: async (value: unknown) => {
       if ((value as {bridge_id:string}).bridge_id !== 'bridge-test') throw new MigrationError('bridge_identity_mismatch');
@@ -44,7 +44,7 @@ test('migration transfer requires authentication and reports only fixed refusal 
 
 test('state reports the configured per-station live limit', async () => {
   const fake = Object.assign(new EventEmitter(), {
-    auth: { state: 'connected' }, backendName: 'mega', migrationError: null, inventory: () => [], pictures: new Map(),
+    auth: { state: 'connected' }, backendName: 'mega', migrationError: null, inventory: () => [], accessories: () => [], pictures: new Map(),
     liveStreamsPerStation: 2, liveMaxSecondsMains: 1800, metrics: {}, hub: new StreamHub({ start: async () => {}, stop: async () => {}, disposeMedia: () => {} }),
   });
   const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
@@ -63,10 +63,49 @@ test('state reports the configured per-station live limit', async () => {
   } finally { server.emit('shutdown'); server.close(); await once(server, 'close'); }
 });
 
+// #275: the shared integration fixture is the frame. Accessories and extra_modes
+// pass through unchanged, also on the push socket, and Off reaches the backend.
+test('state carries accessories and extra_modes on GET and on the push socket, and Off passes the route (#275)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const frame = JSON.parse(readFileSync(new URL('../../tests/fixtures/state-accessories.json', import.meta.url), 'utf8'));
+  const modes: unknown[] = [];
+  const fake = Object.assign(new EventEmitter(), {
+    auth: { state: 'connected' }, backendName: 'mega', migrationError: null, inventory: () => frame.cameras,
+    accessories: () => frame.accessories, pictures: new Map(), metrics: {},
+    stations: { inventory: () => frame.stations, setMode: async () => {}, metrics: { commands: 0, accepted: 0, failed: 0 } },
+    hub: new StreamHub({ start: async () => {}, stop: async () => {}, disposeMedia: () => {} }),
+    setMode: async (serial: string, mode: unknown) => { modes.push([serial, mode]); },
+  });
+  const server = createBridge(fake as unknown as Eufy, token, 'bridge-123');
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address(); assert.ok(address && typeof address !== 'string');
+  const headers = { Authorization: `Bearer ${token}` };
+  try {
+    const state = await (await fetch(`http://127.0.0.1:${address.port}/v1/state`, { headers })).json() as Record<string, unknown>;
+    assert.deepEqual(state.accessories, frame.accessories);
+    assert.deepEqual(state.stations, frame.stations);
+    const socket = new WebSocket(`ws://127.0.0.1:${address.port}/v1/events`, { headers });
+    const first = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      socket.once('message', (data) => resolve(JSON.parse(data.toString())));
+      socket.once('error', reject);
+    });
+    assert.deepEqual(first.accessories, frame.accessories);
+    // A changed reading is one change event, which sends the next frame.
+    const next = new Promise<Record<string, unknown>>((resolve) => socket.once('message', (data) => resolve(JSON.parse(data.toString()))));
+    frame.accessories[0].readings.open.value = false;
+    fake.emit('change');
+    assert.equal(((await next).accessories as { readings: { open: { value: boolean } } }[])[0]!.readings.open.value, false);
+    socket.close();
+    const off = await fetch(`http://127.0.0.1:${address.port}/v1/stations/SYNTHHB30001/mode`, { method: 'POST', headers, body: '{"mode":6}' });
+    assert.equal(off.status, 200);
+    assert.deepEqual(modes, [['SYNTHHB30001', 6]]);
+  } finally { server.emit('shutdown'); server.closeAllConnections(); server.close(); await once(server, 'close'); }
+});
+
 test('authenticated bridge snapshots never start; websocket close stops last viewer', async () => {
   const calls: string[] = [];
   const fake = Object.assign(new EventEmitter(), {
-    auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123',
+    auth: { state: 'connected' }, inventory: () => [], accessories: () => [], hasCamera: (s: string) => s === 'CAM123',
     pictures: new Map([['CAM123', { data: Buffer.from([255, 216, 255, 217]), mime: 'image/jpeg' }]]),
     hub: new StreamHub({ start: async s => { calls.push(`start:${s}`); }, stop: async s => { calls.push(`stop:${s}`); }, disposeMedia: () => {} }),
   });
@@ -101,7 +140,7 @@ test('WebRTC grants report audio=false before the first JPEG frame and expire wi
   let active = false;
   t.mock.method(media, 'active', () => active);
   const hub = new StreamHub({ start: async s => { calls.push(`start:${s}`); }, stop: async s => { calls.push(`stop:${s}`); }, disposeMedia: s => media.stop(s) });
-  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {}, audioAttempt: () => 123 });
+  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], accessories: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {}, audioAttempt: () => 123 });
   const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
@@ -149,7 +188,7 @@ test('WebRTC grants report audio=false before the first JPEG frame and expire wi
 
 test('timeline, calendar and stored thumbnails require auth and known camera IDs',async()=>{
   const calls:string[]=[];const hub=new StreamHub({start:async()=>{},stop:async()=>{},disposeMedia:()=>{}});
-  const fake=Object.assign(new EventEmitter(),{auth:{state:'connected'},inventory:()=>[],hasCamera:(s:string)=>s==='CAM123',hub,recordings:{
+  const fake=Object.assign(new EventEmitter(),{auth:{state:'connected'},inventory:()=>[],accessories:()=>[],hasCamera:(s:string)=>s==='CAM123',hub,recordings:{
     timeline:async(serials:string[],date:string)=>{calls.push('timeline');assert.deepEqual(serials,['CAM123']);assert.equal(date,'2026-09-05');return {recordings:[],complete:true};},
     video:async(_serial:string,_id:string,signal:AbortSignal,consume:any,format:string,hevc:boolean)=>{calls.push('video:'+format);assert.equal(typeof hevc,'boolean');const dir=mkdtempSync(join(tmpdir(),'recording-test-'));const path=join(dir,'mp4');writeFileSync(path,'mp4');try {await consume({path,size:3,media:{source:'h264',output:'h264',processing:'remux',fallback:false}},signal);}finally{rmSync(dir,{recursive:true});}},
     calendar:async()=>{calls.push('calendar');return {days:['2026-09-05']};},thumbnail:async()=>{calls.push('thumbnail');return Buffer.from([255,216,255]);}
@@ -177,7 +216,7 @@ test('timeline, calendar and stored thumbnails require auth and known camera IDs
 
 test('notification frames require opt-in and subscriptions are removed on disconnect', async () => {
   const hub = new StreamHub({ start: async () => {}, stop: async () => {}, disposeMedia: () => {} });
-  const fake = Object.assign(new EventEmitter(), {auth: {state: 'connected'}, inventory: () => [], hub});
+  const fake = Object.assign(new EventEmitter(), {auth: {state: 'connected'}, inventory: () => [], accessories: () => [], hub});
   const server = createBridge(fake as unknown as Eufy, token, 'fixture');
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
@@ -209,7 +248,7 @@ for (const acknowledge of [false, true]) test(`JPEG downgrade preserves one came
   const hub = new StreamHub({ start: async () => { calls.push('start'); }, stop: async () => { calls.push('stop'); hub.stopped('CAM123'); }, disposeMedia: s => media.stop(s) }, () => now);
   const originalAck = hub.ack.bind(hub);
   t.mock.method(hub, 'ack', (s, peer) => { const accepted = originalAck(s, peer); if (accepted) acknowledgements++; return accepted; });
-  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {} });
+  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], accessories: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {} });
   const server = createBridge(fake as unknown as Eufy, token, 'test');
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
@@ -254,7 +293,7 @@ test('one viewer downgrades while another keeps WebRTC on the same camera', { ti
   const media = new MediaRelay(() => {});
   t.mock.method(media, 'active', () => true);
   const hub = new StreamHub({ start: async () => { starts++; }, stop: async () => { stops++; hub.stopped('CAM123'); stopObserved(); }, disposeMedia: s => media.stop(s) });
-  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {} });
+  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], accessories: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(), hub, media, metrics: {} });
   const server = createBridge(fake as unknown as Eufy, token, 'test');
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
@@ -289,6 +328,7 @@ test('explicit unavailable capabilities reject cached snapshots and websocket me
   const fake = Object.assign(new EventEmitter(), {
     auth: { state: 'connected' },
     inventory: () => [{ serial: 'CAM123', capabilities: { snapshot: denied, live: denied, recordings: denied } }],
+    accessories: () => [],
     hasCamera: (serial: string) => serial === 'CAM123',
     pictures: new Map([['CAM123', { data: Buffer.from('stale'), mime: 'image/jpeg' }]]),
     hub: new StreamHub({ start: async () => { starts++; }, stop: async () => {}, disposeMedia: () => {} }),
@@ -338,7 +378,7 @@ test('closing before live metadata removes readiness listeners and never renews 
   const stopComplete = new Promise<void>(resolve => { stopped = resolve; });
   const media = new MediaRelay(() => {});
   const hub = new StreamHub({ start: async () => {}, stop: async () => { stops++; hub.stopped('CAM123'); stopped(); }, disposeMedia: s => media.stop(s) });
-  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: () => true, pictures: new Map(), hub, media, metrics: {} });
+  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], accessories: () => [], hasCamera: () => true, pictures: new Map(), hub, media, metrics: {} });
   const server = createBridge(fake as unknown as Eufy, token, 'test');
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
@@ -366,7 +406,7 @@ for (const optIn of [false, true]) for (const audioFirst of [false, true]) test(
   let stopped!: () => void;
   const stopComplete = new Promise<void>(resolve => { stopped = resolve; });
   const hub = new StreamHub({start:async()=>{starts++;},stop:async()=>{stops++;stopped();},disposeMedia:s=>media.stop(s)});
-  const fake = Object.assign(new EventEmitter(), {auth:{state:'connected'},inventory:()=>[],hasCamera:()=>true,pictures:new Map(),hub,media,metrics:{}});
+  const fake = Object.assign(new EventEmitter(), {auth:{state:'connected'},inventory:()=>[],accessories:()=>[],hasCamera:()=>true,pictures:new Map(),hub,media,metrics:{}});
   const server = createBridge(fake as unknown as Eufy,token,'fixture');
   server.listen(0,'127.0.0.1');await once(server,'listening');
   const address=server.address();assert.ok(address&&typeof address!=='string');
@@ -422,7 +462,7 @@ test('failed recording requests keep the exact 503 body and leave a recording_qu
     recordingCalendar: async (_id: string, _month: string, options: any) => silent(options) };
   const recordings = new MegaRecordings(() => client as any, () => [{ id: 'CAM123', kind: 'camera', stationId: 'CAM123' }] as any,
     () => false, undefined, undefined, (owner, report) => diagnostics.recording(owner, report));
-  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123',
+  const fake = Object.assign(new EventEmitter(), { auth: { state: 'connected' }, inventory: () => [], accessories: () => [], hasCamera: (s: string) => s === 'CAM123',
     pictures: new Map(), recordings, supportReport: () => diagnostics.report(),
     hub: new StreamHub({ start: async () => {}, stop: async () => {}, disposeMedia: () => {} }) });
   const server = createBridge(fake as unknown as Eufy, token, 'bridge-test');
@@ -458,7 +498,7 @@ test('snapshot refresh is an authenticated POST for a known camera that maps ref
   const calls: string[] = [];
   let next: (signal: AbortSignal) => Promise<{ received: string }> = async () => ({ received: '2026-10-18T10:00:00.000Z' });
   const fake = Object.assign(new EventEmitter(), {
-    auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123',
+    auth: { state: 'connected' }, inventory: () => [], accessories: () => [], hasCamera: (s: string) => s === 'CAM123',
     pictures: new Map([['CAM123', { data: Buffer.from([255, 216, 255, 217]), mime: 'image/jpeg' }]]),
     hub: new StreamHub({ start: async () => { assert.fail('The route never starts the hub itself'); }, stop: async () => {}, disposeMedia: () => {} }),
     refreshSnapshot: (serial: string, signal: AbortSignal) => { calls.push(serial); return next(signal); },
@@ -513,7 +553,7 @@ test('a guard mode change goes through the bridge gate against a HomeBase recove
   const calls: unknown[][] = [];
   let next: () => Promise<void> = async () => {};
   const fake: EventEmitter & { stations?: unknown; hub: StreamHub } = Object.assign(new EventEmitter(), {
-    auth: { state: 'connected' }, inventory: () => [], pictures: new Map(),
+    auth: { state: 'connected' }, inventory: () => [], accessories: () => [], pictures: new Map(),
     hub: new StreamHub({ start: async () => { assert.fail('A guard mode change never starts live view'); }, stop: async () => {}, disposeMedia: () => {} }),
     stations: { inventory: () => [], setMode: (...args: unknown[]) => { calls.push(args); return next(); } } as unknown,
     setMode: Bridge.prototype.setMode,
@@ -532,7 +572,8 @@ test('a guard mode change goes through the bridge gate against a HomeBase recove
     Object.defineProperty(fake.hub, 'recoveryDue', { value: true, configurable: true });
     const due = await post('{"mode":0}');
     assert.equal(due.status, 409); assert.deepEqual(await due.json(), { error: 'station_busy' });
-    for (const value of ['{}', '{"mode":6}', '{"mode":"1"}', '{"mode":null}']) {
+    // 6 (Off) is a valid request since #275. The HomeBase's own modes decide it later.
+    for (const value of ['{}', '{"mode":7}', '{"mode":"1"}', '{"mode":null}']) {
       const response = await post(value);
       assert.equal(response.status, 400, value); assert.deepEqual(await response.json(), { error: 'invalid_mode' }, value);
     }
@@ -566,7 +607,7 @@ test('preset move is an authenticated POST for a known camera that accepts only 
   let next: () => Promise<void> = async () => {};
   const metrics = { commands: 7, accepted: 3, rejected: 1, unconfirmed: 1, refused: 2 };
   const fake: EventEmitter & { presets?: unknown; hub: StreamHub } = Object.assign(new EventEmitter(), {
-    auth: { state: 'connected' }, inventory: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(),
+    auth: { state: 'connected' }, inventory: () => [], accessories: () => [], hasCamera: (s: string) => s === 'CAM123', pictures: new Map(),
     hub: new StreamHub({ start: async () => { assert.fail('A preset move never starts live view'); }, stop: async () => {}, disposeMedia: () => {} }),
     presets: { metrics, move: (...args: unknown[]) => { calls.push(args); return next(); } } as unknown,
     // The route moves through the bridge's own guard against the hub.

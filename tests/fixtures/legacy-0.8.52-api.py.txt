@@ -1,0 +1,659 @@
+"""Async client for the local, authenticated Eufy Viewer bridge protocol."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+from dataclasses import dataclass, field
+from typing import Any
+
+import aiohttp
+from yarl import URL
+
+from .const import LIVE_BOUND_DEFAULT_SECONDS, LIVE_BOUND_MAX_SECONDS
+from .recording_file import (
+    CHUNK_BYTES,
+    RECORDING_BYTES,
+    RecordingFile,
+    RecordingStorageError,
+)
+
+
+class BridgeError(Exception):
+    """Bridge unavailable or returned an invalid response."""
+
+
+def recording_media_header(value: str | None) -> dict[str, str | bool] | None:
+    """Accept only bounded, coherent public media facts, never driver messages."""
+    if not value or len(value) > 256:
+        return None
+    try:
+        data = json.loads(value)
+        if not isinstance(data, dict) or set(data) != {
+            "source",
+            "output",
+            "processing",
+            "fallback",
+        }:
+            return None
+        source, output, processing, fallback = (
+            data[k] for k in ("source", "output", "processing", "fallback")
+        )
+        if (
+            source not in ("h264", "hevc")
+            or output not in ("h264", "hevc")
+            or type(fallback) is not bool
+        ):
+            return None
+        if processing == "remux":
+            if source != output or fallback:
+                return None
+        elif processing in ("software", "nvidia"):
+            if (
+                source != "hevc"
+                or output != "h264"
+                or (processing == "nvidia" and fallback)
+            ):
+                return None
+        else:
+            return None
+        return {
+            "source": source,
+            "output": output,
+            "processing": processing,
+            "fallback": fallback,
+        }
+    except ValueError, TypeError:
+        return None
+
+
+class BridgeRecordingError(BridgeError):
+    """An allowlisted recording failure safe to display to the viewer."""
+
+    def __init__(self, code: str, status: int) -> None:
+        super().__init__(code)
+        self.code = code
+        self.status = status
+
+
+async def check_recording_error(response: aiohttp.ClientResponse) -> None:
+    """Forward only known codes, never arbitrary bridge error details."""
+    if response.status not in {409, 410, 503}:
+        return
+    data = json.loads(await read_bounded(response.content, 4096))
+    code = data.get("error") if isinstance(data, dict) else None
+    statuses = {
+        "live_busy": 409,
+        "live_stopping": 409,
+        "recording_busy": 409,
+        "recording_unavailable": 503,
+        "recording_storage_unavailable": 503,
+        "recording_expired": 410,
+        "history_incomplete": 503,
+        "thumbnail_unavailable": 503,
+        "capability_unavailable": 503,
+    }
+    if isinstance(code, str) and statuses.get(code) == response.status:
+        raise BridgeRecordingError(code, response.status)
+
+
+class BridgeSnapshotError(BridgeError):
+    """An allowlisted snapshot refresh failure safe to display to the user."""
+
+    def __init__(self, code: str, status: int) -> None:
+        super().__init__(code)
+        self.code = code
+        self.status = status
+
+
+SNAPSHOT_ERRORS = {
+    "capability_unavailable": 503,
+    "not_connected": 503,
+    "recording_busy": 409,
+    "live_stopping": 409,
+    "station_limit": 409,
+    "camera_busy": 409,
+    "refresh_timeout": 504,
+    "refresh_failed": 502,
+    "not_found": 404,
+}
+
+
+async def check_snapshot_error(response: aiohttp.ClientResponse) -> None:
+    """Forward only known codes, never arbitrary bridge error details."""
+    if response.status not in SNAPSHOT_ERRORS.values():
+        return
+    data = json.loads(await read_bounded(response.content, 4096))
+    code = data.get("error") if isinstance(data, dict) else None
+    if isinstance(code, str) and SNAPSHOT_ERRORS.get(code) == response.status:
+        raise BridgeSnapshotError(code, response.status)
+
+
+class BridgePresetError(BridgeError):
+    """An allowlisted preset move failure safe to display to the user."""
+
+    def __init__(self, code: str, status: int) -> None:
+        super().__init__(code)
+        self.code = code
+        self.status = status
+
+
+# Mirrors the bridge's PresetError statuses. A code with another status stays
+# generic. The integration validates the preset itself, so invalid_preset is
+# not displayed.
+PRESET_ERRORS = {
+    "capability_unavailable": 503,
+    "not_connected": 503,
+    "preset_not_sent": 503,
+    "station_busy": 409,
+    "preset_rejected": 502,
+    "preset_unconfirmed": 504,
+    "not_found": 404,
+}
+
+
+async def check_preset_error(response: aiohttp.ClientResponse) -> None:
+    """Forward only known codes, never arbitrary bridge error details."""
+    if response.status not in PRESET_ERRORS.values():
+        return
+    data = json.loads(await read_bounded(response.content, 4096))
+    code = data.get("error") if isinstance(data, dict) else None
+    if isinstance(code, str) and PRESET_ERRORS.get(code) == response.status:
+        raise BridgePresetError(code, response.status)
+
+
+class BridgeAuthError(BridgeError):
+    """Bridge rejected its access token."""
+
+
+@dataclass(frozen=True, slots=True)
+class CameraInfo:
+    """Whitelisted, non-secret inventory fields."""
+
+    serial: str
+    name: str
+    model: str
+    hardware: str
+    software: str
+    battery: float | None
+    snapshot_received_at: str | None
+    capabilities: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def permits(self, feature: str) -> bool:
+        """Preserve older bridges while honoring explicit software admission."""
+        return self.capabilities.get(feature, {}).get("available") is not False
+
+    def capability_reason(self, feature: str) -> str:
+        """Only display validated capability reasons."""
+        reason = self.capabilities.get(feature, {}).get("reason")
+        return {
+            "standalone_transport_unverified": (
+                "Standalone camera transport is not implemented"
+            ),
+            "standalone_recordings_unverified": (
+                "Recordings are not available on the standalone camera connection"
+            ),
+            "camera_media_unverified": (
+                "Media is unverified for this camera and owner firmware"
+            ),
+            "unsupported_station": "This connection owner is unsupported",
+            "invalid_connection_credentials": (
+                "The connection owner has no usable local credentials"
+            ),
+            "invalid_device_relationship": "The camera connection owner is invalid",
+            "device_initialization_failed": (
+                "The camera or connection owner could not initialize"
+            ),
+        }.get(
+            reason if isinstance(reason, str) else "",
+            "This media operation is unavailable",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class StationInfo:
+    """Station telemetry and supported security profiles."""
+
+    serial: str
+    name: str
+    model: str
+    hardware: str
+    software: str
+    connected: bool
+    guard_mode: int | None
+    current_mode: int | None
+    alarm: bool
+    alarm_delay: int | float
+    arm_delay: int | float
+    modes: list[int]
+
+
+@dataclass(frozen=True, slots=True)
+class BridgeState:
+    """Protocol version and current push inventory."""
+
+    bridge_id: str
+    auth: str
+    cameras: dict[str, CameraInfo]
+    webrtc: bool = False
+    push_connected: bool | None = None
+    stations: dict[str, StationInfo] = field(default_factory=dict)
+    backend: str | None = None
+    migration: bool = False
+    migration_error: str | None = None
+    recording_playback: bool = False
+    live_max_seconds_mains: int = LIVE_BOUND_DEFAULT_SECONDS
+    snapshot_refresh: bool = False
+    preset_move: bool = False
+
+    def live_bound_seconds(self, serial: str) -> int:
+        """Mirror the bridge's cap for one camera.
+
+        Only a camera the inventory reports without a battery value may run to
+        the configured mains bound. A battery camera, or a camera that has left
+        the inventory, keeps the default.
+        """
+        camera = self.cameras.get(serial)
+        if camera is None or camera.battery is not None:
+            return LIVE_BOUND_DEFAULT_SECONDS
+        return self.live_max_seconds_mains
+
+    @classmethod
+    def parse(cls, data: Any) -> BridgeState:
+        """Validate the protocol at the boundary, before updating HA state."""
+        try:
+            if data["protocol"] != 1 or not isinstance(data["cameras"], list):
+                raise ValueError
+            bridge_id, auth = data["bridge_id"], data["auth"]
+            if not isinstance(bridge_id, str) or not 1 <= len(bridge_id) <= 128:
+                raise ValueError
+            if auth not in {
+                "unconfigured",
+                "connected",
+                "connecting",
+                "error",
+                "verify",
+                "captcha",
+            }:
+                raise ValueError
+            cameras = {}
+            if len(data["cameras"]) > 100:
+                raise ValueError
+            for item in data["cameras"]:
+                serial = item["serial"]
+                if (
+                    not isinstance(serial, str)
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", serial)
+                    or serial in cameras
+                ):
+                    raise ValueError
+                for field in ("name", "model", "hardware", "software"):
+                    if not isinstance(item[field], str) or len(item[field]) > 256:
+                        raise ValueError
+                battery = item["battery"]
+                if battery is not None and (
+                    type(battery) not in (int, float) or not 0 <= battery <= 100
+                ):
+                    raise ValueError
+                received = item["snapshot_received_at"]
+                if received is not None and not isinstance(received, str):
+                    raise ValueError
+                capabilities = {}
+                raw_capabilities = item.get("capabilities", {})
+                if not isinstance(raw_capabilities, dict):
+                    raise ValueError
+                # Bridges before 0.8.41 report no presets. Gate on its explicit
+                # availability, never on permits(), which admits an absent key.
+                for feature in ("snapshot", "live", "recordings", "presets"):
+                    if feature not in raw_capabilities:
+                        continue
+                    raw = raw_capabilities[feature]
+                    if (
+                        not isinstance(raw, dict)
+                        or type(raw.get("available")) is not bool
+                    ):
+                        raise ValueError
+                    status = raw.get("status")
+                    reason = raw.get("reason")
+                    capabilities[feature] = {
+                        "available": raw["available"],
+                        "status": status
+                        if status in ("experimental", "unsupported")
+                        else "unknown",
+                        "reason": reason
+                        if reason
+                        in {
+                            "standalone_transport_unverified",
+                            "standalone_recordings_unverified",
+                            "camera_media_unverified",
+                            "unsupported_station",
+                            "invalid_connection_credentials",
+                            "invalid_device_relationship",
+                            "device_initialization_failed",
+                            "unknown_camera",
+                            "unknown_station",
+                            "operation_outside_hardware_scope",
+                        }
+                        else None,
+                    }
+                cameras[serial] = CameraInfo(
+                    **{
+                        key: item[key]
+                        for key in CameraInfo.__dataclass_fields__
+                        if key != "capabilities"
+                    },
+                    capabilities=capabilities,
+                )
+            stations = {}
+            items = data.get("stations", [])
+            if not isinstance(items, list) or len(items) > 100:
+                raise ValueError
+            for item in items:
+                serial = item["serial"]
+                if (
+                    not isinstance(serial, str)
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", serial)
+                    or serial in stations
+                ):
+                    raise ValueError
+                for key in ("name", "model", "hardware", "software"):
+                    if not isinstance(item[key], str) or len(item[key]) > 256:
+                        raise ValueError
+                for key in ("connected", "alarm"):
+                    if type(item[key]) is not bool:
+                        raise ValueError
+                for key in ("guard_mode", "current_mode"):
+                    if item[key] is not None and type(item[key]) is not int:
+                        raise ValueError
+                for key in ("alarm_delay", "arm_delay"):
+                    if (
+                        type(item[key]) not in (int, float)
+                        or not 0 <= item[key] <= 86400
+                    ):
+                        raise ValueError
+                if not isinstance(item["modes"], list) or any(
+                    type(mode) is not int or mode not in {0, 1, 2, 3, 4, 5, 47, 63}
+                    for mode in item["modes"]
+                ):
+                    raise ValueError
+                stations[serial] = StationInfo(
+                    **{key: item[key] for key in StationInfo.__dataclass_fields__}
+                )
+            metrics = data.get("notification_metrics", {})
+            if not isinstance(metrics, dict):
+                raise ValueError
+            push_connected = metrics.get("push_connected")
+            if push_connected is not None and type(push_connected) is not bool:
+                raise ValueError
+            # Bridges before 0.8.22 do not report the option and cap at 120 s.
+            mains = data.get("live_max_seconds_mains", LIVE_BOUND_DEFAULT_SECONDS)
+            if (
+                type(mains) is not int
+                or not LIVE_BOUND_DEFAULT_SECONDS <= mains <= LIVE_BOUND_MAX_SECONDS
+            ):
+                raise ValueError
+            return cls(
+                bridge_id,
+                auth,
+                cameras,
+                "webrtc" in data.get("transports", []),
+                push_connected,
+                stations,
+                data.get("backend")
+                if data.get("backend") in {"legacy", "mega"}
+                else None,
+                isinstance(data.get("migration"), dict)
+                and data["migration"].get("version") == 1,
+                data.get("migration", {}).get("error")
+                if isinstance(data.get("migration"), dict)
+                and data["migration"].get("error")
+                in {
+                    "inventory_required",
+                    "inventory_invalid",
+                    "bridge_identity_mismatch",
+                    "camera_inventory_empty",
+                    "expected_devices_missing",
+                }
+                else None,
+                type(data.get("recording_playback")) is int
+                and data["recording_playback"] == 1,
+                mains,
+                type(data.get("snapshot_refresh")) is int
+                and data["snapshot_refresh"] == 1,
+                type(data.get("preset_move")) is int and data["preset_move"] == 1,
+            )
+        except (KeyError, TypeError, ValueError) as err:
+            raise BridgeError("Invalid bridge protocol") from err
+
+
+def normalize_url(value: str) -> str:
+    """Accept explicit HTTP(S) endpoints without embedded secrets or paths."""
+    try:
+        url = URL(value)
+        if (
+            url.scheme not in {"http", "https"}
+            or not url.host
+            or url.user
+            or url.password
+            or url.query_string
+            or url.fragment
+            or url.path not in {"", "/"}
+        ):
+            raise ValueError
+        _ = url.port
+        return str(url.with_path(""))
+    except (TypeError, ValueError) as err:
+        raise BridgeError("Invalid bridge URL") from err
+
+
+async def read_bounded(content: aiohttp.StreamReader, limit: int) -> bytes:
+    """Consume fragmented HTTP bodies to EOF without exceeding the size limit."""
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in content.iter_chunked(65536):
+        size += len(chunk)
+        if size > limit:
+            raise BridgeError("Bridge response too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+class BridgeClient:
+    """No cloud access, no automatic media reconnect, no polling."""
+
+    def __init__(self, session: aiohttp.ClientSession, url: str, token: str) -> None:
+        self._session = session
+        self.url = normalize_url(url)
+        self._headers = {"Authorization": f"Bearer {token}"}
+
+    async def request(
+        self, method: str, path: str, data: dict[str, Any] | None = None
+    ) -> Any:
+        """Execute a bounded request; never forward secrets across redirects."""
+        try:
+            async with asyncio.timeout(62):
+                async with self._session.request(
+                    method,
+                    self.url + path,
+                    json=data,
+                    headers=self._headers,
+                    allow_redirects=False,
+                ) as response:
+                    if response.status == 401:
+                        raise BridgeAuthError("Bridge authentication failed")
+                    if response.status != 200:
+                        if path.startswith(("/v1/recordings", "/v1/recording-days")):
+                            await check_recording_error(response)
+                        if path.startswith("/v1/snapshot/"):
+                            await check_snapshot_error(response)
+                        if re.fullmatch(r"/v1/cameras/[^/]+/preset", path):
+                            await check_preset_error(response)
+                        raise BridgeError("Bridge request failed")
+                    raw = await read_bounded(
+                        response.content,
+                        4_194_304 if path.startswith("/v1/recordings") else 1_048_576,
+                    )
+
+                    return json.loads(raw)
+        except (aiohttp.ClientError, TimeoutError, ValueError, OSError) as err:
+            raise BridgeError("Cannot communicate with bridge") from err
+
+    async def state(self) -> BridgeState:
+        """Read cached bridge inventory once during setup."""
+        return BridgeState.parse(await self.request("GET", "/v1/state"))
+
+    async def set_guard_mode(self, serial: str, mode: int) -> None:
+        """Wait for device acknowledgement; never write optimistic HA state."""
+        result = await self.request(
+            "POST", f"/v1/stations/{serial}/mode", {"mode": mode}
+        )
+        if not isinstance(result, dict) or result.get("accepted") is not True:
+            raise BridgeError("HomeBase did not confirm the command")
+
+    async def login(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Submit credentials or a challenge without retaining them in HA."""
+        result = await self.request("POST", "/v1/login", data)
+        if not isinstance(result, dict) or "state" not in result:
+            raise BridgeError("Invalid login response")
+        return result
+
+    async def snapshot(self, serial: str) -> bytes | None:
+        """Read an existing image from bridge memory; never capture a new frame."""
+        try:
+            async with asyncio.timeout(10):
+                async with self._session.get(
+                    self.url + f"/v1/snapshot/{serial}",
+                    headers=self._headers,
+                    allow_redirects=False,
+                ) as response:
+                    if response.status == 404:
+                        return None
+                    if response.status != 200 or response.content_type not in {
+                        "image/jpeg",
+                        "image/png",
+                    }:
+                        raise BridgeError("Snapshot unavailable")
+                    return await read_bounded(response.content, 5_000_000)
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise BridgeError("Snapshot unavailable") from err
+
+    async def refresh_snapshot(self, serial: str) -> str:
+        """Wake the camera on an explicit request and return the new receive time.
+
+        The bridge bounds the refresh at 30 s, inside this request's timeout.
+        """
+        result = await self.request("POST", f"/v1/snapshot/{serial}/refresh")
+        received = (
+            result.get("snapshot_received_at") if isinstance(result, dict) else None
+        )
+        if not isinstance(received, str) or not 1 <= len(received) <= 64:
+            raise BridgeError("Invalid snapshot refresh response")
+        return received
+
+    async def move_to_preset(self, serial: str, preset: int) -> None:
+        """Send one move to a saved preset, wire index 0 to 3, and never retry it.
+
+        The bridge answers once the HomeBase accepted the command, not once the
+        camera stopped moving. It bounds the wait inside this request's timeout.
+        """
+        if type(preset) is not int or not 0 <= preset <= 3:
+            raise BridgeError("Invalid preset")
+        result = await self.request(
+            "POST", f"/v1/cameras/{serial}/preset", {"preset": preset}
+        )
+        if not isinstance(result, dict) or result.get("accepted") is not True:
+            raise BridgeError("HomeBase did not confirm the preset move")
+
+    async def recording_thumbnail(self, serial: str, recording_id: str) -> bytes:
+        """Thumbnails retain their small independent response budget."""
+        result = await self.recording_media(serial, recording_id, thumbnail=True)
+        assert isinstance(result, bytes)
+        return result
+
+    async def recording_media(
+        self,
+        serial: str,
+        recording_id: str,
+        *,
+        thumbnail: bool = False,
+        target: RecordingFile | None = None,
+        output_format: str = "h264",
+        hevc_supported: bool = False,
+    ) -> bytes | dict[str, str | bool] | None:
+        """Stream one MP4 into its reserved file and return actual media facts."""
+        if (
+            output_format not in {"auto", "native", "h264"}
+            or type(hevc_supported) is not bool
+        ):
+            raise BridgeError("Invalid recording format")
+        try:
+            async with asyncio.timeout(62):
+                async with self._session.get(
+                    self.url
+                    + f"/v1/recordings/{serial}/{recording_id}/"
+                    + ("thumbnail" if thumbnail else "video")
+                    + (
+                        f"?format={output_format}&hevc_supported={str(hevc_supported).lower()}"
+                        if not thumbnail and output_format == "auto"
+                        else "?format=native"
+                        if not thumbnail and output_format == "native"
+                        else ""
+                    ),
+                    headers=self._headers,
+                    allow_redirects=False,
+                ) as response:
+                    if (
+                        not thumbnail
+                        and target is not None
+                        and target.observation is not None
+                    ):
+                        target.observation.received(
+                            response.headers.get("X-Eufy-Recording-Attempt")
+                        )
+                    await check_recording_error(response)
+                    if response.status != 200 or response.content_type != (
+                        "image/jpeg" if thumbnail else "video/mp4"
+                    ):
+                        raise BridgeError("Recording unavailable")
+                    if thumbnail:
+                        return await read_bounded(response.content, 2 * 1024 * 1024)
+                    if target is None:
+                        raise BridgeError("Recording storage required")
+                    if (
+                        response.content_length is not None
+                        and response.content_length > RECORDING_BYTES
+                    ):
+                        raise BridgeRecordingError("recording_storage_unavailable", 503)
+                    async for chunk in response.content.iter_chunked(CHUNK_BYTES):
+                        try:
+                            await target.write(chunk)
+                        except (RecordingStorageError, OSError) as err:
+                            raise BridgeRecordingError(
+                                "recording_storage_unavailable", 503
+                            ) from err
+                    if not target.size:
+                        raise BridgeError("Empty recording")
+                    return recording_media_header(
+                        response.headers.get("X-Eufy-Recording-Media")
+                    )
+        except (aiohttp.ClientError, TimeoutError, ValueError, OSError) as err:
+            raise BridgeError("Recording unavailable") from err
+
+    async def websocket(self, path: str) -> aiohttp.ClientWebSocketResponse:
+        """Open an authenticated local socket with bounded receive frames."""
+        try:
+            async with asyncio.timeout(10):
+                return await self._session.ws_connect(
+                    self.url + path,
+                    headers=self._headers,
+                    heartbeat=20,
+                    max_msg_size=1_048_576,
+                    compress=0,
+                )
+        except aiohttp.WSServerHandshakeError as err:
+            if err.status == 401:
+                raise BridgeAuthError("Bridge authentication failed") from err
+            raise BridgeError("Bridge socket rejected") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise BridgeError("Bridge socket unavailable") from err

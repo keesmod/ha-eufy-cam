@@ -420,6 +420,17 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   sound. From bridge 0.8.44 the bridge decodes the live AAC-ELD audio the same
   way ([issue #269](https://github.com/keesmod/ha-eufy-cam/issues/269)), not
   yet confirmed on hardware. Reported, not independently reproduced.
+- **Entry Sensor `T8900`, type 2, and Keypad `T8960`, type 11**, recognized as
+  HomeBase 3 accessories from bridge 0.8.44 with client 0.31.0, after
+  [issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275). The sensor
+  is a read-only opening and battery sensor, the keypad a read-only battery and
+  charging sensor, and with a keypad Guard Mode offers Off. They are not
+  cameras. See [HomeBase accessories](USAGE.md#homebase-accessories). Not yet
+  confirmed on hardware.
+- **Doorbell Chime `T8026`, type 600**, recognized from bridge 0.8.44 with
+  client 0.31.0 as a device without functions, after
+  [issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275). No protocol
+  for it is known, so the bridge never connects to it.
 - **eufyCam 2C `T8113-Z`, type 8**, recognized from bridge 0.8.29. Before that
   release an owner reported snapshots, live view and HomeBase recordings behind
   a HomeBase 3 with a local test profile. Reported, not independently

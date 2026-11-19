@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -17,9 +19,23 @@ MODES = {
     3: "Custom 1",
     4: "Custom 2",
     5: "Custom 3",
+    # Off is the mode a keypad sets. Settable only on a HomeBase with a keypad.
+    6: "Off",
     47: "Geofencing",
     63: "Disarmed",
 }
+
+
+def station_device_fields(info: StationInfo) -> dict[str, Any]:
+    """The HomeBase device fields, shared with the accessories that link to it."""
+    return {
+        "identifiers": {(DOMAIN, info.serial)},
+        "manufacturer": "Eufy",
+        "name": info.name,
+        "model": info.model,
+        "hw_version": info.hardware,
+        "sw_version": info.software,
+    }
 
 
 class EufyStationEntity(CoordinatorEntity[EufyCoordinator]):
@@ -31,14 +47,7 @@ class EufyStationEntity(CoordinatorEntity[EufyCoordinator]):
     def __init__(self, coordinator: EufyCoordinator, info: StationInfo) -> None:
         super().__init__(coordinator)
         self.serial = info.serial
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, info.serial)},
-            manufacturer="Eufy",
-            name=info.name,
-            model=info.model,
-            hw_version=info.hardware,
-            sw_version=info.software,
-        )
+        self._attr_device_info = DeviceInfo(**station_device_fields(info))
 
     @property
     def info(self) -> StationInfo | None:
@@ -54,7 +63,11 @@ class EufyStationEntity(CoordinatorEntity[EufyCoordinator]):
         )
 
     async def set_mode(self, mode: int) -> None:
-        if not self.available or self.info is None or mode not in self.info.modes:
+        if (
+            not self.available
+            or self.info is None
+            or mode not in self.info.settable_modes
+        ):
             raise HomeAssistantError("HomeBase or requested security mode unavailable")
         try:
             await self.coordinator.api.set_guard_mode(self.serial, mode)

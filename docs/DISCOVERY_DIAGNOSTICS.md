@@ -9,6 +9,7 @@ No live stream or optional debug logging is needed to generate discovery evidenc
 
 | Collection method | Bridge | Bundled library | HA integration |
 |---|---|---|---|
+| [HomeBase accessory](#homebase-accessories) rows and `support.accessory_observations` | 0.8.44 | 0.31.0 | 0.8.53 for the download |
 | [Key setup fields](#key-setup-fields-of-a-connection-attempt) that say what a station connection attempt saw between `session_open` and the command key | 0.8.40 | 0.30.2 | 0.8.49 for the download |
 | [Standalone push counts](#standalone-push-counts) in `support.standalone_pushes` | 0.8.39 | 0.30.1 | 0.8.48 for the download |
 | [Standalone recording probe](#standalone-recording-probe) records with `query=probe` and the `standalone_recording_probe` summary field | 0.8.39 | 0.30.1 | 0.8.48 for the download |
@@ -43,7 +44,7 @@ is available. If integration 0.8.5 is not offered, use the bridge logs. Follow t
 3. Open the app's **Logs** tab. For Docker, read the bridge container's logs.
 4. Copy all lines beginning with `Eufy discovery:`, `Eufy backend:` and
    `Eufy experimental standalone:` from that startup attempt. Include `summary`,
-   every `device` and `issue` row, the matching `end` row, and connection/error
+   every `device`, `issue` and `accessory` row, the matching `end` row, and connection/error
    records. If authentication fails before a summary is produced, include the
    available diagnostic lines.
 5. Review the excerpt using the privacy guidance below, then attach it as a text
@@ -340,9 +341,22 @@ the doorbell recognized, with snapshots, live view, the recording list and
 events, as [COMPATIBILITY.md](COMPATIBILITY.md) describes. Reported, not
 independently reproduced.
 
+On 2026-11-18 the reporter of [issue #275][275] shared a report from
+integration 0.8.52 and bridge 0.8.43 with client 0.30.5. Seven rows were
+rejected with `code=unsupported_device`: four `T8900` with `device_type=2` and
+one `T8960` with `device_type=11` under a T8030 on firmware 3.8.8.0, and two
+`T8026` with `device_type=600` whose parent is the row itself
+(`parent_status=self`). Client 0.31.0, included in bridge 0.8.44, admits them
+as [HomeBase accessories](#homebase-accessories). They then appear as
+`accessory` rows instead of `issue` rows, never as cameras or HomeBases. Other
+types, neighbour models such as the `T8910` motion sensor, and accessories
+outside that topology keep their rejection. Not tested on hardware with this
+integration.
+
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
 [152-records]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780
 [168]: https://github.com/keesmod/ha-eufy-cam/issues/168
+[275]: https://github.com/keesmod/ha-eufy-cam/issues/275
 [168-row]: https://github.com/keesmod/ha-eufy-cam/issues/168#issuecomment-6189829101
 [152-lookup]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6152282566
 [66-update]: https://github.com/keesmod/ha-eufy-cam/issues/66#issuecomment-6083775017
@@ -836,6 +850,55 @@ standalone camera's device row into
 what the Eufy app and Home Assistant showed. The result goes into the
 [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md).
 
+### HomeBase accessories
+
+From bridge 0.8.44 with client 0.31.0, the discovery report has one
+`accessory` row for each admitted Entry Sensor `T8900` and Keypad `T8960` on a
+HomeBase 3 and each recognized Doorbell Chime `T8026`
+([issue #275][275]). Home Assistant shows them as described in
+[HomeBase accessories](USAGE.md#homebase-accessories). The row holds no serial,
+name or reading.
+
+| Field | Meaning |
+|---|---|
+| `ref` | The row's reference. Accessory references follow the device references |
+| `inventory_row` | The row's position in the Eufy inventory, as on an `issue` row |
+| `category` | `entry_sensor`, `keypad` or `chime` |
+| `model`, `device_type`, `firmware`, `hardware` | As received. An empty firmware reads `unavailable` |
+| `has_station` | True for an entry sensor or keypad, false for a chime |
+| `owner_ref` | The `ref` of the HomeBase `device` row. A chime has none |
+
+The summary counts these rows in `accessories`. The download also has
+`support.accessory_observations`, the client's count of how accessory state
+arrived since the bridge's client started. It holds numbers only and is `null`
+without a client or with an older bridge.
+
+| Field | Meaning |
+|---|---|
+| `hub_notify` | Accessory values in a HomeBase hub notify update (P2P 1829) |
+| `sensor_status` | Entry sensor values in a legacy sensor status notification (P2P 1550) |
+| `push_door_sensor` | Door sensor pushes that set or confirmed an entry sensor value |
+| `camera_info` | Keypad values in the HomeBase's device information |
+| `cloud_seeded` | Values taken from the inventory at discovery. They are not observations |
+| `conflicts` | Older pushes that were dropped, and pushes without a usable time that differed from a P2P value |
+| `unknown_channel` | Reports for a channel that is no single accessory of that HomeBase |
+
+How to read the counts after opening and closing a door:
+
+- `hub_notify` or `sensor_status` above 0: the HomeBase reports the contact over
+  its local session.
+- Only `push_door_sensor` above 0: the state arrives only as a push. Eufy sends
+  that push only while the Eufy app's notifications for that sensor are on, see
+  [notifications](NOTIFICATIONS.md#homebase-accessories).
+- All 0 apart from `cloud_seeded`: no state arrived. The opening entity stays
+  unknown until a value is observed.
+- `unknown_channel` above 0: a report could not be matched to one accessory.
+
+Paste `support.accessory_observations` with `support.software`, the
+`accessory` rows and what the Eufy app showed into [issue #275][275]. The
+result goes into the
+[model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md).
+
 ## Privacy and scope
 
 The dedicated report excludes device names, serial numbers, account identifiers,
@@ -844,7 +907,7 @@ both the excerpt and HA's standard diagnostic envelope before sharing them.
 Never attach `/data`, HA `.storage`, credentials, session stores, raw captures,
 full debug logs, recording paths or identifiable footage. See [safe diagnostics](../.github/SUPPORT.md#safe-diagnostics).
 
-The report is bounded to 99 device rows and 99 issue rows plus summary/end, with
+The report is bounded to 99 device rows, 99 issue rows and 99 accessory rows plus summary/end, with
 up to 100 recent events in the download. It reduces follow-up questions but cannot
 guarantee a diagnosis if Eufy omits the necessary data. Keep unrelated media,
 physical-device and hardware acceptance claims separate.

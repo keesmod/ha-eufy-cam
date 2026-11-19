@@ -19,6 +19,7 @@ import {
 } from '@keesmod/eufy-mega-client';
 import {
   MegaBackend,
+  accessoryInfo,
   liveStreamsPerStation,
   liveMaxSecondsMains,
   experimentalStandalone,
@@ -866,7 +867,7 @@ for (const empty of [false,true])
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
       assert.equal(summary.experimental_standalone,false);
-      assert.equal(summary.software.library,'0.30.5');
+      assert.equal(summary.software.library,'0.31.0-beta.1');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
@@ -2826,8 +2827,9 @@ test('a HomeBase recovery waits for a guard mode change in flight and starts on 
   assert.equal(bridge.hub.recoveryDue, true);
   await assert.rejects(bridge.setMode('BASE', 0), { code: 'station_busy', status: 409 });
   await assert.rejects(bridge.movePreset('CAM', 1), { code: 'station_busy', status: 409 });
-  // A request that is invalid anyway keeps its own code.
-  await assert.rejects(bridge.setMode('BASE', 6), { code: 'invalid_mode', status: 400 });
+  // A request that is invalid anyway keeps its own code. 6 (Off) is a valid
+  // request since #275, so 7 stands for a mode no HomeBase accepts.
+  await assert.rejects(bridge.setMode('BASE', 7), { code: 'invalid_mode', status: 400 });
   await assert.rejects(bridge.setMode('BASE', '1'), { code: 'invalid_mode', status: 400 });
   assert.deepEqual(modes, [['BASE', 1]], 'The refused change never reaches the client');
   assert.deepEqual(f.moves, []);
@@ -2896,4 +2898,337 @@ test('a guard mode change while a camera is stopping and no recovery runs reache
   assert.deepEqual(recoveries, ['CAM']);
   assert.deepEqual(bridge.hub.recoveryMetrics, { recovery_attempts: 1, recovery_completed: 1, recovery_failed: 0 });
   assert.deepEqual(modes, [['BASE', 1]]);
+});
+
+// #275: HomeBase accessories and recognized chimes. Synthetic serials only.
+const accessoryRow = (
+  device_sn: string,
+  parent_sn: string,
+  device_model: string,
+  device_type: number,
+  main_sw_version: string,
+  device_channel: number,
+) => ({
+  category: 'eufy_security',
+  device_sn,
+  parent_sn,
+  device_model,
+  device_type,
+  device_channel,
+  main_sw_version,
+  main_hw_version: '0.0.1',
+  device_name: 'PRIVATE_NAME',
+  p2p_did: 'PRIVATE_DID',
+  p2p_license: 'PRIVATE_LICENSE',
+  member: { admin_user_id: 'PRIVATE_ADMIN' },
+  params: [{ param_type: 1176, param_value: '192.168.1.42' }],
+});
+// A raw inventory through the installed client, so a pin without the
+// accessory profiles fails here even when its version string matches.
+test('raw T8900, T8960 and T8026 rows through the shipped client become accessories, never cameras or HomeBases (#275)', async () => {
+  const f = fixture();
+  const faults: unknown[][] = [];
+  f.backend.on('backend_fault', (...args) => faults.push(args));
+  const connected: string[] = [];
+  const connect = f.client.connectStation;
+  f.client.connectStation = async (id: string) => {
+    connected.push(id);
+    return connect();
+  };
+  const rows = [
+    accessoryRow('BASE', '', 'T8030', 18, '3.8.8.0', 0),
+    accessoryRow('H3_CAM', 'BASE', 'T8215', 97, '2.0.1.4', 1),
+    accessoryRow('H3_DOOR', 'BASE', 'T8900', 2, '', 2),
+    accessoryRow('H3_KEYPAD', 'BASE', 'T8960', 11, '0.0.1.7', 3),
+    accessoryRow('CHIME', 'CHIME', 'T8026', 600, '1.0.2.7', 0),
+    // Rows the client keeps rejected: another type, a neighbour model, a
+    // sensor without its HomeBase and a chime under a HomeBase.
+    accessoryRow('H3_DOOR_TYPE', 'BASE', 'T8900', 3, '', 4),
+    accessoryRow('H3_MOTION', 'BASE', 'T8910', 10, '', 5),
+    accessoryRow('LOST_DOOR', 'NOWHERE', 'T8900', 2, '', 6),
+    accessoryRow('CHIME_UNDER', 'BASE', 'T8026', 600, '1.0.2.7', 7),
+  ];
+  const actual = Object.assign(Object.create(EufyMegaClient.prototype), {
+    experimentalStandalone: false,
+    cloud: { call: async () => ({ devices: rows }) },
+  }) as EufyMegaClient;
+  f.client.discoverDevices = () => actual.discoverDevices();
+  try {
+    assert.equal((await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' })).state, 'connected');
+    // Only the HomeBase is connected. No accessory or chime gets a session.
+    assert.deepEqual(connected, ['BASE']);
+    assert.deepEqual(f.backend.inventory().map((camera) => camera.model), ['T8215']);
+    assert.deepEqual(f.backend.stations.inventory().map((station) => station.serial), ['BASE']);
+    assert.deepEqual(
+      f.backend.accessories().map((row) => [row.serial, row.model, row.category, row.station, row.software]),
+      [
+        ['H3_DOOR', 'T8900', 'entry_sensor', 'BASE', ''],
+        ['H3_KEYPAD', 'T8960', 'keypad', 'BASE', '0.0.1.7'],
+        ['CHIME', 'T8026', 'chime', null, '1.0.2.7'],
+      ],
+    );
+    // Admitted accessories raise no fault. The rejected rows keep theirs, and
+    // the sensor and chime outside their topology share one unsupported_station.
+    assert.deepEqual(faults, [
+      ['unsupported_device', 'device_model=T8900 device_type=3'],
+      ['unsupported_device', 'device_model=T8910 device_type=10'],
+      ['unsupported_station'],
+    ]);
+    const report = f.backend.supportReport();
+    const summary = report.last_discovery.find((r) => r.event === 'summary')!;
+    assert.equal(summary.cameras, 1);
+    assert.equal(summary.stations, 1);
+    assert.equal(summary.accessories, 3);
+    const base = report.last_discovery.find((r) => r.event === 'device' && r.model === 'T8030')!;
+    assert.deepEqual(
+      report.last_discovery
+        .filter((r) => r.event === 'accessory')
+        .map((r) => [r.ref, r.inventory_row, r.category, r.model, r.device_type, r.firmware, r.has_station, r.owner_ref]),
+      [
+        [3, 2, 'entry_sensor', 'T8900', 2, 'unavailable', true, base.ref],
+        [4, 3, 'keypad', 'T8960', 11, '0.0.1.7', true, base.ref],
+        [5, 4, 'chime', 'T8026', 600, '1.0.2.7', false, undefined],
+      ],
+    );
+    const end = report.last_discovery.find((r) => r.event === 'end')!;
+    assert.equal(end.rows, report.last_discovery.length - 2);
+    // Accessory rows are inventory rows, not recent events.
+    assert.equal(report.recent_events.some((r) => r.event === 'accessory'), false);
+    assert.doesNotMatch(JSON.stringify(report), /PRIVATE|192\.168\.1\.42|BASE|H3_|CHIME|NOWHERE/);
+  } finally {
+    await f.backend.close();
+  }
+});
+/** Client accessory rows and readings that give the shared integration fixture's frame. */
+function fixtureAccessories() {
+  const reading = (value: boolean, source: 'p2p' | 'push' | 'cloud', observedAt: string, live: boolean) => ({
+    value,
+    source,
+    observedAt,
+    live,
+  });
+  const accessories = [
+    { id: 'SYNTHSENS001', index: 2, stationId: 'SYNTHHB30001', category: 'entry_sensor', model: 'T8900', deviceType: 2, name: 'Synthetic front door', firmware: null, hardware: '0.0.1' },
+    { id: 'SYNTHSENS002', index: 3, stationId: 'SYNTHHB30001', category: 'entry_sensor', model: 'T8900', deviceType: 2, name: 'Synthetic back door', firmware: null, hardware: '0.0.1' },
+    { id: 'SYNTHKEYP001', index: 4, stationId: 'SYNTHHB30001', category: 'keypad', model: 'T8960', deviceType: 11, name: 'Synthetic keypad', firmware: '0.0.1.7', hardware: '0.0.1' },
+    { id: 'SYNTHCHIM001', index: 5, stationId: null, category: 'chime', model: 'T8026', deviceType: 600, name: 'Synthetic chime', firmware: '1.0.2.7', hardware: '1.0.0.0' },
+  ] as const;
+  const states = new Map<string, unknown>([
+    ['SYNTHSENS001', { id: 'SYNTHSENS001', stationId: 'SYNTHHB30001', category: 'entry_sensor', readings: {
+      open: reading(true, 'p2p', '2026-11-19T10:00:00.000Z', true),
+      batteryLow: reading(false, 'cloud', '2026-11-19T09:00:00.000Z', false),
+    } }],
+    ['SYNTHSENS002', { id: 'SYNTHSENS002', stationId: 'SYNTHHB30001', category: 'entry_sensor', readings: {
+      open: reading(false, 'cloud', '2026-11-19T09:00:00.000Z', false),
+      batteryLow: null,
+    } }],
+    ['SYNTHKEYP001', { id: 'SYNTHKEYP001', stationId: 'SYNTHHB30001', category: 'keypad', readings: {
+      batteryLow: reading(false, 'p2p', '2026-11-19T10:00:00.000Z', true),
+      charging: reading(true, 'p2p', '2026-11-19T10:00:00.000Z', true),
+    } }],
+    ['SYNTHCHIM001', { id: 'SYNTHCHIM001', stationId: null, category: 'chime', readings: {} }],
+  ]);
+  return { accessories, states };
+}
+const sharedStateFrame = JSON.parse(
+  readFileSync(new URL('../../tests/fixtures/state-accessories.json', import.meta.url), 'utf8'),
+) as { accessories: unknown[]; stations: { modes: number[]; extra_modes: number[] }[] };
+test('accessory rows match the shared integration fixture and each changed reading sends one state frame (#275)', async () => {
+  const f = fixture();
+  const { accessories, states } = fixtureAccessories();
+  const base = { ...devices[0]!, id: 'SYNTHHB30001', stationId: 'SYNTHHB30001' };
+  const camera = { ...devices[1]!, stationId: 'SYNTHHB30001' };
+  f.client.discoverDevices = async () => ({ devices: [base, camera], relationships: [], issues: [], accessories: [...accessories] }) as DiscoveryResult;
+  const asked: string[] = [];
+  Object.assign(f.client, {
+    getAccessoryState: async (id: string) => {
+      asked.push(id);
+      return states.get(id);
+    },
+  });
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.deepEqual(asked, accessories.map((row) => row.id));
+    assert.deepEqual(f.backend.accessories(), sharedStateFrame.accessories);
+    let changes = 0;
+    f.backend.on('change', () => changes++);
+    const closed = { id: 'SYNTHSENS001', stationId: 'SYNTHHB30001', category: 'entry_sensor', readings: {
+      open: { value: true, source: 'p2p', observedAt: '2026-11-19T10:00:00.000Z', live: false },
+      batteryLow: null,
+    } };
+    f.client.emit('accessory', closed);
+    assert.equal(changes, 1);
+    assert.deepEqual(f.backend.accessories()[0]!.readings, {
+      open: { value: true, source: 'p2p', observed_at: '2026-11-19T10:00:00.000Z', live: false },
+      battery_low: null,
+    });
+    // An accessory the latest discovery did not admit changes nothing.
+    f.client.emit('accessory', { ...closed, id: 'UNKNOWN' });
+    assert.equal(changes, 1);
+    assert.equal(f.backend.accessories().length, 4);
+    // A malformed reading is reported as unknown, the row stays.
+    f.client.emit('accessory', { ...closed, readings: { open: { value: 'yes', source: 'p2p', observedAt: 'x', live: true }, batteryLow: { value: true, source: 'radio', observedAt: 'x', live: true } } });
+    assert.equal(changes, 2);
+    assert.deepEqual(f.backend.accessories()[0]!.readings, { open: null, battery_low: null });
+    // A category this bridge does not know keeps the frame intact, without readings.
+    assert.deepEqual(accessoryInfo({ ...accessories[0], category: 'siren' } as never, states.get('SYNTHSENS001') as never).readings, {});
+    // A reading a category does not have never reaches the frame.
+    f.client.emit('accessory', { ...states.get('SYNTHCHIM001') as object, readings: { open: closed.readings.open } });
+    assert.deepEqual(f.backend.accessories()[3]!.readings, {});
+    // An accessory is never a camera or a HomeBase.
+    assert.equal(f.backend.hasCamera('SYNTHSENS001'), false);
+    f.client.emit('station', { id: 'SYNTHKEYP001', connected: true, guardMode: 6, currentMode: 6, alarm: false, alarmDelay: 0, armDelay: 0, commandEncryption: null });
+    assert.equal((f.backend as any).stationStates.has('SYNTHKEYP001'), false);
+    assert.deepEqual(f.backend.stations.inventory().map((station) => station.serial), ['SYNTHHB30001']);
+  } finally {
+    await f.backend.close();
+  }
+  assert.deepEqual(f.backend.accessories(), []);
+});
+test('a rediscovery keeps the previous accessory readings until the new ones are read (#275)', async () => {
+  const f = fixture();
+  const { accessories, states } = fixtureAccessories();
+  const base = { ...devices[0]!, id: 'SYNTHHB30001', stationId: 'SYNTHHB30001' };
+  const camera = { ...devices[1]!, stationId: 'SYNTHHB30001' };
+  f.client.discoverDevices = async () => ({ devices: [base, camera], relationships: [], issues: [], accessories: [...accessories] }) as DiscoveryResult;
+  Object.assign(f.client, { getAccessoryState: async (id: string) => states.get(id) });
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    const before = f.backend.accessories();
+    assert.deepEqual(before, sharedStateFrame.accessories);
+    const during: unknown[] = [];
+    const closed = { id: 'SYNTHSENS001', stationId: 'SYNTHHB30001', category: 'entry_sensor', readings: {
+      open: { value: false, source: 'push', observedAt: '2026-11-19T10:05:00.000Z', live: true },
+      batteryLow: null,
+    } };
+    Object.assign(f.client, {
+      getAccessoryState: async (id: string) => {
+        // A frame sent while discovery reads the readings, as a client event would trigger.
+        during.push(f.backend.accessories());
+        const state = states.get(id);
+        // The sensor changes after its own reading was read, while the keypad is still read.
+        if (id === 'SYNTHKEYP001') f.client.emit('accessory', closed);
+        return state;
+      },
+    });
+    await (f.backend as any).discover();
+    for (const frame of during.slice(0, 2)) assert.deepEqual(frame, before);
+    // The change during discovery is kept in the new readings.
+    assert.deepEqual(f.backend.accessories()[0]!.readings, {
+      open: { value: false, source: 'push', observed_at: '2026-11-19T10:05:00.000Z', live: true },
+      battery_low: null,
+    });
+    assert.deepEqual(f.backend.accessories().slice(1), sharedStateFrame.accessories.slice(1));
+  } finally {
+    await f.backend.close();
+  }
+});
+test('a rediscovery whose readings fail at transport level keeps the previous readings (#275)', async () => {
+  const f = fixture();
+  const { accessories, states } = fixtureAccessories();
+  const base = { ...devices[0]!, id: 'SYNTHHB30001', stationId: 'SYNTHHB30001' };
+  const camera = { ...devices[1]!, stationId: 'SYNTHHB30001' };
+  f.client.discoverDevices = async () => ({ devices: [base, camera], relationships: [], issues: [], accessories: [...accessories] }) as DiscoveryResult;
+  Object.assign(f.client, { getAccessoryState: async (id: string) => states.get(id) });
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    const before = f.backend.accessories();
+    assert.deepEqual(before, sharedStateFrame.accessories);
+    // A command in flight makes the transport reload refuse every read.
+    Object.assign(f.client, { getAccessoryState: async () => { throw new EufyError('devices_busy'); } });
+    await (f.backend as any).discover().catch(() => undefined);
+    assert.deepEqual(f.backend.accessories(), before);
+  } finally {
+    await f.backend.close();
+  }
+});
+test('a client without accessory support gives an empty list and rows without readings (#275)', async () => {
+  const f = fixture();
+  const { accessories } = fixtureAccessories();
+  f.client.discoverDevices = async () => ({ devices, relationships: [], issues: [], accessories: [accessories[0]] }) as DiscoveryResult;
+  Object.assign(f.client, { getAccessoryState: async () => { throw new EufyError('unknown_device'); } });
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.deepEqual(f.backend.accessories().map((row) => row.readings), [{ open: null, battery_low: null }]);
+  } finally {
+    await f.backend.close();
+  }
+  const g = fixture();
+  try {
+    await g.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.deepEqual(g.backend.accessories(), []);
+    assert.deepEqual(g.backend.stations.inventory().map((station) => station.extra_modes), [[]]);
+    assert.equal(g.backend.supportReport().accessory_observations, null);
+  } finally {
+    await g.backend.close();
+  }
+});
+test('Off is offered and sent only where the client reports it settable, and modes never holds 6 (#275)', async () => {
+  const f = fixture();
+  const sent: [string, number][] = [];
+  let available: number[] | undefined;
+  const state = () => ({ id: 'BASE', connected: true, guardMode: 6, currentMode: 6, alarm: false, alarmDelay: 0, armDelay: 0, commandEncryption: 'lan-derived' as const, ...(available ? { availableModes: available } : {}) });
+  f.client.connectStation = async () => state();
+  f.client.refreshStationState = async () => state();
+  let refuse = false;
+  f.client.setGuardMode = async (id: string, mode: number) => {
+    sent.push([id, mode]);
+    if (refuse) throw new EufyError('invalid_guard_mode');
+    return { confirmed: true, commandSent: true, state: { ...state(), guardMode: mode, currentMode: mode } };
+  };
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    // A HomeBase in Off without a keypad reports Off, but does not offer it.
+    let [row] = f.backend.stations.inventory();
+    assert.equal(row!.guard_mode, 6);
+    assert.deepEqual(row!.modes, [0, 1, 2, 3, 4, 5, 47, 63]);
+    assert.deepEqual(row!.extra_modes, []);
+    await assert.rejects(f.backend.stations.setMode('BASE', 6), { code: 'invalid_mode', status: 400 });
+    assert.deepEqual(sent, []);
+    assert.deepEqual(f.backend.stations.metrics, { commands: 0, accepted: 0, failed: 0 });
+    // With a keypad the client reports 6 settable. Unknown modes it reports stay out.
+    available = [0, 1, 2, 3, 4, 5, 6, 47, 63, 99];
+    f.client.emit('station', state());
+    [row] = f.backend.stations.inventory();
+    assert.deepEqual(row!.modes, [0, 1, 2, 3, 4, 5, 47, 63]);
+    assert.deepEqual(row!.extra_modes, [6]);
+    await f.backend.stations.setMode('BASE', 6);
+    assert.deepEqual(sent, [['BASE', 6]]);
+    // The client's own refusal of a mode becomes invalid_mode, nothing else.
+    refuse = true;
+    await assert.rejects(f.backend.stations.setMode('BASE', 6), { code: 'invalid_mode', status: 400 });
+    assert.deepEqual(f.backend.stations.metrics, { commands: 2, accepted: 1, failed: 1 });
+    // The frame keeps the legacy list a 0.8.52 integration accepts, and matches the shared fixture.
+    assert.deepEqual(row!.modes, sharedStateFrame.stations[0]!.modes);
+    assert.deepEqual(row!.extra_modes, sharedStateFrame.stations[0]!.extra_modes);
+  } finally {
+    await f.backend.close();
+  }
+});
+test('the support report carries the client accessory observation counts, revalidated (#275)', async () => {
+  const f = fixture();
+  const counts = { hub_notify: 3, sensor_status: 1, push_door_sensor: 2, camera_info: 0, cloud_seeded: 5, conflicts: 0, unknown_channel: 1 };
+  let observation: unknown = counts;
+  Object.defineProperty(f.client, 'accessoryObservation', { get: () => {
+    if (observation instanceof Error) throw observation;
+    return observation;
+  }, configurable: true });
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.deepEqual(f.backend.supportReport().accessory_observations, counts);
+    // Only the known keys leave, each a bounded integer or null.
+    observation = { ...counts, hub_notify: -1, sensor_status: 'PRIVATE', serial: 'PRIVATE', camera_info: 2 ** 40 };
+    const hostile = f.backend.supportReport().accessory_observations!;
+    assert.deepEqual(Object.keys(hostile), Object.keys(counts));
+    assert.equal(hostile.hub_notify, null);
+    assert.equal(hostile.sensor_status, null);
+    assert.equal(hostile.camera_info, null);
+    assert.doesNotMatch(JSON.stringify(hostile), /PRIVATE/);
+    observation = new Error('PRIVATE');
+    assert.equal(f.backend.supportReport().accessory_observations, null);
+    observation = 'PRIVATE';
+    assert.equal(f.backend.supportReport().accessory_observations, null);
+  } finally {
+    await f.backend.close();
+  }
 });

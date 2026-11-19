@@ -22,6 +22,9 @@ Anker.
   across your cameras.
 - Camera event entities, battery sensors, and HomeBase alarm and Guard Mode
   entities for automations. See [events and notifications](docs/NOTIFICATIONS.md).
+- Experimental read-only sensors for the Entry Sensor (`T8900`) and Keypad
+  (`T8960`) of a HomeBase 3, and the Doorbell Chime (`T8026`) as a device
+  without functions, see [HomeBase accessories](docs/USAGE.md#homebase-accessories).
 
 A SoloCam S340 (`T8170`) on a HomeBase 3 gets experimental buttons that move
 it to a preset saved in the Eufy app, see [preset positions](docs/USAGE.md#preset-positions).
@@ -33,7 +36,8 @@ See [snapshot and streaming limits](docs/USAGE.md#honest-snapshot-and-streaming-
 
 - Home Assistant **2026.9.0 or newer** and [HACS](https://hacs.xyz/docs/use/download/download/).
 - Eufy cameras connected to a HomeBase 3 (T8030) for snapshots, live view and
-  recordings. Other HomeBase models, such as HomeBase 2 or HomeBase Mini, and
+  recordings. Entry sensors and a keypad need to be paired with that
+  HomeBase 3. Other HomeBase models, such as HomeBase 2 or HomeBase Mini, and
   NVR setups are not supported. Cameras without a HomeBase normally show these
   features as unsupported, but four models can try an
   [experimental standalone option](docs/USAGE.md#experimental-standalone-cameras).

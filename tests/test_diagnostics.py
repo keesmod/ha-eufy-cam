@@ -145,11 +145,11 @@ def test_report_bounds_malformed_values_and_collection_sizes():
         {
             "schema": 2,
             "generated_at": "PRIVATE",
-            "last_discovery": [row] * 250,
+            "last_discovery": [row] * 350,
             "recent_events": [row] * 150,
         }
     )
-    assert len(result["last_discovery"]) == 200
+    assert len(result["last_discovery"]) == 299
     assert len(result["recent_events"]) == 100
     assert "PRIVATE" not in json.dumps(result)
     assert result["last_discovery"][0]["device_type"] is None

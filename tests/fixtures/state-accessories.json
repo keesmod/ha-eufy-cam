@@ -1,0 +1,98 @@
+{
+  "protocol": 1,
+  "recording_playback": 1,
+  "snapshot_refresh": 1,
+  "preset_move": 1,
+  "migration": {"version": 1, "error": null},
+  "backend": "mega",
+  "transports": ["jpeg", "webrtc"],
+  "live_max_streams_per_station": 1,
+  "live_max_seconds_mains": 120,
+  "bridge_id": "bridge-123",
+  "auth": "connected",
+  "notification_metrics": {"push_connected": true},
+  "cameras": [
+    {
+      "serial": "SYNTHCAM0001",
+      "name": "Synthetic doorbell",
+      "model": "T8214",
+      "hardware": "1",
+      "software": "3.2.7.2",
+      "battery": 80,
+      "snapshot_received_at": null,
+      "capabilities": {
+        "snapshot": {"available": true, "status": "experimental"},
+        "live": {"available": true, "status": "experimental"},
+        "recordings": {"available": true, "status": "experimental"}
+      }
+    }
+  ],
+  "stations": [
+    {
+      "serial": "SYNTHHB30001",
+      "name": "Synthetic HomeBase 3",
+      "model": "T8030",
+      "hardware": "1",
+      "software": "3.8.8.0",
+      "connected": true,
+      "guard_mode": 6,
+      "current_mode": 6,
+      "alarm": false,
+      "alarm_delay": 0,
+      "arm_delay": 0,
+      "modes": [0, 1, 2, 3, 4, 5, 47, 63],
+      "extra_modes": [6]
+    }
+  ],
+  "accessories": [
+    {
+      "serial": "SYNTHSENS001",
+      "name": "Synthetic front door",
+      "model": "T8900",
+      "hardware": "0.0.1",
+      "software": "",
+      "category": "entry_sensor",
+      "station": "SYNTHHB30001",
+      "readings": {
+        "open": {"value": true, "source": "p2p", "observed_at": "2026-11-19T10:00:00.000Z", "live": true},
+        "battery_low": {"value": false, "source": "cloud", "observed_at": "2026-11-19T09:00:00.000Z", "live": false}
+      }
+    },
+    {
+      "serial": "SYNTHSENS002",
+      "name": "Synthetic back door",
+      "model": "T8900",
+      "hardware": "0.0.1",
+      "software": "",
+      "category": "entry_sensor",
+      "station": "SYNTHHB30001",
+      "readings": {
+        "open": {"value": false, "source": "cloud", "observed_at": "2026-11-19T09:00:00.000Z", "live": false},
+        "battery_low": null
+      }
+    },
+    {
+      "serial": "SYNTHKEYP001",
+      "name": "Synthetic keypad",
+      "model": "T8960",
+      "hardware": "0.0.1",
+      "software": "0.0.1.7",
+      "category": "keypad",
+      "station": "SYNTHHB30001",
+      "readings": {
+        "battery_low": {"value": false, "source": "p2p", "observed_at": "2026-11-19T10:00:00.000Z", "live": true},
+        "charging": {"value": true, "source": "p2p", "observed_at": "2026-11-19T10:00:00.000Z", "live": true}
+      }
+    },
+    {
+      "serial": "SYNTHCHIM001",
+      "name": "Synthetic chime",
+      "model": "T8026",
+      "hardware": "1.0.0.0",
+      "software": "1.0.2.7",
+      "category": "chime",
+      "station": null,
+      "readings": {}
+    }
+  ]
+}

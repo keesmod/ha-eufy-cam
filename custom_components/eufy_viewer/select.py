@@ -26,6 +26,7 @@ async def async_setup_entry(
         known.update(s.serial for s in new)
         async_add_entities(EufyGuardMode(entry.runtime_data, s) for s in new)
 
+    entry.async_on_unload(entry.runtime_data.on_forget(known.discard))
     discover()
     entry.async_on_unload(entry.runtime_data.async_add_listener(discover))
 
@@ -39,7 +40,16 @@ class EufyGuardMode(EufyStationEntity, SelectEntity):
 
     @property
     def options(self) -> list[str]:
-        return [MODES[mode] for mode in self.info.modes] if self.info else []
+        info = self.info
+        if info is None:
+            return []
+        modes = info.settable_modes
+        # Show a current mode that cannot be set, such as Off chosen on a keypad
+        # the bridge does not report, so the state never turns unknown.
+        current = info.guard_mode
+        if current is not None and current in MODES and current not in modes:
+            modes = [*modes, current]
+        return [MODES[mode] for mode in modes]
 
     @property
     def current_option(self) -> str | None:

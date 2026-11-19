@@ -5,6 +5,7 @@ import type { DiscoveryResult, Diagnostic, CameraCapabilities, RecordingObservat
 import {
   DiscoveryDiagnostics, connectionAttempt, diagnosticCode, diagnosticModel, diagnosticReleaseVersion, diagnosticSoftware, diagnosticVersion,
   standalonePushReport,
+  accessoryObservationReport,
   type RecordingQueryReport,
 } from '../src/discovery-diagnostics.js';
 
@@ -33,7 +34,7 @@ test('support report includes software, inventory, anonymous ownership, firmware
     {snapshot:capability,live:capability,recordings:capability}]]),new Map());
   const rows=f.rows();
   assert.equal(rows.length,6);
-  assert.equal(rows[0].software.library,'0.30.5');
+  assert.equal(rows[0].software.library,'0.31.0-beta.1');
   assert.equal(rows[0].software.bridge,diagnosticSoftware().bridge);
   assert.deepEqual([rows[0].cameras,rows[0].stations,rows[0].issues],[1,1,2]);
   assert.equal(rows[2].owner_ref,1);
@@ -48,6 +49,49 @@ test('support report includes software, inventory, anonymous ownership, firmware
   f.reporter.inventory(result(),'accepted',undefined,true,new Map(),new Map());
   assert.equal(f.rows().length,2);
   assert.equal(f.rows()[0].unchanged,true);
+});
+// #275: accessory rows follow the device rows and carry no identity or reading.
+test('accessory rows carry category, model, versions and owner reference only, hostile values bounded (#275)', () => {
+  const f=collect();
+  const accessories=[
+    {id:'PRIVATE_DOOR',index:4,stationId:'PRIVATE_BASE',category:'entry_sensor',model:'T8900',deviceType:2,name:'PRIVATE_NAME',firmware:null,hardware:'0.0.1'},
+    {id:'PRIVATE_CHIME',index:5,stationId:null,category:'chime',model:'T8026',deviceType:600,name:'PRIVATE_NAME',firmware:'1.0.2.7',hardware:'1.0.0.0'},
+    {id:'PRIVATE_ODD',index:500,stationId:'PRIVATE_GONE',category:'PRIVATE_CATEGORY',model:'PRIVATE_MODEL',deviceType:70000,name:'PRIVATE_NAME',firmware:'PRIVATE',hardware:'1.2.3.4.5'},
+  ];
+  f.reporter.inventory({...result(),accessories} as DiscoveryResult,'accepted',undefined,true,new Map(),new Map());
+  const rows=f.rows();
+  assert.equal(rows[0].accessories,3);
+  assert.equal(rows[0].truncated,false);
+  assert.deepEqual(rows.filter(r=>r.event==='accessory').map(r=>({...r,timestamp:undefined,report:undefined,diagnostic:undefined,schema:undefined})),[
+    {event:'accessory',ref:3,inventory_row:4,category:'entry_sensor',model:'T8900',device_type:2,firmware:'unavailable',hardware:'0.0.1',has_station:true,owner_ref:1,timestamp:undefined,report:undefined,diagnostic:undefined,schema:undefined},
+    {event:'accessory',ref:4,inventory_row:5,category:'chime',model:'T8026',device_type:600,firmware:'1.0.2.7',hardware:'1.0.0.0',has_station:false,timestamp:undefined,report:undefined,diagnostic:undefined,schema:undefined},
+    {event:'accessory',ref:5,inventory_row:null,category:'unavailable',model:'unavailable',device_type:null,firmware:'unavailable',hardware:'unavailable',has_station:true,owner_ref:null,timestamp:undefined,report:undefined,diagnostic:undefined,schema:undefined},
+  ]);
+  assert.equal(rows.at(-1).rows,rows.length-2);
+  assert.doesNotMatch(f.lines.join('\n'),/PRIVATE|stationId|readings/);
+  // An accessory list beyond the bound is cut and flagged like devices and issues.
+  const many=Array.from({length:101},(_,index)=>({...accessories[0]!,id:`DOOR${index}`,index}));
+  const g=collect();
+  g.reporter.inventory({...result(),accessories:many} as DiscoveryResult,'accepted',undefined,true,new Map(),new Map());
+  assert.equal(g.rows()[0].accessories,99);
+  assert.equal(g.rows()[0].truncated,true);
+});
+// The integration's shared download cases name the same fields the bridge writes (#275).
+test('accessory rows and observation counts have exactly the fields of the shared integration fixture (#275)', () => {
+  const shared=JSON.parse(readFileSync(new URL('../../tests/fixtures/accessory-diagnostics.json',import.meta.url),'utf8'));
+  const f=collect();
+  const accessories=[
+    {id:'PRIVATE_DOOR',index:4,stationId:'PRIVATE_BASE',category:'entry_sensor',model:'T8900',deviceType:2,name:'PRIVATE_NAME',firmware:null,hardware:'0.0.1'},
+    {id:'PRIVATE_CHIME',index:8,stationId:null,category:'chime',model:'T8026',deviceType:600,name:'PRIVATE_NAME',firmware:'1.0.2.7',hardware:'1.0.0.0'},
+  ];
+  f.reporter.inventory({...result(),accessories} as DiscoveryResult,'accepted',undefined,true,new Map(),new Map());
+  const rows=f.rows().filter(r=>r.event==='accessory');
+  const keys=(row:Record<string,unknown>)=>Object.keys(row).sort();
+  assert.deepEqual(keys(rows[0]),keys(shared.rows.find((r:{category:string})=>r.category==='entry_sensor')));
+  assert.deepEqual(keys(rows[1]),keys(shared.rows.find((r:{category:string})=>r.category==='chime')));
+  assert.ok('accessories' in f.rows()[0]);
+  assert.deepEqual(Object.keys(accessoryObservationReport(shared.accessory_observations)!),Object.keys(shared.accessory_observations));
+  assert.deepEqual(accessoryObservationReport(shared.accessory_observations),shared.accessory_observations);
 });
 test('failure reports retain discovery and missing-baseline counts before setup rejection', () => {
   const f=collect();

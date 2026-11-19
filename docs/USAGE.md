@@ -23,6 +23,7 @@ On the tested HB3, increasing the SDK's existing query limit retrieved 105 datab
 - By default one camera per HomeBase is live at a time. A second camera on the same HomeBase is refused until the first live view has stopped, and its card says that another camera on this HomeBase is live. The bridge option `live_max_streams_per_station` raises that limit, see [live cameras per HomeBase](#live-cameras-per-homebase).
 - The bridge independently expires silent viewers and stops the camera after the last viewer leaves.
 - HomeBase alarm and Guard Mode entities with station-confirmed commands and push status.
+- Entry sensors and the keypad of a HomeBase 3 as read-only binary sensors, and the doorbell chime as a device, see [HomeBase accessories](#homebase-accessories).
 - Push discovery and battery sensors, stable registry IDs, clean unload, English/Dutch UI and allowlisted diagnostics. The card shows the battery level next to the camera name, see [battery level](#battery-level).
 - No cloud polling timer: the pinned Eufy client is configured with `pollingIntervalMinutes: 0`. Login, push-triggered refreshes, token renewal and the library's local station communication still occur.
 
@@ -191,6 +192,58 @@ Clients without WebRTC or video-frame callback support, including the Home Assis
 WebRTC requires Home Assistant's **go2rtc integration** to be loaded and the browser to have a media route to HA (the managed service uses TCP port **18555**). A dashboard accessible through an HTTPS reverse proxy alone does not establish this media route. The viewer uses Home Assistant's existing [WebRTC ICE configuration](https://www.home-assistant.io/integrations/web_rtc/) for both live video and optional late audio. HA supplies configured STUN/TURN servers and any registered providers, with its default STUN servers when no custom servers are configured. STUN discovers possible routes but cannot relay media. A route blocked by NAT or firewall may require an existing TURN provider or routed LAN/VPN access. This integration does not configure a separate relay service. If HA's ICE provider fails, direct playback is still attempted and the existing video-only JPEG fallback remains available. Do not expose the bridge API to solve WebRTC connectivity. See [0.2 validation](VALIDATION_0.2.md).
 
 Sessions have a **two-minute absolute limit** for battery cameras and by default for every camera. From bridge 0.8.22 the app option `live_max_seconds_mains` (Docker: `EUFY_LIVE_MAX_SECONDS_MAINS`, a whole number of seconds from 120 to 3600, default 120) raises that limit only for cameras the inventory reports without a battery value, verified on 2026-09-19 with one mains powered camera for a full 1800-second session, see [compatibility](COMPATIBILITY.md#dated-0827-mains-powered-live-session). From integration 0.8.27 the Home Assistant viewer follows that cap as well, before that it ended every session at 125 seconds. Continuing after the cap requires another tap, also on a card with `live_autostart`. Normal close immediately issues stop. After a network partition or frozen page the bridge expires a viewer within **10 seconds**, plus its 250 ms watchdog tick. Startup without frames expires after 20 seconds. A bridge or host hard failure cannot deliver a stop command, camera firmware/P2P behavior in that case must be verified on the intended hardware. No software can promise instantaneous physical stop across a dead network.
+
+## HomeBase accessories
+
+From integration 0.8.53 with bridge 0.8.44 the accessories of a HomeBase 3
+(`T8030`) and the doorbell chime appear in Home Assistant
+([issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275)). They are
+read-only and not yet confirmed on hardware. They are never cameras, so they
+get no camera, card, event or snapshot.
+
+| Device | Model | Entities |
+|---|---|---|
+| Entry Sensor | `T8900` | An opening sensor named after the device, on when open, and a diagnostic **Battery** sensor, on when the battery is low |
+| Keypad | `T8960` | A diagnostic **Battery** sensor, on when the battery is low, and a diagnostic **Charging** sensor |
+| Doorbell Chime | `T8026` | None. The chime is recognized only and shows as a device without entities |
+
+An entry sensor and a keypad appear as devices connected through their
+HomeBase. They are unavailable while the bridge has no connection to that
+HomeBase. The chime connects to Wi-Fi itself, not through a HomeBase. The bridge
+never connects to it and no protocol for it is known, so it has no state to
+show.
+
+The door state shows only a value that the HomeBase or a Eufy push reported.
+The value the Eufy account lists at startup is a cached value and is never shown
+as the door state, so after a bridge restart a door can show unknown until it
+next opens or closes. The opening sensor has the attributes `source` (`p2p` or
+`push`), `observed_at` and `live`. After the HomeBase connection closes and
+comes back, the sensor keeps its last observed value with `live: false` until
+the next change. The battery and charging sensors may show the cached account
+value, with `source: cloud`. Eufy pushes for a sensor arrive only while
+notifications for that sensor are on in the Eufy app. Which route a HomeBase 3
+uses for sensor changes is not yet confirmed.
+
+The keypad's key presses, codes and settings are not available. Arming and
+disarming stay on the existing HomeBase alarm and Guard Mode entities. Motion
+sensors, other accessories and chime settings are not provided.
+
+A device that has left the Eufy inventory, such as a removed sensor or chime,
+can be deleted from its device page. A device the bridge still reports cannot
+be deleted.
+
+### Guard mode Off
+
+Off is the mode a keypad sets. When the HomeBase is in Off, **Guard Mode** shows
+Off and the alarm panel shows disarmed. On a HomeBase with a keypad, Guard Mode
+also offers Off as an option, which the bridge sends as a confirmed command like
+the other modes. Without a keypad, Off appears only while it is the current mode
+and cannot be selected. Disarm on the alarm panel still sets Disarmed, not Off.
+Setting Off from Home Assistant is not yet confirmed on hardware.
+
+Before rolling back to bridge 0.8.43 or older, switch the HomeBase away from
+Off. Older bridges cannot read Off and keep reconnecting to a HomeBase that is
+in Off.
 
 ## Experimental standalone cameras
 

@@ -83,6 +83,8 @@ async def async_setup_entry(
             ]
         )
 
+    entry.async_on_unload(entry.runtime_data.on_forget(known.discard))
+    entry.async_on_unload(entry.runtime_data.on_forget(known_presets.discard))
     discover()
     entry.async_on_unload(entry.runtime_data.async_add_listener(discover))
 

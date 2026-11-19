@@ -6,6 +6,7 @@ import asyncio
 import logging
 import random
 from collections import OrderedDict
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
@@ -44,6 +45,19 @@ class EufyCoordinator(DataUpdateCoordinator[BridgeState]):
         self._listener: asyncio.Task[None] | None = None
         self._closed = False
         self._seen_events: OrderedDict[str, None] = OrderedDict()
+        self._forget: list[Callable[[str], None]] = []
+
+    @callback
+    def on_forget(self, forget: Callable[[str], None]) -> Callable[[], None]:
+        """Call `forget` with the serial of each device the user removes."""
+        self._forget.append(forget)
+        return lambda: self._forget.remove(forget)
+
+    @callback
+    def forget(self, serial: str) -> None:
+        """Let a removed device and its entities return when listed again."""
+        for forget in list(self._forget):
+            forget(serial)
 
     def start(self) -> None:
         """Subscribe after entity platforms have been set up."""
