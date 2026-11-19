@@ -435,9 +435,38 @@ export function standalonePushReport(value: unknown): StandalonePushReport | nul
     push_types: standalonePushRows(observation.pushTypes),
   };
 }
+/**
+ * How the running client received HomeBase accessory state, by route (#275).
+ * Counts only, never a serial, channel, name, door state or time.
+ */
+export const accessoryObservationKeys = [
+  'hub_notify',
+  'sensor_status',
+  'push_door_sensor',
+  'camera_info',
+  'cloud_seeded',
+  'conflicts',
+  'unknown_channel',
+] as const;
+export type AccessoryObservationReport = Record<(typeof accessoryObservationKeys)[number], number | null>;
+/**
+ * Project the client's `accessoryObservation` for the support report (#275).
+ * It crosses a library boundary, so only the known keys leave, each as a
+ * bounded integer or null. Null without an observation, as before client 0.31.0.
+ */
+export function accessoryObservationReport(value: unknown): AccessoryObservationReport | null {
+  const observation = record(value);
+  if (!observation || Array.isArray(observation)) return null;
+  return Object.fromEntries(
+    accessoryObservationKeys.map((key) => [key, pushCount(observation[key])]),
+  ) as AccessoryObservationReport;
+}
+const accessoryCategories: ReadonlySet<string> = new Set(['entry_sensor', 'keypad', 'chime']);
 export interface SupportReport {
   /** Standalone push counts of the running client, null without one (#185). */
   standalone_pushes?: StandalonePushReport | null;
+  /** Accessory observation counts of the running client, null without one (#275). */
+  accessory_observations?: AccessoryObservationReport | null;
   cache_age_ms?: number;
   recording?: ReturnType<import("./recording-diagnostics.js").RecordingDiagnostics["report"]>;
   software?: ReturnType<typeof diagnosticSoftware>;
@@ -619,7 +648,7 @@ export class DiscoveryDiagnostics {
   }
   private emit(value: Record<string, unknown>): void {
     const record = this.record(value);
-    if (!['summary', 'device', 'issue', 'end'].includes(String(value.event))) {
+    if (!['summary', 'device', 'issue', 'accessory', 'end'].includes(String(value.event))) {
       this.recentEvents.push(record);
       if (this.recentEvents.length > 100) this.recentEvents.shift();
     }
@@ -782,6 +811,25 @@ export class DiscoveryDiagnostics {
       parent_model: model(issue.context?.parentModel),
       parent_firmware: diagnosticVersion(issue.context?.parentFirmware),
     }));
+    // Admitted HomeBase accessories and recognized chimes (#275). Their refs
+    // follow the device refs. Category, model, versions and the owner
+    // reference only, never a serial, name or reading.
+    const accessories = (result?.accessories ?? []).slice(0, 99);
+    const accessoryRows = accessories.map((accessory, index) => {
+      const hasStation = typeof accessory.stationId === 'string';
+      return {
+        event: 'accessory',
+        ref: devices.length + index + 1,
+        inventory_row: integer(accessory.index, 0, 98),
+        category: accessoryCategories.has(accessory.category) ? accessory.category : 'unavailable',
+        model: model(accessory.model),
+        device_type: integer(accessory.deviceType, 0, 65535),
+        firmware: diagnosticVersion(accessory.firmware),
+        hardware: diagnosticVersion(accessory.hardware),
+        has_station: hasStation,
+        ...(hasStation ? { owner_ref: refs.get(accessory.stationId!) ?? null } : {}),
+      };
+    });
     const summary = {
       event: 'summary',
       software: diagnosticSoftware(),
@@ -790,8 +838,13 @@ export class DiscoveryDiagnostics {
       scope: 'public_discovery_result',
       cameras: devices.filter((device) => device.kind === 'camera').length,
       stations: devices.filter((device) => device.kind === 'station').length,
+      accessories: accessories.length,
       issues: issues.length,
-      truncated: !!result && (result.devices.length > 99 || result.issues.length > 99),
+      truncated:
+        !!result &&
+        (result.devices.length > 99 ||
+          result.issues.length > 99 ||
+          (result.accessories?.length ?? 0) > 99),
       baseline: !baselineChecked ? 'unavailable' : expected ? 'present' : 'absent',
       expected_cameras: expected ? integer(expected.cameras.length, 0, 100) : null,
       expected_stations: expected ? integer(expected.stations.length, 0, 100) : null,
@@ -807,26 +860,27 @@ export class DiscoveryDiagnostics {
       // The opt-in standalone recording probe of the login discovery (#178).
       standalone_recording_probe: standaloneRecordingProbe === true,
     };
-    const snapshot = JSON.stringify([summary, rows, rejections]);
+    const snapshot = JSON.stringify([summary, rows, rejections, accessoryRows]);
     const unchanged = snapshot === this.previous;
     this.previous = snapshot;
     const report = ++this.sequence;
     this.pendingReport = report;
     this.lastDiscovery = [
       this.record({ ...summary, report, unchanged: false }),
-      ...[...rows, ...rejections].map((row) => this.record({ ...row, report })),
+      ...[...rows, ...rejections, ...accessoryRows].map((row) => this.record({ ...row, report })),
       this.record({
         event: 'end',
         report,
-        rows: rows.length + rejections.length,
+        rows: rows.length + rejections.length + accessoryRows.length,
       }),
     ];
     this.emit({ ...summary, report, unchanged });
-    if (!unchanged) for (const row of [...rows, ...rejections]) this.emit({ ...row, report });
+    if (!unchanged)
+      for (const row of [...rows, ...rejections, ...accessoryRows]) this.emit({ ...row, report });
     this.emit({
       event: 'end',
       report,
-      rows: unchanged ? 0 : rows.length + rejections.length,
+      rows: unchanged ? 0 : rows.length + rejections.length + accessoryRows.length,
     });
   }
 }
