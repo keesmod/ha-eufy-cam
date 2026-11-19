@@ -26,7 +26,19 @@
       "firmware": "unavailable",
       "hardware": "0.0.1",
       "has_station": true,
-      "owner_ref": 4
+      "owner_ref": 4,
+      "string_fields": [
+        "device_model",
+        "device_name",
+        "device_sn",
+        "main_hw_version",
+        "parent_sn",
+        "room.title"
+      ],
+      "text_params": [
+        1234
+      ],
+      "name_source": "device_name"
     },
     {
       "diagnostic": "discovery",
@@ -42,7 +54,17 @@
       "firmware": "0.0.1.7",
       "hardware": "0.0.1",
       "has_station": true,
-      "owner_ref": 4
+      "owner_ref": 4,
+      "string_fields": [
+        "device_model",
+        "device_name",
+        "device_sn",
+        "main_hw_version",
+        "main_sw_version",
+        "parent_sn"
+      ],
+      "text_params": [],
+      "name_source": "device_name"
     },
     {
       "diagnostic": "discovery",
@@ -57,7 +79,16 @@
       "device_type": 600,
       "firmware": "1.0.2.7",
       "hardware": "1.0.0.0",
-      "has_station": false
+      "has_station": false,
+      "string_fields": [
+        "device_model",
+        "device_sn",
+        "main_hw_version",
+        "main_sw_version",
+        "parent_sn"
+      ],
+      "text_params": [],
+      "name_source": null
     }
   ],
   "accessory_observations": {

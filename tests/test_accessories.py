@@ -707,6 +707,38 @@ def test_accessory_diagnostics_keep_bounded_values_and_no_identifiers():
     assert "PRIVATE" not in json.dumps(result)
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "kept"),
+    [
+        ("string_fields", ["device_name", "room.title"], True),
+        ("string_fields", [], True),
+        ("string_fields", ["PRIVATE NAME"], False),
+        ("string_fields", ["x" * 65], False),
+        ("string_fields", [5], False),
+        ("string_fields", ["key"] * 49, False),
+        ("string_fields", "device_name", False),
+        ("text_params", [0, 1234, 100000], True),
+        ("text_params", [100001], False),
+        ("text_params", [-1], False),
+        ("text_params", [True], False),
+        ("text_params", [1.0], False),
+        ("text_params", ["PRIVATE"], False),
+        ("text_params", [1] * 33, False),
+        ("name_source", "alias", True),
+        ("name_source", "device_name", True),
+        ("name_source", None, True),
+        ("name_source", "PRIVATE_NAME", False),
+    ],
+)
+def test_accessory_name_diagnostics_are_bounded(field, value, kept):
+    row = {**SUPPORT["rows"][0], field: value}
+    result = support_report(
+        {"schema": 2, "last_discovery": [row], "recent_events": []}
+    )["last_discovery"][0]
+    assert result[field] == (value if kept else None)
+    assert "PRIVATE" not in json.dumps(result)
+
+
 async def test_download_lists_accessories_without_identifiers(hass):
     with patch("custom_components.eufy_viewer.coordinator.EufyCoordinator.start"):
         entry = await _setup(hass, FRAME)

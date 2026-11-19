@@ -462,6 +462,34 @@ export function accessoryObservationReport(value: unknown): AccessoryObservation
   ) as AccessoryObservationReport;
 }
 const accessoryCategories: ReadonlySet<string> = new Set(['entry_sensor', 'keypad', 'chime']);
+// Keys and parameter types only, re-checked here so a client value can never
+// carry a serial, name or other text into the report (#275).
+const accessoryFieldKey = /^[A-Za-z0-9_.]{1,64}$/;
+const accessoryNameSources = new Set(['alias', 'device_name']);
+function accessoryFields(accessory: object): {
+  string_fields: string[] | null;
+  text_params: number[] | null;
+  name_source: string | null;
+} {
+  const { stringFields, textParams, nameSource } = accessory as {
+    stringFields?: unknown;
+    textParams?: unknown;
+    nameSource?: unknown;
+  };
+  return {
+    string_fields: Array.isArray(stringFields)
+      ? [...new Set(stringFields.filter((key): key is string => typeof key === 'string' && accessoryFieldKey.test(key)))]
+          .sort()
+          .slice(0, 48)
+      : null,
+    text_params: Array.isArray(textParams)
+      ? [...new Set(textParams.filter((type): type is number => Number.isInteger(type) && type >= 0 && type <= 100000))]
+          .sort((a, b) => a - b)
+          .slice(0, 32)
+      : null,
+    name_source: typeof nameSource === 'string' && accessoryNameSources.has(nameSource) ? nameSource : null,
+  };
+}
 export interface SupportReport {
   /** Standalone push counts of the running client, null without one (#185). */
   standalone_pushes?: StandalonePushReport | null;
@@ -828,6 +856,9 @@ export class DiscoveryDiagnostics {
         hardware: diagnosticVersion(accessory.hardware),
         has_station: hasStation,
         ...(hasStation ? { owner_ref: refs.get(accessory.stationId!) ?? null } : {}),
+        // Client 0.31.2 diagnostics (#275): row keys and parameter types that
+        // hold text, never their values. An older client gives null.
+        ...accessoryFields(accessory),
       };
     });
     const summary = {

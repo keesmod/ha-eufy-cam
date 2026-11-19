@@ -63,9 +63,9 @@ test('accessory rows carry category, model, versions and owner reference only, h
   assert.equal(rows[0].accessories,3);
   assert.equal(rows[0].truncated,false);
   assert.deepEqual(rows.filter(r=>r.event==='accessory').map(r=>({...r,timestamp:undefined,report:undefined,diagnostic:undefined,schema:undefined})),[
-    {event:'accessory',ref:3,inventory_row:4,category:'entry_sensor',model:'T8900',device_type:2,firmware:'unavailable',hardware:'0.0.1',has_station:true,owner_ref:1,timestamp:undefined,report:undefined,diagnostic:undefined,schema:undefined},
-    {event:'accessory',ref:4,inventory_row:5,category:'chime',model:'T8026',device_type:600,firmware:'1.0.2.7',hardware:'1.0.0.0',has_station:false,timestamp:undefined,report:undefined,diagnostic:undefined,schema:undefined},
-    {event:'accessory',ref:5,inventory_row:null,category:'unavailable',model:'unavailable',device_type:null,firmware:'unavailable',hardware:'unavailable',has_station:true,owner_ref:null,timestamp:undefined,report:undefined,diagnostic:undefined,schema:undefined},
+    {event:'accessory',ref:3,inventory_row:4,category:'entry_sensor',model:'T8900',device_type:2,firmware:'unavailable',hardware:'0.0.1',has_station:true,owner_ref:1,string_fields:null,text_params:null,name_source:null,timestamp:undefined,report:undefined,diagnostic:undefined,schema:undefined},
+    {event:'accessory',ref:4,inventory_row:5,category:'chime',model:'T8026',device_type:600,firmware:'1.0.2.7',hardware:'1.0.0.0',has_station:false,string_fields:null,text_params:null,name_source:null,timestamp:undefined,report:undefined,diagnostic:undefined,schema:undefined},
+    {event:'accessory',ref:5,inventory_row:null,category:'unavailable',model:'unavailable',device_type:null,firmware:'unavailable',hardware:'unavailable',has_station:true,owner_ref:null,string_fields:null,text_params:null,name_source:null,timestamp:undefined,report:undefined,diagnostic:undefined,schema:undefined},
   ]);
   assert.equal(rows.at(-1).rows,rows.length-2);
   assert.doesNotMatch(f.lines.join('\n'),/PRIVATE|stationId|readings/);
@@ -92,6 +92,31 @@ test('accessory rows and observation counts have exactly the fields of the share
   assert.ok('accessories' in f.rows()[0]);
   assert.deepEqual(Object.keys(accessoryObservationReport(shared.accessory_observations)!),Object.keys(shared.accessory_observations));
   assert.deepEqual(accessoryObservationReport(shared.accessory_observations),shared.accessory_observations);
+});
+// Client 0.31.2 names text fields and parameter types of each accessory row, never values (#275).
+test('accessory rows carry bounded field names, text parameter types and the name source (#275)', () => {
+  const f=collect();
+  const keys=Array.from({length:60},(_,i)=>`key_${String(i).padStart(2,'0')}`);
+  const accessories=[
+    {id:'PRIVATE_DOOR',index:4,stationId:'PRIVATE_BASE',category:'entry_sensor',model:'T8900',deviceType:2,name:'PRIVATE_NAME',firmware:null,hardware:'0.0.1',
+      stringFields:['device_name','room.title','PRIVATE NAME','x'.repeat(65),'device_name',5,...keys],
+      textParams:[1234,7,7,-1,100001,1.5,'PRIVATE_NAME',...Array.from({length:40},(_,i)=>2000+i)],
+      nameSource:'device_name'},
+    {id:'PRIVATE_KEYPAD',index:7,stationId:'PRIVATE_BASE',category:'keypad',model:'T8960',deviceType:11,name:'PRIVATE_NAME',firmware:'0.0.1.7',hardware:'0.0.1',
+      stringFields:'device_name',textParams:{},nameSource:'PRIVATE_NAME'},
+    {id:'PRIVATE_CHIME',index:8,stationId:null,category:'chime',model:'T8026',deviceType:600,name:'PRIVATE_NAME',firmware:'1.0.2.7',hardware:'1.0.0.0'},
+  ];
+  f.reporter.inventory({...result(),accessories} as unknown as DiscoveryResult,'accepted',undefined,true,new Map(),new Map());
+  const [door,keypad,chime]=f.rows().filter(r=>r.event==='accessory');
+  assert.equal(door.string_fields.length,48);
+  assert.deepEqual(door.string_fields.slice(0,3),['device_name','key_00','key_01']);
+  assert.ok(!door.string_fields.includes('room.title'));
+  assert.equal(door.text_params.length,32);
+  assert.deepEqual(door.text_params.slice(0,3),[7,1234,2000]);
+  assert.equal(door.name_source,'device_name');
+  assert.deepEqual([keypad.string_fields,keypad.text_params,keypad.name_source],[null,null,null]);
+  assert.deepEqual([chime.string_fields,chime.text_params,chime.name_source],[null,null,null]);
+  assert.doesNotMatch(f.lines.join('\n'),/PRIVATE/);
 });
 test('failure reports retain discovery and missing-baseline counts before setup rejection', () => {
   const f=collect();

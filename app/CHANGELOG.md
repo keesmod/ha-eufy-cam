@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.46 - Unreleased
+
+- Discovery diagnostics name the text fields of HomeBase accessory rows, without the values ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)).
+
+Upgrade: works with every supported integration. Rollback: bridge 0.8.45.
+
 ## 0.8.45 - 2026-11-19
 
 - Reports the eufy names of HomeBase accessories ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)), not yet confirmed on hardware.

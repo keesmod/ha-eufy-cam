@@ -441,7 +441,12 @@ Since bridge 0.8.44 with client 0.31.0 discovery adds an `accessory` record for
 each admitted HomeBase accessory and recognized chime (#275). It carries `ref`,
 `inventory_row`, `owner_ref` (not for a chime), `category` (`entry_sensor`, `keypad` or `chime`),
 `model`, `device_type`, `firmware`, `hardware` and the strict boolean
-`has_station`, never a serial, name, door state or observation time. The
+`has_station`, never a serial, name, door state or observation time. From
+bridge 0.8.46 with client 0.31.2 it also carries `string_fields`, at most 48
+keys matching `[A-Za-z0-9_.]{1,64}`, `text_params`, at most 32 integers from 0
+to 100000, and `name_source`, `alias`, `device_name` or `null`. They name
+inventory keys and parameter types that hold text, never their values. The
+integration drops a list with any other entry whole. The
 summary adds an `accessories` count from 0 to 100, and `rows` allows up to 297.
 An accessory `ref` follows the device refs, so it goes up to 198.
 The report adds `accessory_observations`, the client's counts by route:

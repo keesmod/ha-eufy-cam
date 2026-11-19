@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.55 - Unreleased
+
+- The diagnostics download shows which fields of a HomeBase accessory hold text, without the values, to find its eufy app name ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)).
+
+Upgrade: update the bridge to 0.8.46, then the integration. Rollback: 0.8.54 with bridge 0.8.45.
+
 ## 0.8.54 - 2026-11-19
 
 - HomeBase accessories show their eufy name, or a name such as Entry Sensor when the inventory has none ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)), not yet confirmed on hardware.

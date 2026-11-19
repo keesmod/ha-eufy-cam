@@ -31,6 +31,8 @@ _ENUMS = {
     ),
     # A HomeBase accessory or a recognized chime, bridge 0.8.44 (#275).
     "category": {"entry_sensor", "keypad", "chime"},
+    # The field that supplied an accessory name, bridge 0.8.46 (#275).
+    "name_source": {"alias", "device_name"},
     "diagnostic": {"discovery"},
     "kind": {"camera", "station", "unavailable"},
     "availability": {"online", "offline", "disabled"},
@@ -150,6 +152,10 @@ _BOOLEANS = set(
         "key_result_encrypted key_without_answer has_station"
     ).split()
 )
+# Accessory inventory keys and parameter types that hold text, bridge 0.8.46
+# (#275). Keys and numbers only, a list with any other entry is dropped whole.
+_FIELD_KEY = re.compile(r"[A-Za-z0-9_.]{1,64}")
+_FIELD_LISTS = {"string_fields": 48, "text_params": 32}
 _VERSIONS = set("firmware hardware parent_firmware node".split())
 # Bridge and client library releases may carry a -beta.N suffix. Device and Node
 # versions stay numeric.
@@ -165,6 +171,18 @@ def _version(value: Any) -> str:
         and re.fullmatch(r"[0-9]{1,4}(?:\.[0-9]{1,4}){0,3}", value)
         else "unavailable"
     )
+
+
+def _field_list(key: str, value: Any) -> list[Any] | None:
+    if not isinstance(value, list) or len(value) > _FIELD_LISTS[key]:
+        return None
+    if key == "string_fields":
+        valid = all(
+            isinstance(item, str) and _FIELD_KEY.fullmatch(item) for item in value
+        )
+    else:
+        valid = all(type(item) is int and 0 <= item <= 100000 for item in value)
+    return list(value) if valid else None
 
 
 def _timestamp(value: Any) -> str | None:
@@ -192,6 +210,7 @@ def _fields(raw: Any) -> dict[str, Any]:
         | _VERSIONS
         | _RELEASE_VERSIONS
         | _MODELS
+        | _FIELD_LISTS.keys()
         | {"timestamp"}
     ):
         if key not in raw:
@@ -212,6 +231,8 @@ def _fields(raw: Any) -> dict[str, Any]:
             result[key] = _version(value)
         elif key in _RELEASE_VERSIONS:
             result[key] = release_version(value)
+        elif key in _FIELD_LISTS:
+            result[key] = _field_list(key, value)
         elif key in _MODELS:
             # A received model code such as T8113-Z or T8410C, the same bound as
             # the bridge. Serials and free text never match, and the value is

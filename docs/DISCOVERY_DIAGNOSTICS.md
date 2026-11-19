@@ -867,6 +867,12 @@ name or reading.
 | `model`, `device_type`, `firmware`, `hardware` | As received. An empty firmware reads `unavailable` |
 | `has_station` | True for an entry sensor or keypad, false for a chime |
 | `owner_ref` | The `ref` of the HomeBase `device` row. A chime has none |
+| `string_fields` | From bridge 0.8.46 with client 0.31.2: the keys of the inventory row that hold text, never their values. `null` with an older client |
+| `text_params` | From bridge 0.8.46: the parameter types whose value is text, never the value. `null` with an older client |
+| `name_source` | From bridge 0.8.46: `alias` or `device_name` for the field that gave the name, `null` when neither did |
+
+The three name fields help find where the Eufy inventory keeps the name a sensor
+has in the Eufy app ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)).
 
 The summary counts these rows in `accessories`. The download also has
 `support.accessory_observations`, the client's count of how accessory state
