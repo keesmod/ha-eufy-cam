@@ -154,10 +154,10 @@ _BOOLEANS = set(
 )
 # Accessory inventory keys and parameter types that hold text, bridge 0.8.46
 # (#275). Keys and numbers only, a list with any other entry is dropped whole.
-# A key passes only in schema form, `segment`, `segment.segment` or `segment.*`,
-# each segment lowercase snake_case of at most 32 characters, without four digits
-# in a row and not 12 or more hex characters. A serial, an id or a capitalized
-# name never passes. A lowercase single word still can.
+# A key passes only in schema form, `segment` or `segment.*`, the segment
+# lowercase snake_case of at most 32 characters, without four digits in a row and
+# not 12 or more hex characters. A serial, an id or a capitalized name never
+# passes, and the keys inside a nested object never appear.
 _FIELD_SEGMENT = re.compile(r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
 
 
@@ -174,7 +174,7 @@ def _field_key(key: str) -> bool:
     parts = key.split(".")
     if len(parts) > 2 or not _schema_segment(parts[0]):
         return False
-    return len(parts) == 1 or parts[1] == "*" or _schema_segment(parts[1])
+    return len(parts) == 1 or parts[1] == "*"
 
 
 _FIELD_LISTS = {"string_fields": 48, "text_params": 32}

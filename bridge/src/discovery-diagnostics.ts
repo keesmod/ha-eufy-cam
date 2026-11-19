@@ -463,10 +463,10 @@ export function accessoryObservationReport(value: unknown): AccessoryObservation
 }
 const accessoryCategories: ReadonlySet<string> = new Set(['entry_sensor', 'keypad', 'chime']);
 // Keys and parameter types only, re-checked here (#275). A key passes only in
-// schema form: `segment`, `segment.segment` or `segment.*`, each segment lowercase
-// snake_case of at most 32 characters, without four digits in a row and not 12 or
-// more hex characters. A serial, an id or a capitalized name never passes. A
-// lowercase single word, such as a room name typed in lowercase, still can.
+// schema form: `segment` or `segment.*`, the segment lowercase snake_case of at
+// most 32 characters, without four digits in a row and not 12 or more hex
+// characters. A serial, an id or a capitalized name never passes, and the keys
+// inside a nested object never appear.
 const accessoryFieldSegment = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 const schemaSegment = (segment: string): boolean =>
   segment.length <= 32 &&
@@ -476,7 +476,7 @@ const schemaSegment = (segment: string): boolean =>
 export function accessoryFieldKey(key: string): boolean {
   const parts = key.split('.');
   if (parts.length > 2 || !schemaSegment(parts[0]!)) return false;
-  return parts.length === 1 || parts[1] === '*' || schemaSegment(parts[1]!);
+  return parts.length === 1 || parts[1] === '*';
 }
 const accessoryNameSources = new Set(['alias', 'device_name']);
 function accessoryFields(accessory: object): {

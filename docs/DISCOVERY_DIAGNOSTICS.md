@@ -867,17 +867,17 @@ name or reading.
 | `model`, `device_type`, `firmware`, `hardware` | As received. An empty firmware reads `unavailable` |
 | `has_station` | True for an entry sensor or keypad, false for a chime |
 | `owner_ref` | The `ref` of the HomeBase `device` row. A chime has none |
-| `string_fields` | From bridge 0.8.46 with client 0.31.2: the keys of the inventory row that hold text, never their values. Only schema-like keys appear. A nested object keyed by other keys shows as `parent.*`. `null` with an older client |
+| `string_fields` | From bridge 0.8.46 with client 0.31.2: the top-level keys of the inventory row that hold text, never their values. Only schema-like keys appear. A nested object that holds text shows as `parent.*`, never with its own keys. `null` with an older client |
 | `text_params` | From bridge 0.8.46: the parameter types whose value is text, never the value. `null` with an older client |
 | `name_source` | From bridge 0.8.46: `alias` or `device_name` for the field that gave the name, `null` when neither did and with an older client |
 
 The three name fields help find where the Eufy inventory keeps the name a sensor
 has in the Eufy app ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)).
-A key appears only in schema form: lowercase snake_case segments of at most 32
-characters, without four digits in a row and not 12 or more hex characters, so a
-serial, an id or a capitalized name never appears. A lowercase single word still
-can. Integration 0.8.54 or older leaves the three fields out of **Download
-diagnostics**.
+A key appears only as `key` or `parent.*`, each lowercase snake_case of at most
+32 characters, without four digits in a row and not 12 or more hex characters,
+so a serial, an id or a capitalized name never appears. The keys inside a nested
+object never appear, because they could be names. Integration 0.8.54 or older
+leaves the three fields out of **Download diagnostics**.
 
 The summary counts these rows in `accessories`. The download also has
 `support.accessory_observations`, the client's count of how accessory state

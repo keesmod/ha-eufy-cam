@@ -710,8 +710,10 @@ def test_accessory_diagnostics_keep_bounded_values_and_no_identifiers():
 @pytest.mark.parametrize(
     ("field", "value", "kept"),
     [
-        ("string_fields", ["device_name", "room.title"], True),
-        ("string_fields", ["p2p_did", "relate_devices.*", "rooms.frontdoor"], True),
+        ("string_fields", ["device_name", "room.*"], True),
+        ("string_fields", ["p2p_did", "relate_devices.*"], True),
+        ("string_fields", ["device_name", "room.title"], False),
+        ("string_fields", ["rooms.frontdoor"], False),
         ("string_fields", [], True),
         ("string_fields", ["T8030P23ABCDEF12"], False),
         ("string_fields", ["relate_devices.T8030P23ABCDEF12"], False),

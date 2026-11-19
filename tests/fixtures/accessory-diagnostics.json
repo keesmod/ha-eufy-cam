@@ -33,7 +33,7 @@
         "device_sn",
         "main_hw_version",
         "parent_sn",
-        "room.title"
+        "room.*"
       ],
       "text_params": [
         1234
