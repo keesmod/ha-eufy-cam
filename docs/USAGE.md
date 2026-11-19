@@ -198,9 +198,9 @@ Sessions have a **two-minute absolute limit** for battery cameras and by default
 From integration 0.8.53 with bridge 0.8.44 the accessories of a HomeBase 3
 (`T8030`) and the doorbell chime appear in Home Assistant
 ([issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275)). They are
-read-only. The opening sensor is reported working on one HomeBase 3. There
-Guard Mode offers Off and the keypad charging sensor shows a value. The battery
-sensors and setting Off are not yet confirmed on hardware. They are never
+read-only. The opening sensor and setting Off are reported working on one
+HomeBase 3, where the keypad charging sensor also shows a value. The battery
+sensors are not yet confirmed on hardware. They are never
 cameras, so they get no camera, card, event or snapshot.
 
 | Device | Model | Entities |
@@ -243,7 +243,8 @@ Off and the alarm panel shows disarmed. On a HomeBase with a keypad, Guard Mode
 also offers Off as an option, which the bridge sends as a confirmed command like
 the other modes. Without a keypad, Off appears only while it is the current mode
 and cannot be selected. Disarm on the alarm panel still sets Disarmed, not Off.
-Setting Off from Home Assistant is not yet confirmed on hardware.
+Setting Off from Home Assistant is reported working on one HomeBase 3
+([report](https://github.com/keesmod/ha-eufy-cam/issues/275#issuecomment-7014332148)).
 
 Before rolling back to bridge 0.8.43 or older, switch the HomeBase away from
 Off. Older bridges cannot read Off and keep reconnecting to a HomeBase that is

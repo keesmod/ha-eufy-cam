@@ -428,9 +428,11 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   cameras. See [HomeBase accessories](USAGE.md#homebase-accessories). On a
   HomeBase 3 with firmware 3.8.8.0 the reporter saw the sensor entities change
   when a door or window opened, with open and closed the right way round. The
-  keypad showed its charging state, and Guard Mode offered Off
+  keypad showed its charging state, and setting Off from Home Assistant moved
+  the status in the eufy app
   ([first report](https://github.com/keesmod/ha-eufy-cam/issues/275#issuecomment-7011685186),
-  [second report](https://github.com/keesmod/ha-eufy-cam/issues/275#issuecomment-7012460116)). The keypad battery shows unknown. Setting Off and the battery
+  [second report](https://github.com/keesmod/ha-eufy-cam/issues/275#issuecomment-7012460116),
+  [third report](https://github.com/keesmod/ha-eufy-cam/issues/275#issuecomment-7014332148)). The keypad battery shows unknown. The battery
   readings are not yet confirmed on hardware. Names and starting values come
   with bridge 0.8.45 and client 0.31.1.
 - **Doorbell Chime `T8026`, type 600**, recognized from bridge 0.8.44 with
