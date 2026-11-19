@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -19,6 +20,8 @@ from .recording_file import (
     RecordingFile,
     RecordingStorageError,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class BridgeError(Exception):
@@ -303,6 +306,7 @@ def _reading(raw: Any) -> Reading | None:
     observed_at, live = raw.get("observed_at"), raw.get("live")
     if (
         type(value) is not bool
+        or not isinstance(source, str)
         or source not in READING_SOURCES
         or type(live) is not bool
         or not isinstance(observed_at, str)
@@ -380,20 +384,26 @@ def parse_accessories(
     if not isinstance(items, list):
         return {}, 0
     if len(items) > ACCESSORY_LIMIT:
+        _LOGGER.debug("Dropped all %d accessory rows: over the limit", len(items))
         return {}, len(items)
     rows = [_accessory(item, stations) for item in items]
     counts: dict[str, int] = {}
     for row in rows:
         if row is not None:
             counts[row.serial] = counts.get(row.serial, 0) + 1
-    accessories = {
-        row.serial: row
-        for row in rows
-        if row is not None
-        and counts[row.serial] == 1
-        and row.serial not in cameras
-        and row.serial not in stations
-    }
+    accessories: dict[str, AccessoryInfo] = {}
+    for index, row in enumerate(rows):
+        # The reason and row index only. Serials and names stay out of the log.
+        if row is None:
+            reason = "invalid row"
+        elif counts[row.serial] > 1:
+            reason = "duplicate serial"
+        elif row.serial in cameras or row.serial in stations:
+            reason = "serial of a camera or station"
+        else:
+            accessories[row.serial] = row
+            continue
+        _LOGGER.debug("Dropped accessory row %d: %s", index, reason)
     return accessories, len(items) - len(accessories)
 
 

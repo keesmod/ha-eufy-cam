@@ -26,6 +26,7 @@ async def async_setup_entry(
         known.update(s.serial for s in new)
         async_add_entities(EufyGuardMode(entry.runtime_data, s) for s in new)
 
+    entry.async_on_unload(entry.runtime_data.on_forget(known.discard))
     discover()
     entry.async_on_unload(entry.runtime_data.async_add_listener(discover))
 

@@ -1,5 +1,6 @@
 """HomeBase accessories, the chime device and guard mode Off (#275)."""
 
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -125,6 +126,25 @@ def test_a_malformed_row_is_dropped_alone(bad):
     assert state.cameras and state.stations
 
 
+def test_dropped_rows_are_logged_by_index_and_reason_only(caplog):
+    caplog.set_level("DEBUG", logger="custom_components.eufy_viewer.api")
+    frame = rows(row(SENSOR), {"serial": [], "category": "chime"}, row(SENSOR))
+    camera = {**row(KEYPAD), "serial": FRAME["cameras"][0]["serial"]}
+    frame["accessories"].append(camera)
+    state = BridgeState.parse(frame)
+    assert state.accessories_dropped == 4
+    messages = [
+        r.getMessage() for r in caplog.records if "accessory row" in r.getMessage()
+    ]
+    assert messages == [
+        "Dropped accessory row 0: duplicate serial",
+        "Dropped accessory row 1: invalid row",
+        "Dropped accessory row 2: duplicate serial",
+        "Dropped accessory row 3: serial of a camera or station",
+    ]
+    assert not any(SENSOR in message for message in messages)
+
+
 def test_a_duplicated_serial_drops_every_copy():
     state = BridgeState.parse(rows(row(SENSOR), row(SENSOR), row(KEYPAD)))
     assert set(state.accessories) == {KEYPAD}
@@ -168,6 +188,9 @@ def test_more_than_one_hundred_rows_are_all_dropped():
         {"value": True, "source": "p2p", "observed_at": "yesterday"},
         {"value": True, "source": "p2p", "observed_at": 1763546400},
         {"value": True, "source": "p2p", "observed_at": "2026-11-19T10:00:00Z" * 3},
+        {"value": True, "source": [], "observed_at": "2026-11-19T10:00:00Z"},
+        {"value": True, "source": {}, "observed_at": "2026-11-19T10:00:00Z"},
+        {"value": True, "source": ["p2p"], "observed_at": "2026-11-19T10:00:00Z"},
     ],
 )
 def test_a_malformed_reading_is_dropped_and_the_row_kept(reading):
@@ -236,6 +259,17 @@ def _legacy_parser():
     sys.modules["legacy_eufy_viewer.api"] = module
     exec(compile(LEGACY_API.read_text(), "legacy-0.8.52-api.py", "exec"), vars(module))
     return module.BridgeState
+
+
+# Git blob id of v0.8.52:custom_components/eufy_viewer/api.py. It pins the
+# snapshot in checkouts without tags, as in CI.
+LEGACY_API_BLOB = "5cfc549ef32d1434a8b20cf0cedee1e0f9e35c95"
+
+
+def test_the_legacy_snapshot_has_the_0852_blob_id():
+    data = LEGACY_API.read_bytes()
+    blob = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+    assert blob == LEGACY_API_BLOB
 
 
 def test_the_legacy_snapshot_is_the_0852_parser():
@@ -410,6 +444,85 @@ async def test_devices_can_be_removed_only_after_they_left_the_inventory(hass):
         )
 
 
+@pytest.mark.parametrize("auth", ["connecting", "error", "verify", "captcha"])
+async def test_nothing_is_removable_while_the_bridge_is_not_connected(hass, auth):
+    with patch("custom_components.eufy_viewer.coordinator.EufyCoordinator.start"):
+        entry = await _setup(hass, FRAME)
+        devices = dr.async_get(hass)
+        serials = (SENSOR, CHIME, HB3, "SYNTHCAM0001")
+        # A bridge that restarts or needs a login sends an empty inventory.
+        await _update(
+            hass, entry, frame(auth=auth, cameras=[], stations=[], accessories=[])
+        )
+        for serial in serials:
+            device = devices.async_get_device_by_identifier(
+                (DOMAIN, serial), entry.entry_id
+            )
+            assert device is not None
+            assert not await async_remove_config_entry_device(hass, entry, device)
+        # A failed update is not an inventory either.
+        await _update(hass, entry, rows(row(KEYPAD)))
+        entry.runtime_data.async_set_update_error(BridgeError("lost"))
+        device = devices.async_get_device_by_identifier(
+            (DOMAIN, SENSOR), entry.entry_id
+        )
+        assert not await async_remove_config_entry_device(hass, entry, device)
+        assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_removed_device_returns_with_its_entities(hass):
+    with patch("custom_components.eufy_viewer.coordinator.EufyCoordinator.start"):
+        entry = await _setup(hass, FRAME)
+        devices, entities = dr.async_get(hass), er.async_get(hass)
+
+        def entity_ids(serial):
+            device = devices.async_get_device_by_identifier(
+                (DOMAIN, serial), entry.entry_id
+            )
+            if device is None:
+                return None
+            return sorted(
+                e.entity_id for e in er.async_entries_for_device(entities, device.id)
+            )
+
+        before = {s: entity_ids(s) for s in (SENSOR, CHIME, HB3, "SYNTHCAM0001")}
+        assert before[SENSOR] and before[HB3] and before["SYNTHCAM0001"]
+        assert before[CHIME] == []
+
+        async def remove(serial):
+            # The steps of Home Assistant's remove_config_entry_device handler.
+            device = devices.async_get_device_by_identifier(
+                (DOMAIN, serial), entry.entry_id
+            )
+            assert await async_remove_config_entry_device(hass, entry, device)
+            devices.async_remove_device(device.id)
+            await hass.async_block_till_done()
+            assert (
+                devices.async_get_device_by_identifier((DOMAIN, serial), entry.entry_id)
+                is None
+            )
+
+        # The camera, the sensor and the chime leave the inventory and are removed.
+        await _update(hass, entry, frame(cameras=[], accessories=[row(KEYPAD)]))
+        for serial in (SENSOR, CHIME, "SYNTHCAM0001"):
+            await remove(serial)
+        assert hass.states.get("binary_sensor.synthetic_front_door") is None
+        # Then the HomeBase, with everything on it.
+        await _update(hass, entry, frame(cameras=[], stations=[], accessories=[]))
+        await remove(KEYPAD)
+        await remove(HB3)
+        # All of them come back without a reload.
+        await _update(hass, entry, FRAME)
+        assert {s: entity_ids(s) for s in before} == before
+        assert hass.states.get("binary_sensor.synthetic_front_door").state == "on"
+        sensor = devices.async_get_device_by_identifier(
+            (DOMAIN, SENSOR), entry.entry_id
+        )
+        hb3 = devices.async_get_device_by_identifier((DOMAIN, HB3), entry.entry_id)
+        assert sensor.via_device_id == hb3.id
+        assert await hass.config_entries.async_unload(entry.entry_id)
+
+
 async def test_guard_mode_off_is_shown_and_settable_only_with_a_keypad(hass):
     with (
         patch("custom_components.eufy_viewer.coordinator.EufyCoordinator.start"),
@@ -475,6 +588,27 @@ def test_accessory_discovery_rows_and_observations_survive_download():
     )
     assert result["last_discovery"] == [SUPPORT["summary"], *SUPPORT["rows"]]
     assert result["accessory_observations"] == SUPPORT["accessory_observations"]
+
+
+def test_a_full_discovery_report_with_accessory_refs_survives_download():
+    accessory = SUPPORT["rows"][-1]
+    rows = [
+        SUPPORT["summary"],
+        *({**accessory, "ref": 100 + i % 99} for i in range(298)),
+    ]
+    result = support_report({"schema": 2, "last_discovery": rows, "recent_events": []})[
+        "last_discovery"
+    ]
+    # Every row of the largest report is kept, accessory refs up to 198 included.
+    assert len(result) == 299 and result == rows
+    beyond = support_report(
+        {
+            "schema": 2,
+            "last_discovery": [{**accessory, "ref": 199}, {**SUPPORT["rows"][0]}],
+            "recent_events": [],
+        }
+    )["last_discovery"]
+    assert beyond[0]["ref"] is None and beyond[1] == SUPPORT["rows"][0]
 
 
 @pytest.mark.parametrize("value", [None, "PRIVATE_SERIAL", 5, [], True])

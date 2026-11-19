@@ -443,6 +443,7 @@ each admitted HomeBase accessory and recognized chime (#275). It carries `ref`,
 `model`, `device_type`, `firmware`, `hardware` and the strict boolean
 `has_station`, never a serial, name, door state or observation time. The
 summary adds an `accessories` count from 0 to 100, and `rows` allows up to 297.
+An accessory `ref` follows the device refs, so it goes up to 198.
 The report adds `accessory_observations`, the client's counts by route:
 `hub_notify`, `sensor_status`, `push_door_sensor`, `camera_info`,
 `cloud_seeded`, `conflicts` and `unknown_channel`, each from 0 to 2^31 - 1, or
@@ -454,8 +455,8 @@ Integration 0.8.52 or older drops the record and the counts.
 
 ### Bounds and compatibility
 
-- Retain at most 99 device rows and 99 issue rows plus summary/end, and at most
-  100 recent events. The download is cached in memory, without extra cloud or
+- Retain at most 99 device rows, 99 issue rows and 99 accessory rows plus
+  summary/end, 299 rows in all, and at most 100 recent events. The download is cached in memory, without extra cloud or
   device calls. Restarting loses earlier retained events and collects new startup
   evidence. Do not introduce unbounded retention or polling for logging.
 - Models match `T[A-Z0-9]{4}(?:[A-Z0-9]{1,3}|-[A-Z0-9]{1,2})?` and are at most

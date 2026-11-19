@@ -134,7 +134,11 @@ _NUMBERS = {
 }
 # The elapsed time of a recording query may include a download. Other rows keep
 # the two-minute bound of a cloud request.
-_EVENT_NUMBERS = {"recording_query": {"elapsed_ms": (0, 3600000)}}
+_EVENT_NUMBERS = {
+    "recording_query": {"elapsed_ms": (0, 3600000)},
+    # Accessory refs follow up to 99 device refs, bridge 0.8.44 (#275).
+    "accessory": {"ref": (1, 198)},
+}
 _BOOLEANS = set(
     (
         "station_connected owner_connected push_connected available "
@@ -600,7 +604,8 @@ def support_report(
         "schema": 2,
         "generated_at": _timestamp(raw.get("generated_at")),
     }
-    for key, limit in (("last_discovery", 200), ("recent_events", 100)):
+    # A summary, 99 device, 99 issue and 99 accessory rows and an end row (#275).
+    for key, limit in (("last_discovery", 299), ("recent_events", 100)):
         rows = raw.get(key)
         if not isinstance(rows, list):
             return {"status": "invalid_report"}

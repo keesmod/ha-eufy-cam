@@ -6,7 +6,7 @@ from pathlib import Path
 
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
-from homeassistant.core import Event, HomeAssistant
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -82,6 +82,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: EufyConfigEntry) -> bool
     # Chimes have no entities, so their devices are registered here. Sensors and
     # keypads are registered the same way before their entities are added.
     devices: dict[str, AccessoryInfo] = {}
+
+    @callback
+    def forget(serial: str) -> None:
+        devices.pop(serial, None)
+
+    entry.async_on_unload(coordinator.on_forget(forget))
     sync_accessory_devices(hass, entry, devices)
     entry.async_on_unload(
         coordinator.async_add_listener(
@@ -107,20 +113,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: EufyConfigEntry) -> bool
 async def async_remove_config_entry_device(
     hass: HomeAssistant, entry: EufyConfigEntry, device: dr.DeviceEntry
 ) -> bool:
-    """Allow removing a device only after it left the bridge inventory."""
+    """Allow removing a device only after it left the bridge inventory.
+
+    Only a connected bridge frame lists the full inventory. While the bridge
+    connects or needs a login, its frames are empty, so nothing is removable.
+    """
     coordinator = getattr(entry, "runtime_data", None)
-    if coordinator is None:
+    if coordinator is None or not coordinator.last_update_success:
         return False
     data = coordinator.data
-    return not any(
-        domain == DOMAIN
-        and (
-            serial in data.cameras
-            or serial in data.stations
-            or serial in data.accessories
-        )
-        for domain, serial in device.identifiers
-    )
+    if data is None or data.auth != "connected":
+        return False
+    serials = [serial for domain, serial in device.identifiers if domain == DOMAIN]
+    if any(
+        serial in data.cameras or serial in data.stations or serial in data.accessories
+        for serial in serials
+    ):
+        return False
+    # Home Assistant removes the device and its entities next. If the bridge
+    # lists it again, the platforms add it anew.
+    for serial in serials:
+        coordinator.forget(serial)
+    return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: EufyConfigEntry) -> bool:

@@ -3085,6 +3085,44 @@ test('accessory rows match the shared integration fixture and each changed readi
   }
   assert.deepEqual(f.backend.accessories(), []);
 });
+test('a rediscovery keeps the previous accessory readings until the new ones are read (#275)', async () => {
+  const f = fixture();
+  const { accessories, states } = fixtureAccessories();
+  const base = { ...devices[0]!, id: 'SYNTHHB30001', stationId: 'SYNTHHB30001' };
+  const camera = { ...devices[1]!, stationId: 'SYNTHHB30001' };
+  f.client.discoverDevices = async () => ({ devices: [base, camera], relationships: [], issues: [], accessories: [...accessories] }) as DiscoveryResult;
+  Object.assign(f.client, { getAccessoryState: async (id: string) => states.get(id) });
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    const before = f.backend.accessories();
+    assert.deepEqual(before, sharedStateFrame.accessories);
+    const during: unknown[] = [];
+    const closed = { id: 'SYNTHSENS001', stationId: 'SYNTHHB30001', category: 'entry_sensor', readings: {
+      open: { value: false, source: 'push', observedAt: '2026-11-19T10:05:00.000Z', live: true },
+      batteryLow: null,
+    } };
+    Object.assign(f.client, {
+      getAccessoryState: async (id: string) => {
+        // A frame sent while discovery reads the readings, as a client event would trigger.
+        during.push(f.backend.accessories());
+        const state = states.get(id);
+        // The sensor changes after its own reading was read, while the keypad is still read.
+        if (id === 'SYNTHKEYP001') f.client.emit('accessory', closed);
+        return state;
+      },
+    });
+    await (f.backend as any).discover();
+    for (const frame of during.slice(0, 2)) assert.deepEqual(frame, before);
+    // The change during discovery is kept in the new readings.
+    assert.deepEqual(f.backend.accessories()[0]!.readings, {
+      open: { value: false, source: 'push', observed_at: '2026-11-19T10:05:00.000Z', live: true },
+      battery_low: null,
+    });
+    assert.deepEqual(f.backend.accessories().slice(1), sharedStateFrame.accessories.slice(1));
+  } finally {
+    await f.backend.close();
+  }
+});
 test('a client without accessory support gives an empty list and rows without readings (#275)', async () => {
   const f = fixture();
   const { accessories } = fixtureAccessories();

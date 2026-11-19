@@ -324,6 +324,8 @@ export class MegaBackend extends EventEmitter implements Backend {
   private accessoryRows = new Map<string, Accessory>();
   /** The client's last readings per accessory, from discovery and its accessory events. */
   private accessoryStates = new Map<string, AccessoryState>();
+  /** Rows and readings of a discovery in progress. Events during it land here too. */
+  private pendingAccessories: { rows: Map<string, Accessory>; states: Map<string, AccessoryState> } | null = null;
   private streams = new Map<
     string,
     { abort: AbortController; handle?: LiveStream; starting: Promise<void>; audio: LiveAudioObservation; eld?: LiveEldAudio }
@@ -569,17 +571,26 @@ export class MegaBackend extends EventEmitter implements Backend {
       this.devices = next;
       // Accessories have no owner of their own and no media. Their readings come
       // from the HomeBase sessions below and the push stream (#275).
-      this.accessoryRows = new Map(
+      // Rows and readings are built aside and replace the previous ones at once,
+      // so a frame sent while they load keeps the previous readings.
+      const rows = new Map(
         (result.accessories ?? []).slice(0, ACCESSORY_LIMIT).map((accessory) => [accessory.id, accessory]),
       );
-      this.accessoryStates.clear();
-      for (const accessory of this.accessoryRows.values()) {
-        try {
-          this.accessoryStates.set(accessory.id, await client.getAccessoryState(accessory.id));
-        } catch {
-          // A row the client cannot read is reported without readings.
+      const states = new Map<string, AccessoryState>();
+      this.pendingAccessories = { rows, states };
+      try {
+        for (const accessory of rows.values()) {
+          try {
+            states.set(accessory.id, await client.getAccessoryState(accessory.id));
+          } catch {
+            // A row the client cannot read is reported without readings.
+          }
         }
+      } finally {
+        this.pendingAccessories = null;
       }
+      this.accessoryRows = rows;
+      this.accessoryStates = states;
       this.capabilities.clear();
       for (const device of devices.filter((d) => d.kind === 'camera')) {
         const capability = await client.getCameraCapabilities(device.id);
@@ -761,6 +772,8 @@ export class MegaBackend extends EventEmitter implements Backend {
     // A changed reading of an accessory of the latest discovery. The client emits
     // it only on a change, and each one sends a state frame (#275).
     client.on('accessory', (state) => {
+      const pending = this.pendingAccessories;
+      if (pending?.rows.has(state.id)) pending.states.set(state.id, state);
       if (!this.accessoryRows.has(state.id)) return;
       this.accessoryStates.set(state.id, state);
       this.emit('change');

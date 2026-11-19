@@ -29,6 +29,7 @@ async def async_setup_entry(
         known.update(info.serial for info in new)
         async_add_entities(EufyCamera(entry.runtime_data, info) for info in new)
 
+    entry.async_on_unload(entry.runtime_data.on_forget(known.discard))
     discover()
     entry.async_on_unload(entry.runtime_data.async_add_listener(discover))
 

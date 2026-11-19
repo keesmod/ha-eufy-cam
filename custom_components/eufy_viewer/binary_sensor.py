@@ -38,6 +38,7 @@ async def async_setup_entry(
         if entities:
             async_add_entities(entities)
 
+    entry.async_on_unload(entry.runtime_data.on_forget(known.discard))
     discover()
     entry.async_on_unload(coordinator.async_add_listener(discover))
 
