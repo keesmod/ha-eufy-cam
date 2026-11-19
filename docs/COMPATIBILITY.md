@@ -432,9 +432,12 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   the status in the eufy app
   ([first report](https://github.com/keesmod/ha-eufy-cam/issues/275#issuecomment-7011685186),
   [second report](https://github.com/keesmod/ha-eufy-cam/issues/275#issuecomment-7012460116),
-  [third report](https://github.com/keesmod/ha-eufy-cam/issues/275#issuecomment-7014332148)). The keypad battery shows unknown. The battery
-  readings are not yet confirmed on hardware. Names and starting values come
-  with bridge 0.8.45 and client 0.31.1.
+  [third report](https://github.com/keesmod/ha-eufy-cam/issues/275#issuecomment-7014332148)).
+  With bridge 0.8.45 and client 0.31.1 the accessories show their eufy app
+  names and an entry sensor battery reads normal
+  ([fourth report](https://github.com/keesmod/ha-eufy-cam/issues/275#issuecomment-7016266715),
+  [fifth report](https://github.com/keesmod/ha-eufy-cam/issues/275#issuecomment-7016932101)). The keypad battery shows unknown and is not yet
+  confirmed on hardware.
 - **Doorbell Chime `T8026`, type 600**, recognized from bridge 0.8.44 with
   client 0.31.0 as a device without functions, after
   [issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275). No protocol
