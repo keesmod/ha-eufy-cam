@@ -439,7 +439,7 @@ finding for it yet. The schema stays `2` because the record is additive.
 
 Since bridge 0.8.44 with client 0.31.0 discovery adds an `accessory` record for
 each admitted HomeBase accessory and recognized chime (#275). It carries `ref`,
-`inventory_row`, `owner_ref`, `category` (`entry_sensor`, `keypad` or `chime`),
+`inventory_row`, `owner_ref` (not for a chime), `category` (`entry_sensor`, `keypad` or `chime`),
 `model`, `device_type`, `firmware`, `hardware` and the strict boolean
 `has_station`, never a serial, name, door state or observation time. The
 summary adds an `accessories` count from 0 to 100, and `rows` allows up to 297.

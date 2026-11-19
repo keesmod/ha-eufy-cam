@@ -29,7 +29,7 @@ body:
     id: hardware
     attributes:
       label: Models and firmware
-      description: Camera model/firmware and the HomeBase model/firmware it connects to, or state standalone. For multiple combinations, identify which results belong to each. No serial numbers.
+      description: Camera model/firmware and the HomeBase model/firmware it connects to, or state standalone. Include entry sensors, keypads and chimes with their models. For multiple combinations, identify which results belong to each. No serial numbers.
     validations:
       required: true
   - type: input
@@ -57,6 +57,9 @@ body:
         Confirmed device stop and remaining bridge streams: not tested
         Restart recovery with the same devices/entities: not tested
         Phone background or dashboard navigation: not tested
+        Entry sensor opening and closing in HA, with Eufy app notifications on and off: not tested
+        Keypad battery and charging state: not tested
+        Guard Mode Off shown, and set from HA with a keypad: not tested
     validations:
       required: true
   - type: textarea

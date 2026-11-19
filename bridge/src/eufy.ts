@@ -12,6 +12,7 @@ import { Storage } from './storage.js';
 import { MegaBackend } from './mega-backend.js';
 import { migrationInventory, MigrationError, parseMigrationInventory } from './migration.js';
 import type {
+  AccessoryInfo,
   Backend,
   BackendName,
   BackendRecordings,
@@ -564,7 +565,7 @@ export class Eufy extends EventEmitter {
     const setup = this.setupDiagnostics.report();
     const report = this.backend?.supportReport?.() ?? this.failedSupportReport ?? setup;
     // The failed report keeps the counts of its closed client, the setup report has none (#185).
-    return {...report, standalone_pushes: report.standalone_pushes ?? null, live_video: this.liveVideo.report(this.liveMaxSecondsMains * 1000 + 900_000), cache_age_ms: report === this.failedSupportReport ? Math.max(0, Math.round(performance.now() - this.failedSupportAt)) : 0, software: diagnosticSoftware(), generated_at:setup.generated_at, recent_events:
+    return {...report, standalone_pushes: report.standalone_pushes ?? null, accessory_observations: report.accessory_observations ?? null, live_video: this.liveVideo.report(this.liveMaxSecondsMains * 1000 + 900_000), cache_age_ms: report === this.failedSupportReport ? Math.max(0, Math.round(performance.now() - this.failedSupportAt)) : 0, software: diagnosticSoftware(), generated_at:setup.generated_at, recent_events:
       report === setup ? setup.recent_events : [...report.recent_events, ...setup.recent_events]
         .sort((a,b) => String(a.timestamp).localeCompare(String(b.timestamp))).slice(-100)};
   }
@@ -580,6 +581,10 @@ export class Eufy extends EventEmitter {
   }
   hasCamera(serial: string): boolean {
     return this.backend?.hasCamera(serial) ?? false;
+  }
+  /** HomeBase accessories and recognized chimes for the state frame, none without a backend (#275). */
+  accessories(): AccessoryInfo[] {
+    return this.backend?.accessories?.() ?? [];
   }
   async close(): Promise<void> {
     this.restoreAbort.abort();
