@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.55 - Unreleased
+
+- Added the Window Camera E10 `T8404` on a HomeBase 3 ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)), not yet confirmed on hardware.
+- Updated the client to 0.31.2 ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)).
+
+Upgrade: update the bridge to 0.8.46 first, then the integration. Rollback: 0.8.54 with bridge 0.8.45.
+
 ## 0.8.54 - 2026-11-19
 
 - HomeBase accessories show their eufy name, or a name such as Entry Sensor when the inventory has none ([#275](https://github.com/keesmod/ha-eufy-cam/issues/275)), not yet confirmed on hardware.

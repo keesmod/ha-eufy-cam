@@ -353,6 +353,20 @@ types, neighbour models such as the `T8910` motion sensor, and accessories
 outside that topology keep their rejection. Not tested on hardware with this
 integration.
 
+On 2026-11-21 the reporter of [issue #283][283] ran bridge 0.8.45 with client
+0.31.1 on Home Assistant 2026.11.2. The discovery report shows a rejected row
+with `code=unsupported_device`, `model=T8404`, `device_type=314`, camera
+firmware 1.0.5.4 and `parent_status=present` under a T8030 on firmware 3.8.8.0.
+The report form names it Window Camera E10. Type 314 was not known to the
+client at all. Client 0.31.2, included in bridge 0.8.46, adds type 314 and
+admits exactly `T8404` with type 314 in the indoor family under the H3 media
+policy, which checks the actual HomeBase 3 owner and its firmware. An E10 that
+is its own station reports `relationship=standalone` with
+`relationship_reason=standalone_transport_unverified`. Other types, suffixes
+and models with type 314 stay `unsupported_device`. The client's
+[model matrix][283-matrix] records the reported tuple and the public evidence.
+Not tested on hardware with this integration.
+
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
 [152-records]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780
 [168]: https://github.com/keesmod/ha-eufy-cam/issues/168
@@ -376,6 +390,8 @@ integration.
 [236-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-t8142-z-0303
 [252]: https://github.com/keesmod/ha-eufy-cam/issues/252
 [252-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-t8215-video-doorbell-s4-0304
+[283]: https://github.com/keesmod/ha-eufy-cam/issues/283
+[283-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-t8404-window-camera-e10-0312
 
 `ref`, `owner_ref` and `device_ref` are anonymous references within a report.
 `inventory_row` is a separate zero-based source position. Use the `report` number
