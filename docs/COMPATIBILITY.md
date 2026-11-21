@@ -420,6 +420,14 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   sound. From bridge 0.8.44 the bridge decodes the live AAC-ELD audio the same
   way ([issue #269](https://github.com/keesmod/ha-eufy-cam/issues/269)), not
   yet confirmed on hardware. Reported, not independently reproduced.
+- **Window Camera E10 `T8404`, type 314**, recognized behind a HomeBase 3 from
+  bridge 0.8.46 with client 0.31.2, after
+  [issue #283](https://github.com/keesmod/ha-eufy-cam/issues/283). Snapshot,
+  live view and recordings use the HomeBase 3 owner and firmware checks.
+  The client delivers motion, person, pet and vehicle events for it, and no
+  battery level, since the camera is mains powered. The reporter has not yet
+  tested a bridge with this change, so
+  snapshot, live view, recordings and events are not yet confirmed on hardware.
 - **Entry Sensor `T8900`, type 2, and Keypad `T8960`, type 11**, recognized as
   HomeBase 3 accessories from bridge 0.8.44 with client 0.31.0, after
   [issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275). The sensor
