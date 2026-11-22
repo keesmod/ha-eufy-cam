@@ -925,17 +925,19 @@ restarts.
 The lists are totals since the start, and they are not paired with each other.
 One query answers for every camera on the HomeBase, so an event of any camera
 adds a `push` row for each of them. `downloads` also counts the picture of each
-camera that the `connect` query fetched at the start. To isolate one camera,
-restart the bridge app, wait until the HomeBase is connected, keep the other
-cameras quiet, trigger one event on the camera and download the diagnostics a
-minute later. `replies.push` is then 1, or 2 when the event's pushes came more
-than 2 seconds apart. With `replies.push` at 1, the camera's `push` row reads:
+camera that the `connect` query fetched at the start, and a repeated request for
+the same path shares one download. Whether the snapshot changed is therefore the
+result, and `downloads` only explains it. To isolate one camera, restart the
+bridge app, wait until the HomeBase is connected, keep the other cameras quiet,
+trigger one event on the camera and download the diagnostics a minute later.
+`replies.push` is then usually 1. A push that arrives after the first query
+went out adds another query. With `replies.push` at 1, the camera's `push` row
+reads:
 
-- No `push` row for the camera and `replies.push` at 0: no refresh ran, so no
-  accepted push for that HomeBase reached the bridge.
-- `homebase_path`: a new picture was requested. It was shown when `kept`
-  equals the number of the camera's `homebase_path` rows over all triggers.
-  Otherwise `no_reply`, `not_jpeg` or `too_large` says why it was not.
+- `homebase_path`: a new picture was requested. If the snapshot did not change,
+  `downloads` shows `no_reply`, `not_jpeg`, `too_large` or `superseded` as the
+  likely reason. A picture that answers after 15 seconds counts as `no_reply`
+  but is still shown.
 - `unchanged_path` with a `push` `event_counts` of `unchanged`: 2 seconds after
   the event the HomeBase had not recorded a new row yet.
 - `unchanged_path` with `increased`: the HomeBase recorded the event but kept
@@ -943,6 +945,14 @@ than 2 seconds apart. With `replies.push` at 1, the camera's `push` row reads:
 - `cloud_path_only`, `no_path` or `path_absent`: the HomeBase has no picture of
   its own for the camera's latest row.
 - `no_row`: the HomeBase answered without a row for the camera.
+
+With `replies.push` above 1 the camera has one `push` row per query. A row the
+HomeBase recorded late typically shows `unchanged_path` with `unchanged`,
+followed by `homebase_path` with `increased`. Trigger the event again if the
+rows do not fit one reading. With `replies.push` at 0 and no `push` row, no
+refresh answer arrived: no accepted push reached the bridge, the HomeBase was
+not connected 2 seconds after it, the answer was an error (`failed`) or it came
+after 15 seconds (counted as `connect`).
 
 Copy `support.snapshot_refresh` with `support.software` into the issue,
 together with whether the snapshot changed.
