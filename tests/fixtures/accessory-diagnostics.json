@@ -68,5 +68,39 @@
     "cloud_seeded": 5,
     "conflicts": 0,
     "unknown_channel": 1
-  }
+  },
+  "keypad_parameters": [
+    {
+      "inventory_row": 7,
+      "cloud": {
+        "types": [
+          1101,
+          1141,
+          1653,
+          1655
+        ],
+        "codes": {
+          "1101": "100",
+          "1653": "3",
+          "1655": "2"
+        }
+      },
+      "camera_info": {
+        "types": [
+          1141,
+          1653,
+          1655,
+          1657
+        ],
+        "codes": {
+          "1653": "other",
+          "1655": "2"
+        }
+      },
+      "hub_notify": {
+        "types": [],
+        "codes": {}
+      }
+    }
+  ]
 }

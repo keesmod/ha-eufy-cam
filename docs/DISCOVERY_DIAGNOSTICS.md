@@ -9,6 +9,7 @@ No live stream or optional debug logging is needed to generate discovery evidenc
 
 | Collection method | Bridge | Bundled library | HA integration |
 |---|---|---|---|
+| [Keypad parameters](#keypad-parameters) in `support.keypad_parameters` | 0.8.47 | 0.31.3 | 0.8.56 for the download |
 | [HomeBase accessory](#homebase-accessories) rows and `support.accessory_observations` | 0.8.44 | 0.31.0 | 0.8.53 for the download |
 | [Key setup fields](#key-setup-fields-of-a-connection-attempt) that say what a station connection attempt saw between `session_open` and the command key | 0.8.40 | 0.30.2 | 0.8.49 for the download |
 | [Standalone push counts](#standalone-push-counts) in `support.standalone_pushes` | 0.8.39 | 0.30.1 | 0.8.48 for the download |
@@ -914,6 +915,33 @@ Paste `support.accessory_observations` with `support.software`, the
 `accessory` rows and what the Eufy app showed into [issue #275][275]. The
 result goes into the
 [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md).
+
+#### Keypad parameters
+
+From bridge 0.8.47 with client 0.31.3 and integration 0.8.56 the download also
+has `support.keypad_parameters`, one row for each admitted Keypad `T8960`, at
+most eight ([issue #286][286]). It shows which parameters the keypad sends, so the
+battery and charging values can be decoded from evidence. It is `null` without a
+client or with an older bridge, missing with an older integration, and an empty
+list without a keypad.
+
+| Field | Meaning |
+|---|---|
+| `inventory_row` | The keypad's position in the Eufy inventory, as on its `accessory` row |
+| `cloud` | What the inventory row of the latest discovery carried |
+| `camera_info` | What the HomeBase's device information and other session reports carried |
+| `hub_notify` | What hub notify updates (P2P 1829) carried |
+
+Each route has `types`, the parameter types it carried, and `codes`, the newest
+raw value of the battery keys only: `1101` battery level, `1653` battery state,
+`1654` battery temperature state and `1655` charger state. A value that is not
+a short integer reads `other`. No other value is kept, so keypad codes and
+settings never appear.
+
+Paste `support.keypad_parameters` into [issue #286][286] with what the eufy app
+showed for the keypad battery and whether the keypad was plugged in.
+
+[286]: https://github.com/keesmod/ha-eufy-cam/issues/286
 
 ## Privacy and scope
 

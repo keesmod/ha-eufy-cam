@@ -452,6 +452,13 @@ each accessory in its own download with its category, model, firmware, whether
 it has a HomeBase and the source of each reading, plus `accessories_dropped`.
 The shared cases are in `tests/fixtures/accessory-diagnostics.json`.
 Integration 0.8.52 or older drops the record and the counts.
+Since bridge 0.8.47 with client 0.31.3 the report adds `keypad_parameters`
+(#286), at most eight rows of `inventory_row` and the routes `cloud`,
+`camera_info` and `hub_notify`. Each route has `types`, at most 68 integers from
+0 to 65535, and `codes`, only the keys `1101`, `1653`, `1654` and `1655` with a
+value of at most six digits or `other`. It is `null` without a client or from an
+older bridge. The shared case is in the same fixture. Integration 0.8.55 or
+older drops it.
 
 ### Bounds and compatibility
 

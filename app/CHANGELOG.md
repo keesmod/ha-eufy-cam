@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.47 - Unreleased
+
+- Reports which parameters and battery values a Keypad `T8960` sends in the diagnostics ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286)), not yet confirmed on hardware.
+- Updated the client to 0.31.3 ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286)).
+
+Upgrade: works with every supported integration. Rollback: bridge 0.8.46.
+
 ## 0.8.46 - 2026-11-21
 
 - Added the Window Camera E10 `T8404` on a HomeBase 3 ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)), not yet confirmed on hardware.

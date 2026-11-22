@@ -707,6 +707,63 @@ def test_accessory_diagnostics_keep_bounded_values_and_no_identifiers():
     assert "PRIVATE" not in json.dumps(result)
 
 
+def test_keypad_parameters_survive_download():
+    result = support_report(
+        {
+            "schema": 2,
+            "last_discovery": [],
+            "recent_events": [],
+            "keypad_parameters": SUPPORT["keypad_parameters"],
+        }
+    )
+    assert result["keypad_parameters"] == SUPPORT["keypad_parameters"]
+
+
+@pytest.mark.parametrize("value", [None, "PRIVATE_SERIAL", 5, {}, True])
+def test_keypad_parameters_are_null_without_a_client_or_an_old_bridge(value):
+    report = {"schema": 2, "last_discovery": [], "recent_events": []}
+    assert support_report(report)["keypad_parameters"] is None
+    report["keypad_parameters"] = value
+    assert support_report(report)["keypad_parameters"] is None
+
+
+def test_keypad_parameters_keep_types_and_battery_codes_only():
+    hostile = {
+        "inventory_row": 99,
+        "serial": "PRIVATE_SERIAL",
+        "cloud": {
+            "types": [1655, 1655, -1, 70000, 1.5, True, "PRIVATE", *range(3000, 3080)],
+            "codes": {
+                "1101": "1234567",
+                "1653": "PRIVATE",
+                "1654": "other",
+                "1655": 2,
+                "1657": "4321",
+            },
+            "name": "PRIVATE_NAME",
+        },
+        "camera_info": "PRIVATE",
+        "hub_notify": {"types": "PRIVATE", "codes": ["1655"]},
+    }
+    result = support_report(
+        {
+            "schema": 2,
+            "last_discovery": [],
+            "recent_events": [],
+            "keypad_parameters": ["PRIVATE", hostile, *[{"inventory_row": 1}] * 9],
+        }
+    )["keypad_parameters"]
+    # At most eight input rows are read, and a row that is no object is skipped.
+    assert len(result) == 7
+    row = result[0]
+    assert list(row) == ["inventory_row", "cloud", "camera_info", "hub_notify"]
+    assert row["inventory_row"] is None
+    assert row["cloud"]["types"] == [1655, *range(3000, 3067)]
+    assert row["cloud"]["codes"] == {"1654": "other"}
+    assert row["camera_info"] == row["hub_notify"] == {"types": [], "codes": {}}
+    assert "PRIVATE" not in json.dumps(result) and "4321" not in json.dumps(result)
+
+
 async def test_download_lists_accessories_without_identifiers(hass):
     with patch("custom_components.eufy_viewer.coordinator.EufyCoordinator.start"):
         entry = await _setup(hass, FRAME)
@@ -718,6 +775,7 @@ async def test_download_lists_accessories_without_identifiers(hass):
                     "last_discovery": SUPPORT["rows"],
                     "recent_events": [],
                     "accessory_observations": SUPPORT["accessory_observations"],
+                    "keypad_parameters": SUPPORT["keypad_parameters"],
                 }
             ),
         ):
@@ -755,6 +813,7 @@ async def test_download_lists_accessories_without_identifiers(hass):
         assert diagnostics["accessories_dropped"] == 0
         support = diagnostics["support"]
         assert support["accessory_observations"] == SUPPORT["accessory_observations"]
+        assert support["keypad_parameters"] == SUPPORT["keypad_parameters"]
         assert [r["category"] for r in support["last_discovery"]] == [
             "entry_sensor",
             "keypad",

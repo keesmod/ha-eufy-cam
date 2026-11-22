@@ -27,6 +27,9 @@ import {
   diagnosticModel,
   standalonePushReport,
   accessoryObservationReport,
+  keypadParametersReport,
+  KEYPAD_PARAMETER_ROWS,
+  type KeypadParameterReport,
   type AccessoryObservationReport,
   type RecordingQueryReport,
   type StandalonePushReport,
@@ -393,7 +396,28 @@ export class MegaBackend extends EventEmitter implements Backend {
       () => this.emit('change'),
     );
   }
-  supportReport() { return { ...this.discoveryDiagnostics.report(), live_audio: this.liveAudio.report(this.liveMaxSecondsMains * 1000 + 900_000), recording: this.recordings.diagnostics.report(), standalone_pushes: this.standalonePushes(), accessory_observations: this.accessoryObservations() }; }
+  supportReport() { return { ...this.discoveryDiagnostics.report(), live_audio: this.liveAudio.report(this.liveMaxSecondsMains * 1000 + 900_000), recording: this.recordings.diagnostics.report(), standalone_pushes: this.standalonePushes(), accessory_observations: this.accessoryObservations(), keypad_parameters: this.keypadParameters() }; }
+  /**
+   * The parameters and battery codes the client saw for each admitted keypad
+   * (#286), revalidated at this library boundary and keyed by inventory row.
+   * Null without a client or before client 0.31.3. A keypad whose getter
+   * throws is left out, and the download never fails.
+   */
+  private keypadParameters(): KeypadParameterReport[] | null {
+    const client = this.client;
+    if (!client || typeof (client as { accessoryParameters?: unknown }).accessoryParameters !== 'function') return null;
+    const rows: KeypadParameterReport[] = [];
+    for (const accessory of this.accessoryRows.values()) {
+      if (accessory.category !== 'keypad' || rows.length >= KEYPAD_PARAMETER_ROWS) continue;
+      try {
+        const row = keypadParametersReport(accessory.index, client.accessoryParameters(accessory.id));
+        if (row) rows.push(row);
+      } catch {
+        // Left out, like a keypad without evidence.
+      }
+    }
+    return rows;
+  }
   /**
    * The client's accessory observation counts (#275), revalidated at this
    * library boundary. Null without a client or before client 0.31.0. A getter
