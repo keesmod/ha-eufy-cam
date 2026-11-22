@@ -3255,6 +3255,61 @@ test('Off is offered and sent only where the client reports it settable, and mod
     await f.backend.close();
   }
 });
+test('the support report carries the parameters of each keypad by inventory row, revalidated (#286)', async () => {
+  const shared = JSON.parse(readFileSync(new URL('../../tests/fixtures/accessory-diagnostics.json', import.meta.url), 'utf8'));
+  const [expected] = shared.keypad_parameters as { inventory_row: number; [route: string]: unknown }[];
+  const f = fixture();
+  const { accessories } = fixtureAccessories();
+  const keypad = { ...accessories[2], index: expected!.inventory_row };
+  const second = { ...keypad, id: 'SYNTHKEYP002', index: 9 };
+  f.client.discoverDevices = async () =>
+    ({ devices, relationships: [], issues: [], accessories: [accessories[0], keypad, accessories[3], second] }) as DiscoveryResult;
+  const { inventory_row: _row, ...routes } = expected!;
+  const asked: string[] = [];
+  let answer: (id: string) => unknown = () => routes;
+  Object.assign(f.client, {
+    getAccessoryState: async () => { throw new EufyError('unknown_device'); },
+    accessoryParameters: (id: string) => {
+      asked.push(id);
+      return answer(id);
+    },
+  });
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    // Only keypads are asked, and each row carries its inventory row, never its serial.
+    assert.deepEqual(f.backend.supportReport().keypad_parameters, [expected, { ...expected, inventory_row: 9 }]);
+    assert.deepEqual(asked, ['SYNTHKEYP001', 'SYNTHKEYP002']);
+    // Only the routes, bounded types and the four battery codes leave.
+    answer = () => ({
+      cloud: { types: [1655, 1655, -1, 70000, 1.5, 'PRIVATE', ...Array.from({ length: 80 }, (_, i) => 3000 + i)], codes: { 1655: '2', 1657: '1234', 1653: 'PRIVATE', 1101: '1234567', 1654: 'other' } },
+      camera_info: 'PRIVATE',
+      serial: 'PRIVATE',
+    });
+    const [hostile] = f.backend.supportReport().keypad_parameters!;
+    assert.deepEqual(Object.keys(hostile!), ['inventory_row', 'cloud', 'camera_info', 'hub_notify']);
+    assert.equal(hostile!.cloud.types.length, 68);
+    assert.deepEqual(hostile!.cloud.types.slice(0, 2), [1655, 3000]);
+    assert.deepEqual(hostile!.cloud.codes, { 1654: 'other', 1655: '2' });
+    assert.deepEqual(hostile!.camera_info, { types: [], codes: {} });
+    assert.doesNotMatch(JSON.stringify(hostile), /PRIVATE|1234/);
+    // A keypad whose getter throws or answers no object is left out.
+    answer = (id) => {
+      if (id === 'SYNTHKEYP001') throw new Error('PRIVATE');
+      return null;
+    };
+    assert.deepEqual(f.backend.supportReport().keypad_parameters, []);
+  } finally {
+    await f.backend.close();
+  }
+  // A client before 0.31.3 has no getter, so the report has none.
+  const g = fixture();
+  try {
+    await g.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.equal(g.backend.supportReport().keypad_parameters, null);
+  } finally {
+    await g.backend.close();
+  }
+});
 test('the support report carries the client accessory observation counts, revalidated (#275)', async () => {
   const f = fixture();
   const counts = { hub_notify: 3, sensor_status: 1, push_door_sensor: 2, camera_info: 0, cloud_seeded: 5, conflicts: 0, unknown_channel: 1 };

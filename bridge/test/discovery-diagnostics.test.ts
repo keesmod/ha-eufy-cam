@@ -6,6 +6,7 @@ import {
   DiscoveryDiagnostics, connectionAttempt, diagnosticCode, diagnosticModel, diagnosticReleaseVersion, diagnosticSoftware, diagnosticVersion,
   standalonePushReport,
   accessoryObservationReport,
+  keypadParametersReport,
   type RecordingQueryReport,
 } from '../src/discovery-diagnostics.js';
 
@@ -92,6 +93,11 @@ test('accessory rows and observation counts have exactly the fields of the share
   assert.ok('accessories' in f.rows()[0]);
   assert.deepEqual(Object.keys(accessoryObservationReport(shared.accessory_observations)!),Object.keys(shared.accessory_observations));
   assert.deepEqual(accessoryObservationReport(shared.accessory_observations),shared.accessory_observations);
+  for (const {inventory_row,...routes} of shared.keypad_parameters)
+    assert.deepEqual(keypadParametersReport(inventory_row,routes),{inventory_row,...routes});
+  assert.equal(keypadParametersReport(4,null),null);
+  assert.equal(keypadParametersReport(4,[]),null);
+  assert.deepEqual(keypadParametersReport('PRIVATE',{}),{inventory_row:null,cloud:{types:[],codes:{}},camera_info:{types:[],codes:{}},hub_notify:{types:[],codes:{}}});
 });
 test('failure reports retain discovery and missing-baseline counts before setup rejection', () => {
   const f=collect();

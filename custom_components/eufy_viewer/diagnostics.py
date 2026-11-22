@@ -569,6 +569,59 @@ def accessory_observations_report(raw: Any) -> dict[str, int] | None:
     return _bounded(raw, dict.fromkeys(_ACCESSORY_OBSERVATIONS, _PUSH_COUNT))
 
 
+# Parameters and battery codes of each keypad, bridge 0.8.47 with client 0.31.3
+# (#286). Parameter types and four battery codes only, never another value.
+_KEYPAD_ROUTES = ("cloud", "camera_info", "hub_notify")
+_KEYPAD_CODE_KEYS = ("1101", "1653", "1654", "1655")
+_KEYPAD_CODE = re.compile(r"-?[0-9]{1,6}")
+# 64 parameter types besides the four battery keys, as the client bounds them.
+_KEYPAD_TYPES = 68
+_KEYPAD_ROWS = 8
+
+
+def _keypad_route(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {"types": [], "codes": {}}
+    types = raw.get("types")
+    codes = raw.get("codes")
+    return {
+        "types": sorted(
+            {
+                value
+                for value in (types[:256] if isinstance(types, list) else [])
+                if type(value) is int and 0 <= value <= 65535
+            }
+        )[:_KEYPAD_TYPES],
+        "codes": {
+            key: codes[key]
+            for key in _KEYPAD_CODE_KEYS
+            if isinstance(codes, dict)
+            and isinstance(codes.get(key), str)
+            and (codes[key] == "other" or _KEYPAD_CODE.fullmatch(codes[key]))
+        },
+    }
+
+
+def keypad_parameters_report(raw: Any) -> list[dict[str, Any]] | None:
+    """Keep each keypad's parameter types and battery codes, by inventory row."""
+    if not isinstance(raw, list):
+        return None
+    rows = []
+    for row in raw[:_KEYPAD_ROWS]:
+        if not isinstance(row, dict):
+            continue
+        index = row.get("inventory_row")
+        rows.append(
+            {
+                "inventory_row": index
+                if type(index) is int and 0 <= index <= 98
+                else None,
+                **{route: _keypad_route(row.get(route)) for route in _KEYPAD_ROUTES},
+            }
+        )
+    return rows
+
+
 def standalone_pushes_report(raw: Any) -> dict[str, Any] | None:
     """Keep the bridge's standalone push counts, bounded integers only."""
     if not isinstance(raw, dict):
@@ -666,6 +719,8 @@ def support_report(
     result["accessory_observations"] = accessory_observations_report(
         raw.get("accessory_observations")
     )
+    # Null for a bridge before 0.8.47 or a client before 0.31.3.
+    result["keypad_parameters"] = keypad_parameters_report(raw.get("keypad_parameters"))
     return result
 
 
