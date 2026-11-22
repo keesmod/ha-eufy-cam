@@ -432,8 +432,8 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   [power cycle of the camera](https://github.com/keesmod/ha-eufy-cam/issues/283#issuecomment-7080211793).
   An E10 event does not change the snapshot to the event picture, unlike the
   other cameras on that HomeBase. Bridge 0.8.47 with client 0.31.3 also accepts
-  its detection pushes when they name the camera as its own station, and logs
-  pushes that produce no event, see
+  its detection pushes when they name the camera as its own station, not yet
+  confirmed on hardware, and logs pushes that produce no event, see
   [camera events that never arrive](DISCOVERY_DIAGNOSTICS.md#camera-events-that-never-arrive).
   Reported, not independently reproduced.
 - **Entry Sensor `T8900`, type 2, and Keypad `T8960`, type 11**, recognized as
