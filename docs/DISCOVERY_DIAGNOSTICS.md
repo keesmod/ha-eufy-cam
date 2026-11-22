@@ -9,6 +9,7 @@ No live stream or optional debug logging is needed to generate discovery evidenc
 
 | Collection method | Bridge | Bundled library | HA integration |
 |---|---|---|---|
+| [Keypad parameters](#keypad-parameters) in `support.keypad_parameters` | 0.8.47 | 0.31.3 | 0.8.56 for the download |
 | [HomeBase accessory](#homebase-accessories) rows and `support.accessory_observations` | 0.8.44 | 0.31.0 | 0.8.53 for the download |
 | [Key setup fields](#key-setup-fields-of-a-connection-attempt) that say what a station connection attempt saw between `session_open` and the command key | 0.8.40 | 0.30.2 | 0.8.49 for the download |
 | [Standalone push counts](#standalone-push-counts) in `support.standalone_pushes` | 0.8.39 | 0.30.1 | 0.8.48 for the download |
@@ -917,11 +918,12 @@ result goes into the
 
 #### Keypad parameters
 
-From bridge 0.8.47 with client 0.31.3 the download also has
-`support.keypad_parameters`, one row for each admitted Keypad `T8960`, at most
-eight ([issue #286][286]). It shows which parameters the keypad sends, so the
+From bridge 0.8.47 with client 0.31.3 and integration 0.8.56 the download also
+has `support.keypad_parameters`, one row for each admitted Keypad `T8960`, at
+most eight ([issue #286][286]). It shows which parameters the keypad sends, so the
 battery and charging values can be decoded from evidence. It is `null` without a
-client or with an older bridge, and an empty list without a keypad.
+client or with an older bridge, missing with an older integration, and an empty
+list without a keypad.
 
 | Field | Meaning |
 |---|---|
