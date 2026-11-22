@@ -427,12 +427,15 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   The client delivers motion, person, pet and vehicle events for it, and no
   battery level, since the camera is mains powered. On bridge 0.8.46 the
   reporter saw the camera under the HomeBase 3, a snapshot, live view with and
-  without sound, and the recording list and playback work, but no events.
-  Bridge 0.8.47 with client 0.31.3 accepts its detection pushes when they name
-  the camera as its own station, and logs pushes that produce no event, see
+  without sound, and the recording list and playback work. Motion and person
+  events arrived only after a
+  [power cycle of the camera](https://github.com/keesmod/ha-eufy-cam/issues/283#issuecomment-7080211793).
+  An E10 event does not change the snapshot to the event picture, unlike the
+  other cameras on that HomeBase. Bridge 0.8.47 with client 0.31.3 also accepts
+  its detection pushes when they name the camera as its own station, not yet
+  confirmed on hardware, and logs pushes that produce no event, see
   [camera events that never arrive](DISCOVERY_DIAGNOSTICS.md#camera-events-that-never-arrive).
-  Events are not yet confirmed on hardware. Reported, not independently
-  reproduced.
+  Reported, not independently reproduced.
 - **Entry Sensor `T8900`, type 2, and Keypad `T8960`, type 11**, recognized as
   HomeBase 3 accessories from bridge 0.8.44 with client 0.31.0, after
   [issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275). The sensor

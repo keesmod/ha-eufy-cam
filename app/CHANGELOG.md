@@ -3,7 +3,8 @@
 ## 0.8.47 - Unreleased
 
 - Reports which parameters and battery values a Keypad `T8960` sends in the diagnostics ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286)), not yet confirmed on hardware.
-- Possible fix for missing Window Camera E10 `T8404` events on a HomeBase 3 ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)), not yet confirmed on hardware.
+- Window Camera E10 `T8404` events also arrive when the camera sends them as if it had no HomeBase ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)), not yet confirmed on hardware.
+- An event of the Window Camera E10 `T8404` does not change the snapshot to the event picture ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)), reported, not yet fixed.
 - The bridge log shows camera pushes that produce no event ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)).
 - Updated the client to 0.31.3 ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286), [#283](https://github.com/keesmod/ha-eufy-cam/issues/283)).
 
