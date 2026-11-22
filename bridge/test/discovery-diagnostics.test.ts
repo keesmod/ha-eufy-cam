@@ -35,7 +35,7 @@ test('support report includes software, inventory, anonymous ownership, firmware
     {snapshot:capability,live:capability,recordings:capability}]]),new Map());
   const rows=f.rows();
   assert.equal(rows.length,6);
-  assert.equal(rows[0].software.library,'0.31.3-beta.1');
+  assert.equal(rows[0].software.library,'0.31.3-beta.2');
   assert.equal(rows[0].software.bridge,diagnosticSoftware().bridge);
   assert.deepEqual([rows[0].cameras,rows[0].stations,rows[0].issues],[1,1,2]);
   assert.equal(rows[2].owner_ref,1);
@@ -1047,4 +1047,38 @@ test('a hostile standalone push observation leaves only bounded integers and no 
   assert.equal(rows.length, 18);
   assert.deepEqual(rows.slice(-3), [{ code: 150, count: 1 }, { code: 'none', count: 2 }, { code: 'other', count: 3 }]);
   assert.ok(rows.every((row) => Number.isInteger(row.count) && (typeof row.code === 'number' ? Number.isInteger(row.code) && row.code >= 0 && row.code <= 99999 : row.code === 'none' || row.code === 'other')));
+});
+
+test('unrouted pushes are revalidated, rate-limited and kept out of recent_events (#283)', () => {
+  const f=collect();
+  const push={reason:'owner_mismatch',source:'cloud',model:'T8404',station:'device',pushType:314,eventCode:3102,msgType:18};
+  const start=1_800_000_000_000;
+  f.reporter.unroutedPush(push,start);
+  f.reporter.unroutedPush(push,start+1000);
+  f.reporter.unroutedPush(push,start+2000);
+  f.reporter.unroutedPush({...push,eventCode:3101},start+3000);
+  f.reporter.unroutedPush(push,start+600_000);
+  assert.deepEqual(f.rows().map(({timestamp,...row})=>row),[
+    {diagnostic:'discovery',schema:2,event:'unrouted_push',reason:'owner_mismatch',source:'cloud',model:'T8404',station:'device',push_type:314,event_code:3102,msg_type:18,repeats:0},
+    {diagnostic:'discovery',schema:2,event:'unrouted_push',reason:'owner_mismatch',source:'cloud',model:'T8404',station:'device',push_type:314,event_code:3101,msg_type:18,repeats:0},
+    {diagnostic:'discovery',schema:2,event:'unrouted_push',reason:'owner_mismatch',source:'cloud',model:'T8404',station:'device',push_type:314,event_code:3102,msg_type:18,repeats:2},
+  ]);
+  assert.deepEqual(f.reporter.report().recent_events,[]);
+  // Anything outside the client's vocabulary is replaced, never logged as received.
+  const g=collect();
+  g.reporter.unroutedPush({reason:'PRIVATE_SERIAL',source:'mqtt',model:'PRIVATE_NAME',station:'T8030PRIVATE',pushType:'314',eventCode:1.5,msgType:100000,extra:'PRIVATE'},start);
+  g.reporter.unroutedPush(null,start);
+  g.reporter.unroutedPush({...push,model:null},start);
+  // null matches the first record, so it only counts as a repeat.
+  assert.deepEqual(g.rows().map(({timestamp,...row})=>row),[
+    {diagnostic:'discovery',schema:2,event:'unrouted_push',reason:'unavailable',source:'unavailable',model:'unavailable',station:'unavailable',push_type:null,event_code:null,msg_type:null,repeats:0},
+    {diagnostic:'discovery',schema:2,event:'unrouted_push',reason:'owner_mismatch',source:'cloud',model:null,station:'device',push_type:314,event_code:3102,msg_type:18,repeats:0},
+  ]);
+  assert.ok(!g.lines.join('').includes('PRIVATE'));
+  // At most 32 distinct records per window. A new record waits until one expires.
+  const h=collect();
+  for (let code=0;code<40;code++) h.reporter.unroutedPush({...push,eventCode:code},start);
+  assert.equal(h.lines.length,32);
+  h.reporter.unroutedPush({...push,eventCode:99},start+600_000);
+  assert.equal(h.rows().at(-1).event_code,99);
 });

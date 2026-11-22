@@ -445,6 +445,37 @@ test('Mega adapter preserves camera identity, notifications, and device-confirme
     });
     assert.equal((notifications[0] as { person_name: string }).person_name, 'Fixture');
     assert.equal(f.backend.notifications.metrics.duplicates, 2);
+    // #283: a push without an event becomes one revalidated log line, never a notification.
+    const unrouted: string[] = [];
+    f.backend.on('discovery_diagnostic', (line: string) => unrouted.push(line));
+    f.client.emit('push-unrouted', {
+      reason: 'owner_mismatch',
+      source: 'cloud',
+      model: 'T8404',
+      station: 'device',
+      pushType: 314,
+      eventCode: 3102,
+      msgType: 18,
+    });
+    assert.equal(notifications.length, 1);
+    assert.deepEqual(
+      unrouted.map((line) => JSON.parse(line)).map(({ timestamp, ...row }) => row),
+      [
+        {
+          diagnostic: 'discovery',
+          schema: 2,
+          event: 'unrouted_push',
+          reason: 'owner_mismatch',
+          source: 'cloud',
+          model: 'T8404',
+          station: 'device',
+          push_type: 314,
+          event_code: 3102,
+          msg_type: 18,
+          repeats: 0,
+        },
+      ],
+    );
     const media: unknown[] = [];
     f.backend.on('live-start', (event) => media.push(event));
     const stopped: boolean[] = [];
@@ -867,7 +898,7 @@ for (const empty of [false,true])
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
       assert.equal(summary.experimental_standalone,false);
-      assert.equal(summary.software.library,'0.31.3-beta.1');
+      assert.equal(summary.software.library,'0.31.3-beta.2');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);

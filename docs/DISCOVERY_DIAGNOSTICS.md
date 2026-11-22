@@ -867,6 +867,32 @@ standalone camera's device row into
 what the Eufy app and Home Assistant showed. The result goes into the
 [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md).
 
+### Camera events that never arrive
+
+From bridge 0.8.47 with client 0.31.3, a push that produced no camera event
+leaves an `unrouted_push` line in the `Eufy discovery:` log
+([issue #283](https://github.com/keesmod/ha-eufy-cam/issues/283)). It holds a
+reason, the camera model and numbers only, with no serial, DID, address, name,
+time or image. Pushes for HomeBase accessories and standalone cameras are left
+out, because their own counts cover them, and so is a HomeBase push without a
+camera detection, such as a Guard Mode change. The line is not in the
+downloaded diagnostics.
+
+| Field | Meaning |
+|---|---|
+| `reason` | `no_serial`: the push named no device or station. `unknown_device`: it named no admitted camera. `camera_unavailable`: the camera or its HomeBase was not set up or had failed. `owner_mismatch`: the station it named was not the camera's HomeBase. `unsupported_event`: the camera lacks that detection. `station_detection`: a HomeBase push without a camera carried a camera detection code |
+| `source` | `cloud` for the Eufy push service, `local` for a push over the open HomeBase session |
+| `model` | The model of the admitted camera the push named, else `null` |
+| `station` | The station the push named: the camera's HomeBase (`owner`), the camera itself (`device`), another admitted HomeBase (`station`), something else (`unknown`) or nothing (`missing`) |
+| `push_type`, `event_code`, `msg_type` | The push's type field, event code and message type, or `null` |
+| `repeats` | Identical pushes left out since the previous line of the same values |
+
+The bridge writes the same values at most once per 10 minutes, for at most 32
+different lines at a time. To report missing events, trigger a detection the
+Eufy app shows, wait a minute, and copy the `unrouted_push` lines with the
+`summary` line of the last startup. No line for that camera means no push for it
+reached the bridge.
+
 ### HomeBase accessories
 
 From bridge 0.8.44 with client 0.31.0, the discovery report has one
