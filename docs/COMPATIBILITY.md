@@ -418,8 +418,16 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   30 ms per unit at 16 kHz. The integration version and whether the sound stays
   in sync with the picture were not stated. On that bridge live view had no
   sound. From bridge 0.8.44 the bridge decodes the live AAC-ELD audio the same
-  way ([issue #269](https://github.com/keesmod/ha-eufy-cam/issues/269)), not
-  yet confirmed on hardware. Reported, not independently reproduced.
+  way ([issue #269](https://github.com/keesmod/ha-eufy-cam/issues/269)). In
+  the owner's first live test its `eld_decode` log line
+  [showed](https://github.com/keesmod/ha-eufy-cam/issues/252#issuecomment-7037483555)
+  440 units decoded without errors, 30 ms per unit. The card still played live
+  view as JPEG without sound, because Home Assistant's go2rtc was not set up on
+  the owner's HA Core installation. After setting it up, the owner
+  [reported](https://github.com/keesmod/ha-eufy-cam/issues/252#issuecomment-7079188914)
+  live view working with sound. The owner called the sync of sound and picture
+  mediocre, but no better in the Eufy app. The bridge and integration versions
+  of these tests were not stated. Reported, not independently reproduced.
 - **Window Camera E10 `T8404`, type 314**, recognized behind a HomeBase 3 from
   bridge 0.8.46 with client 0.31.2, after
   [issue #283](https://github.com/keesmod/ha-eufy-cam/issues/283). Snapshot,
