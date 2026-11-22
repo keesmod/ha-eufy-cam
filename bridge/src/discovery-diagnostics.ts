@@ -488,7 +488,11 @@ export const snapshotRowOutcomes = [
 export const snapshotEventCounts = ['first', 'increased', 'unchanged', 'decreased', 'unavailable'] as const;
 export const snapshotDownloadOutcomes = ['kept', 'not_jpeg', 'too_large', 'superseded', 'no_reply'] as const;
 type SnapshotTrigger = (typeof snapshotTriggers)[number];
-/** At most this many rows per list: 17 client model keys times 3 triggers fit twice over. */
+/**
+ * At most this many rows per list. Only counts above 0 are listed, and an account
+ * has few camera models, so this stays far above what one account produces. Rows
+ * beyond it are left out.
+ */
 export const SNAPSHOT_REFRESH_ROWS = 96;
 export interface SnapshotRefreshReport {
   replies: Record<SnapshotTrigger | 'failed', number | null>;

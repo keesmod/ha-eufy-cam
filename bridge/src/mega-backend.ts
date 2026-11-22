@@ -425,6 +425,14 @@ export class MegaBackend extends EventEmitter implements Backend {
    * library boundary. Null without a client or before client 0.31.0. A getter
    * that throws gives null and never fails the download.
    */
+  private accessoryObservations(): AccessoryObservationReport | null {
+    if (!this.client) return null;
+    try {
+      return accessoryObservationReport(this.client.accessoryObservation);
+    } catch {
+      return null;
+    }
+  }
   /**
    * The client's snapshot refresh counts (#293), revalidated at this library
    * boundary. Null without a client or before client 0.31.3. A getter that
@@ -434,14 +442,6 @@ export class MegaBackend extends EventEmitter implements Backend {
     if (!this.client) return null;
     try {
       return snapshotRefreshReport(this.client.snapshotRefreshStatus);
-    } catch {
-      return null;
-    }
-  }
-  private accessoryObservations(): AccessoryObservationReport | null {
-    if (!this.client) return null;
-    try {
-      return accessoryObservationReport(this.client.accessoryObservation);
     } catch {
       return null;
     }
