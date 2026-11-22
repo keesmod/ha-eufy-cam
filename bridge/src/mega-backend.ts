@@ -27,6 +27,8 @@ import {
   diagnosticModel,
   standalonePushReport,
   accessoryObservationReport,
+  snapshotRefreshReport,
+  type SnapshotRefreshReport,
   keypadParametersReport,
   KEYPAD_PARAMETER_ROWS,
   type KeypadParameterReport,
@@ -396,7 +398,7 @@ export class MegaBackend extends EventEmitter implements Backend {
       () => this.emit('change'),
     );
   }
-  supportReport() { return { ...this.discoveryDiagnostics.report(), live_audio: this.liveAudio.report(this.liveMaxSecondsMains * 1000 + 900_000), recording: this.recordings.diagnostics.report(), standalone_pushes: this.standalonePushes(), accessory_observations: this.accessoryObservations(), keypad_parameters: this.keypadParameters() }; }
+  supportReport() { return { ...this.discoveryDiagnostics.report(), live_audio: this.liveAudio.report(this.liveMaxSecondsMains * 1000 + 900_000), recording: this.recordings.diagnostics.report(), standalone_pushes: this.standalonePushes(), accessory_observations: this.accessoryObservations(), keypad_parameters: this.keypadParameters(), snapshot_refresh: this.snapshotRefresh() }; }
   /**
    * The parameters and battery codes the client saw for each admitted keypad
    * (#286), revalidated at this library boundary and keyed by inventory row.
@@ -423,6 +425,19 @@ export class MegaBackend extends EventEmitter implements Backend {
    * library boundary. Null without a client or before client 0.31.0. A getter
    * that throws gives null and never fails the download.
    */
+  /**
+   * The client's snapshot refresh counts (#293), revalidated at this library
+   * boundary. Null without a client or before client 0.31.3. A getter that
+   * throws gives null and never fails the download.
+   */
+  private snapshotRefresh(): SnapshotRefreshReport | null {
+    if (!this.client) return null;
+    try {
+      return snapshotRefreshReport(this.client.snapshotRefreshStatus);
+    } catch {
+      return null;
+    }
+  }
   private accessoryObservations(): AccessoryObservationReport | null {
     if (!this.client) return null;
     try {

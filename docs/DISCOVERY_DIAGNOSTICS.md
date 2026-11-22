@@ -899,6 +899,48 @@ line of any model appears, no push for it reached the bridge, unless a line with
 the same values appeared in the 10 minutes before, 32 other records already
 filled the 10 minutes or the bridge logged a fault.
 
+### Event pictures that do not update
+
+After a camera event the bridge's client waits 2 seconds, asks the HomeBase for
+the latest event row of each camera and downloads the picture at the row's
+HomeBase path. That picture becomes the camera's snapshot. It never fetches a
+cloud path. From bridge 0.8.47 with client 0.31.3 the download has
+`support.snapshot_refresh`, which counts each step by camera model
+([issue #293](https://github.com/keesmod/ha-eufy-cam/issues/293)). It holds
+model codes, fixed words and counts only, with no serial, path, name, time or
+image. It is `null` without a client and with an older bridge.
+
+| Field | Meaning |
+|---|---|
+| `replies` | Answers to the latest-row query, by what asked: `push` (after an event), `request` (a snapshot without a stored picture), `connect` (the HomeBase session's own query when it opens). `failed`: answers with an error, whose rows are not read |
+| `rows` | `{model, trigger, outcome, count}`. Per answer and camera: `no_row` (the answer had no row for the camera), `homebase_path` (a new HomeBase path, its picture was requested), `unchanged_path` (the path of the picture already shown), `cloud_path_only`, `no_path`, `path_absent` (the row had no HomeBase path field) or `invalid_path` |
+| `event_counts` | `{model, trigger, change, count}`. How the row's event count compares with the camera's previous row: `first`, `increased`, `unchanged`, `decreased` or `unavailable` |
+| `downloads` | `{model, outcome, count}`. Per requested picture: `kept` (it became the snapshot), `not_jpeg`, `too_large` (over 5 MB), `superseded` (a newer path was requested first) or `no_reply` (nothing within 15 seconds) |
+
+Only rows with a count above 0 are listed, at most 96 per list. A model the
+bridge does not recognise as a model code shows as `unavailable`, and `other`
+collects models after the first 16. The counts start at 0 when the bridge
+restarts.
+
+How to read the rows of a camera whose event picture does not update, after an
+event that reached Home Assistant:
+
+- `push` with `homebase_path` and `downloads` `kept`: the picture was fetched
+  and shown.
+- `push` with `unchanged_path` and `event_counts` `unchanged`: 2 seconds after
+  the event the HomeBase had not recorded a new row yet.
+- `push` with `unchanged_path` and `event_counts` `increased`: the HomeBase
+  recorded the event but kept an older picture path.
+- `cloud_path_only`, `no_path` or `path_absent`: the HomeBase has no picture of
+  its own for the camera's latest row.
+- `no_row`: the HomeBase answered without a row for the camera.
+- `downloads` `no_reply`, `not_jpeg` or `too_large`: the path was there, but
+  the picture did not arrive as a usable JPEG.
+
+To report it, restart the bridge app, trigger one event on the camera, wait a
+minute, then download the diagnostics and copy `support.snapshot_refresh` with
+`support.software`.
+
 ### HomeBase accessories
 
 From bridge 0.8.44 with client 0.31.0, the discovery report has one

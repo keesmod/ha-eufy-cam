@@ -474,6 +474,79 @@ export function accessoryObservationReport(value: unknown): AccessoryObservation
     accessoryObservationKeys.map((key) => [key, pushCount(observation[key])]),
   ) as AccessoryObservationReport;
 }
+/** The queries, row outcomes, event_count changes and download outcomes of client 0.31.3 (#293). */
+export const snapshotTriggers = ['push', 'request', 'connect'] as const;
+export const snapshotRowOutcomes = [
+  'no_row',
+  'homebase_path',
+  'unchanged_path',
+  'cloud_path_only',
+  'no_path',
+  'path_absent',
+  'invalid_path',
+] as const;
+export const snapshotEventCounts = ['first', 'increased', 'unchanged', 'decreased', 'unavailable'] as const;
+export const snapshotDownloadOutcomes = ['kept', 'not_jpeg', 'too_large', 'superseded', 'no_reply'] as const;
+type SnapshotTrigger = (typeof snapshotTriggers)[number];
+/** At most this many rows per list: 17 client model keys times 3 triggers fit twice over. */
+export const SNAPSHOT_REFRESH_ROWS = 96;
+export interface SnapshotRefreshReport {
+  replies: Record<SnapshotTrigger | 'failed', number | null>;
+  rows: { model: string; trigger: SnapshotTrigger; outcome: (typeof snapshotRowOutcomes)[number]; count: number }[];
+  event_counts: { model: string; trigger: SnapshotTrigger; change: (typeof snapshotEventCounts)[number]; count: number }[];
+  downloads: { model: string; outcome: (typeof snapshotDownloadOutcomes)[number]; count: number }[];
+}
+/**
+ * Project the client's `snapshotRefreshStatus` for the support report (#293).
+ * It crosses a library boundary, so only known keys leave: the model as the
+ * bounded model code, `other` or `unavailable`, and each count above 0 as a
+ * bounded integer. Rows of the same values are added up. Null without an
+ * observation, as before client 0.31.3.
+ */
+export function snapshotRefreshReport(value: unknown): SnapshotRefreshReport | null {
+  const observation = record(value);
+  if (!observation || Array.isArray(observation)) return null;
+  const replies = record(observation.replies);
+  const models = record(observation.models);
+  const rows = new Map<string, SnapshotRefreshReport['rows'][number]>();
+  const changes = new Map<string, SnapshotRefreshReport['event_counts'][number]>();
+  const downloads = new Map<string, SnapshotRefreshReport['downloads'][number]>();
+  const add = <T extends { count: number }>(target: Map<string, T>, row: Omit<T, 'count'>, raw: unknown) => {
+    const count = pushCount(raw);
+    if (!count) return;
+    const key = JSON.stringify(row);
+    const existing = target.get(key);
+    if (existing) existing.count = Math.min(2 ** 31 - 1, existing.count + count);
+    else if (target.size < SNAPSHOT_REFRESH_ROWS) target.set(key, { ...row, count } as T);
+  };
+  if (models && !Array.isArray(models))
+    for (const [key, raw] of Object.entries(models)) {
+      const counts = record(raw);
+      if (!counts) continue;
+      const name = key === 'other' ? 'other' : model(key);
+      const byTrigger = record(counts.rows);
+      const changeByTrigger = record(counts.eventCounts);
+      for (const trigger of snapshotTriggers) {
+        const outcomes = record(byTrigger?.[trigger]);
+        for (const outcome of snapshotRowOutcomes) add(rows, { model: name, trigger, outcome }, outcomes?.[outcome]);
+        const kinds = record(changeByTrigger?.[trigger]);
+        for (const change of snapshotEventCounts) add(changes, { model: name, trigger, change }, kinds?.[change]);
+      }
+      const fetched = record(counts.downloads);
+      for (const outcome of snapshotDownloadOutcomes) add(downloads, { model: name, outcome }, fetched?.[outcome]);
+    }
+  return {
+    replies: {
+      push: pushCount(replies?.push),
+      request: pushCount(replies?.request),
+      connect: pushCount(replies?.connect),
+      failed: pushCount(observation.failedReplies),
+    },
+    rows: [...rows.values()],
+    event_counts: [...changes.values()],
+    downloads: [...downloads.values()],
+  };
+}
 /** The routes of the client's keypad parameters (#286). */
 export const keypadParameterRoutes = ['cloud', 'camera_info', 'hub_notify'] as const;
 /** The battery keys whose raw values the client keeps for a keypad (#286). */

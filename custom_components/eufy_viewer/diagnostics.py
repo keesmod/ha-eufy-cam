@@ -622,6 +622,72 @@ def keypad_parameters_report(raw: Any) -> list[dict[str, Any]] | None:
     return rows
 
 
+# How the client refreshes snapshots from latest event rows, bridge 0.8.47 with
+# client 0.31.3 (#293). A model code, enums and counts only.
+_SNAPSHOT_TRIGGERS = ("push", "request", "connect")
+_SNAPSHOT_ROW_OUTCOMES = (
+    "no_row",
+    "homebase_path",
+    "unchanged_path",
+    "cloud_path_only",
+    "no_path",
+    "path_absent",
+    "invalid_path",
+)
+_SNAPSHOT_CHANGES = ("first", "increased", "unchanged", "decreased", "unavailable")
+_SNAPSHOT_DOWNLOADS = ("kept", "not_jpeg", "too_large", "superseded", "no_reply")
+_SNAPSHOT_ROWS = 96
+
+
+def _snapshot_rows(raw: Any, keys: dict[str, tuple[str, ...]]) -> list[dict[str, Any]]:
+    """Keep rows of a model, known enum values and a count from 1."""
+    if not isinstance(raw, list):
+        return []
+    rows = []
+    for row in raw[:_SNAPSHOT_ROWS]:
+        if not isinstance(row, dict):
+            continue
+        count = row.get("count")
+        if type(count) is not int or not 1 <= count <= 2**31 - 1:
+            continue
+        if any(row.get(key) not in allowed for key, allowed in keys.items()):
+            continue
+        model = row.get("model")
+        rows.append(
+            {
+                "model": "other"
+                if model == "other"
+                else _fields({"model": model})["model"],
+                **{key: row[key] for key in keys},
+                "count": count,
+            }
+        )
+    return rows
+
+
+def snapshot_refresh_report(raw: Any) -> dict[str, Any] | None:
+    """Keep the snapshot refresh counts, by model, enums and counts only."""
+    if not isinstance(raw, dict):
+        return None
+    return {
+        "replies": _bounded(
+            raw.get("replies"),
+            dict.fromkeys((*_SNAPSHOT_TRIGGERS, "failed"), _PUSH_COUNT),
+        ),
+        "rows": _snapshot_rows(
+            raw.get("rows"),
+            {"trigger": _SNAPSHOT_TRIGGERS, "outcome": _SNAPSHOT_ROW_OUTCOMES},
+        ),
+        "event_counts": _snapshot_rows(
+            raw.get("event_counts"),
+            {"trigger": _SNAPSHOT_TRIGGERS, "change": _SNAPSHOT_CHANGES},
+        ),
+        "downloads": _snapshot_rows(
+            raw.get("downloads"), {"outcome": _SNAPSHOT_DOWNLOADS}
+        ),
+    }
+
+
 def standalone_pushes_report(raw: Any) -> dict[str, Any] | None:
     """Keep the bridge's standalone push counts, bounded integers only."""
     if not isinstance(raw, dict):
@@ -721,6 +787,8 @@ def support_report(
     )
     # Null for a bridge before 0.8.47 or a client before 0.31.3.
     result["keypad_parameters"] = keypad_parameters_report(raw.get("keypad_parameters"))
+    # Null for a bridge before 0.8.47-beta.3 or a client before 0.31.3-beta.3.
+    result["snapshot_refresh"] = snapshot_refresh_report(raw.get("snapshot_refresh"))
     return result
 
 

@@ -1464,3 +1464,116 @@ async def test_download_keeps_standalone_pushes_from_the_bridge(hass):
         result = await async_get_config_entry_diagnostics(hass, entry)
     assert result["support"]["standalone_pushes"] == _PUSHES
     assert "PRIVATE" not in json.dumps(result)
+
+
+# Issue #293: how the client refreshes snapshots from latest event rows, by model.
+_SNAPSHOT = json.loads(
+    (
+        Path(__file__).parent / "fixtures" / "snapshot-refresh-diagnostics.json"
+    ).read_text()
+)["support"]
+
+
+def _with_snapshot(value):
+    return {
+        "schema": 2,
+        "last_discovery": [],
+        "recent_events": [],
+        "snapshot_refresh": value,
+    }
+
+
+def test_snapshot_refresh_survives_download_unchanged():
+    assert support_report(_with_snapshot(_SNAPSHOT))["snapshot_refresh"] == _SNAPSHOT
+
+
+@pytest.mark.parametrize("value", [None, "PRIVATE_SERIAL", 5, [], True])
+def test_snapshot_refresh_is_null_without_a_client_or_an_old_bridge(value):
+    report = {"schema": 2, "last_discovery": [], "recent_events": []}
+    assert support_report(report)["snapshot_refresh"] is None
+    assert support_report(_with_snapshot(value))["snapshot_refresh"] is None
+
+
+def test_snapshot_refresh_keeps_models_enums_and_counts_only():
+    hostile = {
+        "replies": {"push": 2**31, "request": True, "connect": 1, "failed": -1},
+        "serial": "PRIVATE_SERIAL",
+        "path": "/PRIVATE/path.jpg",
+        "rows": [
+            {"model": "T8404", "trigger": "push", "outcome": "path_absent", "count": 2},
+            {
+                "model": "PRIVATE_SERIAL",
+                "trigger": "push",
+                "outcome": "no_row",
+                "count": 1,
+            },
+            {"model": "other", "trigger": "connect", "outcome": "no_path", "count": 1},
+            {"model": "T8404", "trigger": "later", "outcome": "no_row", "count": 1},
+            {"model": "T8404", "trigger": "push", "outcome": "/PRIVATE", "count": 1},
+            {"model": "T8404", "trigger": "push", "outcome": "no_row", "count": 0},
+            {"model": "T8404", "trigger": "push", "outcome": "no_row", "count": 1.0},
+            {
+                "model": "T8404",
+                "trigger": "push",
+                "outcome": "no_row",
+                "count": 1,
+                "path": "/PRIVATE/path.jpg",
+            },
+            "PRIVATE_SERIAL",
+        ],
+        "event_counts": [
+            {"model": "T8404", "trigger": "push", "change": "increased", "count": 3},
+            {"model": "T8404", "trigger": "push", "change": "PRIVATE", "count": 3},
+        ],
+        "downloads": [
+            {"model": "T8404", "outcome": "no_reply", "count": 1},
+            {"model": "T8404", "outcome": "kept", "count": 2**31},
+            {"model": "T8404", "trigger": "push", "outcome": "kept", "count": 1},
+        ],
+    }
+    result = support_report(_with_snapshot(hostile))["snapshot_refresh"]
+    assert result == {
+        "replies": {"connect": 1},
+        "rows": [
+            {"model": "T8404", "trigger": "push", "outcome": "path_absent", "count": 2},
+            {
+                "model": "unavailable",
+                "trigger": "push",
+                "outcome": "no_row",
+                "count": 1,
+            },
+            {"model": "other", "trigger": "connect", "outcome": "no_path", "count": 1},
+            {"model": "T8404", "trigger": "push", "outcome": "no_row", "count": 1},
+        ],
+        "event_counts": [
+            {"model": "T8404", "trigger": "push", "change": "increased", "count": 3}
+        ],
+        "downloads": [
+            {"model": "T8404", "outcome": "no_reply", "count": 1},
+            {"model": "T8404", "outcome": "kept", "count": 1},
+        ],
+    }
+    assert "PRIVATE" not in json.dumps(result)
+    many = [
+        {"model": "T8404", "trigger": "push", "outcome": "no_row", "count": n}
+        for n in range(1, 200)
+    ]
+    rows = support_report(_with_snapshot({**_SNAPSHOT, "rows": many}))
+    assert len(rows["snapshot_refresh"]["rows"]) == 96
+
+
+async def test_download_keeps_snapshot_refresh_from_the_bridge(hass):
+    entry = MockConfigEntry(domain=DOMAIN, unique_id="PRIVATE", data=DATA)
+    entry.add_to_hass(hass)
+    with patch(
+        "custom_components.eufy_viewer.api.BridgeClient.request",
+        AsyncMock(
+            return_value={
+                **_bridge_0837_report(),
+                "snapshot_refresh": {**_SNAPSHOT, "serial": "PRIVATE_SERIAL"},
+            }
+        ),
+    ):
+        result = await async_get_config_entry_diagnostics(hass, entry)
+    assert result["support"]["snapshot_refresh"] == _SNAPSHOT
+    assert "PRIVATE" not in json.dumps(result)

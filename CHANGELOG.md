@@ -7,7 +7,8 @@
 - Window Camera E10 `T8404` events also arrive when the camera sends them as if it had no HomeBase ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)), not yet confirmed on hardware.
 - An event of the Window Camera E10 `T8404` does not change the snapshot to the event picture ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)), reported, not yet fixed.
 - The bridge log shows camera pushes that produce no event ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)).
-- Updated the client to 0.31.3 ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286), [#283](https://github.com/keesmod/ha-eufy-cam/issues/283)).
+- Diagnostics count by camera model how event pictures are found and fetched ([#293](https://github.com/keesmod/ha-eufy-cam/issues/293)), not yet confirmed on hardware.
+- Updated the client to 0.31.3 ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286), [#283](https://github.com/keesmod/ha-eufy-cam/issues/283), [#293](https://github.com/keesmod/ha-eufy-cam/issues/293)).
 
 Upgrade: update the bridge to 0.8.47 first, then the integration. Rollback: 0.8.55 with bridge 0.8.46.
 

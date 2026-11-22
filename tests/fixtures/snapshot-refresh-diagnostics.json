@@ -1,0 +1,224 @@
+{
+  "description": "Synthetic counts shared by the bridge and integration tests (#293). client is the client's snapshotRefreshStatus, support is the bridge's snapshot_refresh projection.",
+  "client": {
+    "replies": {
+      "push": 4,
+      "request": 0,
+      "connect": 1
+    },
+    "failedReplies": 1,
+    "models": {
+      "T8404": {
+        "rows": {
+          "push": {
+            "no_row": 0,
+            "homebase_path": 0,
+            "unchanged_path": 3,
+            "cloud_path_only": 0,
+            "no_path": 0,
+            "path_absent": 1,
+            "invalid_path": 0
+          },
+          "request": {
+            "no_row": 0,
+            "homebase_path": 0,
+            "unchanged_path": 0,
+            "cloud_path_only": 0,
+            "no_path": 0,
+            "path_absent": 0,
+            "invalid_path": 0
+          },
+          "connect": {
+            "no_row": 0,
+            "homebase_path": 1,
+            "unchanged_path": 0,
+            "cloud_path_only": 0,
+            "no_path": 0,
+            "path_absent": 0,
+            "invalid_path": 0
+          }
+        },
+        "eventCounts": {
+          "push": {
+            "first": 0,
+            "increased": 3,
+            "unchanged": 1,
+            "decreased": 0,
+            "unavailable": 0
+          },
+          "request": {
+            "first": 0,
+            "increased": 0,
+            "unchanged": 0,
+            "decreased": 0,
+            "unavailable": 0
+          },
+          "connect": {
+            "first": 1,
+            "increased": 0,
+            "unchanged": 0,
+            "decreased": 0,
+            "unavailable": 0
+          }
+        },
+        "downloads": {
+          "kept": 1,
+          "not_jpeg": 0,
+          "too_large": 0,
+          "superseded": 0,
+          "no_reply": 0
+        }
+      },
+      "T8213": {
+        "rows": {
+          "push": {
+            "no_row": 0,
+            "homebase_path": 4,
+            "unchanged_path": 0,
+            "cloud_path_only": 0,
+            "no_path": 0,
+            "path_absent": 0,
+            "invalid_path": 0
+          },
+          "request": {
+            "no_row": 0,
+            "homebase_path": 0,
+            "unchanged_path": 0,
+            "cloud_path_only": 0,
+            "no_path": 0,
+            "path_absent": 0,
+            "invalid_path": 0
+          },
+          "connect": {
+            "no_row": 0,
+            "homebase_path": 1,
+            "unchanged_path": 0,
+            "cloud_path_only": 0,
+            "no_path": 0,
+            "path_absent": 0,
+            "invalid_path": 0
+          }
+        },
+        "eventCounts": {
+          "push": {
+            "first": 0,
+            "increased": 4,
+            "unchanged": 0,
+            "decreased": 0,
+            "unavailable": 0
+          },
+          "request": {
+            "first": 0,
+            "increased": 0,
+            "unchanged": 0,
+            "decreased": 0,
+            "unavailable": 0
+          },
+          "connect": {
+            "first": 1,
+            "increased": 0,
+            "unchanged": 0,
+            "decreased": 0,
+            "unavailable": 0
+          }
+        },
+        "downloads": {
+          "kept": 4,
+          "not_jpeg": 0,
+          "too_large": 0,
+          "superseded": 0,
+          "no_reply": 1
+        }
+      }
+    }
+  },
+  "support": {
+    "replies": {
+      "push": 4,
+      "request": 0,
+      "connect": 1,
+      "failed": 1
+    },
+    "rows": [
+      {
+        "model": "T8404",
+        "trigger": "push",
+        "outcome": "unchanged_path",
+        "count": 3
+      },
+      {
+        "model": "T8404",
+        "trigger": "push",
+        "outcome": "path_absent",
+        "count": 1
+      },
+      {
+        "model": "T8404",
+        "trigger": "connect",
+        "outcome": "homebase_path",
+        "count": 1
+      },
+      {
+        "model": "T8213",
+        "trigger": "push",
+        "outcome": "homebase_path",
+        "count": 4
+      },
+      {
+        "model": "T8213",
+        "trigger": "connect",
+        "outcome": "homebase_path",
+        "count": 1
+      }
+    ],
+    "event_counts": [
+      {
+        "model": "T8404",
+        "trigger": "push",
+        "change": "increased",
+        "count": 3
+      },
+      {
+        "model": "T8404",
+        "trigger": "push",
+        "change": "unchanged",
+        "count": 1
+      },
+      {
+        "model": "T8404",
+        "trigger": "connect",
+        "change": "first",
+        "count": 1
+      },
+      {
+        "model": "T8213",
+        "trigger": "push",
+        "change": "increased",
+        "count": 4
+      },
+      {
+        "model": "T8213",
+        "trigger": "connect",
+        "change": "first",
+        "count": 1
+      }
+    ],
+    "downloads": [
+      {
+        "model": "T8404",
+        "outcome": "kept",
+        "count": 1
+      },
+      {
+        "model": "T8213",
+        "outcome": "kept",
+        "count": 4
+      },
+      {
+        "model": "T8213",
+        "outcome": "no_reply",
+        "count": 1
+      }
+    ]
+  }
+}
