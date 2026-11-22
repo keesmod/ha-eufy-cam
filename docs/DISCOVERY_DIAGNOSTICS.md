@@ -928,8 +928,9 @@ adds a `push` row for each of them. `downloads` also counts the picture of each
 camera that the `connect` query fetched at the start, and a repeated request for
 the same path shares one download. Whether the snapshot changed is therefore the
 result, and `downloads` only explains it. To isolate one camera, restart the
-bridge app, wait until the HomeBase is connected, keep the other cameras quiet,
-trigger one event on the camera and download the diagnostics a minute later.
+bridge app, wait until the HomeBase is connected, keep the other cameras quiet
+and close every live view, trigger one event on the camera and download the
+diagnostics a minute later.
 `replies.push` is then usually 1. A push that arrives after the first query
 went out adds another query. With `replies.push` at 1, the camera's `push` row
 reads:
@@ -951,8 +952,9 @@ HomeBase recorded late typically shows `unchanged_path` with `unchanged`,
 followed by `homebase_path` with `increased`. Trigger the event again if the
 rows do not fit one reading. With `replies.push` at 0 and no `push` row, no
 refresh answer arrived: no accepted push reached the bridge, the HomeBase was
-not connected 2 seconds after it, the answer was an error (`failed`) or it came
-after 15 seconds (counted as `connect`).
+not connected 2 seconds after it, a live view, recording or HomeBase command
+still held the HomeBase so the refresh kept waiting, the answer was an error
+(`failed`) or it came after 15 seconds (counted as `connect`).
 
 Copy `support.snapshot_refresh` with `support.software` into the issue,
 together with whether the snapshot changed.
