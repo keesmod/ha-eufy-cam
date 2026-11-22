@@ -842,6 +842,8 @@ export class MegaBackend extends EventEmitter implements Backend {
       });
       this.emit('change');
     });
+    // #283: a push that produced no event, numbers and model only. Logged, rate-limited.
+    client.on('push-unrouted', (push) => this.discoveryDiagnostics.unroutedPush(push));
     client.on('fault', (error) =>
       this.emit('backend_fault', error instanceof EufyError ? error.code : 'device_failed'),
     );
