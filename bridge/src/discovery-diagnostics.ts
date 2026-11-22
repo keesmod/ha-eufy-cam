@@ -226,6 +226,19 @@ const integer = (value: unknown, min: number, max: number): number | null =>
     ? value
     : null;
 const recordingQueries: ReadonlySet<unknown> = new Set(['list', 'calendar', 'thumbnail', 'download', 'probe']);
+// #283: client 0.31.3 reasons and station relations of a push that produced no event.
+const unroutedReasons: ReadonlySet<unknown> = new Set([
+  'no_serial',
+  'unknown_device',
+  'camera_unavailable',
+  'owner_mismatch',
+  'unsupported_event',
+  'station_detection',
+]);
+const unroutedStations: ReadonlySet<unknown> = new Set(['owner', 'device', 'station', 'unknown', 'missing']);
+/** One unrouted_push line per distinct record per window, for at most this many records. */
+const UNROUTED_WINDOW_MS = 600_000;
+const UNROUTED_RECORDS = 32;
 const recordingOwners: ReadonlySet<unknown> = new Set(['standalone', 'station']);
 const queryStages: ReadonlySet<unknown> = new Set(['admission', 'connect', 'query', 'validate', 'transfer']);
 const unhandledReasons: ReadonlySet<unknown> = new Set(['unknown_cmd', 'parse_error']);
@@ -554,6 +567,8 @@ export class DiscoveryDiagnostics {
   private standaloneOwners = new Set<string>();
   /** The latest recording_query outcome per owner reference and query. */
   private recordingEvents = new Map<string, { report: number; outcome: string }>();
+  /** #283: the last unrouted_push line per distinct record, and the copies since. */
+  private unrouted = new Map<string, { at: number; repeats: number }>();
   prepare(result: DiscoveryResult): void {
     this.refs = new Map(result.devices.slice(0, 99).map((device, index) => [device.id, index + 1]));
     this.pendingReport = this.sequence + 1;
@@ -677,6 +692,39 @@ export class DiscoveryDiagnostics {
     });
   }
 
+  /**
+   * #283: a push that produced no detection event, from client 0.31.3, revalidated
+   * here. One line per distinct record per 10 minutes, for at most 32 records,
+   * with the identical pushes left out since the previous line as `repeats`, until
+   * the record is dropped to make room for another. Never in recent_events, so it
+   * cannot push recording or fault records out.
+   */
+  unroutedPush(push: unknown, now = Date.now()): void {
+    const value = (typeof push === 'object' && push !== null ? push : {}) as Record<string, unknown>;
+    const fields = {
+      reason: unroutedReasons.has(value.reason) ? value.reason : 'unavailable',
+      source: value.source === 'cloud' || value.source === 'local' ? value.source : 'unavailable',
+      model: value.model === null ? null : model(value.model),
+      station: unroutedStations.has(value.station) ? value.station : 'unavailable',
+      push_type: integer(value.pushType, -1, 99999),
+      event_code: integer(value.eventCode, -1, 99999),
+      msg_type: integer(value.msgType, -1, 99999),
+    };
+    const key = JSON.stringify(fields);
+    const entry = this.unrouted.get(key);
+    if (entry && now - entry.at < UNROUTED_WINDOW_MS) {
+      entry.repeats++;
+      return;
+    }
+    if (!entry && this.unrouted.size >= UNROUTED_RECORDS) {
+      for (const [record, old] of this.unrouted)
+        if (now - old.at >= UNROUTED_WINDOW_MS) this.unrouted.delete(record);
+      if (this.unrouted.size >= UNROUTED_RECORDS) return;
+    }
+    this.unrouted.set(key, { at: now, repeats: 0 });
+    this.emit({ event: 'unrouted_push', ...fields, repeats: entry?.repeats ?? 0 });
+  }
+
   fault(code: unknown): void {
     const safe = diagnosticCode(code);
     if (safe === this.lastFault) return;
@@ -698,7 +746,7 @@ export class DiscoveryDiagnostics {
   }
   private emit(value: Record<string, unknown>): void {
     const record = this.record(value);
-    if (!['summary', 'device', 'issue', 'accessory', 'end'].includes(String(value.event))) {
+    if (!['summary', 'device', 'issue', 'accessory', 'end', 'unrouted_push'].includes(String(value.event))) {
       this.recentEvents.push(record);
       if (this.recentEvents.length > 100) this.recentEvents.shift();
     }
