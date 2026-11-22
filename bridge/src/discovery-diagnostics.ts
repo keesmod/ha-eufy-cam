@@ -695,8 +695,9 @@ export class DiscoveryDiagnostics {
   /**
    * #283: a push that produced no detection event, from client 0.31.3, revalidated
    * here. One line per distinct record per 10 minutes, for at most 32 records,
-   * with the identical pushes left out since the previous line as `repeats`. Never
-   * in recent_events, so it cannot push recording or fault records out.
+   * with the identical pushes left out since the previous line as `repeats`, until
+   * the record is dropped to make room for another. Never in recent_events, so it
+   * cannot push recording or fault records out.
    */
   unroutedPush(push: unknown, now = Date.now()): void {
     const value = (typeof push === 'object' && push !== null ? push : {}) as Record<string, unknown>;
