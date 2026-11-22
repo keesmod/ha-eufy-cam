@@ -565,7 +565,7 @@ export class Eufy extends EventEmitter {
     const setup = this.setupDiagnostics.report();
     const report = this.backend?.supportReport?.() ?? this.failedSupportReport ?? setup;
     // The failed report keeps the counts of its closed client, the setup report has none (#185).
-    return {...report, standalone_pushes: report.standalone_pushes ?? null, accessory_observations: report.accessory_observations ?? null, live_video: this.liveVideo.report(this.liveMaxSecondsMains * 1000 + 900_000), cache_age_ms: report === this.failedSupportReport ? Math.max(0, Math.round(performance.now() - this.failedSupportAt)) : 0, software: diagnosticSoftware(), generated_at:setup.generated_at, recent_events:
+    return {...report, standalone_pushes: report.standalone_pushes ?? null, accessory_observations: report.accessory_observations ?? null, keypad_parameters: report.keypad_parameters ?? null, live_video: this.liveVideo.report(this.liveMaxSecondsMains * 1000 + 900_000), cache_age_ms: report === this.failedSupportReport ? Math.max(0, Math.round(performance.now() - this.failedSupportAt)) : 0, software: diagnosticSoftware(), generated_at:setup.generated_at, recent_events:
       report === setup ? setup.recent_events : [...report.recent_events, ...setup.recent_events]
         .sort((a,b) => String(a.timestamp).localeCompare(String(b.timestamp))).slice(-100)};
   }

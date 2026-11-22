@@ -461,12 +461,62 @@ export function accessoryObservationReport(value: unknown): AccessoryObservation
     accessoryObservationKeys.map((key) => [key, pushCount(observation[key])]),
   ) as AccessoryObservationReport;
 }
+/** The routes of the client's keypad parameters (#286). */
+export const keypadParameterRoutes = ['cloud', 'camera_info', 'hub_notify'] as const;
+/** The battery keys whose raw values the client keeps for a keypad (#286). */
+const keypadCodeKeys = ['1101', '1653', '1654', '1655'] as const;
+/** 64 parameter types besides the four battery keys, as the client bounds them. */
+const KEYPAD_PARAMETER_TYPES = 68;
+/** At most this many keypads in the support report. */
+export const KEYPAD_PARAMETER_ROWS = 8;
+export interface KeypadParameterRoute {
+  types: number[];
+  codes: Partial<Record<(typeof keypadCodeKeys)[number], string>>;
+}
+export type KeypadParameterReport = { inventory_row: number | null } & Record<
+  (typeof keypadParameterRoutes)[number],
+  KeypadParameterRoute
+>;
+const keypadParameterRoute = (value: unknown): KeypadParameterRoute => {
+  const route = record(value);
+  const types = Array.isArray(route?.types) ? route.types.slice(0, 256) : [];
+  const codes = record(route?.codes);
+  return {
+    types: [...new Set(types.filter((type) => integer(type, 0, 65535) !== null) as number[])]
+      .sort((a, b) => a - b)
+      .slice(0, KEYPAD_PARAMETER_TYPES),
+    codes: Object.fromEntries(
+      keypadCodeKeys.flatMap((key) => {
+        const code = codes && !Array.isArray(codes) ? codes[key] : undefined;
+        return typeof code === 'string' && (code === 'other' || /^-?[0-9]{1,6}$/.test(code)) ? [[key, code]] : [];
+      }),
+    ),
+  };
+};
+/**
+ * Project the client's `accessoryParameters` of one keypad for the support
+ * report (#286). It crosses a library boundary, so only the three routes leave,
+ * each with bounded parameter types and the battery codes. The row is the
+ * keypad's inventory row, never its serial. Null for anything that is no object.
+ */
+export function keypadParametersReport(inventoryRow: unknown, value: unknown): KeypadParameterReport | null {
+  const parameters = record(value);
+  if (!parameters || Array.isArray(parameters)) return null;
+  return {
+    inventory_row: integer(inventoryRow, 0, 98),
+    ...(Object.fromEntries(
+      keypadParameterRoutes.map((route) => [route, keypadParameterRoute(parameters[route])]),
+    ) as Record<(typeof keypadParameterRoutes)[number], KeypadParameterRoute>),
+  };
+}
 const accessoryCategories: ReadonlySet<string> = new Set(['entry_sensor', 'keypad', 'chime']);
 export interface SupportReport {
   /** Standalone push counts of the running client, null without one (#185). */
   standalone_pushes?: StandalonePushReport | null;
   /** Accessory observation counts of the running client, null without one (#275). */
   accessory_observations?: AccessoryObservationReport | null;
+  /** Parameters and battery codes of each keypad, null without a client or before client 0.31.3 (#286). */
+  keypad_parameters?: KeypadParameterReport[] | null;
   cache_age_ms?: number;
   recording?: ReturnType<import("./recording-diagnostics.js").RecordingDiagnostics["report"]>;
   software?: ReturnType<typeof diagnosticSoftware>;
