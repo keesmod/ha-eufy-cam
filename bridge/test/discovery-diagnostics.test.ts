@@ -1082,15 +1082,18 @@ test('unrouted pushes are revalidated, rate-limited and kept out of recent_event
   // A known record still counts as a repeat while the records are full.
   h.reporter.unroutedPush({...push,eventCode:0},start+1000);
   h.reporter.unroutedPush({...push,eventCode:1},start+2000);
+  h.reporter.unroutedPush({...push,eventCode:2},start+2000);
   assert.equal(h.lines.length,32);
   // An expired known record logs again with its count, without dropping others.
   h.reporter.unroutedPush({...push,eventCode:0},start+600_000);
   assert.deepEqual([h.rows().at(-1).event_code,h.rows().at(-1).repeats],[0,1]);
+  h.reporter.unroutedPush({...push,eventCode:2},start+600_000);
+  assert.deepEqual([h.rows().at(-1).event_code,h.rows().at(-1).repeats],[2,1]);
   // A new record drops the expired ones, and with them their pending counts.
   h.reporter.unroutedPush({...push,eventCode:99},start+600_000);
   assert.deepEqual([h.rows().at(-1).event_code,h.rows().at(-1).repeats],[99,0]);
   h.reporter.unroutedPush({...push,eventCode:1},start+600_001);
   assert.deepEqual([h.rows().at(-1).event_code,h.rows().at(-1).repeats],[1,0]);
   h.reporter.unroutedPush({...push,eventCode:0},start+600_002);
-  assert.equal(h.lines.length,35);
+  assert.equal(h.lines.length,36);
 });

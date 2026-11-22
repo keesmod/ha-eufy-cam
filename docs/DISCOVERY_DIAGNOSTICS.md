@@ -895,8 +895,9 @@ Eufy app shows, wait a minute, and copy the `unrouted_push` lines with the
 `summary` line of the last startup. Copy every `unrouted_push` line, also those
 with `model` `null`, because a push that names the camera only as its station
 carries no model. When the detection gives no event and no new `unrouted_push`
-line of any model appears, no push for it reached the bridge, unless 32 other
-records already filled the 10 minutes or the bridge logged a fault.
+line of any model appears, no push for it reached the bridge, unless a line with
+the same values appeared in the 10 minutes before, 32 other records already
+filled the 10 minutes or the bridge logged a fault.
 
 ### HomeBase accessories
 
