@@ -9,6 +9,7 @@ No live stream or optional debug logging is needed to generate discovery evidenc
 
 | Collection method | Bridge | Bundled library | HA integration |
 |---|---|---|---|
+| [Unrouted push lines](#camera-events-that-never-arrive) in the `Eufy discovery:` log | 0.8.47 | 0.31.3 | No integration update needed to read bridge logs |
 | [Keypad parameters](#keypad-parameters) in `support.keypad_parameters` | 0.8.47 | 0.31.3 | 0.8.56 for the download |
 | [HomeBase accessory](#homebase-accessories) rows and `support.accessory_observations` | 0.8.44 | 0.31.0 | 0.8.53 for the download |
 | [Key setup fields](#key-setup-fields-of-a-connection-attempt) that say what a station connection attempt saw between `session_open` and the command key | 0.8.40 | 0.30.2 | 0.8.49 for the download |
@@ -866,6 +867,37 @@ standalone camera's device row into
 [issue #185](https://github.com/keesmod/ha-eufy-cam/issues/185), together with
 what the Eufy app and Home Assistant showed. The result goes into the
 [model matrix](https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md).
+
+### Camera events that never arrive
+
+From bridge 0.8.47 with client 0.31.3, a push that produced no camera event
+leaves an `unrouted_push` line in the `Eufy discovery:` log
+([issue #283](https://github.com/keesmod/ha-eufy-cam/issues/283)). It holds a
+reason, the camera model and numbers only, with no serial, DID, address, name,
+time or image. Pushes for HomeBase accessories and experimental standalone
+cameras are left out, because their own counts cover them, and so is a HomeBase
+push without a camera detection, such as a Guard Mode change. A standalone
+camera without the experimental option is not admitted, so its pushes show as
+`unknown_device`. The line is not in the downloaded diagnostics.
+
+| Field | Meaning |
+|---|---|
+| `reason` | `no_serial`: the push named no device or station. `unknown_device`: it named no admitted camera. `camera_unavailable`: the camera or its HomeBase was not set up or had failed. `owner_mismatch`: the station it named was not the camera's HomeBase. `unsupported_event`: the camera lacks that detection. `station_detection`: a HomeBase push without a camera carried a camera detection code |
+| `source` | `cloud` for the Eufy push service, `local` for a push over the open HomeBase session |
+| `model` | The model of the admitted camera the push named, else `null` |
+| `station` | The station the push named: the camera's HomeBase (`owner`), the camera itself (`device`), another admitted HomeBase (`station`), something else (`unknown`) or nothing (`missing`) |
+| `push_type`, `event_code`, `msg_type` | The push's type field, event code and message type, or `null` |
+| `repeats` | Identical pushes left out since the previous line of the same values. The count shows on the next line of the same values, and is lost when the bridge drops the record to make room for another |
+
+The bridge writes the same values at most once per 10 minutes, for at most 32
+different lines at a time. To report missing events, trigger a detection the
+Eufy app shows, wait a minute, and copy the `unrouted_push` lines with the
+`summary` line of the last startup. Copy every `unrouted_push` line, also those
+with `model` `null`, because a push that names the camera only as its station
+carries no model. When the detection gives no event and no new `unrouted_push`
+line of any model appears, no push for it reached the bridge, unless a line with
+the same values appeared in the 10 minutes before, 32 other records already
+filled the 10 minutes or the bridge logged a fault.
 
 ### HomeBase accessories
 
