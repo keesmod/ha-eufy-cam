@@ -7,6 +7,8 @@ import {
   standalonePushReport,
   accessoryObservationReport,
   keypadParametersReport,
+  snapshotRefreshReport,
+  SNAPSHOT_REFRESH_ROWS,
   type RecordingQueryReport,
 } from '../src/discovery-diagnostics.js';
 
@@ -35,7 +37,7 @@ test('support report includes software, inventory, anonymous ownership, firmware
     {snapshot:capability,live:capability,recordings:capability}]]),new Map());
   const rows=f.rows();
   assert.equal(rows.length,6);
-  assert.equal(rows[0].software.library,'0.31.3-beta.2');
+  assert.equal(rows[0].software.library,'0.31.3-beta.3');
   assert.equal(rows[0].software.bridge,diagnosticSoftware().bridge);
   assert.deepEqual([rows[0].cameras,rows[0].stations,rows[0].issues],[1,1,2]);
   assert.equal(rows[2].owner_ref,1);
@@ -1096,4 +1098,38 @@ test('unrouted pushes are revalidated, rate-limited and kept out of recent_event
   assert.deepEqual([h.rows().at(-1).event_code,h.rows().at(-1).repeats],[1,0]);
   h.reporter.unroutedPush({...push,eventCode:0},start+600_002);
   assert.equal(h.lines.length,36);
+});
+
+// #293: the client's snapshot refresh counts, projected to flat rows for the download.
+test('snapshot refresh counts become the shared integration fixture, by model, enums and counts only (#293)', () => {
+  const shared=JSON.parse(readFileSync(new URL('../../tests/fixtures/snapshot-refresh-diagnostics.json',import.meta.url),'utf8'));
+  assert.deepEqual(snapshotRefreshReport(shared.client),shared.support);
+  for (const value of [null,undefined,'PRIVATE',5,[]]) assert.equal(snapshotRefreshReport(value),null);
+  const zero=(keys:string[])=>Object.fromEntries(keys.map(k=>[k,0]));
+  const rows=(over:Record<string,number>)=>({...zero(['no_row','homebase_path','unchanged_path','cloud_path_only','no_path','path_absent','invalid_path']),...over});
+  const hostile={
+    replies:{push:2**31,request:'1',connect:2},failedReplies:-1,serial:'PRIVATE_SERIAL',
+    models:{
+      PRIVATE_SERIAL:{rows:{push:rows({no_row:1})},eventCounts:{},downloads:{kept:1}},
+      unknown:{rows:{push:rows({no_row:2})}},
+      other:{rows:{connect:rows({no_path:1,'/PRIVATE/path':4})},downloads:{kept:1.5,no_reply:2,'/PRIVATE':1}},
+      T8404:{rows:{push:rows({path_absent:3,unchanged_path:-1}),later:rows({no_row:9})},eventCounts:{push:{increased:3,PRIVATE:1}},downloads:'PRIVATE'},
+    },
+  };
+  const report=snapshotRefreshReport(hostile)!;
+  assert.deepEqual(report,{
+    replies:{push:null,request:null,connect:2,failed:null},
+    // The serial-like and the absent model both become unavailable, and their rows add up.
+    rows:[
+      {model:'unavailable',trigger:'push',outcome:'no_row',count:3},
+      {model:'other',trigger:'connect',outcome:'no_path',count:1},
+      {model:'T8404',trigger:'push',outcome:'path_absent',count:3},
+    ],
+    event_counts:[{model:'T8404',trigger:'push',change:'increased',count:3}],
+    downloads:[{model:'unavailable',outcome:'kept',count:1},{model:'other',outcome:'no_reply',count:2}],
+  });
+  assert.doesNotMatch(JSON.stringify(report),/PRIVATE/);
+  // Bounded lists: more distinct rows than the bound are left out.
+  const many=Object.fromEntries(Array.from({length:40},(_,i)=>[`T90${String(i).padStart(2,'0')}`,{rows:{push:rows({no_row:1,homebase_path:1,unchanged_path:1})}}]));
+  assert.equal(snapshotRefreshReport({replies:{},models:many})!.rows.length,SNAPSHOT_REFRESH_ROWS);
 });

@@ -898,7 +898,7 @@ for (const empty of [false,true])
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
       assert.equal(summary.experimental_standalone,false);
-      assert.equal(summary.software.library,'0.31.3-beta.2');
+      assert.equal(summary.software.library,'0.31.3-beta.3');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
@@ -3364,6 +3364,27 @@ test('the support report carries the client accessory observation counts, revali
     assert.equal(f.backend.supportReport().accessory_observations, null);
     observation = 'PRIVATE';
     assert.equal(f.backend.supportReport().accessory_observations, null);
+  } finally {
+    await f.backend.close();
+  }
+});
+
+test('the support report carries the client snapshot refresh counts, revalidated (#293)', async () => {
+  const shared = JSON.parse(readFileSync(new URL('../../tests/fixtures/snapshot-refresh-diagnostics.json', import.meta.url), 'utf8'));
+  const f = fixture();
+  let observation: unknown = shared.client;
+  Object.defineProperty(f.client, 'snapshotRefreshStatus', { get: () => {
+    if (observation instanceof Error) throw observation;
+    return observation;
+  }, configurable: true });
+  try {
+    assert.equal(f.backend.supportReport().snapshot_refresh, null, 'no client before login');
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.deepEqual(f.backend.supportReport().snapshot_refresh, shared.support);
+    observation = new Error('PRIVATE');
+    assert.equal(f.backend.supportReport().snapshot_refresh, null);
+    observation = undefined;
+    assert.equal(f.backend.supportReport().snapshot_refresh, null, 'a client before 0.31.3-beta.3 has no getter');
   } finally {
     await f.backend.close();
   }
