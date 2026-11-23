@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.47 - Unreleased
+## 0.8.47 - 2026-11-23
 
 - Reports which parameters and battery values a Keypad `T8960` or an Entry Sensor `T8900` sends in the diagnostics ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286), [#306](https://github.com/keesmod/ha-eufy-cam/issues/306)), not yet confirmed on hardware.
 - Reads the Keypad `T8960` battery as normal instead of unknown when the eufy app shows it full ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286)), reported working.

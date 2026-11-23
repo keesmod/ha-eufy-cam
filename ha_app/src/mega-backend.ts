@@ -27,6 +27,13 @@ import {
   diagnosticModel,
   standalonePushReport,
   accessoryObservationReport,
+  snapshotRefreshReport,
+  type SnapshotRefreshReport,
+  keypadParametersReport,
+  entrySensorParametersReport,
+  KEYPAD_PARAMETER_ROWS,
+  ENTRY_SENSOR_PARAMETER_ROWS,
+  type AccessoryParameterReport,
   type AccessoryObservationReport,
   type RecordingQueryReport,
   type StandalonePushReport,
@@ -393,7 +400,31 @@ export class MegaBackend extends EventEmitter implements Backend {
       () => this.emit('change'),
     );
   }
-  supportReport() { return { ...this.discoveryDiagnostics.report(), live_audio: this.liveAudio.report(this.liveMaxSecondsMains * 1000 + 900_000), recording: this.recordings.diagnostics.report(), standalone_pushes: this.standalonePushes(), accessory_observations: this.accessoryObservations() }; }
+  supportReport() { return { ...this.discoveryDiagnostics.report(), live_audio: this.liveAudio.report(this.liveMaxSecondsMains * 1000 + 900_000), recording: this.recordings.diagnostics.report(), standalone_pushes: this.standalonePushes(), accessory_observations: this.accessoryObservations(), keypad_parameters: this.accessoryParameters('keypad'), entry_sensor_parameters: this.accessoryParameters('entry_sensor'), snapshot_refresh: this.snapshotRefresh() }; }
+  /**
+   * The parameters and battery codes the client saw for each admitted keypad
+   * (#286) or entry sensor (#306), revalidated at this library boundary and
+   * keyed by inventory row. Null without a client or before client 0.31.3. An
+   * accessory whose getter throws is left out, and the download never fails.
+   */
+  private accessoryParameters(category: 'keypad' | 'entry_sensor'): AccessoryParameterReport[] | null {
+    const client = this.client;
+    if (!client || typeof (client as { accessoryParameters?: unknown }).accessoryParameters !== 'function') return null;
+    const [project, limit] = category === 'keypad'
+      ? [keypadParametersReport, KEYPAD_PARAMETER_ROWS]
+      : [entrySensorParametersReport, ENTRY_SENSOR_PARAMETER_ROWS];
+    const rows: AccessoryParameterReport[] = [];
+    for (const accessory of this.accessoryRows.values()) {
+      if (accessory.category !== category || rows.length >= limit) continue;
+      try {
+        const row = project(accessory.index, client.accessoryParameters(accessory.id));
+        if (row) rows.push(row);
+      } catch {
+        // Left out, like an accessory without evidence.
+      }
+    }
+    return rows;
+  }
   /**
    * The client's accessory observation counts (#275), revalidated at this
    * library boundary. Null without a client or before client 0.31.0. A getter
@@ -403,6 +434,19 @@ export class MegaBackend extends EventEmitter implements Backend {
     if (!this.client) return null;
     try {
       return accessoryObservationReport(this.client.accessoryObservation);
+    } catch {
+      return null;
+    }
+  }
+  /**
+   * The client's snapshot refresh counts (#293), revalidated at this library
+   * boundary. Null without a client or before client 0.31.3. A getter that
+   * throws gives null and never fails the download.
+   */
+  private snapshotRefresh(): SnapshotRefreshReport | null {
+    if (!this.client) return null;
+    try {
+      return snapshotRefreshReport(this.client.snapshotRefreshStatus);
     } catch {
       return null;
     }
@@ -818,6 +862,8 @@ export class MegaBackend extends EventEmitter implements Backend {
       });
       this.emit('change');
     });
+    // #283: a push that produced no event, numbers and model only. Logged, rate-limited.
+    client.on('push-unrouted', (push) => this.discoveryDiagnostics.unroutedPush(push));
     client.on('fault', (error) =>
       this.emit('backend_fault', error instanceof EufyError ? error.code : 'device_failed'),
     );
