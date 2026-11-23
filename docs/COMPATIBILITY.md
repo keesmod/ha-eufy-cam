@@ -466,10 +466,11 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   ([issue #286](https://github.com/keesmod/ha-eufy-cam/issues/286)). Both keypad
   values are not yet confirmed on hardware. From bridge 0.8.47 with integration
   0.8.56 the diagnostics show which parameters the keypad sends and its battery
-  values. They showed battery state 2 while the eufy app showed the battery
-  full, which reads as normal from bridge 0.8.47 with client 0.31.3. The charger
-  state was 2 and still reads as not charging, while one of the reporter's eufy
-  app screenshots shows the keypad charging. Charging is not yet fixed.
+  values. They showed battery state 2, which reads as normal from bridge 0.8.47
+  with client 0.31.3, and charger state 2, which reads as not charging. Two eufy
+  app screenshots showed the battery full, one with and one without a charging
+  symbol. The report does not say in which state the diagnostics were taken.
+  Charging is not yet fixed.
 - **Doorbell Chime `T8026`, type 600**, recognized from bridge 0.8.44 with
   client 0.31.0 as a device without functions, after
   [issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275). No protocol
