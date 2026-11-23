@@ -1031,7 +1031,8 @@ a short integer reads `other`. No other value is kept, so keypad codes and
 settings never appear.
 
 Paste `support.keypad_parameters` into [issue #286][286] with what the eufy app
-showed for the keypad battery and whether the keypad was plugged in.
+showed for the keypad battery, whether the keypad was plugged in and the colour
+of its charging light.
 
 [286]: https://github.com/keesmod/ha-eufy-cam/issues/286
 
