@@ -2,15 +2,17 @@
 
 ## 0.8.56 - Unreleased
 
-- Diagnostics show which parameters and battery values a Keypad `T8960` sends ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286)), not yet confirmed on hardware.
+- Diagnostics show which parameters and battery values a Keypad `T8960` or an Entry Sensor `T8900` sends ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286), [#306](https://github.com/keesmod/ha-eufy-cam/issues/306)), not yet confirmed on hardware.
 - The Keypad `T8960` battery shows normal instead of unknown when the eufy app shows it full ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286)), reported working.
 - The Keypad `T8960` charging state follows a plug change within about 5 minutes while the HomeBase stays connected ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286)), reported working.
 - Entry sensor states are read again about every 5 minutes while the HomeBase stays connected ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286)), not yet confirmed on hardware.
+- Entry sensor values in the encoded part of the HomeBase's device information are read too ([#306](https://github.com/keesmod/ha-eufy-cam/issues/306)), not yet confirmed on hardware.
+- An Entry Sensor `T8900` battery can show unknown while the eufy app shows it full ([#306](https://github.com/keesmod/ha-eufy-cam/issues/306)), reported, not yet fixed.
 - Window Camera E10 `T8404` events also arrive when the camera sends them as if it had no HomeBase ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)), not yet confirmed on hardware.
 - An event of the Window Camera E10 `T8404` does not change the snapshot to the event picture ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)), reported, not yet fixed.
 - The bridge log shows camera pushes that produce no event ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)).
 - Diagnostics count by camera model how event pictures are found and fetched ([#293](https://github.com/keesmod/ha-eufy-cam/issues/293)), not yet confirmed on hardware.
-- Updated the client to 0.31.3 ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286), [#283](https://github.com/keesmod/ha-eufy-cam/issues/283), [#293](https://github.com/keesmod/ha-eufy-cam/issues/293)).
+- Updated the client to 0.31.3 ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286), [#283](https://github.com/keesmod/ha-eufy-cam/issues/283), [#293](https://github.com/keesmod/ha-eufy-cam/issues/293), [#306](https://github.com/keesmod/ha-eufy-cam/issues/306)).
 
 Upgrade: update the bridge to 0.8.47 first, then the integration. Rollback: 0.8.55 with bridge 0.8.46.
 

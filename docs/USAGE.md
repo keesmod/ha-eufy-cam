@@ -206,8 +206,11 @@ connects to the HomeBase. From the same versions the bridge reads the keypad
 again about every 5 minutes while it stays connected, so a plug change shows
 without a reconnect within about 5 minutes, or later while that HomeBase is busy
 with a live view, a recording or a command. That is reported working on one
-HomeBase 3. They are never cameras, so they get no camera, card, event or
-snapshot.
+HomeBase 3. An entry sensor battery can show unknown while the eufy app shows
+it full ([issue #306](https://github.com/keesmod/ha-eufy-cam/issues/306)). From
+bridge 0.8.47 the bridge also reads entry sensor values in the encoded part of
+the HomeBase's device information, not yet confirmed on hardware. The
+accessories are never cameras, so they get no camera, card, event or snapshot.
 
 | Device | Model | Entities |
 |---|---|---|

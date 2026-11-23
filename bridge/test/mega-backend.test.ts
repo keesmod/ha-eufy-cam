@@ -898,7 +898,7 @@ for (const empty of [false,true])
       const summary=rows.find(row=>row.event==='summary');
       assert.equal(summary.outcome,empty?'camera_inventory_empty':'accepted');
       assert.equal(summary.experimental_standalone,false);
-      assert.equal(summary.software.library,'0.31.3-beta.5');
+      assert.equal(summary.software.library,'0.31.3-beta.6');
       assert.equal(summary.cameras,empty?0:1);
       assert.equal(rows.filter(row=>row.event==='issue').length,1);
       assert.equal(rows.find(row=>row.event==='issue').device_type,95);
@@ -3307,9 +3307,10 @@ test('the support report carries the parameters of each keypad by inventory row,
   });
   try {
     await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
-    // Only keypads are asked, and each row carries its inventory row, never its serial.
+    // Each keypad row carries its inventory row, never its serial. Entry sensors
+    // are asked for their own list, and a chime is never asked.
     assert.deepEqual(f.backend.supportReport().keypad_parameters, [expected, { ...expected, inventory_row: 9 }]);
-    assert.deepEqual(asked, ['SYNTHKEYP001', 'SYNTHKEYP002']);
+    assert.deepEqual(asked, ['SYNTHKEYP001', 'SYNTHKEYP002', 'SYNTHSENS001']);
     // Only the routes, bounded types and the four battery codes leave.
     answer = () => ({
       cloud: { types: [1655, 1655, -1, 70000, 1.5, 'PRIVATE', ...Array.from({ length: 80 }, (_, i) => 3000 + i)], codes: { 1655: '2', 1657: '1234', 1653: 'PRIVATE', 1101: '1234567', 1654: 'other' } },
@@ -3337,6 +3338,56 @@ test('the support report carries the parameters of each keypad by inventory row,
   try {
     await g.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
     assert.equal(g.backend.supportReport().keypad_parameters, null);
+  } finally {
+    await g.backend.close();
+  }
+});
+test('the support report carries the parameters of each entry sensor by inventory row, revalidated (#306)', async () => {
+  const shared = JSON.parse(readFileSync(new URL('../../tests/fixtures/accessory-diagnostics.json', import.meta.url), 'utf8'));
+  const [expected] = shared.entry_sensor_parameters as { inventory_row: number; [route: string]: unknown }[];
+  const f = fixture();
+  const { accessories } = fixtureAccessories();
+  const sensor = { ...accessories[0], index: expected!.inventory_row };
+  const many = Array.from({ length: 20 }, (_, i) => ({ ...accessories[1], id: `SYNTHSENS1${String(i).padStart(2, '0')}`, index: 20 + i }));
+  f.client.discoverDevices = async () =>
+    ({ devices, relationships: [], issues: [], accessories: [sensor, accessories[2], accessories[3], ...many] }) as DiscoveryResult;
+  const { inventory_row: _row, ...routes } = expected!;
+  let answer: (id: string) => unknown = (id) => (id.startsWith('SYNTHSENS') ? routes : null);
+  Object.assign(f.client, {
+    getAccessoryState: async () => { throw new EufyError('unknown_device'); },
+    accessoryParameters: (id: string) => answer(id),
+  });
+  try {
+    await f.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    // At most sixteen entry sensors, each by inventory row. The keypad answers null and is left out.
+    const rows = f.backend.supportReport().entry_sensor_parameters!;
+    assert.equal(rows.length, 16);
+    assert.deepEqual(rows[0], expected);
+    assert.deepEqual(rows.slice(1).map((row) => row.inventory_row), Array.from({ length: 15 }, (_, i) => 20 + i));
+    assert.deepEqual(f.backend.supportReport().keypad_parameters, []);
+    // Only the routes, bounded types and the entry sensor battery codes leave.
+    answer = () => ({
+      cloud: { types: [1552, 1552, -1, 70000, 'PRIVATE', ...Array.from({ length: 80 }, (_, i) => 3000 + i)], codes: { 1552: '0', 1101: 'other', 1550: '1', 1551: '1700000000', 1653: '2' } },
+      hub_notify: 'PRIVATE',
+      serial: 'PRIVATE',
+    });
+    const [hostile] = f.backend.supportReport().entry_sensor_parameters!;
+    assert.deepEqual(Object.keys(hostile!), ['inventory_row', 'cloud', 'camera_info', 'hub_notify']);
+    assert.equal(hostile!.cloud.types.length, 66);
+    assert.deepEqual(hostile!.cloud.codes, { 1101: 'other', 1552: '0' });
+    assert.deepEqual(hostile!.hub_notify, { types: [], codes: {} });
+    assert.doesNotMatch(JSON.stringify(hostile), /PRIVATE|1700000000/);
+    // An entry sensor whose getter throws is left out.
+    answer = () => { throw new Error('PRIVATE'); };
+    assert.deepEqual(f.backend.supportReport().entry_sensor_parameters, []);
+  } finally {
+    await f.backend.close();
+  }
+  // A client before 0.31.3 has no getter, so the report has none.
+  const g = fixture();
+  try {
+    await g.backend.login({ username: 'fixture', password: 'fixture', country: 'NL' });
+    assert.equal(g.backend.supportReport().entry_sensor_parameters, null);
   } finally {
     await g.backend.close();
   }

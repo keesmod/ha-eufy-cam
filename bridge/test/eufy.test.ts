@@ -751,3 +751,21 @@ test('a refresh keeps the newest decoded frame when FFmpeg emits several in one 
     assert.deepEqual(refreshMetrics(bridge), [3, 3, 0]);
   } finally { await bridge.close(); }
 });
+test('the support report defaults the accessory evidence of a missing client to null (#306)', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'eufy-viewer-test-'));
+  try {
+    // A backend without a support report gives the setup report.
+    const setup = makeBridge(new Storage(directory)).supportReport();
+    // A backend from before these fields gives a report without them.
+    const older = new Eufy(new Storage(directory), 'mega', false, () => Object.assign(fixtureBackend(), {
+      supportReport: () => ({ schema: 2, generated_at: '2026-11-23T00:00:00.000Z', last_discovery: [], recent_events: [] }),
+    }) as Backend);
+    await older.login({ username: 'test@example.invalid', password: 'fixture-only', country: 'NL' });
+    for (const report of [setup, older.supportReport()])
+      for (const key of ['standalone_pushes', 'accessory_observations', 'keypad_parameters', 'entry_sensor_parameters'] as const)
+        assert.equal(report[key], null, key);
+    await older.close();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

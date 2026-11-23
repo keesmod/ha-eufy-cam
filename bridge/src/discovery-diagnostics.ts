@@ -551,36 +551,54 @@ export function snapshotRefreshReport(value: unknown): SnapshotRefreshReport | n
     downloads: [...downloads.values()],
   };
 }
-/** The routes of the client's keypad parameters (#286). */
-export const keypadParameterRoutes = ['cloud', 'camera_info', 'hub_notify'] as const;
+/** The routes of the client's accessory parameters (#286, #306). */
+export const accessoryParameterRoutes = ['cloud', 'camera_info', 'hub_notify'] as const;
 /** The battery keys whose raw values the client keeps for a keypad (#286). */
 const keypadCodeKeys = ['1101', '1653', '1654', '1655'] as const;
-/** 64 parameter types besides the four battery keys, as the client bounds them. */
-const KEYPAD_PARAMETER_TYPES = 68;
+/** The battery keys whose raw values the client keeps for an entry sensor (#306). */
+const entrySensorCodeKeys = ['1101', '1552'] as const;
+/** The client keeps 64 parameter types per route besides the battery keys. */
+const ACCESSORY_PARAMETER_TYPES = 64;
 /** At most this many keypads in the support report. */
 export const KEYPAD_PARAMETER_ROWS = 8;
-export interface KeypadParameterRoute {
+/** At most this many entry sensors in the support report. */
+export const ENTRY_SENSOR_PARAMETER_ROWS = 16;
+export interface AccessoryParameterRoute {
   types: number[];
-  codes: Partial<Record<(typeof keypadCodeKeys)[number], string>>;
+  codes: Partial<Record<string, string>>;
 }
-export type KeypadParameterReport = { inventory_row: number | null } & Record<
-  (typeof keypadParameterRoutes)[number],
-  KeypadParameterRoute
+export type AccessoryParameterReport = { inventory_row: number | null } & Record<
+  (typeof accessoryParameterRoutes)[number],
+  AccessoryParameterRoute
 >;
-const keypadParameterRoute = (value: unknown): KeypadParameterRoute => {
+const accessoryParameterRoute = (value: unknown, codeKeys: readonly string[]): AccessoryParameterRoute => {
   const route = record(value);
   const types = Array.isArray(route?.types) ? route.types.slice(0, 256) : [];
   const codes = record(route?.codes);
   return {
     types: [...new Set(types.filter((type) => integer(type, 0, 65535) !== null) as number[])]
       .sort((a, b) => a - b)
-      .slice(0, KEYPAD_PARAMETER_TYPES),
+      .slice(0, ACCESSORY_PARAMETER_TYPES + codeKeys.length),
     codes: Object.fromEntries(
-      keypadCodeKeys.flatMap((key) => {
+      codeKeys.flatMap((key) => {
         const code = codes && !Array.isArray(codes) ? codes[key] : undefined;
         return typeof code === 'string' && (code === 'other' || /^-?[0-9]{1,6}$/.test(code)) ? [[key, code]] : [];
       }),
     ),
+  };
+};
+const accessoryParametersReport = (
+  codeKeys: readonly string[],
+  inventoryRow: unknown,
+  value: unknown,
+): AccessoryParameterReport | null => {
+  const parameters = record(value);
+  if (!parameters || Array.isArray(parameters)) return null;
+  return {
+    inventory_row: integer(inventoryRow, 0, 98),
+    ...(Object.fromEntries(
+      accessoryParameterRoutes.map((route) => [route, accessoryParameterRoute(parameters[route], codeKeys)]),
+    ) as Record<(typeof accessoryParameterRoutes)[number], AccessoryParameterRoute>),
   };
 };
 /**
@@ -589,15 +607,15 @@ const keypadParameterRoute = (value: unknown): KeypadParameterRoute => {
  * each with bounded parameter types and the battery codes. The row is the
  * keypad's inventory row, never its serial. Null for anything that is no object.
  */
-export function keypadParametersReport(inventoryRow: unknown, value: unknown): KeypadParameterReport | null {
-  const parameters = record(value);
-  if (!parameters || Array.isArray(parameters)) return null;
-  return {
-    inventory_row: integer(inventoryRow, 0, 98),
-    ...(Object.fromEntries(
-      keypadParameterRoutes.map((route) => [route, keypadParameterRoute(parameters[route])]),
-    ) as Record<(typeof keypadParameterRoutes)[number], KeypadParameterRoute>),
-  };
+export function keypadParametersReport(inventoryRow: unknown, value: unknown): AccessoryParameterReport | null {
+  return accessoryParametersReport(keypadCodeKeys, inventoryRow, value);
+}
+/**
+ * The same projection for one entry sensor (#306), with its battery codes
+ * `1101` and `1552` only.
+ */
+export function entrySensorParametersReport(inventoryRow: unknown, value: unknown): AccessoryParameterReport | null {
+  return accessoryParametersReport(entrySensorCodeKeys, inventoryRow, value);
 }
 const accessoryCategories: ReadonlySet<string> = new Set(['entry_sensor', 'keypad', 'chime']);
 export interface SupportReport {
@@ -606,7 +624,9 @@ export interface SupportReport {
   /** Accessory observation counts of the running client, null without one (#275). */
   accessory_observations?: AccessoryObservationReport | null;
   /** Parameters and battery codes of each keypad, null without a client or before client 0.31.3 (#286). */
-  keypad_parameters?: KeypadParameterReport[] | null;
+  keypad_parameters?: AccessoryParameterReport[] | null;
+  /** Parameters and battery codes of each entry sensor, null without a client or before client 0.31.3 (#306). */
+  entry_sensor_parameters?: AccessoryParameterReport[] | null;
   cache_age_ms?: number;
   recording?: ReturnType<import("./recording-diagnostics.js").RecordingDiagnostics["report"]>;
   software?: ReturnType<typeof diagnosticSoftware>;

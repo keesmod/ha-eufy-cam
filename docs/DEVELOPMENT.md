@@ -458,7 +458,9 @@ Since bridge 0.8.47 with client 0.31.3 the report adds `keypad_parameters`
 0 to 65535, and `codes`, only the keys `1101`, `1653`, `1654` and `1655` with a
 value of at most six digits or `other`. It is `null` without a client or from an
 older bridge. The shared case is in the same fixture. Integration 0.8.55 or
-older drops it.
+older drops it. The same versions also add `entry_sensor_parameters` (#306) in
+the same shape, at most sixteen rows. Each route has at most 66 `types`, and
+`codes` only the keys `1101` and `1552`. Integration 0.8.55 or older drops it.
 
 ### Bounds and compatibility
 
