@@ -236,7 +236,12 @@ next opens or closes. The opening sensor has the attributes `source` (`p2p` or
 `push`), `observed_at` and `live`. After the HomeBase connection closes and
 comes back, the sensor keeps its last observed value with `live: false` until
 the HomeBase reports a value or the door next changes. The battery and charging
-sensors may show the cached account value, with `source: cloud`. Eufy pushes for a sensor arrive only while
+sensors may show the cached account value, with `source: cloud`. From bridge
+0.8.48 with client 0.31.4 an entry sensor without a battery state in the Eufy
+account shows normal with `source: cloud`, the default of the vendored library.
+A low battery then shows once the account or the HomeBase reports it. A low
+battery that only the HomeBase reported shows normal after a bridge restart
+until the HomeBase reports it again. Eufy pushes for a sensor arrive only while
 notifications for that sensor are on in the Eufy app. Which route a HomeBase 3
 uses for sensor changes is not yet confirmed.
 
