@@ -226,6 +226,19 @@ const integer = (value: unknown, min: number, max: number): number | null =>
     ? value
     : null;
 const recordingQueries: ReadonlySet<unknown> = new Set(['list', 'calendar', 'thumbnail', 'download', 'probe']);
+// #283: client 0.31.3 reasons and station relations of a push that produced no event.
+const unroutedReasons: ReadonlySet<unknown> = new Set([
+  'no_serial',
+  'unknown_device',
+  'camera_unavailable',
+  'owner_mismatch',
+  'unsupported_event',
+  'station_detection',
+]);
+const unroutedStations: ReadonlySet<unknown> = new Set(['owner', 'device', 'station', 'unknown', 'missing']);
+/** One unrouted_push line per distinct record per window, for at most this many records. */
+const UNROUTED_WINDOW_MS = 600_000;
+const UNROUTED_RECORDS = 32;
 const recordingOwners: ReadonlySet<unknown> = new Set(['standalone', 'station']);
 const queryStages: ReadonlySet<unknown> = new Set(['admission', 'connect', 'query', 'validate', 'transfer']);
 const unhandledReasons: ReadonlySet<unknown> = new Set(['unknown_cmd', 'parse_error']);
@@ -461,12 +474,159 @@ export function accessoryObservationReport(value: unknown): AccessoryObservation
     accessoryObservationKeys.map((key) => [key, pushCount(observation[key])]),
   ) as AccessoryObservationReport;
 }
+/** The queries, row outcomes, event_count changes and download outcomes of client 0.31.3 (#293). */
+export const snapshotTriggers = ['push', 'request', 'connect'] as const;
+export const snapshotRowOutcomes = [
+  'no_row',
+  'homebase_path',
+  'unchanged_path',
+  'cloud_path_only',
+  'no_path',
+  'path_absent',
+  'invalid_path',
+] as const;
+export const snapshotEventCounts = ['first', 'increased', 'unchanged', 'decreased', 'unavailable'] as const;
+export const snapshotDownloadOutcomes = ['kept', 'not_jpeg', 'too_large', 'superseded', 'no_reply'] as const;
+type SnapshotTrigger = (typeof snapshotTriggers)[number];
+/**
+ * At most this many rows per list. Only counts above 0 are listed, and an account
+ * has few camera models, so this stays far above what one account produces. Rows
+ * beyond it are left out.
+ */
+export const SNAPSHOT_REFRESH_ROWS = 96;
+export interface SnapshotRefreshReport {
+  replies: Record<SnapshotTrigger | 'failed', number | null>;
+  rows: { model: string; trigger: SnapshotTrigger; outcome: (typeof snapshotRowOutcomes)[number]; count: number }[];
+  event_counts: { model: string; trigger: SnapshotTrigger; change: (typeof snapshotEventCounts)[number]; count: number }[];
+  downloads: { model: string; outcome: (typeof snapshotDownloadOutcomes)[number]; count: number }[];
+}
+/**
+ * Project the client's `snapshotRefreshStatus` for the support report (#293).
+ * It crosses a library boundary, so only known keys leave: the model as the
+ * bounded model code, `other` or `unavailable`, and each count above 0 as a
+ * bounded integer. Rows of the same values are added up. Null without an
+ * observation, as before client 0.31.3.
+ */
+export function snapshotRefreshReport(value: unknown): SnapshotRefreshReport | null {
+  const observation = record(value);
+  if (!observation || Array.isArray(observation)) return null;
+  const replies = record(observation.replies);
+  const models = record(observation.models);
+  const rows = new Map<string, SnapshotRefreshReport['rows'][number]>();
+  const changes = new Map<string, SnapshotRefreshReport['event_counts'][number]>();
+  const downloads = new Map<string, SnapshotRefreshReport['downloads'][number]>();
+  const add = <T extends { count: number }>(target: Map<string, T>, row: Omit<T, 'count'>, raw: unknown) => {
+    const count = pushCount(raw);
+    if (!count) return;
+    const key = JSON.stringify(row);
+    const existing = target.get(key);
+    if (existing) existing.count = Math.min(2 ** 31 - 1, existing.count + count);
+    else if (target.size < SNAPSHOT_REFRESH_ROWS) target.set(key, { ...row, count } as T);
+  };
+  if (models && !Array.isArray(models))
+    for (const [key, raw] of Object.entries(models)) {
+      const counts = record(raw);
+      if (!counts) continue;
+      const name = key === 'other' ? 'other' : model(key);
+      const byTrigger = record(counts.rows);
+      const changeByTrigger = record(counts.eventCounts);
+      for (const trigger of snapshotTriggers) {
+        const outcomes = record(byTrigger?.[trigger]);
+        for (const outcome of snapshotRowOutcomes) add(rows, { model: name, trigger, outcome }, outcomes?.[outcome]);
+        const kinds = record(changeByTrigger?.[trigger]);
+        for (const change of snapshotEventCounts) add(changes, { model: name, trigger, change }, kinds?.[change]);
+      }
+      const fetched = record(counts.downloads);
+      for (const outcome of snapshotDownloadOutcomes) add(downloads, { model: name, outcome }, fetched?.[outcome]);
+    }
+  return {
+    replies: {
+      push: pushCount(replies?.push),
+      request: pushCount(replies?.request),
+      connect: pushCount(replies?.connect),
+      failed: pushCount(observation.failedReplies),
+    },
+    rows: [...rows.values()],
+    event_counts: [...changes.values()],
+    downloads: [...downloads.values()],
+  };
+}
+/** The routes of the client's accessory parameters (#286, #306). */
+export const accessoryParameterRoutes = ['cloud', 'camera_info', 'hub_notify'] as const;
+/** The battery keys whose raw values the client keeps for a keypad (#286). */
+const keypadCodeKeys = ['1101', '1653', '1654', '1655'] as const;
+/** The battery keys whose raw values the client keeps for an entry sensor (#306). */
+const entrySensorCodeKeys = ['1101', '1552'] as const;
+/** The client keeps 64 parameter types per route besides the battery keys. */
+const ACCESSORY_PARAMETER_TYPES = 64;
+/** At most this many keypads in the support report. */
+export const KEYPAD_PARAMETER_ROWS = 8;
+/** At most this many entry sensors in the support report. */
+export const ENTRY_SENSOR_PARAMETER_ROWS = 16;
+export interface AccessoryParameterRoute {
+  types: number[];
+  codes: Partial<Record<string, string>>;
+}
+export type AccessoryParameterReport = { inventory_row: number | null } & Record<
+  (typeof accessoryParameterRoutes)[number],
+  AccessoryParameterRoute
+>;
+const accessoryParameterRoute = (value: unknown, codeKeys: readonly string[]): AccessoryParameterRoute => {
+  const route = record(value);
+  const types = Array.isArray(route?.types) ? route.types.slice(0, 256) : [];
+  const codes = record(route?.codes);
+  return {
+    types: [...new Set(types.filter((type) => integer(type, 0, 65535) !== null) as number[])]
+      .sort((a, b) => a - b)
+      .slice(0, ACCESSORY_PARAMETER_TYPES + codeKeys.length),
+    codes: Object.fromEntries(
+      codeKeys.flatMap((key) => {
+        const code = codes && !Array.isArray(codes) ? codes[key] : undefined;
+        return typeof code === 'string' && (code === 'other' || /^-?[0-9]{1,6}$/.test(code)) ? [[key, code]] : [];
+      }),
+    ),
+  };
+};
+const accessoryParametersReport = (
+  codeKeys: readonly string[],
+  inventoryRow: unknown,
+  value: unknown,
+): AccessoryParameterReport | null => {
+  const parameters = record(value);
+  if (!parameters || Array.isArray(parameters)) return null;
+  return {
+    inventory_row: integer(inventoryRow, 0, 98),
+    ...(Object.fromEntries(
+      accessoryParameterRoutes.map((route) => [route, accessoryParameterRoute(parameters[route], codeKeys)]),
+    ) as Record<(typeof accessoryParameterRoutes)[number], AccessoryParameterRoute>),
+  };
+};
+/**
+ * Project the client's `accessoryParameters` of one keypad for the support
+ * report (#286). It crosses a library boundary, so only the three routes leave,
+ * each with bounded parameter types and the battery codes. The row is the
+ * keypad's inventory row, never its serial. Null for anything that is no object.
+ */
+export function keypadParametersReport(inventoryRow: unknown, value: unknown): AccessoryParameterReport | null {
+  return accessoryParametersReport(keypadCodeKeys, inventoryRow, value);
+}
+/**
+ * The same projection for one entry sensor (#306), with its battery codes
+ * `1101` and `1552` only.
+ */
+export function entrySensorParametersReport(inventoryRow: unknown, value: unknown): AccessoryParameterReport | null {
+  return accessoryParametersReport(entrySensorCodeKeys, inventoryRow, value);
+}
 const accessoryCategories: ReadonlySet<string> = new Set(['entry_sensor', 'keypad', 'chime']);
 export interface SupportReport {
   /** Standalone push counts of the running client, null without one (#185). */
   standalone_pushes?: StandalonePushReport | null;
   /** Accessory observation counts of the running client, null without one (#275). */
   accessory_observations?: AccessoryObservationReport | null;
+  /** Parameters and battery codes of each keypad, null without a client or before client 0.31.3 (#286). */
+  keypad_parameters?: AccessoryParameterReport[] | null;
+  /** Parameters and battery codes of each entry sensor, null without a client or before client 0.31.3 (#306). */
+  entry_sensor_parameters?: AccessoryParameterReport[] | null;
   cache_age_ms?: number;
   recording?: ReturnType<import("./recording-diagnostics.js").RecordingDiagnostics["report"]>;
   software?: ReturnType<typeof diagnosticSoftware>;
@@ -504,6 +664,8 @@ export class DiscoveryDiagnostics {
   private standaloneOwners = new Set<string>();
   /** The latest recording_query outcome per owner reference and query. */
   private recordingEvents = new Map<string, { report: number; outcome: string }>();
+  /** #283: the last unrouted_push line per distinct record, and the copies since. */
+  private unrouted = new Map<string, { at: number; repeats: number }>();
   prepare(result: DiscoveryResult): void {
     this.refs = new Map(result.devices.slice(0, 99).map((device, index) => [device.id, index + 1]));
     this.pendingReport = this.sequence + 1;
@@ -627,6 +789,39 @@ export class DiscoveryDiagnostics {
     });
   }
 
+  /**
+   * #283: a push that produced no detection event, from client 0.31.3, revalidated
+   * here. One line per distinct record per 10 minutes, for at most 32 records,
+   * with the identical pushes left out since the previous line as `repeats`, until
+   * the record is dropped to make room for another. Never in recent_events, so it
+   * cannot push recording or fault records out.
+   */
+  unroutedPush(push: unknown, now = Date.now()): void {
+    const value = (typeof push === 'object' && push !== null ? push : {}) as Record<string, unknown>;
+    const fields = {
+      reason: unroutedReasons.has(value.reason) ? value.reason : 'unavailable',
+      source: value.source === 'cloud' || value.source === 'local' ? value.source : 'unavailable',
+      model: value.model === null ? null : model(value.model),
+      station: unroutedStations.has(value.station) ? value.station : 'unavailable',
+      push_type: integer(value.pushType, -1, 99999),
+      event_code: integer(value.eventCode, -1, 99999),
+      msg_type: integer(value.msgType, -1, 99999),
+    };
+    const key = JSON.stringify(fields);
+    const entry = this.unrouted.get(key);
+    if (entry && now - entry.at < UNROUTED_WINDOW_MS) {
+      entry.repeats++;
+      return;
+    }
+    if (!entry && this.unrouted.size >= UNROUTED_RECORDS) {
+      for (const [record, old] of this.unrouted)
+        if (now - old.at >= UNROUTED_WINDOW_MS) this.unrouted.delete(record);
+      if (this.unrouted.size >= UNROUTED_RECORDS) return;
+    }
+    this.unrouted.set(key, { at: now, repeats: 0 });
+    this.emit({ event: 'unrouted_push', ...fields, repeats: entry?.repeats ?? 0 });
+  }
+
   fault(code: unknown): void {
     const safe = diagnosticCode(code);
     if (safe === this.lastFault) return;
@@ -648,7 +843,7 @@ export class DiscoveryDiagnostics {
   }
   private emit(value: Record<string, unknown>): void {
     const record = this.record(value);
-    if (!['summary', 'device', 'issue', 'accessory', 'end'].includes(String(value.event))) {
+    if (!['summary', 'device', 'issue', 'accessory', 'end', 'unrouted_push'].includes(String(value.event))) {
       this.recentEvents.push(record);
       if (this.recentEvents.length > 100) this.recentEvents.shift();
     }
