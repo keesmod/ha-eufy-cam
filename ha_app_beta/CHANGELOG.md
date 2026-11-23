@@ -1,9 +1,9 @@
 # Changelog
 
-## 0.8.48-beta.1
-Unreleased
+## 0.8.48
+2026-11-23
 
-- Reads an Entry Sensor `T8900` battery as normal when the Eufy account has no battery state for it, as the eufy app does ([#306](https://github.com/keesmod/ha-eufy-cam/issues/306)), not yet confirmed on hardware.
+- Reads an Entry Sensor `T8900` battery as normal when the Eufy account has no battery state for it, as the eufy app does ([#306](https://github.com/keesmod/ha-eufy-cam/issues/306)), reported working.
 - Updated the client to 0.31.4 ([#306](https://github.com/keesmod/ha-eufy-cam/issues/306)).
 
 Upgrade: works with every supported integration. Rollback: bridge 0.8.47.
