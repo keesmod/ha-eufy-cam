@@ -494,7 +494,9 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   sensors that showed unknown
   ([report](https://github.com/keesmod/ha-eufy-cam/issues/306#issuecomment-7110972339)).
   From bridge 0.8.48 with client 0.31.4 such a sensor shows normal, the default
-  of the vendored library, as the eufy app does. Not yet confirmed on hardware.
+  of the vendored library, as the eufy app does. With bridge 0.8.48-beta.1 the
+  reporter saw every entry sensor's battery as normal
+  ([report](https://github.com/keesmod/ha-eufy-cam/issues/306#issuecomment-7113118296)).
 - **Doorbell Chime `T8026`, type 600**, recognized from bridge 0.8.44 with
   client 0.31.0 as a device without functions, after
   [issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275). No protocol
