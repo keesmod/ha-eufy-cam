@@ -473,8 +473,13 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   download while the keypad charged and one after unplugging it, each after a
   bridge restart ([report](https://github.com/keesmod/ha-eufy-cam/issues/286#issuecomment-7096211834)).
   The HomeBase sent charger state 1 and then 2, and the keypad showed charging,
-  then not charging, with a normal battery each time. Whether a change while
-  the bridge stays connected reaches Home Assistant is not yet known.
+  then not charging, with a normal battery each time. When the reporter plugged
+  the keypad in while the bridge stayed connected, it still showed not charging
+  ten minutes later, because the HomeBase sent no update
+  ([report](https://github.com/keesmod/ha-eufy-cam/issues/286#issuecomment-7100742982)).
+  From bridge 0.8.47 with client 0.31.3 the bridge reads the keypad again about
+  every 5 minutes while it stays connected. That is not yet confirmed on
+  hardware.
 - **Doorbell Chime `T8026`, type 600**, recognized from bridge 0.8.44 with
   client 0.31.0 as a device without functions, after
   [issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275). No protocol
