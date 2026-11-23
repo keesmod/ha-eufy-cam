@@ -1054,6 +1054,12 @@ empty list without an entry sensor.
 state only. A value that is not a short integer reads `other`. No other value
 is kept, so contact states, times and settings never appear.
 
+From client 0.31.4 a sensor whose inventory row has no `1552` reads its battery
+as normal, the default of the vendored library. Its `sources.battery_low` in
+`accessories` then reads `cloud`, like a value from the Eufy account. The
+`cloud` route of this section shows the latest inventory row. Without `1552` in
+its `codes` the reading is that default or a value kept from an earlier row.
+
 Paste `support.entry_sensor_parameters` into [issue #306][306] with what the
 eufy app showed for each sensor battery.
 

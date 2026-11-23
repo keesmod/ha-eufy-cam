@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.57 - Unreleased
+
+- An Entry Sensor `T8900` without a battery state in the Eufy account shows its battery as normal, as the eufy app does ([#306](https://github.com/keesmod/ha-eufy-cam/issues/306)), not yet confirmed on hardware.
+- Updated the client to 0.31.4 ([#306](https://github.com/keesmod/ha-eufy-cam/issues/306)).
+
+Upgrade: update the bridge to 0.8.48 first, then the integration. Rollback: 0.8.56 with bridge 0.8.47.
+
 ## 0.8.56 - 2026-11-23
 
 - Diagnostics show which parameters and battery values a Keypad `T8960` or an Entry Sensor `T8900` sends ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286), [#306](https://github.com/keesmod/ha-eufy-cam/issues/306)), not yet confirmed on hardware.
