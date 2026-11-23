@@ -225,8 +225,8 @@ The value the Eufy account lists at startup is a cached value and is never shown
 as the door state. From bridge 0.8.45 the bridge reads the door states the
 HomeBase reports when it connects, and from bridge 0.8.47 again about every 5
 minutes while it stays connected. Until the HomeBase reports a door state, or
-when it reports none, a door can show unknown after a bridge restart until it next opens or
-closes. The opening sensor has the attributes `source` (`p2p` or
+when it reports none, a door can show unknown after a bridge restart until it
+next opens or closes. The opening sensor has the attributes `source` (`p2p` or
 `push`), `observed_at` and `live`. After the HomeBase connection closes and
 comes back, the sensor keeps its last observed value with `live: false` until
 the HomeBase reports a value or the door next changes. The battery and charging
