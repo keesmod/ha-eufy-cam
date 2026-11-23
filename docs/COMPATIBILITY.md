@@ -478,8 +478,10 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   not charging ten minutes later, and no update reached the bridge
   ([report](https://github.com/keesmod/ha-eufy-cam/issues/286#issuecomment-7100742982)).
   From bridge 0.8.47 with client 0.31.3 the bridge reads the keypad again about
-  every 5 minutes while it stays connected. That is not yet confirmed on
-  hardware.
+  every 5 minutes while it stays connected. With bridge 0.8.47-beta.5 and client
+  0.31.3-beta.5 the reporter plugged the keypad in and later unplugged it
+  without a restart, and Home Assistant followed both changes
+  ([report](https://github.com/keesmod/ha-eufy-cam/issues/286#issuecomment-7103334111)).
 - **Doorbell Chime `T8026`, type 600**, recognized from bridge 0.8.44 with
   client 0.31.0 as a device without functions, after
   [issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275). No protocol

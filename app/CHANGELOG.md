@@ -4,7 +4,8 @@
 
 - Reports which parameters and battery values a Keypad `T8960` sends in the diagnostics ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286)), not yet confirmed on hardware.
 - Reads the Keypad `T8960` battery as normal instead of unknown when the eufy app shows it full ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286)), reported working.
-- Reads the Keypad `T8960` charging state and the entry sensor states again about every 5 minutes while the HomeBase stays connected ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286)), not yet confirmed on hardware.
+- Reads the Keypad `T8960` charging state again about every 5 minutes while the HomeBase stays connected, so it follows a plug change ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286)), reported working.
+- Reads the entry sensor states again about every 5 minutes while the HomeBase stays connected ([#286](https://github.com/keesmod/ha-eufy-cam/issues/286)), not yet confirmed on hardware.
 - Window Camera E10 `T8404` events also arrive when the camera sends them as if it had no HomeBase ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)), not yet confirmed on hardware.
 - An event of the Window Camera E10 `T8404` does not change the snapshot to the event picture ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)), reported, not yet fixed.
 - The bridge log shows camera pushes that produce no event ([#283](https://github.com/keesmod/ha-eufy-cam/issues/283)).
