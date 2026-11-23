@@ -102,5 +102,33 @@
         "codes": {}
       }
     }
+  ],
+  "entry_sensor_parameters": [
+    {
+      "inventory_row": 4,
+      "cloud": {
+        "types": [
+          1550,
+          1551,
+          1552
+        ],
+        "codes": {
+          "1552": "0"
+        }
+      },
+      "camera_info": {
+        "types": [
+          1550,
+          1552
+        ],
+        "codes": {
+          "1552": "2"
+        }
+      },
+      "hub_notify": {
+        "types": [],
+        "codes": {}
+      }
+    }
   ]
 }

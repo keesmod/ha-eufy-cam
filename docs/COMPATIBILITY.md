@@ -482,6 +482,14 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   0.31.3-beta.5 the reporter plugged the keypad in and later unplugged it
   without a restart, and Home Assistant followed both changes
   ([report](https://github.com/keesmod/ha-eufy-cam/issues/286#issuecomment-7103334111)).
+  With the same versions the reporter saw every entry sensor's battery as
+  unknown while the eufy app showed it full, and the diagnostics had a battery
+  value for one of four sensors, from the Eufy account
+  ([issue #306](https://github.com/keesmod/ha-eufy-cam/issues/306)). From bridge
+  0.8.47 with client 0.31.3 the bridge also reads entry sensor values in the
+  encoded part of the HomeBase's device information, and from integration
+  0.8.56 the diagnostics show which parameters each entry sensor sends. Not yet
+  confirmed on hardware.
 - **Doorbell Chime `T8026`, type 600**, recognized from bridge 0.8.44 with
   client 0.31.0 as a device without functions, after
   [issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275). No protocol

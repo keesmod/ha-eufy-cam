@@ -7,6 +7,7 @@ import {
   standalonePushReport,
   accessoryObservationReport,
   keypadParametersReport,
+  entrySensorParametersReport,
   snapshotRefreshReport,
   SNAPSHOT_REFRESH_ROWS,
   type RecordingQueryReport,
@@ -100,6 +101,13 @@ test('accessory rows and observation counts have exactly the fields of the share
   assert.equal(keypadParametersReport(4,null),null);
   assert.equal(keypadParametersReport(4,[]),null);
   assert.deepEqual(keypadParametersReport('PRIVATE',{}),{inventory_row:null,cloud:{types:[],codes:{}},camera_info:{types:[],codes:{}},hub_notify:{types:[],codes:{}}});
+  for (const {inventory_row,...routes} of shared.entry_sensor_parameters)
+    assert.deepEqual(entrySensorParametersReport(inventory_row,routes),{inventory_row,...routes});
+  assert.equal(entrySensorParametersReport(4,null),null);
+  // An entry sensor keeps only its own battery codes, a keypad only its own.
+  const mixed={cloud:{types:[1101,1552,1653],codes:{1101:'90',1552:'0',1653:'2',1550:'1'}}};
+  assert.deepEqual(entrySensorParametersReport(4,mixed)!.cloud.codes,{1101:'90',1552:'0'});
+  assert.deepEqual(keypadParametersReport(7,mixed)!.cloud.codes,{1101:'90',1653:'2'});
 });
 test('failure reports retain discovery and missing-baseline counts before setup rejection', () => {
   const f=collect();

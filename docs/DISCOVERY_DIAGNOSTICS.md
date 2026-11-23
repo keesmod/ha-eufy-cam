@@ -10,6 +10,7 @@ No live stream or optional debug logging is needed to generate discovery evidenc
 | Collection method | Bridge | Bundled library | HA integration |
 |---|---|---|---|
 | [Unrouted push lines](#camera-events-that-never-arrive) in the `Eufy discovery:` log | 0.8.47 | 0.31.3 | No integration update needed to read bridge logs |
+| [Entry sensor parameters](#entry-sensor-parameters) in `support.entry_sensor_parameters` | 0.8.47 | 0.31.3 | 0.8.56 for the download |
 | [Keypad parameters](#keypad-parameters) in `support.keypad_parameters` | 0.8.47 | 0.31.3 | 0.8.56 for the download |
 | [HomeBase accessory](#homebase-accessories) rows and `support.accessory_observations` | 0.8.44 | 0.31.0 | 0.8.53 for the download |
 | [Key setup fields](#key-setup-fields-of-a-connection-attempt) that say what a station connection attempt saw between `session_open` and the command key | 0.8.40 | 0.30.2 | 0.8.49 for the download |
@@ -987,7 +988,7 @@ without a client or with an older bridge.
 | `hub_notify` | Accessory values in a HomeBase hub notify update (P2P 1829) |
 | `sensor_status` | Entry sensor values in a legacy sensor status notification (P2P 1550) |
 | `push_door_sensor` | Door sensor pushes that set or confirmed an entry sensor value |
-| `camera_info` | Keypad values in the HomeBase's device information |
+| `camera_info` | Keypad and entry sensor values in the HomeBase's device information |
 | `cloud_seeded` | Values taken from the inventory at discovery. They are not observations |
 | `conflicts` | Older pushes that were dropped, and pushes without a usable time that differed from a P2P value |
 | `unknown_channel` | Reports for a channel that is no single accessory of that HomeBase |
@@ -1035,6 +1036,26 @@ showed for the keypad battery, whether the keypad was plugged in and the colour
 of its charging light.
 
 [286]: https://github.com/keesmod/ha-eufy-cam/issues/286
+
+#### Entry sensor parameters
+
+From bridge 0.8.47 with client 0.31.3 and integration 0.8.56 the download also
+has `support.entry_sensor_parameters`, one row for each admitted Entry Sensor
+`T8900`, at most sixteen ([issue #306][306]). It shows which parameters each
+sensor sends, so its battery value can be decoded from evidence. It has the
+same fields as the [keypad parameters](#keypad-parameters). `camera_info` also
+covers the encoded part of the device information. It is `null` without a
+client or with an older bridge, missing with an older integration, and an
+empty list without an entry sensor.
+
+`codes` keeps the newest raw value of `1101` battery level and `1552` battery
+state only. A value that is not a short integer reads `other`. No other value
+is kept, so contact states, times and settings never appear.
+
+Paste `support.entry_sensor_parameters` into [issue #306][306] with what the
+eufy app showed for each sensor battery.
+
+[306]: https://github.com/keesmod/ha-eufy-cam/issues/306
 
 ## Privacy and scope
 
