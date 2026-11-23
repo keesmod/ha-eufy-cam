@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@keesmod/eufy-mega-client": "https://github.com/keesmod/eufy-mega-client/releases/download/v0.31.3-beta.4/keesmod-eufy-mega-client-0.31.3-beta.4.tgz",
-    "ws": "8.22.2"
+    "ws": "8.23.0"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
