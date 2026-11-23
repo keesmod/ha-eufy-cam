@@ -463,10 +463,9 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   [fifth report](https://github.com/keesmod/ha-eufy-cam/issues/275#issuecomment-7016932101)). With bridge 0.8.46 and client 0.31.2 the
   same reporter saw the keypad show not charging while it charged, and its
   battery stayed unknown while the eufy app showed it full
-  ([issue #286](https://github.com/keesmod/ha-eufy-cam/issues/286)). Both keypad
-  values are not yet confirmed on hardware. From bridge 0.8.47 with integration
-  0.8.56 the diagnostics show which parameters the keypad sends and its battery
-  values. They showed battery state 2, which reads as normal from bridge 0.8.47
+  ([issue #286](https://github.com/keesmod/ha-eufy-cam/issues/286)). From
+  bridge 0.8.47 with integration 0.8.56 the diagnostics show which parameters the
+  keypad sends and its battery values. They showed battery state 2, which reads as normal from bridge 0.8.47
   with client 0.31.3, and charger state 2, which reads as not charging. Two eufy
   app screenshots showed the battery full, one with and one without a charging
   symbol. The report does not say in which state the diagnostics were taken.
