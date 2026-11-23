@@ -474,8 +474,8 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   bridge restart ([report](https://github.com/keesmod/ha-eufy-cam/issues/286#issuecomment-7096211834)).
   The HomeBase sent charger state 1 and then 2, and the keypad showed charging,
   then not charging, with a normal battery each time. When the reporter plugged
-  the keypad in while the bridge stayed connected, it still showed not charging
-  ten minutes later, because the HomeBase sent no update
+  the keypad in while the bridge stayed connected, Home Assistant still showed
+  not charging ten minutes later, and no update reached the bridge
   ([report](https://github.com/keesmod/ha-eufy-cam/issues/286#issuecomment-7100742982)).
   From bridge 0.8.47 with client 0.31.3 the bridge reads the keypad again about
   every 5 minutes while it stays connected. That is not yet confirmed on
