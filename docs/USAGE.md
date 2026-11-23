@@ -202,8 +202,11 @@ read-only. The opening sensor and setting Off are reported working on one
 HomeBase 3, where the entry sensor battery and the keypad charging sensor also
 show a value. From integration 0.8.56 with bridge 0.8.47 a full keypad battery
 shows normal, and charging and not charging are reported right after the bridge
-connects to the HomeBase. Whether a plug change shows without a reconnect is not
-yet confirmed. They are never cameras, so they get no camera, card, event or snapshot.
+connects to the HomeBase. From the same versions the bridge reads the keypad
+again about every 5 minutes while it stays connected, so a plug change should
+show within about 5 minutes without a reconnect. That is not yet confirmed on
+hardware. They are never cameras, so they get no camera, card, event or
+snapshot.
 
 | Device | Model | Entities |
 |---|---|---|
@@ -220,9 +223,10 @@ show.
 The door state shows only a value that the HomeBase or a Eufy push reported.
 The value the Eufy account lists at startup is a cached value and is never shown
 as the door state. From bridge 0.8.45 the bridge reads the door states the
-HomeBase reports when it connects. Until then, or when the HomeBase reports
-none, a door can show unknown after a bridge restart until it next opens or
-closes. The opening sensor has the attributes `source` (`p2p` or
+HomeBase reports when it connects, and from bridge 0.8.47 again about every 5
+minutes while it stays connected. Until the HomeBase reports a door state, or
+when it reports none, a door can show unknown after a bridge restart until it
+next opens or closes. The opening sensor has the attributes `source` (`p2p` or
 `push`), `observed_at` and `live`. After the HomeBase connection closes and
 comes back, the sensor keeps its last observed value with `live: false` until
 the HomeBase reports a value or the door next changes. The battery and charging
