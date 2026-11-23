@@ -1043,8 +1043,10 @@ From bridge 0.8.47 with client 0.31.3 and integration 0.8.56 the download also
 has `support.entry_sensor_parameters`, one row for each admitted Entry Sensor
 `T8900`, at most sixteen ([issue #306][306]). It shows which parameters each
 sensor sends, so its battery value can be decoded from evidence. It has the
-same fields as the [keypad parameters](#keypad-parameters). `camera_info` also
-covers the encoded part of the device information. It is `null` without a
+same fields as the [keypad parameters](#keypad-parameters), except that
+`camera_info` holds only the HomeBase's device information, including its
+encoded part. Contact notifications and door pushes add nothing here. It is
+`null` without a
 client or with an older bridge, missing with an older integration, and an
 empty list without an entry sensor.
 
