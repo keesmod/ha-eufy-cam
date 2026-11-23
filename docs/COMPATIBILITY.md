@@ -489,7 +489,12 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   0.8.47 with client 0.31.3 the bridge also reads entry sensor values in the
   encoded part of the HomeBase's device information, and from integration
   0.8.56 the diagnostics show which parameters each entry sensor sends. Not yet
-  confirmed on hardware.
+  confirmed on hardware. With bridge 0.8.47-beta.6 the diagnostics showed that
+  neither the HomeBase nor the Eufy account had a battery state for the three
+  sensors that showed unknown
+  ([report](https://github.com/keesmod/ha-eufy-cam/issues/306#issuecomment-7110972339)).
+  From bridge 0.8.48 with client 0.31.4 such a sensor shows normal, the default
+  of the vendored library, as the eufy app does. Not yet confirmed on hardware.
 - **Doorbell Chime `T8026`, type 600**, recognized from bridge 0.8.44 with
   client 0.31.0 as a device without functions, after
   [issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275). No protocol

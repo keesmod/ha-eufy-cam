@@ -209,7 +209,9 @@ with a live view, a recording or a command. That is reported working on one
 HomeBase 3. An entry sensor battery can show unknown while the eufy app shows
 it full ([issue #306](https://github.com/keesmod/ha-eufy-cam/issues/306)). From
 bridge 0.8.47 the bridge also reads entry sensor values in the encoded part of
-the HomeBase's device information, not yet confirmed on hardware. The
+the HomeBase's device information, not yet confirmed on hardware. From bridge
+0.8.48 with client 0.31.4 an entry sensor without a battery state in the Eufy
+account shows normal, as the eufy app does, not yet confirmed on hardware. The
 accessories are never cameras, so they get no camera, card, event or snapshot.
 
 | Device | Model | Entities |
