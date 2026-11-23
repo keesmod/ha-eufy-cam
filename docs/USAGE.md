@@ -203,9 +203,9 @@ HomeBase 3, where the entry sensor battery and the keypad charging sensor also
 show a value. From integration 0.8.56 with bridge 0.8.47 a full keypad battery
 shows normal, and charging and not charging are reported right after the bridge
 connects to the HomeBase. From the same versions the bridge reads the keypad
-again about every 5 minutes while it stays connected, so a plug change should
-show within about 5 minutes without a reconnect. That is not yet confirmed on
-hardware. They are never cameras, so they get no camera, card, event or
+again about every 5 minutes while it stays connected, so a plug change shows
+within about 5 minutes without a reconnect. That is reported working on one
+HomeBase 3. They are never cameras, so they get no camera, card, event or
 snapshot.
 
 | Device | Model | Entities |
