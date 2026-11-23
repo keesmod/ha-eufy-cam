@@ -200,8 +200,10 @@ From integration 0.8.53 with bridge 0.8.44 the accessories of a HomeBase 3
 ([issue #275](https://github.com/keesmod/ha-eufy-cam/issues/275)). They are
 read-only. The opening sensor and setting Off are reported working on one
 HomeBase 3, where the entry sensor battery and the keypad charging sensor also
-show a value. The keypad battery sensor is not yet confirmed on hardware. They
-are never cameras, so they get no camera, card, event or snapshot.
+show a value. From integration 0.8.56 with bridge 0.8.47 a full keypad battery
+shows normal, and charging and not charging are reported right after the bridge
+connects to the HomeBase. Whether a plug change shows without a reconnect is not
+yet confirmed. They are never cameras, so they get no camera, card, event or snapshot.
 
 | Device | Model | Entities |
 |---|---|---|
