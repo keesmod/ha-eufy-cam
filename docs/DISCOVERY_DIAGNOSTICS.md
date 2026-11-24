@@ -370,6 +370,21 @@ and models with type 314 stay `unsupported_device`. The client's
 [model matrix][283-matrix] records the reported tuple and the public evidence.
 Not tested on hardware with this integration.
 
+On 2026-11-24 the reporter of [issue #315][315] ran integration 0.8.57 and
+bridge 0.8.48 with client 0.31.4 on Home Assistant OS. The bridge logged
+`Eufy backend: unsupported_device device_model=T8142-R device_type=15`, and the
+discovery report shows the rejected row with `code=unsupported_device` and
+`parent_status=present`, camera firmware 3.0.5.7 under a T8030 on firmware
+3.8.8.0. The report form names it eufyCam 2C Pro. Four `T8142-Z` cameras on
+the same HomeBase were accepted. Client 0.31.5, included in bridge 0.8.49,
+admits exactly `T8142-R` with type 15 under the H3 media policy, which checks
+the actual HomeBase 3 owner and its firmware. Under another parent, such as a
+HomeBase 2, its `device` row shows `relationship=unsupported` with
+`relationship_reason=unsupported_station`. `T8142R` without the hyphen, other
+suffixes and other types stay `unsupported_device`. The client's
+[model matrix][315-matrix] records the reported tuple. Not tested on hardware
+with this integration.
+
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
 [152-records]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780
 [168]: https://github.com/keesmod/ha-eufy-cam/issues/168
@@ -395,6 +410,8 @@ Not tested on hardware with this integration.
 [252-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-t8215-video-doorbell-s4-0304
 [283]: https://github.com/keesmod/ha-eufy-cam/issues/283
 [283-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-t8404-window-camera-e10-0312
+[315]: https://github.com/keesmod/ha-eufy-cam/issues/315
+[315-matrix]: https://github.com/keesmod/eufy-mega-client/blob/main/docs/MODEL_MATRIX.md#reported-t8142-r-0315
 
 `ref`, `owner_ref` and `device_ref` are anonymous references within a report.
 `inventory_row` is a separate zero-based source position. Use the `report` number
