@@ -1,6 +1,6 @@
 {
   "name": "eufy-viewer-bridge",
-  "version": "0.8.49-beta.1",
+  "version": "0.8.49",
   "private": true,
   "type": "module",
   "engines": {
