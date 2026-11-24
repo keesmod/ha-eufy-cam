@@ -380,8 +380,8 @@ the same HomeBase were accepted. Client 0.31.5, included in bridge 0.8.49,
 admits exactly `T8142-R` with type 15 under the H3 media policy, which checks
 the actual HomeBase 3 owner and its firmware. Under another parent, such as a
 HomeBase 2, its `device` row shows `relationship=unsupported` with
-`relationship_reason=unsupported_station`. `T8142R` without the hyphen, other
-suffixes and other types stay `unsupported_device`. The client's
+`relationship_reason=unsupported_station`. `T8142R` without the hyphen, longer
+suffixes such as `T8142-RR` and other types stay `unsupported_device`. The client's
 [model matrix][315-matrix] records the reported tuple. Not tested on hardware
 with this integration.
 
