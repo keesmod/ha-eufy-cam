@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.58 - Unreleased
+
+- Added the eufyCam 2C Pro `T8142-R` on a HomeBase 3 ([#315](https://github.com/keesmod/ha-eufy-cam/issues/315)), not yet confirmed on hardware.
+- Updated the client to 0.31.5 ([#315](https://github.com/keesmod/ha-eufy-cam/issues/315)).
+
+Upgrade: update the bridge to 0.8.49 first, then the integration. Rollback: 0.8.57 with bridge 0.8.48.
+
 ## 0.8.57 - 2026-11-23
 
 - An Entry Sensor `T8900` without a battery state in the Eufy account shows its battery as normal, as the eufy app does ([#306](https://github.com/keesmod/ha-eufy-cam/issues/306)), reported working.
