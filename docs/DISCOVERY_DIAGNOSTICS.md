@@ -382,8 +382,11 @@ the actual HomeBase 3 owner and its firmware. Under another parent, such as a
 HomeBase 2, its `device` row shows `relationship=unsupported` with
 `relationship_reason=unsupported_station`. `T8142R` without the hyphen, longer
 suffixes such as `T8142-RR` and other types stay `unsupported_device`. The client's
-[model matrix][315-matrix] records the reported tuple. Not tested on hardware
-with this integration.
+[model matrix][315-matrix] records the reported tuple. After the release of
+integration 0.8.58 with bridge 0.8.49 the reporter saw the camera recognized,
+with snapshots, live view, recordings and events, as
+[COMPATIBILITY.md](COMPATIBILITY.md) describes. Reported, not independently
+reproduced.
 
 [152]: https://github.com/keesmod/ha-eufy-cam/issues/152
 [152-records]: https://github.com/keesmod/ha-eufy-cam/issues/152#issuecomment-6208097780

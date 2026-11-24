@@ -399,13 +399,18 @@ Eufy Mega client [model matrix](https://github.com/keesmod/eufy-mega-client/blob
   with this change. Another owner, in
   [issue #315](https://github.com/keesmod/ha-eufy-cam/issues/315), reported four
   `T8142-Z` cameras discovered and added to Home Assistant behind a HomeBase 3
-  on integration 0.8.57 with bridge 0.8.48. Snapshot, live view, recordings and
-  events were not reported. Reported, not independently reproduced.
+  on integration 0.8.57 with bridge 0.8.48. On integration 0.8.58 that owner
+  reported snapshots, live view, recordings and push events working on these
+  four cameras. Reported, not independently reproduced.
 - **eufyCam 2C Pro `T8142-R`, type 15**, recognized behind a HomeBase 3 from
   bridge 0.8.49 with client 0.31.5, after
   [issue #315](https://github.com/keesmod/ha-eufy-cam/issues/315). Snapshot,
   live view and recordings use the HomeBase 3 owner and firmware checks, as for
-  `T8142-Z`. The reporter has not yet tested a bridge with this change.
+  `T8142-Z`. The owner reported the camera, snapshots, live video and audio,
+  recording playback with audio and motion and person events working behind a
+  HomeBase 3 on integration 0.8.58. Events arrived after push was enabled for
+  the cameras in the Eufy security modes, as [NOTIFICATIONS.md](NOTIFICATIONS.md)
+  describes. Reported, not independently reproduced.
 - **Video Doorbell S4 `T8215`, type 97**, recognized behind a HomeBase 3 from
   bridge 0.8.42 with client 0.30.4, after
   [issue #252](https://github.com/keesmod/ha-eufy-cam/issues/252). Snapshot,
